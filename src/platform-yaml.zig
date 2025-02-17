@@ -7,7 +7,7 @@ const file = @import("file.zig");
 const yaml = @import("zig-yaml");
 const result = @import("result.zig");
 
-pub const DefaultVariant = "default";
+pub const default_variant = "default";
 
 pub const Operation = enum {
     Write,
@@ -84,7 +84,7 @@ fn definitionFromYamlString(
     const variations = try allocator.create(Variations);
     variations.* = try untyped.parse(Variations);
 
-    if (variant_name == null or std.mem.eql(u8, DefaultVariant, variant_name.?)) {
+    if (variant_name == null or std.mem.eql(u8, default_variant, variant_name.?)) {
         return DefinitionFromYaml{
             .allocator = allocator,
             .untyped = untyped,

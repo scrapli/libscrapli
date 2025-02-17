@@ -34,13 +34,13 @@ const Capability = struct {
     }
 };
 
-pub const DelimiterVersion_1_0 = "]]>]]>";
-pub const DelimiterVersion_1_1 = "##";
+pub const delimiter_Version_1_0 = "]]>]]>";
+pub const delimiter_Version_1_1 = "##";
 
-pub const Version_1_0_CapabilityName = "urn:ietf:params:netconf:base:1.0";
-pub const Version_1_1_CapabilityName = "urn:ietf:params:netconf:base:1.1";
+pub const version_1_0_capability_name = "urn:ietf:params:netconf:base:1.0";
+pub const version_1_1_capability_name = "urn:ietf:params:netconf:base:1.1";
 
-const Version_1_0_Capability =
+const version_1_0_capability =
     \\<?xml version="1.0" encoding="utf-8"?>
     \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
     \\  <capabilities>
@@ -48,7 +48,7 @@ const Version_1_0_Capability =
     \\  </capabilities>
     \\</hello>]]>]]>
 ;
-const Version_1_1_Capability =
+const version_1_1_capability =
     \\<?xml version="1.0" encoding="utf-8"?>
     \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
     \\  <capabilities>
@@ -57,14 +57,12 @@ const Version_1_1_Capability =
     \\</hello>]]>]]>
 ;
 
-pub const DefaultRpcErrorTag = "rpc-error>";
+pub const default_rpc_error_tag = "rpc-error>";
 
-// TODO i think its more idomatic to do camelCase for consts... so prolly fix all those at some
-// point
-const WithDefaults_Capability = "urn:ietf:params:netconf:capability:with-defaults:1.0";
+const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-defaults:1.0";
 
-const MessageIDAttributePrefix = "message-id=\"";
-const SubscriptionIDAttributePrefix = "subscription-id=\"";
+const message_id_attribute_prefix = "message-id=\"";
+const subscription_id_attribute_prefix = "subscription-id=\"";
 
 const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
@@ -77,7 +75,7 @@ pub fn NewOptions() Options {
         .session = session.NewOptions(),
         .transport = transport.NewOptions(),
         .transport_implementation = transport_bin.NewOptions(),
-        .error_tag = DefaultRpcErrorTag,
+        .error_tag = default_rpc_error_tag,
         .preferred_version = null,
         .message_poll_interval_ns = default_message_poll_interval_ns,
     };
@@ -129,7 +127,7 @@ pub fn NewDriver(
         allocator,
         log,
         host,
-        DelimiterVersion_1_0,
+        delimiter_Version_1_0,
         mut_options.session,
         mut_options.transport,
         mut_options.transport_implementation,
@@ -418,7 +416,7 @@ pub const Driver = struct {
             const cap_end_index = std.mem.indexOf(
                 u8,
                 _read_cap_buf,
-                DelimiterVersion_1_0,
+                delimiter_Version_1_0,
             );
             if (cap_end_index != null) {
                 end_copy_index = cap_end_index.?;
@@ -545,8 +543,8 @@ pub const Driver = struct {
     fn determineVersion(
         self: *Driver,
     ) !void {
-        const hasVersion_1_0 = try self.hasCapability(null, Version_1_0_CapabilityName, null);
-        const hasVersion_1_1 = try self.hasCapability(null, Version_1_1_CapabilityName, null);
+        const hasVersion_1_0 = try self.hasCapability(null, version_1_0_capability_name, null);
+        const hasVersion_1_1 = try self.hasCapability(null, version_1_1_capability_name, null);
 
         if (hasVersion_1_1) {
             // we default to preferring 1.1
@@ -590,10 +588,10 @@ pub const Driver = struct {
     ) !void {
         var cur_read_delay_ns: u64 = self.session.options.read_delay_min_ns;
 
-        var caps: []const u8 = Version_1_0_Capability;
+        var caps: []const u8 = version_1_0_capability;
 
         if (self.negotiated_version == Version.Version_1_1) {
-            caps = Version_1_1_Capability;
+            caps = version_1_1_capability;
         }
 
         try self.session.writeAndReturn(caps, false);
@@ -632,16 +630,16 @@ pub const Driver = struct {
             const delim_index = std.mem.indexOf(
                 u8,
                 _read_cap_buf,
-                DelimiterVersion_1_0,
+                delimiter_Version_1_0,
             );
 
             if (delim_index != null) {
-                if (delim_index.? + DelimiterVersion_1_0.len < _read_cap_buf.len) {
+                if (delim_index.? + delimiter_Version_1_0.len < _read_cap_buf.len) {
                     // almost certainly in an integration test and we overshot the delim
                     // which would cause a test to fail later on as we'll never be able to find
                     // the start of the next message, just put back whatever we over read
                     try self.session.read_queue.unget(
-                        _read_cap_buf[delim_index.? + DelimiterVersion_1_0.len ..],
+                        _read_cap_buf[delim_index.? + delimiter_Version_1_0.len ..],
                     );
                 }
 
@@ -683,10 +681,10 @@ pub const Driver = struct {
         var message_complete_delim: []const u8 = undefined;
         switch (self.negotiated_version) {
             Version.Version_1_0 => {
-                message_complete_delim = DelimiterVersion_1_0;
+                message_complete_delim = delimiter_Version_1_0;
             },
             Version.Version_1_1 => {
-                message_complete_delim = DelimiterVersion_1_1;
+                message_complete_delim = delimiter_Version_1_1;
             },
         }
 
@@ -729,7 +727,9 @@ pub const Driver = struct {
 
                 const reverse_idx = message_buf.items.len - forward_idx - 1;
 
-                if (message_buf.items[reverse_idx] == ascii.LF or message_buf.items[reverse_idx] == ascii.CR) {
+                if (message_buf.items[reverse_idx] == ascii.control_chars.lf or
+                    message_buf.items[reverse_idx] == ascii.control_chars.cr)
+                {
                     continue;
                 }
 
@@ -761,8 +761,8 @@ pub const Driver = struct {
             return;
         }
 
-        const index_of_message_id = std.mem.indexOf(u8, buf, MessageIDAttributePrefix);
-        const index_of_subscription_id = std.mem.indexOf(u8, buf, SubscriptionIDAttributePrefix);
+        const index_of_message_id = std.mem.indexOf(u8, buf, message_id_attribute_prefix);
+        const index_of_subscription_id = std.mem.indexOf(u8, buf, subscription_id_attribute_prefix);
 
         if (index_of_message_id == null and
             index_of_subscription_id == null)
@@ -776,9 +776,9 @@ pub const Driver = struct {
 
         var _start_index: usize = 0;
         if (index_of_message_id != null) {
-            _start_index = index_of_message_id.? + MessageIDAttributePrefix.len;
+            _start_index = index_of_message_id.? + message_id_attribute_prefix.len;
         } else if (index_of_subscription_id != null) {
-            _start_index = index_of_subscription_id.? + SubscriptionIDAttributePrefix.len;
+            _start_index = index_of_subscription_id.? + subscription_id_attribute_prefix.len;
         }
 
         // 32 chars *should* absolutely be enough to capture any messages/sub id?
@@ -896,7 +896,7 @@ pub const Driver = struct {
         try writer.elementStart("with-defaults");
         try writer.bindNs(
             "",
-            WithDefaults_Capability,
+            with_defaults_capability_name,
         );
         try writer.text(default_type.toString());
 
@@ -913,13 +913,13 @@ pub const Driver = struct {
             return std.fmt.allocPrint(
                 allocator,
                 "{s}\n{s}",
-                .{ elem_conent, DelimiterVersion_1_0 },
+                .{ elem_conent, delimiter_Version_1_0 },
             );
         } else {
             return std.fmt.allocPrint(
                 allocator,
                 "#{d}\n{s}\n{s}",
-                .{ elem_conent.len, elem_conent, DelimiterVersion_1_1 },
+                .{ elem_conent.len, elem_conent, delimiter_Version_1_1 },
             );
         }
     }

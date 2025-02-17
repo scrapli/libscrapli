@@ -4,80 +4,82 @@ const std = @import("std");
 const arrays = @import("arrays.zig");
 const thelper = @import("test-helper.zig");
 
-// Null | 0x00 | 0
-const NUL = 0x00;
-// Start of heading | 0x01 | 1
-const SOH = 0x01;
-// Start of text | 0x02 | 2
-const STX = 0x02;
-// End of text | 0x03 | 3 | also ctrl+c
-pub const ETX = 0x03;
-// End of transmission | 0x04 | 4
-const EOT = 0x04;
-// Enquiry | 0x05 | 5
-const ENQ = 0x05;
-// Acknowledge | 0x06 | 6
-const ACK = 0x05;
-// Terminal Bell | 0x07 | 7
-const BEL = 0x07;
-// Backspace | 0x08 | 8
-const BS = 0x08;
-// Horizontal tab | 0x09 | 9
-const TAB = 0x09;
-// Line feed | \n | 0x0A | 10
-pub const LF = 0x0A;
-// Vertical tab | 0x0B | 11
-const VT = 0x0B;
-// New Page | 0x0C | 12
-const NP = 0x0C;
-// Carriage return | \r | 0x0D | 13
-pub const CR = 0x0D;
-// Shift out | 0x0E | 14
-const SO = 0x0E;
-// Shift in | 0x0F | 15
-const SI = 0x0F;
-// Data link escape | 0x10 | 16
-const DLE = 0x10;
-// Device control 1 | 0x11 | 17
-const DC1 = 0x11;
-// Device control 2 | 0x12 | 18
-const DC2 = 0x12;
-// Device control 3 | 0x13 | 19
-const DC3 = 0x13;
-// Device control 4 | 0x14 | 20
-const DC4 = 0x14;
-// Negative acknowledge | 0x15 | 21
-const NAK = 0x15;
-// Synchronous idle | 0x16 | 22
-const SYN = 0x16;
-// End of transmission block | 0x17 | 23
-const ETB = 0x17;
-// Cancel | 0x18 | 24
-const CAN = 0x18;
-// End of medium | 0x19 | 25
-const EM = 0x19;
-// Substitute | 0x1A | 26
-const SUB = 0x1A;
-// Escape | 0x1B | 27
-pub const ESC = 0x1B;
-// File seperator | 0x1C | 28
-const FS = 0x1C;
-// Group seperator | 0x1D | 29
-const GS = 0x1D;
-// Record seperator | 0x1E | 30
-const RS = 0x1E;
-// Unit seperator | 0x1F | 31
-const US = 0x1F;
+pub const control_chars = struct {
+    // Null | 0x00 | 0
+    pub const nul = 0x00;
+    // Start of heading | 0x01 | 1
+    pub const soh = 0x01;
+    // Start of text | 0x02 | 2
+    pub const stx = 0x02;
+    // End of text | 0x03 | 3 | also ctrl+c
+    pub const etx = 0x03;
+    // End of transmission | 0x04 | 4
+    pub const eot = 0x04;
+    // Enquiry | 0x05 | 5
+    pub const enq = 0x05;
+    // Acknowledge | 0x06 | 6
+    pub const ack = 0x05;
+    // Terminal Bell | 0x07 | 7
+    pub const bel = 0x07;
+    // Backspace | 0x08 | 8
+    pub const bs = 0x08;
+    // Horizontal tab | 0x09 | 9
+    pub const tab = 0x09;
+    // Line feed | \n | 0x0A | 10
+    pub const lf = 0x0A;
+    // Vertical tab | 0x0B | 11
+    pub const vt = 0x0B;
+    // New Page | 0x0C | 12
+    pub const np = 0x0C;
+    // Carriage return | \r | 0x0D | 13
+    pub const cr = 0x0D;
+    // Shift out | 0x0E | 14
+    pub const so = 0x0E;
+    // Shift in | 0x0F | 15
+    pub const si = 0x0F;
+    // Data link escape | 0x10 | 16
+    pub const dle = 0x10;
+    // Device control 1 | 0x11 | 17
+    pub const dc1 = 0x11;
+    // Device control 2 | 0x12 | 18
+    pub const dc2 = 0x12;
+    // Device control 3 | 0x13 | 19
+    pub const dc3 = 0x13;
+    // Device control 4 | 0x14 | 20
+    pub const dc4 = 0x14;
+    // Negative acknowledge | 0x15 | 21
+    pub const nak = 0x15;
+    // Synchronous idle | 0x16 | 22
+    pub const syn = 0x16;
+    // End of transmission block | 0x17 | 23
+    pub const etb = 0x17;
+    // Cancel | 0x18 | 24
+    pub const can = 0x18;
+    // End of medium | 0x19 | 25
+    pub const em = 0x19;
+    // Substitute | 0x1A | 26
+    pub const sub = 0x1A;
+    // Escape | 0x1B | 27
+    pub const esc = 0x1B;
+    // File seperator | 0x1C | 28
+    pub const fs = 0x1C;
+    // Group seperator | 0x1D | 29
+    pub const gs = 0x1D;
+    // Record seperator | 0x1E | 30
+    pub const rs = 0x1E;
+    // Unit seperator | 0x1F | 31
+    pub const us = 0x1F;
 
-// CSI / Control Sequence Introducer *Device* / "P" / 0x50 / 80
-const CONTROL_SEQUENCE_INTRODUCER_DEVICE = 0x50;
-// CSI / Control Sequence Introducer / "[" / 0x5B / 91
-const CONTROL_SEQUENCE_INTRODUCER = 0x5B;
-// CSI / Control Sequence Introducer *Operating System* / "]" / 0x5D / 93
-const CONTROL_SEQUENCE_INTRODUCER_OPERATING_SYSTEM = 0x5D;
+    // CSI / Control Sequence Introducer *Device* / "P" / 0x50 / 80
+    const control_sequence_introducer_device = 0x50;
+    // CSI / Control Sequence Introducer / "[" / 0x5B / 91
+    const control_sequence_introducer = 0x5B;
+    // CSI / Control Sequence Introducer *Operating System* / "]" / 0x5D / 93
+    const control_sequence_introducer_operating_system = 0x5D;
 
-// Delete | 0x7F | 127
-const DEL = 0x7F;
+    // Delete | 0x7F | 127
+    const del = 0x7F;
+};
 
 pub fn stripAsciiAndAnsiControlCharsInPlace(
     haystack: []u8,
@@ -95,12 +97,12 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
         const char = haystack[read_idx];
 
         switch (char) {
-            ESC => {
+            control_chars.esc => {
                 is_escaped = true;
                 read_idx += 1;
                 continue;
             },
-            TAB, LF, VT, CR => {
+            control_chars.tab, control_chars.lf, control_chars.vt, control_chars.cr => {
                 // Keep non-display chars we want to preserve.
                 haystack[write_idx] = char;
                 write_idx += 1;
@@ -110,7 +112,7 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
             else => {},
         }
 
-        if ((0x00 <= char and char <= 0x1F) or char == DEL) {
+        if ((0x00 <= char and char <= 0x1F) or char == control_chars.del) {
             // all single byte control codes (minus escape since we care about that one
             // differently) also note that 0x00 -> 0x1F was specified then DEL (0x7F appened
             // for some reason) and newlines and carriage returns fall in this range which is why
@@ -120,21 +122,21 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
             continue;
         }
 
-        if (is_escaped and (char == CONTROL_SEQUENCE_INTRODUCER or
-            char == CONTROL_SEQUENCE_INTRODUCER_DEVICE or
-            char == CONTROL_SEQUENCE_INTRODUCER_OPERATING_SYSTEM))
+        if (is_escaped and (char == control_chars.control_sequence_introducer or
+            char == control_chars.control_sequence_introducer_device or
+            char == control_chars.control_sequence_introducer_operating_system))
         {
             // increment past the csi char
             read_idx += 1;
 
             switch (char) {
-                CONTROL_SEQUENCE_INTRODUCER => {
+                control_chars.control_sequence_introducer => {
                     is_control_sequence = true;
                 },
-                CONTROL_SEQUENCE_INTRODUCER_DEVICE => {
+                control_chars.control_sequence_introducer_device => {
                     is_device_control_sequence = true;
                 },
-                CONTROL_SEQUENCE_INTRODUCER_OPERATING_SYSTEM => {
+                control_chars.control_sequence_introducer_operating_system => {
                     is_operating_system_control_sequence = true;
                 },
                 else => {},
@@ -160,7 +162,7 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
                 } else if (is_device_control_sequence) {
                     // do we need to do things?
                 } else if (is_operating_system_control_sequence) {
-                    if (csi_char == BEL or csi_char == 0x9C) {
+                    if (csi_char == control_chars.bel or csi_char == 0x9C) {
                         // sequence is complete, continue iterating through haystack at csi_idx
                         is_escaped = false;
                         is_operating_system_control_sequence = false;
@@ -460,7 +462,7 @@ pub fn stripAsciiControlCharsInPlace(
 
         const char = haystack.items[read_idx];
 
-        if (char == ESC) {
+        if (char == control_chars.esc) {
             // Ignore escapes; if there are escapes, stripAnsiiControlSequences will handle them.
             haystack.items[write_idx] = char;
             write_idx += 1;
@@ -476,7 +478,7 @@ pub fn stripAsciiControlCharsInPlace(
         }
 
         switch (char) {
-            TAB, LF, VT, CR => {
+            control_chars.tab, control_chars.lf, control_chars.vt, control_chars.cr => {
                 // Keep non-display chars we want to preserve.
                 haystack.items[write_idx] = char;
                 write_idx += 1;
@@ -707,7 +709,7 @@ pub fn stripAsciiControlChars(
 
         const char = haystack[haystack_idx];
 
-        if (char == ESC) {
+        if (char == control_chars.esc) {
             // firstly ignore escapes, *if* there are escapes the stripAnsiiControlSequences will
             // handle those
             processed[processed_idx] = char;
@@ -728,7 +730,7 @@ pub fn stripAsciiControlChars(
         }
 
         switch (char) {
-            TAB, LF, VT, CR => {
+            control_chars.tab, control_chars.lf, control_chars.vt, control_chars.cr => {
                 // non "display" chars we want to keep
                 processed[processed_idx] = char;
                 processed_idx += 1;
@@ -961,14 +963,14 @@ pub fn stripAnsiiControlSequences(
         const char = haystack[haystack_idx];
 
         switch (char) {
-            ESC => {
+            control_chars.esc => {
                 is_escaped = true;
 
                 haystack_idx += 1;
 
                 continue;
             },
-            LF, CR => {
+            control_chars.lf, control_chars.cr => {
                 processed[processed_idx] = char;
                 processed_idx += 1;
 
@@ -979,7 +981,7 @@ pub fn stripAnsiiControlSequences(
             else => {},
         }
 
-        if ((0x00 <= char and char <= 0x1F) or char == DEL) {
+        if ((0x00 <= char and char <= 0x1F) or char == control_chars.del) {
             // all single byte control codes (minus escape since we care about that one
             // differently) also note that 0x00 -> 0x1F was specified then DEL (0x7F appened
             // for some reason) and newlines and carriage returns fall in this range which is why
@@ -990,21 +992,21 @@ pub fn stripAnsiiControlSequences(
             continue;
         }
 
-        if (is_escaped and (char == CONTROL_SEQUENCE_INTRODUCER or
-            char == CONTROL_SEQUENCE_INTRODUCER_DEVICE or
-            char == CONTROL_SEQUENCE_INTRODUCER_OPERATING_SYSTEM))
+        if (is_escaped and (char == control_chars.control_sequence_introducer or
+            char == control_chars.control_sequence_introducer_device or
+            char == control_chars.control_sequence_introducer_operating_system))
         {
             // increment past the csi char
             haystack_idx += 1;
 
             switch (char) {
-                CONTROL_SEQUENCE_INTRODUCER => {
+                control_chars.control_sequence_introducer => {
                     is_control_sequence = true;
                 },
-                CONTROL_SEQUENCE_INTRODUCER_DEVICE => {
+                control_chars.control_sequence_introducer_device => {
                     is_device_control_sequence = true;
                 },
-                CONTROL_SEQUENCE_INTRODUCER_OPERATING_SYSTEM => {
+                control_chars.control_sequence_introducer_operating_system => {
                     is_operating_system_control_sequence = true;
                 },
                 else => {},
@@ -1030,7 +1032,7 @@ pub fn stripAnsiiControlSequences(
                 } else if (is_device_control_sequence) {
                     // do we need to do things?
                 } else if (is_operating_system_control_sequence) {
-                    if (csi_char == BEL or csi_char == 0x9C) {
+                    if (csi_char == control_chars.bel or csi_char == 0x9C) {
                         // sequence is complete, continue iterating through haystack at csi_idx
                         is_escaped = false;
                         is_operating_system_control_sequence = false;

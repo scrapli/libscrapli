@@ -255,7 +255,7 @@ pub const Result = struct {
             declaration_index = _declaration_index.? + xmlDeclaration.len;
         }
 
-        const delimiter_index = std.mem.indexOf(u8, ret, driver.DelimiterVersion_1_0);
+        const delimiter_index = std.mem.indexOf(u8, ret, driver.delimiter_Version_1_0);
 
         try self.results.append(
             try self.allocator.dupe(
@@ -321,7 +321,9 @@ pub const Result = struct {
             iter_idx = chunk_size_end_idx;
 
             while (true) {
-                if (ret[iter_idx] == ascii.CR or ret[iter_idx] == ascii.LF) {
+                if (ret[iter_idx] == ascii.control_chars.cr or
+                    ret[iter_idx] == ascii.control_chars.lf)
+                {
                     iter_idx += 1;
 
                     continue;
@@ -342,7 +344,7 @@ pub const Result = struct {
             // dont account for that
             while (counted_chunk_iter < chunk_size) {
                 defer counted_chunk_iter += 1;
-                if (ret[iter_idx + counted_chunk_iter] == ascii.CR) {
+                if (ret[iter_idx + counted_chunk_iter] == ascii.control_chars.cr) {
                     final_chunk_size += 1;
 
                     continue;
@@ -421,7 +423,7 @@ pub const Result = struct {
             cur += result_raw.len;
 
             if (idx != self.results_raw.items.len - 1) {
-                out[cur] = ascii.LF;
+                out[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }
@@ -457,7 +459,7 @@ pub const Result = struct {
             cur += result.len;
 
             if (idx != self.results.items.len - 1) {
-                out[cur] = ascii.LF;
+                out[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }
@@ -481,7 +483,7 @@ test "parseRpcErrors" {
                 "1.2.3.4",
                 830,
                 driver.Version.Version_1_0,
-                driver.DefaultRpcErrorTag,
+                driver.default_rpc_error_tag,
                 operation.Kind.Get,
             ),
             .input =
@@ -503,7 +505,7 @@ test "parseRpcErrors" {
                 "1.2.3.4",
                 830,
                 driver.Version.Version_1_0,
-                driver.DefaultRpcErrorTag,
+                driver.default_rpc_error_tag,
                 operation.Kind.Get,
             ),
             .input =
@@ -539,7 +541,7 @@ test "parseRpcErrors" {
                 "1.2.3.4",
                 830,
                 driver.Version.Version_1_0,
-                driver.DefaultRpcErrorTag,
+                driver.default_rpc_error_tag,
                 operation.Kind.Get,
             ),
             .input =
@@ -600,7 +602,7 @@ test "recordVersion1_0" {
                 "1.2.3.4",
                 830,
                 driver.Version.Version_1_0,
-                driver.DefaultRpcErrorTag,
+                driver.default_rpc_error_tag,
                 operation.Kind.Get,
             ),
             .input =
@@ -629,7 +631,7 @@ test "recordVersion1_0" {
                 "1.2.3.4",
                 830,
                 driver.Version.Version_1_0,
-                driver.DefaultRpcErrorTag,
+                driver.default_rpc_error_tag,
                 operation.Kind.Get,
             ),
             .input =
@@ -658,7 +660,7 @@ test "recordVersion1_0" {
                 "1.2.3.4",
                 830,
                 driver.Version.Version_1_0,
-                driver.DefaultRpcErrorTag,
+                driver.default_rpc_error_tag,
                 operation.Kind.Get,
             ),
             .input =
@@ -689,7 +691,7 @@ test "recordVersion1_0" {
                 "1.2.3.4",
                 830,
                 driver.Version.Version_1_0,
-                driver.DefaultRpcErrorTag,
+                driver.default_rpc_error_tag,
                 operation.Kind.Get,
             ),
             .input =
@@ -738,7 +740,7 @@ test "recordVersion1_1" {
                 "1.2.3.4",
                 830,
                 driver.Version.Version_1_1,
-                driver.DefaultRpcErrorTag,
+                driver.default_rpc_error_tag,
                 operation.Kind.Get,
             ),
             .input =

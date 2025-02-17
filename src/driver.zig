@@ -120,7 +120,7 @@ pub fn NewDriver(
 
         .session = sess,
 
-        .current_mode = mode.UnknownMode,
+        .current_mode = mode.unknown_mode,
     };
 
     return driver;
@@ -480,7 +480,7 @@ pub const Driver = struct {
 
         var target_mode = options.requested_mode;
 
-        if (std.mem.eql(u8, target_mode, mode.DefaultMode)) {
+        if (std.mem.eql(u8, target_mode, mode.default_mode)) {
             target_mode = self.definition.default_mode;
         }
 
@@ -509,7 +509,7 @@ pub const Driver = struct {
     ) !*result.Result {
         var target_mode = options.requested_mode;
 
-        if (std.mem.eql(u8, target_mode, mode.DefaultMode)) {
+        if (std.mem.eql(u8, target_mode, mode.default_mode)) {
             target_mode = self.definition.default_mode;
         }
 
@@ -552,7 +552,7 @@ pub const Driver = struct {
 
         var target_mode = options.requested_mode;
 
-        if (std.mem.eql(u8, target_mode, mode.DefaultMode)) {
+        if (std.mem.eql(u8, target_mode, mode.default_mode)) {
             target_mode = self.definition.default_mode;
         }
 

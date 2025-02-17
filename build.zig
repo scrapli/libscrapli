@@ -30,15 +30,15 @@ pub fn build(b: *std.Build) !void {
 
     for (targets) |target| {
         if (!skip_ffi_lib) {
-            try build_ffi_lib(b, optimize, target);
+            try buildFfiLib(b, optimize, target);
         }
 
         if (examples) {
-            try build_examples(b, optimize, target);
+            try buildExamples(b, optimize, target);
         }
     }
 
-    try build_tests(b, default_target, optimize);
+    try buildTests(b, default_target, optimize);
 }
 
 fn getPcre2Dep(
@@ -97,7 +97,7 @@ fn getZigXmlDep(
     );
 }
 
-fn build_ffi_lib(
+fn buildFfiLib(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     target: std.Target.Query,
@@ -133,7 +133,7 @@ fn build_ffi_lib(
     b.getInstallStep().dependOn(&lib_target_output.step);
 }
 
-fn build_examples(
+fn buildExamples(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     target: std.Target.Query,
@@ -185,7 +185,7 @@ fn build_examples(
     }
 }
 
-fn build_tests(
+fn buildTests(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,

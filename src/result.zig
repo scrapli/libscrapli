@@ -199,7 +199,7 @@ pub const Result = struct {
             cur += result_raw.len;
 
             if (idx != self.results_raw.items.len - 1) {
-                out[cur] = ascii.LF;
+                out[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }
@@ -235,7 +235,7 @@ pub const Result = struct {
             cur += result.len;
 
             if (idx != self.results.items.len - 1) {
-                out[cur] = ascii.LF;
+                out[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }

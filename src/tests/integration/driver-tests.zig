@@ -561,17 +561,17 @@ test "driver enter-mode" {
     }{
         .{
             .name = "no-change",
-            .default_mode = mode.DefaultMode,
+            .default_mode = mode.default_mode,
             .requested_mode = "exec",
         },
         .{
             .name = "priv-exec-to-priv-exec",
-            .default_mode = mode.DefaultMode,
+            .default_mode = mode.default_mode,
             .requested_mode = "privileged_exec",
         },
         .{
             .name = "exec-to-configuration",
-            .default_mode = mode.DefaultMode,
+            .default_mode = mode.default_mode,
             .requested_mode = "configuration",
         },
     };
@@ -757,28 +757,28 @@ test "driver send-input" {
             // default retention behavior
             .retain_input = false,
             .retain_trailing_prompt = false,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "retain-input",
             .input = "show ip route",
             .retain_input = true,
             .retain_trailing_prompt = false,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "retain-prompt",
             .input = "show ip route",
             .retain_input = false,
             .retain_trailing_prompt = true,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "retain-all",
             .input = "show ip route",
             .retain_input = true,
             .retain_trailing_prompt = true,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "change-priv-level",
@@ -1000,28 +1000,28 @@ test "driver send-inputs" {
             // default retention behavior
             .retain_input = false,
             .retain_trailing_prompt = false,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "retain-input",
             .inputs = &[_][]const u8{ "show ip route", "show run | i hostname" },
             .retain_input = true,
             .retain_trailing_prompt = false,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "retain-prompt",
             .inputs = &[_][]const u8{ "show ip route", "show run | i hostname" },
             .retain_input = false,
             .retain_trailing_prompt = true,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "retain-all",
             .inputs = &[_][]const u8{ "show ip route", "show run | i hostname" },
             .retain_input = true,
             .retain_trailing_prompt = true,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "change-priv-level",
@@ -1249,10 +1249,10 @@ test "driver send-prompted-input" {
             .name = "simple",
             .input = "write erase",
             .prompt = "Proceed with erasing startup configuration? [confirm]",
-            .response = &[_]u8{ascii.ETX},
+            .response = &[_]u8{ascii.control_chars.etx},
             // default retention behavior
             .retain_trailing_prompt = false,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         // note: no option to not retain input for send prompted input because output would be
         // super weird!
@@ -1260,15 +1260,15 @@ test "driver send-prompted-input" {
             .name = "retain-prompt",
             .input = "write erase",
             .prompt = "Proceed with erasing startup configuration? [confirm]",
-            .response = &[_]u8{ascii.ETX},
+            .response = &[_]u8{ascii.control_chars.etx},
             .retain_trailing_prompt = true,
-            .requested_mode = mode.DefaultMode,
+            .requested_mode = mode.default_mode,
         },
         .{
             .name = "change-priv-level",
             .input = "write erase",
             .prompt = "Proceed with erasing startup configuration? [confirm]",
-            .response = &[_]u8{ascii.ETX},
+            .response = &[_]u8{ascii.control_chars.etx},
             .retain_trailing_prompt = true,
             .requested_mode = "configuration",
         },

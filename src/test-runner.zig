@@ -8,7 +8,7 @@ const flags = @import("flags.zig");
 
 const Allocator = std.mem.Allocator;
 
-const BORDER = "=" ** 80;
+const border = "=" ** 80;
 
 // yaml is verrrry noisy
 pub const std_options = std.Options{
@@ -112,7 +112,7 @@ pub fn main() !void {
             printer.status(
                 .fail,
                 "\n{s}\n\"{s}\" - Memory Leak\n{s}\n",
-                .{ BORDER, friendly_name, BORDER },
+                .{ border, friendly_name, border },
             );
         }
 
@@ -129,7 +129,7 @@ pub fn main() !void {
                 printer.status(
                     .fail,
                     "\n{s}\n\"{s}\" - {s}\n{s}\n",
-                    .{ BORDER, friendly_name, @errorName(err), BORDER },
+                    .{ border, friendly_name, @errorName(err), border },
                 );
                 if (@errorReturnTrace()) |trace| {
                     std.debug.dumpStackTrace(trace.*);

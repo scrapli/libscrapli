@@ -442,7 +442,7 @@ pub const Session = struct {
 
             try bufs.appendSliceBoth(buf[0..n]);
 
-            if (std.mem.indexOf(u8, buf[0..n], &[_]u8{ascii.ESC}) != null) {
+            if (std.mem.indexOf(u8, buf[0..n], &[_]u8{ascii.control_chars.esc}) != null) {
                 // same as readTimeout other than we dont bother limiting the search depth here
                 // see readTimeout for some more info
                 const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
@@ -634,7 +634,7 @@ pub const Session = struct {
 
             try bufs.appendSliceBoth(buf[0..n]);
 
-            if (std.mem.indexOf(u8, buf[0..n], &[_]u8{ascii.ESC}) != null) {
+            if (std.mem.indexOf(u8, buf[0..n], &[_]u8{ascii.control_chars.esc}) != null) {
                 // if ESC in the new buf look at last n of processed buf to replace if
                 // necessary; this *feels* bad like we may miss sequences (if our read gets part
                 // of a sequence, then a subsequent read gets the rest), however this has never

@@ -80,7 +80,7 @@ pub fn NewGetPromptOptions() GetPromptOptions {
 pub fn NewSendInputOptions() SendInputOptions {
     return SendInputOptions{
         .cancel = null,
-        .requested_mode = mode.DefaultMode,
+        .requested_mode = mode.default_mode,
         .input_handling = InputHandling.Fuzzy,
         .retain_input = false,
         .retain_trailing_prompt = false,
@@ -91,7 +91,7 @@ pub fn NewSendInputOptions() SendInputOptions {
 pub fn NewSendPromptedInputOptions() SendPromptedInputOptions {
     return SendPromptedInputOptions{
         .cancel = null,
-        .requested_mode = mode.DefaultMode,
+        .requested_mode = mode.default_mode,
         .input_handling = InputHandling.Fuzzy,
         .hidden_response = false,
         .retain_trailing_prompt = false,

@@ -8,8 +8,8 @@ const pcre2 = @cImport({
     @cInclude("pcre2.h");
 });
 
-pub const UnknownMode = "__unknown__";
-pub const DefaultMode = "__default__";
+pub const unknown_mode = "__unknown__";
+pub const default_mode = "__default__";
 
 pub const Instruction = enum {
     SendInput,
