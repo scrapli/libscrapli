@@ -1,0 +1,28 @@
+.{
+    .name = "zigtmp",
+    .version = "0.0.1",
+    .minimum_zig_version = "0.14.0-dev.2546+0ff0bdb4a",
+    .dependencies = .{
+        .pcre2 = .{
+            .path = "lib/pcre2",
+        },
+        .libssh2 = .{
+            .path = "lib/libssh2",
+        },
+        .@"zig-yaml" = .{
+            .url = "https://github.com/kubkon/zig-yaml/archive/c159b36.tar.gz",
+            .hash = "12206cc047b006b3a1f657d9bcb9b63842dd38007644f36ec92536e876d7ab8c4762",
+        },
+        .@"zig-xml" = .{
+            .url = "https://github.com/ianprime0509/zig-xml/archive/03e67f5.tar.gz",
+            .hash = "122077c1f683baf0f7bb49f2434caa8651a7c08406e0e87601b7263193b4313a5496",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "lib",
+        "src",
+        "LICENSE",
+    },
+}

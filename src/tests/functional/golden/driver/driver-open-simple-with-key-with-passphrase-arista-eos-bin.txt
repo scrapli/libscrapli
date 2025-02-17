@@ -1,0 +1,5 @@
+Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.
+Enter passphrase for key 'src/tests/fixtures/libscrapli_test_ssh_key_passphrase': 
+Last login: Thu Jan  9 23:54:40 2025 from 172.20.20.1
+eos1>
+eos1>

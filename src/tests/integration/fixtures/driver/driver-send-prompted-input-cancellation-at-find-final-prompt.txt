@@ -1,0 +1,12 @@
+Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.
+
+
+(admin@localhost) Password: 
+Last login: Fri Dec 27 21:17:48 2024 from 172.20.20.1
+
+[5neos1>
+eos1>
+eos1>enable
+eos1#write erase
+Proceed with erasing startup configuration? [confirm]
+cant find prompt here so we have time to cancel!

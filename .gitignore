@@ -1,0 +1,35 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.dylib.o
+
+# jetbrains goodies
+.idea
+
+# macos stuff
+.DS_Store
+*/.DS_Store
+
+# private dir for notes and such
+private/
+.private/
+
+# log output
+*.log
+
+# zig cache/build stuff
+.zig-cache
+zig-out
+
+# for notes/stuff/whatever
+.private
+
+# functional testing things (containerlab bin will go away once dind fix is merged and released)
+src/tests/functional/clab/clab-libscrapli
+src/tests/functional/clab/*.bak
+src/tests/functional/clab/launcher/containerlab
+# pcre2 that will be cloned during builds
+lib/pcre2/pcre2

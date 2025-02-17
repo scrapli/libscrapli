@@ -1,0 +1,3 @@
+eos1(config)#write erase
+Proceed with erasing startup configuration? [confirm]
+eos1(config)#

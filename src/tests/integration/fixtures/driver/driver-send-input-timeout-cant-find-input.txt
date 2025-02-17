@@ -1,0 +1,10 @@
+Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.
+
+
+(admin@localhost) Password: 
+Last login: Thu Dec 26 23:51:28 2024 from 172.20.20.1
+
+[5neos1>
+eos1>
+eos1>enable
+eos1#our input is not here!

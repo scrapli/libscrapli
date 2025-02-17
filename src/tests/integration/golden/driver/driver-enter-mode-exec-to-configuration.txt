@@ -1,0 +1,5 @@
+eos1>
+eos1>enable
+eos1#
+eos1#configure terminal
+eos1(config)#

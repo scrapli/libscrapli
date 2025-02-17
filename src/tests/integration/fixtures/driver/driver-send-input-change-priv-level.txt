@@ -1,0 +1,32 @@
+Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.
+(admin@localhost) Password: 
+Last login: Sat Dec 28 20:07:56 2024 from 172.20.20.1
+eos1>
+eos1>
+eos1>enable
+eos1#configure terminal
+eos1(config)#do show ip route
+
+VRF: default
+Source Codes:
+       C - connected, S - static, K - kernel,
+       O - OSPF, IA - OSPF inter area, E1 - OSPF external type 1,
+       E2 - OSPF external type 2, N1 - OSPF NSSA external type 1,
+       N2 - OSPF NSSA external type2, B - Other BGP Routes,
+       B I - iBGP, B E - eBGP, R - RIP, I L1 - IS-IS level 1,
+       I L2 - IS-IS level 2, O3 - OSPFv3, A B - BGP Aggregate,
+       A O - OSPF Summary, NG - Nexthop Group Static Route,
+       V - VXLAN Control Service, M - Martian,
+       DH - DHCP client installed default route,
+       DP - Dynamic Policy Route, L - VRF Leaked,
+       G  - gRIBI, RC - Route Cache Route,
+       CL - CBF Leaked Route
+
+Gateway of last resort:
+ S        0.0.0.0/0 [1/0]
+           via 172.20.20.1, Management0
+
+ C        172.20.20.0/24
+           directly connected, Management0
+
+eos1(config)#

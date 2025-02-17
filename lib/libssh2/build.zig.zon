@@ -1,0 +1,21 @@
+.{
+    .name = "libssh2",
+    .version = "1.11.1",
+    .minimum_zig_version = "0.14.0-dev.2546+0ff0bdb4a",
+    .dependencies = .{
+        .openssl = .{
+            .path = "../openssl",
+        },
+        .libssh2 = .{
+            .url = "https://github.com/libssh2/libssh2/archive/refs/tags/libssh2-1.11.1.tar.gz",
+            .hash = "12206efeb372e17d942ba46d71d60aff2033915e8e702aa0a3968ac86a299996dc97",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "config",
+        "include",
+        "LICENSE",
+    },
+}
