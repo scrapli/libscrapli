@@ -34,9 +34,11 @@ pub const std_options = std.Options{
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa_allocator.allocator();
 
-export fn assertNoLeaks() void {
-    const check = gpa_allocator.deinit();
-    std.log.info("LEAK CHECK RESULT >> {any}", .{check});
+export fn assertNoLeaks() bool {
+    switch (gpa_allocator.deinit()) {
+        .leak => return false,
+        .ok => return true,
+    }
 }
 
 export fn allocDriver(
