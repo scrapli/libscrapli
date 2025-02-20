@@ -285,7 +285,7 @@ export fn fetchOperation(
             cur += result_raw.len;
 
             if (idx != _ret.results_raw.items.len - 1) {
-                operation_result_raw.*[cur] = ascii.LF;
+                operation_result_raw.*[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }
@@ -297,7 +297,7 @@ export fn fetchOperation(
             cur += result.len;
 
             if (idx != _ret.results.items.len - 1) {
-                operation_result.*[cur] = ascii.LF;
+                operation_result.*[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }
@@ -381,7 +381,7 @@ export fn sendInput(
                 .input_handling = operation.InputHandling.Fuzzy,
                 .retain_input = false,
                 .retain_trailing_prompt = false,
-                .requested_mode = mode.DefaultMode,
+                .requested_mode = mode.default_mode,
                 .stop_on_indicated_failure = true,
             },
         },
@@ -612,7 +612,7 @@ export fn netconfFetchOperation(
             cur += result_raw.len;
 
             if (idx != _ret.results_raw.items.len - 1) {
-                operation_result_raw.*[cur] = ascii.LF;
+                operation_result_raw.*[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }
@@ -624,7 +624,7 @@ export fn netconfFetchOperation(
             cur += result.len;
 
             if (idx != _ret.results.items.len - 1) {
-                operation_result.*[cur] = ascii.LF;
+                operation_result.*[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }
