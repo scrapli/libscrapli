@@ -3,12 +3,14 @@ const std = @import("std");
 const ffi_options = @import("ffi-options.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const operation = @import("operation.zig");
+const driver = @import("driver.zig");
 const netconf_ffi_options = @import("ffi-options-netconf.zig");
 const netconf_ffi_driver = @import("ffi-driver-netconf.zig");
 const netconf_operation = @import("operation-netconf.zig");
 const logger = @import("logger.zig");
 const mode = @import("mode.zig");
 const ascii = @import("ascii.zig");
+const file = @import("file.zig");
 
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
@@ -41,7 +43,7 @@ export fn assertNoLeaks() bool {
     }
 }
 
-export fn allocDriver(
+export fn allocDriverFromYaml(
     file_path: [*c]const u8,
     variant_name: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
@@ -51,7 +53,6 @@ export fn allocDriver(
     username: [*c]const u8,
     password: [*c]const u8,
     session_timeout_ns: u64,
-    // TODO all the other opts
 ) usize {
     var log = logger.Logger{ .allocator = allocator, .f = null };
 
@@ -59,10 +60,7 @@ export fn allocDriver(
         log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
     }
 
-    const file_path_slice = std.mem.span(file_path);
-    const host_slice = std.mem.span(host);
-
-    const opts = ffi_options.NewDriverOptionsFromAlloc(
+    const options = ffi_options.NewDriverOptionsFromAlloc(
         variant_name,
         log,
         transport_kind,
@@ -72,21 +70,86 @@ export fn allocDriver(
         session_timeout_ns,
     );
 
+    const real_driver = driver.NewDriverFromYaml(
+        allocator,
+        std.mem.span(file_path),
+        std.mem.span(host),
+        options,
+    ) catch |err| {
+        log.critical("error during NewDriverFromYaml: {any}", .{err});
+
+        return 0;
+    };
+
     const d = ffi_driver.NewFfiDriver(
         allocator,
-        file_path_slice,
-        host_slice,
-        opts,
+        real_driver,
     ) catch |err| {
-        log.critical("error during alloc driver {any}", .{err});
+        log.critical("error during NewFfiDriver: {any}", .{err});
 
         return 0;
     };
 
     d.init() catch |err| {
-        d.real_driver.log.critical("error during init driver {any}", .{err});
+        log.critical("error during driver init: {any}", .{err});
 
-        return 1;
+        return 0;
+    };
+
+    return @intFromPtr(d);
+}
+
+export fn allocDriverFromYamlString(
+    definition_string: [*c]const u8,
+    variant_name: [*c]const u8,
+    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
+    host: [*c]const u8,
+    transport_kind: [*c]const u8,
+    port: u16,
+    username: [*c]const u8,
+    password: [*c]const u8,
+    session_timeout_ns: u64,
+) usize {
+    var log = logger.Logger{ .allocator = allocator, .f = null };
+
+    if (logger_callback != null) {
+        log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
+    }
+
+    const options = ffi_options.NewDriverOptionsFromAlloc(
+        variant_name,
+        log,
+        transport_kind,
+        port,
+        username,
+        password,
+        session_timeout_ns,
+    );
+
+    const real_driver = driver.NewDriverFromYamlString(
+        allocator,
+        std.mem.span(definition_string),
+        std.mem.span(host),
+        options,
+    ) catch |err| {
+        log.critical("error during NewDriverFromYamlString: {any}", .{err});
+
+        return 0;
+    };
+
+    const d = ffi_driver.NewFfiDriver(
+        allocator,
+        real_driver,
+    ) catch |err| {
+        log.critical("error during NewFfiDriver: {any}", .{err});
+
+        return 0;
+    };
+
+    d.init() catch |err| {
+        log.critical("error during driver init: {any}", .{err});
+
+        return 0;
     };
 
     return @intFromPtr(d);

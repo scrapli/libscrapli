@@ -54,17 +54,8 @@ pub const OperationOptions = union(OperationKind) { Open: OpenOperation, EnterMo
 
 pub fn NewFfiDriver(
     allocator: std.mem.Allocator,
-    file_path: []const u8,
-    host: []const u8,
-    options: driver.Options,
+    real_driver: *driver.Driver,
 ) !*FfiDriver {
-    const real_driver = try driver.NewDriverFromYaml(
-        allocator,
-        file_path,
-        host,
-        options,
-    );
-
     const ffi_driver = try allocator.create(FfiDriver);
 
     ffi_driver.* = FfiDriver{
