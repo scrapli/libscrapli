@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) !void {
     generate.has_side_effects = true;
     generate.expectExitCode(0);
     generate.addCheck(
-        .{ .expect_stdout_match = "Successfully removed upstream build.zig file!\n" },
+        .{ .expect_stdout_match = "PCRE2 clone/setup OK!\n" },
     );
     generate.addArg("sh");
     generate.addFileArg(b.path("generate.sh"));
@@ -79,6 +79,8 @@ pub fn build(b: *std.Build) !void {
         },
     );
 
+    lib.step.dependOn(&generate.step);
+
     lib.root_module.addCMacro("HAVE_CONFIG_H", "");
     lib.root_module.addCMacro("PCRE2_CODE_UNIT_WIDTH", @tagName(codeUnitWidth));
     if (linkage == .static) {
@@ -136,5 +138,4 @@ pub fn build(b: *std.Build) !void {
 
     lib.installHeader(pcre2_header, "pcre2.h");
     b.installArtifact(lib);
-    b.getInstallStep().dependOn(&generate.step);
 }
