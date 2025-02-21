@@ -17,6 +17,7 @@ pub const OperationKind = enum {
     EnterMode,
     GetPrompt,
     SendInput,
+    SendPromptedInput,
 };
 
 pub const OpenOperation = struct {
@@ -41,12 +42,15 @@ pub const SendInputOperation = struct {
     options: operation.SendInputOptions,
 };
 
-pub const OperationOptions = union(OperationKind) {
-    Open: OpenOperation,
-    EnterMode: EnterModeOperation,
-    GetPrompt: GetPromptOperation,
-    SendInput: SendInputOperation,
+pub const SendPromptedInputOperation = struct {
+    id: u32,
+    input: []const u8,
+    prompt: []const u8,
+    response: []const u8,
+    options: operation.SendPromptedInputOptions,
 };
+
+pub const OperationOptions = union(OperationKind) { Open: OpenOperation, EnterMode: EnterModeOperation, GetPrompt: GetPromptOperation, SendInput: SendInputOperation, SendPromptedInput: SendPromptedInputOperation };
 
 pub fn NewFfiDriver(
     allocator: std.mem.Allocator,
@@ -237,6 +241,20 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
+                OperationKind.SendPromptedInput => {
+                    operation_id = op.?.SendPromptedInput.id;
+
+                    ret_ok = self.real_driver.sendPromptedInput(
+                        self.allocator,
+                        op.?.SendPromptedInput.input,
+                        op.?.SendPromptedInput.prompt,
+                        op.?.SendPromptedInput.response,
+                        op.?.SendPromptedInput.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
             }
 
             self.operation_lock.lock();
@@ -352,6 +370,9 @@ pub const FfiDriver = struct {
             },
             OperationKind.SendInput => {
                 mut_options.SendInput.id = operation_id;
+            },
+            OperationKind.SendPromptedInput => {
+                mut_options.SendPromptedInput.id = operation_id;
             },
         }
 

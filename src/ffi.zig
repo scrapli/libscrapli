@@ -78,13 +78,13 @@ export fn allocDriver(
         host_slice,
         opts,
     ) catch |err| {
-        log.critical("error during alloc driver {}", .{err});
+        log.critical("error during alloc driver {any}", .{err});
 
         return 0;
     };
 
     d.init() catch |err| {
-        d.real_driver.log.critical("error during init driver {}", .{err});
+        d.real_driver.log.critical("error during init driver {any}", .{err});
 
         return 1;
     };
@@ -108,7 +108,7 @@ export fn openDriver(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
-        d.real_driver.log.critical("error during driver open {}", .{err});
+        d.real_driver.log.critical("error during driver open {any}", .{err});
 
         return 1;
     };
@@ -121,7 +121,7 @@ export fn openDriver(
             },
         },
     }) catch |err| {
-        d.real_driver.log.critical("error during queue open {}", .{err});
+        d.real_driver.log.critical("error during queue open {any}", .{err});
 
         return 1;
     };
@@ -139,7 +139,7 @@ export fn closeDriver(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.close(cancel) catch |err| {
-        d.real_driver.log.critical("error during driver close {}", .{err});
+        d.real_driver.log.critical("error during driver close {any}", .{err});
 
         return 1;
     };
@@ -161,7 +161,7 @@ export fn pollOperation(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.pollOperation(operation_id, false) catch |err| {
-        d.real_driver.log.critical("error during poll operation {}", .{err});
+        d.real_driver.log.critical("error during poll operation {any}", .{err});
 
         return 1;
     };
@@ -207,7 +207,7 @@ export fn waitOperation(
 
     while (true) {
         const ret = d.pollOperation(operation_id, false) catch |err| {
-            d.real_driver.log.critical("error during poll operation {}", .{err});
+            d.real_driver.log.critical("error during poll operation {any}", .{err});
 
             return 1;
         };
@@ -254,7 +254,7 @@ export fn fetchOperation(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.pollOperation(operation_id, true) catch |err| {
-        d.real_driver.log.critical("error during fetch operation {}", .{err});
+        d.real_driver.log.critical("error during fetch operation {any}", .{err});
 
         return 1;
     };
@@ -329,7 +329,7 @@ export fn enterMode(
             },
         },
     }) catch |err| {
-        d.real_driver.log.critical("error during queue enter mode {}", .{err});
+        d.real_driver.log.critical("error during queue enterMode {any}", .{err});
 
         return 1;
     };
@@ -354,7 +354,7 @@ export fn getPrompt(
             },
         },
     }) catch |err| {
-        d.real_driver.log.critical("error during queue get prompt {}", .{err});
+        d.real_driver.log.critical("error during queue getPrompt {any}", .{err});
 
         return 1;
     };
@@ -386,7 +386,45 @@ export fn sendInput(
             },
         },
     }) catch |err| {
-        d.real_driver.log.critical("error during queue get prompt {}", .{err});
+        d.real_driver.log.critical("error during queue sendInput {any}", .{err});
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn sendPromptedInput(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    input: [*c]const u8,
+    prompt: [*c]const u8,
+    response: [*c]const u8,
+    hidden_response: bool,
+    abort_input: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
+        .SendPromptedInput = ffi_driver.SendPromptedInputOperation{
+            .id = 0,
+            .input = std.mem.span(input),
+            .prompt = std.mem.span(prompt),
+            .response = std.mem.span(response),
+            .options = operation.SendPromptedInputOptions{
+                .cancel = cancel,
+                .requested_mode = mode.default_mode,
+                .input_handling = operation.InputHandling.Fuzzy,
+                .hidden_response = hidden_response,
+                .retain_trailing_prompt = false,
+                .abort_input = std.mem.span(abort_input),
+            },
+        },
+    }) catch |err| {
+        d.real_driver.log.critical("error during queue sendPromptedInput {any}", .{err});
 
         return 1;
     };
@@ -428,13 +466,13 @@ export fn netconfAllocDriver(
         host_slice,
         opts,
     ) catch |err| {
-        log.critical("error during alloc driver {}", .{err});
+        log.critical("error during alloc driver {any}", .{err});
 
         return 0;
     };
 
     d.init() catch |err| {
-        d.real_driver.log.critical("error during init driver {}", .{err});
+        d.real_driver.log.critical("error during init driver {any}", .{err});
 
         return 1;
     };
@@ -458,7 +496,7 @@ export fn netconfOpenDriver(
     var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
-        d.real_driver.log.critical("error during driver open {}", .{err});
+        d.real_driver.log.critical("error during driver open {any}", .{err});
 
         return 1;
     };
@@ -471,7 +509,7 @@ export fn netconfOpenDriver(
             },
         },
     }) catch |err| {
-        d.real_driver.log.critical("error during queue open {}", .{err});
+        d.real_driver.log.critical("error during queue open {any}", .{err});
 
         return 1;
     };
@@ -488,7 +526,7 @@ export fn netconfCloseDriver(
     var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.close(cancel) catch |err| {
-        d.real_driver.log.critical("error during driver close {}", .{err});
+        d.real_driver.log.critical("error during driver close {any}", .{err});
 
         return 1;
     };
@@ -507,7 +545,7 @@ export fn netconfPollOperation(
     var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.pollOperation(operation_id, false) catch |err| {
-        d.real_driver.log.critical("error during poll operation {}", .{err});
+        d.real_driver.log.critical("error during poll operation {any}", .{err});
 
         return 1;
     };
@@ -544,7 +582,7 @@ export fn netconfWaitOperation(
 
     while (true) {
         const ret = d.pollOperation(operation_id, false) catch |err| {
-            d.real_driver.log.critical("error during poll operation {}", .{err});
+            d.real_driver.log.critical("error during poll operation {any}", .{err});
 
             return 1;
         };
@@ -581,7 +619,7 @@ export fn netconfFetchOperation(
     var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.pollOperation(operation_id, true) catch |err| {
-        d.real_driver.log.critical("error during fetch operation {}", .{err});
+        d.real_driver.log.critical("error during fetch operation {any}", .{err});
 
         return 1;
     };
@@ -651,7 +689,7 @@ export fn netconfGetConfig(
             .options = opts,
         },
     }) catch |err| {
-        d.real_driver.log.critical("error during queue get-config {}", .{err});
+        d.real_driver.log.critical("error during queue getConfig {any}", .{err});
 
         return 1;
     };
