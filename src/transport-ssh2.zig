@@ -141,6 +141,8 @@ pub fn NewTransport(
 
         .auth_callback_data = a,
 
+        .session_lock = std.Thread.Mutex{},
+
         .socket = null,
         .session = null,
         .channel = null,
@@ -158,6 +160,8 @@ pub const Transport = struct {
     options: Options,
 
     auth_callback_data: *AuthCallbackData,
+
+    session_lock: std.Thread.Mutex,
 
     socket: ?std.posix.socket_t,
     session: ?*ssh2.struct__LIBSSH2_SESSION,
@@ -214,6 +218,9 @@ pub const Transport = struct {
         try self.openChannel(cancel);
         try self.requestPty(cancel);
         try self.requestShell(cancel);
+
+        // all the open things are sequential/single-threaded, any read/write operation past this
+        // point must acquire the lock to operate against the session!
     }
 
     fn initSocket(self: *Transport) !void {
@@ -614,6 +621,9 @@ pub const Transport = struct {
     }
 
     pub fn close(self: *Transport) void {
+        self.session_lock.lock();
+        defer self.session_lock.unlock();
+
         if (self.session != null) {
             const rc = ssh2.libssh2_session_disconnect(self.session, "deinit");
             if (rc != 0) {
@@ -623,7 +633,19 @@ pub const Transport = struct {
     }
 
     pub fn write(self: *Transport, buf: []const u8) !void {
+        self.session_lock.lock();
+        defer self.session_lock.unlock();
+
         const n = ssh2.libssh2_channel_write_ex(self.channel, 0, buf.ptr, buf.len);
+
+        if (n == LIBSSH2_ERROR_EAGAIN) {
+            // would block
+            return self.write(buf);
+        }
+
+        if (n < 0) {
+            return error.WriteFailed;
+        }
 
         if (n != buf.len) {
             self.log.critical("wrote {d} bytes, expected to write {d}", .{ n, buf.len });
@@ -633,6 +655,9 @@ pub const Transport = struct {
     }
 
     pub fn read(self: *Transport, buf: []u8) !usize {
+        self.session_lock.lock();
+        defer self.session_lock.unlock();
+
         const n = ssh2.libssh2_channel_read_ex(
             self.channel.?,
             @as(c_int, 0),
@@ -643,6 +668,10 @@ pub const Transport = struct {
         if (n == LIBSSH2_ERROR_EAGAIN) {
             // would block
             return 0;
+        }
+
+        if (n < 0) {
+            return error.ReadFailed;
         }
 
         return @intCast(n);
