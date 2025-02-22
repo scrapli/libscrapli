@@ -128,13 +128,14 @@ fn buildFfiLib(
     lib.root_module.addImport("zig-xml", xml.module("xml"));
 
     const lib_target_output = b.addInstallArtifact(
-        lib, .{
-        .dest_dir = .{
-            .override = .{
-                .custom = try target.zigTriple(b.allocator),
+        lib,
+        .{
+            .dest_dir = .{
+                .override = .{
+                    .custom = try target.zigTriple(b.allocator),
+                },
             },
         },
-    },
     );
 
     b.getInstallStep().dependOn(&lib_target_output.step);
@@ -208,12 +209,10 @@ fn buildTests(
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
-        .test_runner = b.path("src/test-runner.zig"),
-        // TODO use this once i can use master w/out the popOrNull issue
-        // .test_runner = std.Build.Step.Compile.TestRunner{
-        //     .mode = .simple,
-        //     .path = b.path("src/test-runner.zig"),
-        // },
+        .test_runner = std.Build.Step.Compile.TestRunner{
+            .mode = .simple,
+            .path = b.path("src/test-runner.zig"),
+        },
     });
 
     tests.linkLibrary(pcre2.artifact("pcre2-8"));

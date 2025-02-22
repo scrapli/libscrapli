@@ -1,7 +1,7 @@
 .{
     .name = "zigtmp",
     .version = "0.0.1",
-    .minimum_zig_version = "0.14.0-dev.2546+0ff0bdb4a",
+    .minimum_zig_version = "0.14.0-dev.3287+65e7ede49",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",
@@ -10,12 +10,12 @@
             .path = "lib/libssh2",
         },
         .@"zig-yaml" = .{
-            .url = "https://github.com/kubkon/zig-yaml/archive/c159b36.tar.gz",
-            .hash = "12206cc047b006b3a1f657d9bcb9b63842dd38007644f36ec92536e876d7ab8c4762",
+            .url = "https://github.com/kubkon/zig-yaml/archive/73f9cb9.tar.gz",
+            .hash = "12207e7220d406a57e79a473312d4fb94b115084b0f6830ff13a12814f4b1b3a69b7",
         },
         .@"zig-xml" = .{
-            .url = "https://github.com/ianprime0509/zig-xml/archive/03e67f5.tar.gz",
-            .hash = "122077c1f683baf0f7bb49f2434caa8651a7c08406e0e87601b7263193b4313a5496",
+            .url = "https://github.com/carlmontanari/zig-xml/archive/b1d5fcd.tar.gz",
+            .hash = "122060eb493b54cf33adf9496673a1e5b436043bf825bf6e5ef5765ac89722f6511f",
         },
     },
     .paths = .{
