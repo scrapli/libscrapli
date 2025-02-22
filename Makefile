@@ -29,7 +29,7 @@ build: fmt ## Build the shared objects.
 	zig build -freference-trace --summary all
 
 build-examples: fmt ## Build the example binaries
-	zig build -freference-trace --summary all --examples --skip-lib
+	zig build -freference-trace --summary all -- --examples --skip-lib
 
 build-clab-launcher: ## Builds the clab launcher image
 	docker build \

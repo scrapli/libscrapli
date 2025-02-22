@@ -63,13 +63,11 @@ pub fn main() !void {
         error.EnvironmentVariableNotFound => default_host,
         else => return err,
     };
-    defer allocator.free(host);
 
     const password = std.process.getEnvVarOwned(allocator, password_env_var_name) catch |err| switch (err) {
         error.EnvironmentVariableNotFound => default_password,
         else => return err,
     };
-    defer allocator.free(password);
 
     var opts = driver.NewOptions();
 
