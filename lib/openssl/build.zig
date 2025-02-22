@@ -157,7 +157,7 @@ fn libssl(
         },
     });
 
-    if (lib.rootModuleTarget().isDarwin()) {
+    if (lib.rootModuleTarget().isDarwinLibC()) {
         lib.root_module.addIncludePath(
             .{ .cwd_relative = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include" },
         );
@@ -1138,7 +1138,7 @@ fn libcrypto(
         },
     });
 
-    if (lib.rootModuleTarget().isDarwin()) {
+    if (lib.rootModuleTarget().isDarwinLibC()) {
         lib.root_module.addIncludePath(
             .{ .cwd_relative = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include" },
         );

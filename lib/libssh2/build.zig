@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) !void {
         lib.root_module.addCMacro("HAVE_SELECT", "");
         lib.root_module.addCMacro("LIBSSH2_DH_GEX_NEW", "1");
 
-        if (target.result.isGnu()) {
+        if (target.result.isGnuLibC()) {
             lib.root_module.addCMacro("HAVE_UNISTD_H", "");
             lib.root_module.addCMacro("HAVE_INTTYPES_H", "");
             lib.root_module.addCMacro("HAVE_SYS_TIME_H", "");
@@ -115,6 +115,7 @@ pub fn build(b: *std.Build) !void {
                 "-DCRYPTO_BACKEND=OpenSSL",
                 "-DBUILD_EXAMPLES=OFF",
                 "-DBUILD_TESTING=OFF",
+                "-DLIBSSH2DEBUG", // for enabling debug logging/trace
             },
         },
     );
