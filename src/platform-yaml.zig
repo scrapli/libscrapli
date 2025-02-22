@@ -76,13 +76,13 @@ fn definitionFromYamlString(
     variant_name: ?[]const u8,
 ) !DefinitionFromYaml {
     var untyped = try yaml.Yaml.load(allocator, definition_string);
-    errdefer untyped.deinit();
+    errdefer untyped.deinit(allocator);
 
     // variations needs to escape to the heap -- if it doesnt then the fields in our chosen
     // definition will segfault since they'll be pointing to stack scoped (and gone) memory for
     // things like prompt pattern etc!
     const variations = try allocator.create(Variations);
-    variations.* = try untyped.parse(Variations);
+    variations.* = try untyped.parse(allocator, Variations);
 
     if (variant_name == null or std.mem.eql(u8, default_variant, variant_name.?)) {
         return DefinitionFromYaml{
@@ -121,7 +121,7 @@ pub const DefinitionFromYaml = struct {
 
     pub fn deinit(self: *DefinitionFromYaml) void {
         self.allocator.destroy(self.variations);
-        self.untyped.deinit();
+        self.untyped.deinit(self.allocator);
     }
 };
 
