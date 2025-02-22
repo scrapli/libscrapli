@@ -22,6 +22,7 @@ const all_examples: []const []const u8 = &.{
 
 pub fn build(b: *std.Build) !void {
     const examples = flags.parseCustomFlag("--examples", false);
+    const main = flags.parseCustomFlag("--main", false);
     const skip_ffi_lib = flags.parseCustomFlag("--skip-ffi-lib", false);
     const release = flags.parseCustomFlag("--release", false);
     const default_target = b.standardTargetOptions(.{});
@@ -38,7 +39,11 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
-    try buildTests(b, default_target, optimize);
+    try buildTests(b, optimize, default_target);
+
+    if (main) {
+        try buildMainExe(b, optimize, default_target);
+    }
 }
 
 fn getPcre2Dep(
@@ -122,13 +127,15 @@ fn buildFfiLib(
     lib.root_module.addImport("zig-yaml", yaml.module("yaml"));
     lib.root_module.addImport("zig-xml", xml.module("xml"));
 
-    const lib_target_output = b.addInstallArtifact(lib, .{
+    const lib_target_output = b.addInstallArtifact(
+        lib, .{
         .dest_dir = .{
             .override = .{
                 .custom = try target.zigTriple(b.allocator),
             },
         },
-    });
+    },
+    );
 
     b.getInstallStep().dependOn(&lib_target_output.step);
 }
@@ -187,8 +194,8 @@ fn buildExamples(
 
 fn buildTests(
     b: *std.Build,
-    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    target: std.Build.ResolvedTarget,
 ) !void {
     const step = b.step("test", "Run tests");
 
@@ -291,4 +298,41 @@ fn buildTests(
 
         step.dependOn(&run_tests.step);
     }
+}
+
+fn buildMainExe(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    target: std.Build.ResolvedTarget,
+) !void {
+    const pcre2 = getPcre2Dep(b, target.query, optimize);
+    const libssh2 = getLibssh2Dep(b, target.query, optimize);
+    const yaml = getZigYamlDep(b, target.query, optimize);
+    const xml = getZigXmlDep(b, target.query, optimize);
+
+    const lib = b.addStaticLibrary(.{
+        .name = "scrapli",
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .version = libscrapli_version,
+    });
+
+    lib.linkLibrary(pcre2.artifact("pcre2-8"));
+    lib.linkLibrary(libssh2.artifact("ssh2"));
+    lib.root_module.addImport("zig-yaml", yaml.module("yaml"));
+    lib.root_module.addImport("zig-xml", xml.module("xml"));
+
+    const exe = b.addExecutable(.{
+        .name = "scrapli",
+        .root_source_file = b.path("main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.linkLibrary(lib);
+    exe.root_module.addImport("scrapli", lib.root_module);
+
+    const exe_target_output = b.addInstallArtifact(exe, .{});
+
+    b.getInstallStep().dependOn(&exe_target_output.step);
 }
