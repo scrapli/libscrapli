@@ -10,14 +10,22 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const generate = std.Build.Step.Run.create(b, "Clone pcre2 and remove upstream's build.zig");
-    generate.has_side_effects = true;
-    generate.expectExitCode(0);
-    generate.addCheck(
-        .{ .expect_stdout_match = "PCRE2 clone/setup OK!\n" },
-    );
-    generate.addArg("sh");
-    generate.addFileArg(b.path("generate.sh"));
+    // super janky, but lets us be decoupled from upstream (because even if we used upstream as
+    // a dep and then tried to tweak it we would still be hosed if/until they update zig versions
+    // and stuff).
+    const proc = std.process.Child.run(
+        .{
+            .cwd = "lib/pcre2",
+            .argv = &[_][]const u8{"./generate.sh"},
+            .allocator = b.allocator,
+        },
+    ) catch {
+        return std.Build.RunError.ExitCodeFailure;
+    };
+
+    if (proc.term.Exited != 0) {
+        return std.Build.RunError.ExitCodeFailure;
+    }
 
     const linkage = b.option(
         std.builtin.LinkMode,
@@ -78,8 +86,6 @@ pub fn build(b: *std.Build) !void {
             .link_libc = true,
         },
     );
-
-    lib.step.dependOn(&generate.step);
 
     lib.root_module.addCMacro("HAVE_CONFIG_H", "");
     lib.root_module.addCMacro("PCRE2_CODE_UNIT_WIDTH", @tagName(codeUnitWidth));
