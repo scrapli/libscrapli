@@ -82,7 +82,11 @@ fn definitionFromYamlString(
     // definition will segfault since they'll be pointing to stack scoped (and gone) memory for
     // things like prompt pattern etc!
     const variations = try allocator.create(Variations);
-    variations.* = try untyped.parse(allocator, Variations);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    variations.* = try untyped.parse(arena.allocator(), Variations);
 
     if (variant_name == null or std.mem.eql(u8, default_variant, variant_name.?)) {
         return DefinitionFromYaml{
