@@ -691,16 +691,8 @@ pub fn stripAsciiControlChars(
     allocator: std.mem.Allocator,
     haystack: []const u8,
 ) ![]const u8 {
-    var processed = try allocator.alloc(u8, haystack.len);
+    const processed = try allocator.alloc(u8, haystack.len);
     var processed_idx: u64 = 0;
-    defer {
-        var resize = haystack.len;
-        if (processed_idx < resize) {
-            resize = processed_idx;
-        }
-
-        _ = allocator.resize(processed, resize);
-    }
 
     var haystack_idx: usize = 0;
 
@@ -741,7 +733,7 @@ pub fn stripAsciiControlChars(
         }
     }
 
-    return processed[0..processed_idx];
+    return allocator.realloc(processed, processed_idx);
 }
 
 test "stripAsciiControlChars" {
@@ -944,14 +936,6 @@ pub fn stripAnsiiControlSequences(
 ) ![]const u8 {
     var processed = try allocator.alloc(u8, haystack.len);
     var processed_idx: u64 = 0;
-    defer {
-        var resize = haystack.len;
-        if (processed_idx < resize) {
-            resize = processed_idx;
-        }
-
-        _ = allocator.resize(processed, resize);
-    }
 
     var is_escaped = false;
     var is_control_sequence = false;
@@ -1073,7 +1057,7 @@ pub fn stripAnsiiControlSequences(
         processed_idx += 1;
     }
 
-    return processed[0..processed_idx];
+    return allocator.realloc(processed, processed_idx);
 }
 
 test "stripAnsiiControlSequences" {
