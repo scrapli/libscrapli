@@ -1,7 +1,7 @@
 .{
     .name = "zigtmp",
     .version = "0.0.1",
-    .minimum_zig_version = "0.14.0-dev.3287+65e7ede49",
+    .minimum_zig_version = "0.14.0-dev.3296+a7467b9bb",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",
