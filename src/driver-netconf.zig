@@ -833,15 +833,6 @@ pub const Driver = struct {
         }
     }
 
-    fn getMessageId(
-        self: *Driver,
-    ) ![]u8 {
-        // big enough buf to hold u64, just needs to be stack allocated as we dump to string
-        // via allocPrint before this ends
-        var message_id_buf: [20]u8 = undefined;
-        return std.fmt.bufPrint(&message_id_buf, "{}", .{self.message_id});
-    }
-
     fn addFilterElem(
         writer: *xml.GenericWriter(error{OutOfMemory}),
         filter: []const u8,
@@ -929,6 +920,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.GetConfigOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -940,7 +933,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("get-config");
         try writer.elementStart("source");
         try writer.elementStart(options.source.toString());
@@ -989,6 +989,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.EditConfigOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1000,7 +1002,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("edit-config");
 
         try Driver.addTargetElem(&writer, options.target.toString());
@@ -1033,6 +1042,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CopyConfigOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1044,7 +1055,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("copy-config");
 
         try Driver.addSourceElem(&writer, options.source.toString());
@@ -1075,6 +1093,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.DeleteConfigOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1086,7 +1106,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("delete-config");
 
         try Driver.addTargetElem(&writer, options.target.toString());
@@ -1116,6 +1143,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.LockUnlockOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1127,7 +1156,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("lock");
 
         try Driver.addTargetElem(&writer, options.target.toString());
@@ -1157,6 +1193,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.LockUnlockOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1168,7 +1206,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("unlock");
 
         try Driver.addTargetElem(&writer, options.target.toString());
@@ -1198,6 +1243,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.GetOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1209,7 +1256,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("get");
 
         if (options.filter != null and options.filter.?.len > 0) {
@@ -1257,6 +1311,8 @@ pub const Driver = struct {
     ) ![]const u8 {
         _ = options;
 
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1268,7 +1324,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("close-session");
         try writer.elementEnd();
         try writer.elementEnd();
@@ -1295,6 +1358,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.KillSessionOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1306,7 +1371,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("kill-session");
 
         try writer.elementStart("session-id");
@@ -1343,6 +1415,8 @@ pub const Driver = struct {
     ) ![]const u8 {
         _ = options;
 
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1354,7 +1428,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("commit");
         try writer.elementEnd();
         try writer.elementEnd();
@@ -1383,6 +1464,8 @@ pub const Driver = struct {
     ) ![]const u8 {
         _ = options;
 
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1394,7 +1477,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("discard-changes");
         try writer.elementEnd();
         try writer.elementEnd();
@@ -1423,6 +1513,8 @@ pub const Driver = struct {
     ) ![]const u8 {
         _ = options;
 
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1434,7 +1526,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("cancel-commit");
         try writer.elementEnd();
         try writer.elementEnd();
@@ -1461,6 +1560,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.ValidateOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1472,7 +1573,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("validate");
 
         try Driver.addSourceElem(&writer, options.source.toString());
@@ -1502,6 +1610,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CreateSubscriptionOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1513,7 +1623,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("create-subscription");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:notification:1.0");
 
@@ -1560,6 +1677,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.EstablishSubscriptionOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1571,7 +1690,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("establish-subscription");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
@@ -1617,6 +1743,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.ModifySubscriptionOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1628,7 +1756,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("modify-subscription");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
@@ -1680,6 +1815,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.DeleteSubscriptionOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1691,7 +1828,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("delete-subscription");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
@@ -1727,6 +1871,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.ResyncSubscriptionOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1738,7 +1884,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("resync-subscription");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
@@ -1774,6 +1927,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.KillSubscriptionOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1785,7 +1940,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("kill-subscription");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
@@ -1821,6 +1983,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.GetSchemaOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1832,7 +1996,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("get-schema");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring");
 
@@ -1875,6 +2046,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.GetDataOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1886,7 +2059,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("get-data");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-netconf-nmda");
         try writer.bindNs("ds", "urn:ietf:params:xml:ns:yang:ietf-datastores");
@@ -1965,6 +2145,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.EditDataOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -1976,7 +2158,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("edit-data");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-netconf-nmda");
         try writer.bindNs("ds", "urn:ietf:params:xml:ns:yang:ietf-datastores");
@@ -2014,6 +2203,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.ActionOptions,
     ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
         var sink = std.ArrayList(u8).init(allocator);
         defer sink.deinit();
 
@@ -2025,7 +2216,14 @@ pub const Driver = struct {
         try writer.xmlDeclaration("UTF-8", null);
         try writer.elementStart("rpc");
         try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute("message-id", try self.getMessageId());
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
         try writer.elementStart("action");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:1");
 
