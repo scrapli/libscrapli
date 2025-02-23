@@ -28,6 +28,9 @@ open-coverage: ## Open the generated coverage report
 build: fmt ## Build the shared objects.
 	zig build -freference-trace --summary all
 
+build-release: fmt ## Build the shared objects w/ release optimization.
+	zig build -freference-trace --summary all -- --release
+
 build-examples: fmt ## Build the example binaries
 	zig build -freference-trace --summary all -- --examples --skip-lib
 
