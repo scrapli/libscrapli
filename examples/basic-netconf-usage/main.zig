@@ -91,7 +91,7 @@ pub fn main() !void {
 
     const d = try driver.NewDriver(
         allocator,
-        "localhost",
+        host,
         opts,
     );
 
