@@ -31,6 +31,9 @@ build: fmt ## Build the shared objects.
 build-examples: fmt ## Build the example binaries
 	zig build -freference-trace --summary all -- --examples --skip-lib
 
+build-main: fmt ## Build the example binaries
+	zig build -freference-trace --summary all -- --main --skip-lib
+
 build-clab-launcher: ## Builds the clab launcher image
 	docker build \
 		-f src/tests/functional/clab/launcher/Dockerfile \
