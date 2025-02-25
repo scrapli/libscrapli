@@ -351,7 +351,10 @@ pub const Result = struct {
                 }
             }
 
-            @memcpy(_parsed[parsed_idx .. parsed_idx + final_chunk_size], ret[iter_idx .. iter_idx + final_chunk_size]);
+            @memcpy(
+                _parsed[parsed_idx .. parsed_idx + final_chunk_size],
+                ret[iter_idx .. iter_idx + final_chunk_size],
+            );
             parsed_idx += final_chunk_size;
 
             // finally increment iter_idx past this chunk

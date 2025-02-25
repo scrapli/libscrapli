@@ -20,7 +20,6 @@ const default_return_char: []const u8 = "\n";
 const default_username_pattern: []const u8 = "^(.*username:)|(.*login:)\\s?$";
 const default_password_pattern: []const u8 = "(.*@.*)?password:\\s?$";
 const default_passphrase_pattern: []const u8 = "enter passphrase for key";
-const default_auth_timeout_ns: u64 = 10_000_000_000;
 const default_operation_timeout_ns: u64 = 10_000_000_000;
 const default_operation_max_search_depth: u64 = 512;
 
@@ -102,7 +101,6 @@ pub fn NewOptions() Options {
         .password_pattern = default_password_pattern,
         .passphrase_pattern = default_passphrase_pattern,
         .auth_bypass = false,
-        .auth_timeout_ns = default_auth_timeout_ns,
         .operation_timeout_ns = default_operation_timeout_ns,
         .operation_max_search_depth = default_operation_max_search_depth,
         .recorder = null,
@@ -123,10 +121,8 @@ pub const Options = struct {
     passphrase_pattern: []const u8,
 
     auth_bypass: bool,
-    auth_timeout_ns: u64,
 
     operation_timeout_ns: u64,
-
     operation_max_search_depth: u64,
 
     recorder: ?std.fs.File.Writer,
@@ -270,7 +266,18 @@ pub const Session = struct {
         lookup_fn: lookup.LookupFn,
         options: operation.OpenOptions,
     ) ![2][]const u8 {
-        try self.transport.open(options.cancel, lookup_fn);
+        var timer = std.time.Timer.start() catch |err| {
+            self.log.critical("failed initializing open/authentication timer, err: {}", .{err});
+
+            return error.AuthenicationFailed;
+        };
+
+        try self.transport.open(
+            &timer,
+            options.cancel,
+            self.options.operation_timeout_ns,
+            lookup_fn,
+        );
 
         self.read_stop.store(ReadThreadState.Run, std.builtin.AtomicOrder.unordered);
 
@@ -295,6 +302,7 @@ pub const Session = struct {
 
         return self.authenticate(
             allocator,
+            &timer,
             options.cancel,
             auth_data,
             lookup_fn,
@@ -389,17 +397,12 @@ pub const Session = struct {
     fn authenticate(
         self: *Session,
         allocator: std.mem.Allocator,
+        timer: *std.time.Timer,
         cancel: ?*bool,
         auth_data: transport.AuthData,
         lookup_fn: lookup.LookupFn,
     ) ![2][]const u8 {
         self.log.info("in channel authentication starting...", .{});
-
-        var t = std.time.Timer.start() catch |err| {
-            self.log.critical("failed initializing authentication timer, err: {}", .{err});
-
-            return error.AuthenicationFailed;
-        };
 
         var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
 
@@ -420,9 +423,9 @@ pub const Session = struct {
                 return error.Cancelled;
             }
 
-            const elapsed_time = t.read();
+            const elapsed_time = timer.read();
 
-            if ((elapsed_time + cur_read_delay_ns) > self.options.auth_timeout_ns) {
+            if ((elapsed_time + cur_read_delay_ns) > self.options.operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.AuthenicationTimeoutExceeded;

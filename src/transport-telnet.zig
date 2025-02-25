@@ -142,7 +142,12 @@ pub const Transport = struct {
         return false;
     }
 
-    fn handleControlChars(self: *Transport, cancel: ?*bool) !void {
+    fn handleControlChars(
+        self: *Transport,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+    ) !void {
         var control_buf = std.ArrayList(u8).init(self.allocator);
         defer control_buf.deinit();
 
@@ -151,6 +156,14 @@ pub const Transport = struct {
                 self.log.critical("operation cancelled", .{});
 
                 return error.Cancelled;
+            }
+
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
             }
 
             var control_char_buf: [1]u8 = undefined;
@@ -170,7 +183,12 @@ pub const Transport = struct {
         }
     }
 
-    pub fn open(self: *Transport, cancel: ?*bool) !void {
+    pub fn open(
+        self: *Transport,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+    ) !void {
         self.stream = std.net.tcpConnectToHost(
             self.allocator,
             self.host,
@@ -187,7 +205,7 @@ pub const Transport = struct {
             return error.OpenFailed;
         };
 
-        try self.handleControlChars(cancel);
+        try self.handleControlChars(timer, cancel, operation_timeout_ns);
     }
 
     pub fn close(self: *Transport) void {

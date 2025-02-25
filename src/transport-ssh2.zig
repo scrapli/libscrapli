@@ -203,21 +203,23 @@ pub const Transport = struct {
 
     pub fn open(
         self: *Transport,
+        timer: *std.time.Timer,
         cancel: ?*bool,
+        operation_timeout_ns: u64,
         lookup_fn: lookup.LookupFn,
     ) !void {
         try self.initSocket();
-        try self.initSession(cancel);
+        try self.initSession(timer, cancel, operation_timeout_ns);
 
         // TODO known hosts things
         // https://github.com/libssh2/libssh2/blob/master/example/ssh2_exec.c#L161-L197
 
-        try self.authenticate(cancel, lookup_fn);
+        try self.authenticate(timer, cancel, operation_timeout_ns, lookup_fn);
         self.log.info("authentication complete", .{});
 
-        try self.openChannel(cancel);
-        try self.requestPty(cancel);
-        try self.requestShell(cancel);
+        try self.openChannel(timer, cancel, operation_timeout_ns);
+        try self.requestPty(timer, cancel, operation_timeout_ns);
+        try self.requestShell(timer, cancel, operation_timeout_ns);
 
         // all the open things are sequential/single-threaded, any read/write operation past this
         // point must acquire the lock to operate against the session!
@@ -265,7 +267,12 @@ pub const Transport = struct {
         };
     }
 
-    fn initSession(self: *Transport, cancel: ?*bool) !void {
+    fn initSession(
+        self: *Transport,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+    ) !void {
         self.session = ssh2.libssh2_session_init_ex(
             null,
             null,
@@ -302,6 +309,14 @@ pub const Transport = struct {
                 return error.Cancelled;
             }
 
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
+            }
+
             const rc = ssh2.libssh2_session_handshake(self.session, self.socket.?);
 
             if (rc == 0) {
@@ -320,7 +335,9 @@ pub const Transport = struct {
 
     fn authenticate(
         self: *Transport,
+        timer: *std.time.Timer,
         cancel: ?*bool,
+        operation_timeout_ns: u64,
         lookup_fn: lookup.LookupFn,
     ) !void {
         const _username = self.allocator.dupeZ(u8, self.base_options.username.?) catch |err| {
@@ -332,14 +349,20 @@ pub const Transport = struct {
 
         if (self.options.private_key_path != null) {
             self.handlePrivateKeyAuth(
+                timer,
                 cancel,
+                operation_timeout_ns,
                 _username,
             ) catch blk: {
                 // we can still try to auth with a password if the user provided it, so we continue
                 break :blk;
             };
 
-            if (try self.isAuthenticated(cancel)) {
+            if (try self.isAuthenticated(
+                timer,
+                cancel,
+                operation_timeout_ns,
+            )) {
                 return;
             }
         }
@@ -361,18 +384,24 @@ pub const Transport = struct {
             defer self.allocator.free(_password);
             self.auth_callback_data.password = _password;
 
-            self.handlePasswordAuth(cancel, _username, _password) catch blk: {
+            self.handlePasswordAuth(
+                timer,
+                cancel,
+                operation_timeout_ns,
+                _username,
+                _password,
+            ) catch blk: {
                 // password auth failed but we can still try kbdinteractive, in the future we could
                 // /should check auth list before doing this but for now this is ok
                 break :blk;
             };
 
-            if (try self.isAuthenticated(cancel)) {
+            if (try self.isAuthenticated(timer, cancel, operation_timeout_ns)) {
                 return;
             }
 
-            try self.handleKeyboardInteractiveAuth(cancel, _username);
-            if (try self.isAuthenticated(cancel)) {
+            try self.handleKeyboardInteractiveAuth(timer, cancel, operation_timeout_ns, _username);
+            if (try self.isAuthenticated(timer, cancel, operation_timeout_ns)) {
                 return;
             }
         }
@@ -382,13 +411,23 @@ pub const Transport = struct {
 
     fn isAuthenticated(
         self: *Transport,
+        timer: *std.time.Timer,
         cancel: ?*bool,
+        operation_timeout_ns: u64,
     ) !bool {
         while (true) {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
                 return error.Cancelled;
+            }
+
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
             }
 
             const rc = ssh2.libssh2_userauth_authenticated(self.session);
@@ -408,7 +447,9 @@ pub const Transport = struct {
 
     fn handlePrivateKeyAuth(
         self: *Transport,
+        timer: *std.time.Timer,
         cancel: ?*bool,
+        operation_timeout_ns: u64,
         username: [:0]u8,
     ) !void {
         const _private_key_path = self.allocator.dupeZ(
@@ -446,6 +487,14 @@ pub const Transport = struct {
                 return error.Cancelled;
             }
 
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
+            }
+
             // -18 rc == "failed" (key auth not supported)
             // -19 rc == "unverified" (auth failed)
             const rc = ssh2.libssh2_userauth_publickey_fromfile_ex(
@@ -473,7 +522,9 @@ pub const Transport = struct {
 
     fn handleKeyboardInteractiveAuth(
         self: *Transport,
+        timer: *std.time.Timer,
         cancel: ?*bool,
+        operation_timeout_ns: u64,
         username: [:0]u8,
     ) !void {
         while (true) {
@@ -481,6 +532,14 @@ pub const Transport = struct {
                 self.log.critical("operation cancelled", .{});
 
                 return error.Cancelled;
+            }
+
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
             }
 
             const rc = ssh2.libssh2_userauth_keyboard_interactive_ex(
@@ -506,7 +565,9 @@ pub const Transport = struct {
 
     fn handlePasswordAuth(
         self: *Transport,
+        timer: *std.time.Timer,
         cancel: ?*bool,
+        operation_timeout_ns: u64,
         username: [:0]u8,
         password: [:0]u8,
     ) !void {
@@ -517,6 +578,14 @@ pub const Transport = struct {
                 self.log.critical("operation cancelled", .{});
 
                 return error.Cancelled;
+            }
+
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
             }
 
             const rc = ssh2.libssh2_userauth_password_ex(
@@ -542,12 +611,25 @@ pub const Transport = struct {
         }
     }
 
-    fn openChannel(self: *Transport, cancel: ?*bool) !void {
+    fn openChannel(
+        self: *Transport,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+    ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
                 return error.Cancelled;
+            }
+
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
             }
 
             const channel = libssh2ChannelOpenSession(self.session);
@@ -572,12 +654,25 @@ pub const Transport = struct {
         }
     }
 
-    fn requestPty(self: *Transport, cancel: ?*bool) !void {
+    fn requestPty(
+        self: *Transport,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+    ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
                 return error.Cancelled;
+            }
+
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
             }
 
             const rc = libssh2_channel_request_pty(self.channel);
@@ -596,12 +691,25 @@ pub const Transport = struct {
         }
     }
 
-    fn requestShell(self: *Transport, cancel: ?*bool) !void {
+    fn requestShell(
+        self: *Transport,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+    ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
                 return error.Cancelled;
+            }
+
+            const elapsed_time = timer.read();
+
+            if (elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return error.OpenTimeoutExceeded;
             }
 
             const rc = libssh2ChannelProcessStartup(self.channel, self.options.netconf);

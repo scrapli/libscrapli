@@ -54,7 +54,6 @@ pub fn NewOptions() Options {
         .port = default_port,
         .term_height = default_term_height,
         .term_width = default_term_width,
-        .connect_timeout_ns = default_connect_timeout_ns,
         .username = null,
         .password = null,
     };
@@ -65,8 +64,6 @@ pub const Options = struct {
 
     term_height: u16,
     term_width: u16,
-
-    connect_timeout_ns: u64,
 
     username: ?[]const u8,
     password: ?[]const u8,
@@ -245,20 +242,25 @@ pub const Transport = struct {
 
     pub fn open(
         self: *Transport,
+        timer: *std.time.Timer,
         cancel: ?*bool,
+        operation_timeout_ns: u64,
         lookup_fn: lookup.LookupFn,
     ) !void {
         self.log.debug("transport open start...", .{});
 
         switch (self.implementation) {
             Kind.Bin => |t| {
-                try t.open(cancel);
+                // bin transport doesnt need the timer, since we just pass the timeout value to
+                // to the cli args and let openssh do it, then the rest of the timing out bits
+                // happen in in session auth
+                try t.open(operation_timeout_ns);
             },
             Kind.Telnet => |t| {
-                try t.open(cancel);
+                try t.open(timer, cancel, operation_timeout_ns);
             },
             Kind.SSH2 => |t| {
-                try t.open(cancel, lookup_fn);
+                try t.open(timer, cancel, operation_timeout_ns, lookup_fn);
             },
             Kind.Test => |t| {
                 try t.open(cancel);

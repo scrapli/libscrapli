@@ -87,7 +87,20 @@ pub const Transport = struct {
 
     open_args: std.ArrayList(strings.MaybeHeapString),
 
-    fn buildArgs(self: *Transport) !void {
+    pub fn init(self: *Transport) !void {
+        _ = self;
+    }
+
+    pub fn deinit(self: *Transport) void {
+        for (self.open_args.items) |*arg| {
+            arg.deinit();
+        }
+
+        self.open_args.deinit();
+        self.allocator.destroy(self);
+    }
+
+    fn buildArgs(self: *Transport, operation_timeout_ns: u64) !void {
         if (self.options.override_open_args != null) {
             for (self.options.override_open_args.?) |arg| {
                 try self.open_args.append(
@@ -146,7 +159,7 @@ pub const Transport = struct {
                 .string = try std.fmt.allocPrint(
                     self.allocator,
                     "ConnectTimeout={d}",
-                    .{self.base_options.connect_timeout_ns / std.time.ns_per_s},
+                    .{operation_timeout_ns / std.time.ns_per_s},
                 ),
             },
         );
@@ -164,7 +177,7 @@ pub const Transport = struct {
                 .string = try std.fmt.allocPrint(
                     self.allocator,
                     "ServerAliveInterval={d}",
-                    .{self.base_options.connect_timeout_ns / std.time.ns_per_s},
+                    .{operation_timeout_ns / std.time.ns_per_s},
                 ),
             },
         );
@@ -281,26 +294,15 @@ pub const Transport = struct {
         }
     }
 
-    pub fn init(self: *Transport) !void {
-        self.buildArgs() catch |err| {
+    pub fn open(
+        self: *Transport,
+        operation_timeout_ns: u64,
+    ) !void {
+        self.buildArgs(operation_timeout_ns) catch |err| {
             self.log.critical("failed generating open command, err: {}", .{err});
 
             return error.OpenFailed;
         };
-    }
-
-    pub fn deinit(self: *Transport) void {
-        for (self.open_args.items) |*arg| {
-            arg.deinit();
-        }
-
-        self.open_args.deinit();
-        self.allocator.destroy(self);
-    }
-
-    pub fn open(self: *Transport, cancel: ?*bool) !void {
-        // cancel ignored for bin transport since everything is really happening in session!
-        _ = cancel;
 
         const open_args = self.allocator.alloc([]const u8, self.open_args.items.len) catch |err| {
             self.log.critical("failed preparing open command, err: {}", .{err});
@@ -315,7 +317,7 @@ pub const Transport = struct {
 
         self.log.debug("bin transport opening with args: {s}", .{open_args});
 
-        self.f = openPty(self.allocator, open_args) catch |err| {
+        self.f = openPty(self.allocator, open_args, self.options.netconf) catch |err| {
             self.log.critical("failed inizializing master_fd, err: {}", .{err});
 
             return error.OpenFailed;
@@ -374,7 +376,11 @@ pub const Transport = struct {
     }
 };
 
-fn openPty(allocator: std.mem.Allocator, open_args: [][]const u8) !std.fs.File {
+fn openPty(
+    allocator: std.mem.Allocator,
+    open_args: [][]const u8,
+    netconf: bool,
+) !std.fs.File {
     const master_fd = try std.fs.openFileAbsolute("/dev/ptmx", .{
         .mode = .read_write,
         .allow_ctty = false,
@@ -416,13 +422,17 @@ fn openPty(allocator: std.mem.Allocator, open_args: [][]const u8) !std.fs.File {
 
         var env_map_iter = env_map.iterator();
         while (env_map_iter.next()) |pair| {
-            envs[i] = try std.fmt.allocPrintZ(allocator, "{s}={s}", .{ pair.key_ptr.*, pair.value_ptr.* });
+            envs[i] = try std.fmt.allocPrintZ(
+                allocator,
+                "{s}={s}",
+                .{ pair.key_ptr.*, pair.value_ptr.* },
+            );
             i += 1;
         }
 
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
         // to see what happened
-        try openPtyChild(master_fd, slave_fd, args, envs);
+        try openPtyChild(master_fd, slave_fd, args, envs, netconf);
     }
 
     // parent process, close the slave and return the master (pty) to read/write to
@@ -436,6 +446,7 @@ fn openPtyChild(
     slave_fd: std.fs.File,
     args: [:null]?[*:0]const u8,
     envs: [:null]?[*:0]const u8,
+    netconf: bool,
 ) !void {
     std.posix.close(master_fd.handle);
 
@@ -449,15 +460,17 @@ fn openPtyChild(
         return error.PtyCreationFailedSetCtty;
     }
 
-    var size = c.winsize{
-        // TODO make configurable
-        .ws_row = 255,
-        .ws_col = 80,
-    };
+    if (!netconf) {
+        var size = c.winsize{
+            // TODO make configurable
+            .ws_row = 255,
+            .ws_col = 80,
+        };
 
-    const set_win_size_rc = ioctl(slave_fd.handle, c.TIOCSWINSZ, @intFromPtr(&size));
-    if (set_win_size_rc != 0) {
-        return error.PtyCreationFailedSetWinSize;
+        const set_win_size_rc = ioctl(slave_fd.handle, c.TIOCSWINSZ, @intFromPtr(&size));
+        if (set_win_size_rc != 0) {
+            return error.PtyCreationFailedSetWinSize;
+        }
     }
 
     try std.posix.dup2(slave_fd.handle, 0); // stdin
