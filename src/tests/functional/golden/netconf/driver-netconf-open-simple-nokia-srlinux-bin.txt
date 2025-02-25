@@ -13,7 +13,7 @@
         <capability>urn:ietf:params:netconf:capability:with-defaults:1.0?basic-mode=explicit&amp;also-supported=report-all</capability>
         <capability>urn:ietf:params:netconf:capability:with-operational-defaults:1.0</capability>
         <capability>urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring</capability>
-        <capability>urn:ietf:params:netconf:capability:yang-library:1.1?revision=2019-01-04&amp;content-id=1jr21fax0yk1</capability>
+        <capability>urn:ietf:params:netconf:capability:yang-library:1.1?revision=2019-01-04&amp;content-id=1jrc1u7x0yk1</capability>
         <capability>urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring?module=ietf-netconf-monitoring&amp;revision=2010-10-04</capability>
         <capability>urn:ietf:params:xml:ns:yang:ietf-yang-library?module=ietf-yang-library&amp;revision=2019-01-04</capability>
         <capability>urn:nokia.com:srlinux:aaa:aaa?module=srl_nokia-aaa&amp;revision=2024-10-31</capability>
