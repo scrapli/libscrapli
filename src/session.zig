@@ -295,7 +295,7 @@ pub const Session = struct {
         const auth_data = self.transport.GetAuthData();
 
         // check if we have auth bypass or the transport handles auth for us -- if yes we are done
-        if (self.options.auth_bypass or !auth_data.is_in_channel) {
+        if (self.options.auth_bypass or !auth_data.is_in_session) {
             // TODO does trying to free this cause an issue?
             return [2][]const u8{ "", "" };
         }

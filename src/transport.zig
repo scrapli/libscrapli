@@ -7,12 +7,11 @@ const logger = @import("logger.zig");
 const lookup = @import("lookup.zig");
 
 const default_port: u16 = 22;
-const default_connect_timeout_ns: u64 = 10_000_000_000;
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
 
 pub const AuthData = struct {
-    is_in_channel: bool,
+    is_in_session: bool,
     username: ?[]const u8,
     password: ?[]const u8,
     passphrase: ?[]const u8,
@@ -206,7 +205,7 @@ pub const Transport = struct {
         switch (self.implementation) {
             Kind.Bin => {
                 return .{
-                    .is_in_channel = true,
+                    .is_in_session = true,
                     .username = self.implementation.Bin.base_options.username,
                     .password = self.implementation.Bin.base_options.password,
                     .passphrase = self.implementation.Bin.options.private_key_passphrase,
@@ -214,7 +213,7 @@ pub const Transport = struct {
             },
             Kind.Telnet => {
                 return .{
-                    .is_in_channel = true,
+                    .is_in_session = true,
                     .username = self.implementation.Telnet.base_options.username,
                     .password = self.implementation.Telnet.base_options.password,
                     .passphrase = null,
@@ -222,7 +221,7 @@ pub const Transport = struct {
             },
             Kind.SSH2 => {
                 return .{
-                    .is_in_channel = false,
+                    .is_in_session = false,
                     .username = null,
                     .password = null,
                     .passphrase = null,
@@ -231,7 +230,7 @@ pub const Transport = struct {
             Kind.Test => {
                 return .{
                     // we want test transport to do in channel auth so we can test that part!
-                    .is_in_channel = true,
+                    .is_in_session = true,
                     .username = self.implementation.Test.base_options.username,
                     .password = self.implementation.Test.base_options.password,
                     .passphrase = null,
