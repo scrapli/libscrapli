@@ -14,7 +14,7 @@
             .hash = "12207e7220d406a57e79a473312d4fb94b115084b0f6830ff13a12814f4b1b3a69b7",
         },
         .@"zig-xml" = .{
-            .url = "https://github.com/carlmontanari/zig-xml/archive/b1d5fcd.tar.gz",
+            .url = "https://github.com/ianprime0509/zig-xml/archive/9781f4f.tar.gz",
             .hash = "122060eb493b54cf33adf9496673a1e5b436043bf825bf6e5ef5765ac89722f6511f",
         },
     },
