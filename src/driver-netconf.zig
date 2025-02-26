@@ -21,7 +21,7 @@ pub const Version = enum {
     Version_1_1,
 };
 
-const Capability = struct {
+pub const Capability = struct {
     allocator: std.mem.Allocator,
     namespace: []const u8,
     name: []const u8,

@@ -10,7 +10,6 @@ const netconf_operation = @import("operation-netconf.zig");
 const logger = @import("logger.zig");
 const mode = @import("mode.zig");
 const ascii = @import("ascii.zig");
-const file = @import("file.zig");
 
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{

@@ -3,10 +3,8 @@ const std = @import("std");
 const scrapli = @import("scrapli");
 
 const driver = scrapli.driver_netconf;
-const bin = scrapli.transport_bin;
 const ssh2 = scrapli.transport_ssh2;
 const operation = scrapli.operation_netconf;
-const logger = scrapli.logger;
 
 const banner = "********************";
 
@@ -78,7 +76,8 @@ pub fn main() !void {
     // ssh2; if commented out you'll default to using bin transport (/bin/ssh wrapper)
     opts.transport_implementation = ssh2.NewOptions();
 
-    // for logging to stdout, or comment/remove for no logging
+    // for logging to stdout, or comment/remove for no logging and add the following import/alias:
+    // const logger = scrapli.logger;
     // opts.logger = logger.Logger{ .allocator = allocator, .f = logger.stdLogf };
 
     // for logging to a file

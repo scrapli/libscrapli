@@ -1,6 +1,9 @@
 // zlint-disable suppressed-errors, no-undefined, unsafe-undefined, unused-decls
 const std = @import("std");
 
+const xml = @import("zig-xml");
+const yaml = @import("zig-yaml");
+
 const driver = @import("../../driver-netconf.zig");
 const transport = @import("../../transport.zig");
 const result = @import("../../result-netconf.zig");
@@ -76,6 +79,58 @@ fn GetDriver(
         "localhost",
         opts,
     );
+}
+
+const allocatorlessCapability = struct {
+    namespace: []const u8,
+    name: []const u8,
+    revision: []const u8,
+};
+
+fn compareAllocatorlessCapability(
+    context: void,
+    a: allocatorlessCapability,
+    b: allocatorlessCapability,
+) bool {
+    _ = context;
+
+    if (std.mem.eql(u8, a.namespace, b.namespace)) {
+        // if namespace is equal we'll compare the name, we'll almost certainly have duplicated
+        // namaespaces but *not* names
+        for (0.., a.name) |idx, char| {
+            if (idx >= b.name.len) {
+                return false;
+            }
+
+            if (char == b.name[idx]) {
+                continue;
+            }
+
+            if (char > b.name[idx]) {
+                return false;
+            }
+
+            return true;
+        }
+    } else {
+        for (0.., a.namespace) |idx, char| {
+            if (idx >= b.namespace.len) {
+                return false;
+            }
+
+            if (char == b.namespace[idx]) {
+                continue;
+            }
+
+            if (char > b.namespace[idx]) {
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    return false;
 }
 
 test "driver-netconf open" {
@@ -160,12 +215,18 @@ test "driver-netconf open" {
         // but not others
         const golden_filename = try std.fmt.allocPrint(
             std.testing.allocator,
-            "src/tests/functional/golden/netconf/{s}-{s}-{s}-{s}.txt",
-            .{ test_name, case.name, case.platform, case.transportKind.toString() },
+            "src/tests/functional/golden/netconf/{s}-{s}-capabilities.yaml",
+            .{ test_name, case.platform },
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d = try GetDriver(case.transportKind, case.platform, case.username, case.key, case.passphrase);
+        var d = try GetDriver(
+            case.transportKind,
+            case.platform,
+            case.username,
+            case.key,
+            case.passphrase,
+        );
 
         try d.init();
         defer d.deinit();
@@ -178,14 +239,52 @@ test "driver-netconf open" {
             close_ret.deinit();
         }
 
-        const actual = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(actual);
+        const open_ret = try actual_res.getResult(std.testing.allocator);
+        defer std.testing.allocator.free(open_ret);
+
+        // for open, we'll just check/assert the capabilities because if we check that we know
+        // that the open/auth worked of course, and also cap parcing is good, if those are null
+        // we obviously failed
+        if (d.server_capabilities == null) {
+            return error.NoCapabilitiesRecorded;
+        }
+
+        // dump the caps we processed to a struct that does not include vtable magic for allocators
+        // so that we can easily serialize it to dump to disk and compare to golden
+        var yamlable_capabilities = try std.testing.allocator.alloc(
+            allocatorlessCapability,
+            d.server_capabilities.?.items.len,
+        );
+        defer std.testing.allocator.free(yamlable_capabilities);
+
+        // TODO we need to sort this i think otherwise we'll still get stuff out of order breaking
+        // the test (i think)
+        for (0.., d.server_capabilities.?.items) |idx, cap| {
+            yamlable_capabilities[idx] = allocatorlessCapability{
+                .namespace = cap.namespace,
+                .name = cap.name,
+                .revision = cap.revision,
+            };
+        }
+
+        // sort the caps slice so its always a good comparison
+        std.sort.insertion(
+            allocatorlessCapability,
+            yamlable_capabilities,
+            {},
+            compareAllocatorlessCapability,
+        );
+
+        var output = std.ArrayList(u8).init(std.testing.allocator);
+        defer output.deinit();
+
+        try yaml.stringify(std.testing.allocator, yamlable_capabilities, output.writer());
 
         try helper.processFixutreTestStrResult(
             test_name,
             case.name,
             golden_filename,
-            actual,
+            output.items,
         );
     }
 }
