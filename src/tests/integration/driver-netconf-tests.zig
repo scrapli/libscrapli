@@ -13,9 +13,9 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
 
     opts.session.recorder = recorder;
 
-    opts.transport.username = "admin";
-    opts.transport.password = "admin";
-    opts.transport.port = 22830;
+    opts.auth.username = "admin";
+    opts.auth.password = "admin";
+    opts.port = 22830;
 
     return driver.NewDriver(
         std.testing.allocator,
@@ -40,10 +40,10 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
     // server hello. this is just an issue due to how the test transport reads the file
     opts.session.operation_max_search_depth = 32;
 
-    opts.transport.username = "admin";
-    opts.transport.password = "admin";
-    opts.transport_implementation = test_transport.NewOptions();
-    opts.transport_implementation.Test.f = f;
+    opts.auth.username = "admin";
+    opts.auth.password = "admin";
+    opts.transport = test_transport.NewOptions();
+    opts.transport.Test.f = f;
 
     return driver.NewDriver(
         std.testing.allocator,

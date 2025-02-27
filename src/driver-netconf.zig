@@ -1,4 +1,5 @@
 const std = @import("std");
+const driver = @import("driver.zig");
 const logger = @import("logger.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
@@ -33,6 +34,8 @@ pub const Capability = struct {
         self.allocator.free(self.revision);
     }
 };
+
+const default_netconf_port = 830;
 
 pub const delimiter_Version_1_0 = "]]>]]>";
 pub const delimiter_Version_1_1 = "##";
@@ -71,10 +74,10 @@ const default_post_open_operation_max_search_depth: u64 = 32;
 pub fn NewOptions() Options {
     var opts = Options{
         .logger = null,
-        .lookup_fn = null,
+        .port = null,
+        .auth = driver.NewAuthOptions(),
         .session = session.NewOptions(),
-        .transport = transport.NewOptions(),
-        .transport_implementation = transport_bin.NewOptions(),
+        .transport = transport_bin.NewOptions(),
         .error_tag = default_rpc_error_tag,
         .preferred_version = null,
         .message_poll_interval_ns = default_message_poll_interval_ns,
@@ -87,12 +90,10 @@ pub fn NewOptions() Options {
 
 pub const Options = struct {
     logger: ?logger.Logger,
-    // TODO -- expose this to ffi too -- it would be nice to be able to get creds "safely" from
-    // wrapper language of choice
-    lookup_fn: lookup.LookupFn,
+    port: ?u16,
+    auth: driver.AuthOptions,
     session: session.Options,
     transport: transport.Options,
-    transport_implementation: transport.ImplementationOptions,
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
@@ -107,16 +108,15 @@ pub fn NewDriver(
 
     var mut_options = options;
 
-    switch (options.transport_implementation) {
+    switch (options.transport) {
         .Bin => {
-            mut_options.transport_implementation.Bin.netconf = true;
+            mut_options.transport.Bin.netconf = true;
         },
         .SSH2 => {
-            mut_options.transport_implementation.SSH2.netconf = true;
+            mut_options.transport.SSH2.netconf = true;
         },
         .Test => {
-            // we need to "support" test transport as well... ya know, for tests
-            mut_options.transport_implementation.Test.netconf = true;
+            // nothing to do for test transport, but its "allowed" so dont return an error
         },
         else => {
             return error.UnsupportedTransport;
@@ -126,18 +126,19 @@ pub fn NewDriver(
     const sess = try session.NewSession(
         allocator,
         log,
-        host,
         delimiter_Version_1_0,
         mut_options.session,
         mut_options.transport,
-        mut_options.transport_implementation,
     );
 
-    const driver = try allocator.create(Driver);
+    const d = try allocator.create(Driver);
 
-    driver.* = Driver{
+    d.* = Driver{
         .allocator = allocator,
         .log = log,
+
+        .host = host,
+        .port = 0,
 
         .options = options,
 
@@ -168,12 +169,28 @@ pub fn NewDriver(
         .subscriptions_lock = std.Thread.Mutex{},
     };
 
-    return driver;
+    if (options.port == null) {
+        switch (options.transport) {
+            transport.Kind.Bin, transport.Kind.SSH2, transport.Kind.Test => {
+                d.port = default_netconf_port;
+            },
+            else => {
+                return error.UnsupportedTransport;
+            },
+        }
+    } else {
+        d.port = options.port.?;
+    }
+
+    return d;
 }
 
 pub const Driver = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
+
+    host: []const u8,
+    port: u16,
 
     options: Options,
 
@@ -232,8 +249,8 @@ pub const Driver = struct {
     ) !*result.Result {
         return result.NewResult(
             allocator,
-            self.session.transport.host,
-            self.session.transport.port,
+            self.host,
+            self.port,
             self.negotiated_version,
             self.options.error_tag,
             operation_kind,
@@ -252,7 +269,12 @@ pub const Driver = struct {
 
         const rets = try self.session.open(
             allocator,
-            self.options.lookup_fn,
+            self.host,
+            self.port,
+            self.options.auth.username,
+            self.options.auth.password,
+            self.options.auth.passphrase,
+            self.options.auth.lookup_fn,
             options,
         );
         allocator.free(rets[0]);

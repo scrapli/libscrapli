@@ -3,32 +3,26 @@ const transport = @import("transport.zig");
 const file = @import("file.zig");
 const logger = @import("logger.zig");
 
-pub fn NewOptions() transport.ImplementationOptions {
-    return transport.ImplementationOptions{ .Test = Options{
-        .f = null,
-        .netconf = false,
-    } };
+pub fn NewOptions() transport.Options {
+    return transport.Options{
+        .Test = Options{
+            .f = null,
+        },
+    };
 }
 
 pub const Options = struct {
     f: ?[]const u8,
-    netconf: bool,
 };
 
 pub fn NewTransport(
     allocator: std.mem.Allocator,
-    log: logger.Logger,
-    host: []const u8,
-    base_options: transport.Options,
     options: Options,
 ) !*Transport {
     const t = try allocator.create(Transport);
 
     t.* = Transport{
         .allocator = allocator,
-        .log = log,
-        .host = host,
-        .base_options = base_options,
         .options = options,
         .reader = null,
     };
@@ -38,10 +32,7 @@ pub fn NewTransport(
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
 
-    host: []const u8,
-    base_options: transport.Options,
     options: Options,
 
     reader: ?std.fs.File.Reader,

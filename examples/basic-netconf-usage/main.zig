@@ -69,12 +69,12 @@ pub fn main() !void {
 
     var opts = driver.NewOptions();
 
-    opts.transport.username = "admin";
-    opts.transport.password = password;
-    opts.transport.port = try get_port();
+    opts.auth.username = "admin";
+    opts.auth.password = password;
+    opts.port = try get_port();
 
     // ssh2; if commented out you'll default to using bin transport (/bin/ssh wrapper)
-    opts.transport_implementation = ssh2.NewOptions();
+    opts.transport = ssh2.NewOptions();
 
     // for logging to stdout, or comment/remove for no logging and add the following import/alias:
     // const logger = scrapli.logger;

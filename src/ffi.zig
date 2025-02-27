@@ -42,72 +42,42 @@ export fn assertNoLeaks() bool {
     }
 }
 
-export fn allocDriverFromYaml(
-    file_path: [*c]const u8,
-    variant_name: [*c]const u8,
-    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
-    host: [*c]const u8,
-    transport_kind: [*c]const u8,
-    port: u16,
-    username: [*c]const u8,
-    password: [*c]const u8,
-    session_timeout_ns: u64,
-) usize {
-    var log = logger.Logger{ .allocator = allocator, .f = null };
-
-    if (logger_callback != null) {
-        log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
-    }
-
-    const options = ffi_options.NewDriverOptionsFromAlloc(
-        variant_name,
-        log,
-        transport_kind,
-        port,
-        username,
-        password,
-        session_timeout_ns,
-    );
-
-    const real_driver = driver.NewDriverFromYaml(
-        allocator,
-        std.mem.span(file_path),
-        std.mem.span(host),
-        options,
-    ) catch |err| {
-        log.critical("error during NewDriverFromYaml: {any}", .{err});
-
-        return 0;
-    };
-
-    const d = ffi_driver.NewFfiDriver(
-        allocator,
-        real_driver,
-    ) catch |err| {
-        log.critical("error during NewFfiDriver: {any}", .{err});
-
-        return 0;
-    };
-
-    d.init() catch |err| {
-        log.critical("error during driver init: {any}", .{err});
-
-        return 0;
-    };
-
-    return @intFromPtr(d);
-}
-
-export fn allocDriverFromYamlString(
+export fn allocDriver(
+    definition_file_path: [*c]const u8,
     definition_string: [*c]const u8,
     variant_name: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
-    transport_kind: [*c]const u8,
     port: u16,
     username: [*c]const u8,
     password: [*c]const u8,
-    session_timeout_ns: u64,
+
+    // session things
+    read_size: u64,
+    read_delay_min_ns: u64,
+    read_delay_max_ns: u64,
+    read_delay_backoff_factor: u8,
+    return_char: []const u8,
+    username_pattern: []const u8,
+    password_pattern: []const u8,
+    passphrase_pattern: []const u8,
+    in_session_auth_bypass: bool,
+    operation_timeout_ns: u64,
+    operation_max_search_depth: u64,
+
+    // in native zig we just pass a tagged union of the transport implementation options, but
+    // we'll pass this explicitly from go/py so we know which args to use/set
+    transport_kind: [*c]const u8,
+
+    // general transport things
+    term_width: u16,
+    term_height: u16,
+
+    // TODO bin/ssh/telnet args
+    // bin_transport_bin: []const u8,
+    // bin_transport_extra_open_args: []const []const u8,
+    // bin_transport_override_open_args: []const []const u8,
+    // bin_transport_bin: []const u8,
 ) usize {
     var log = logger.Logger{ .allocator = allocator, .f = null };
 
@@ -118,23 +88,62 @@ export fn allocDriverFromYamlString(
     const options = ffi_options.NewDriverOptionsFromAlloc(
         variant_name,
         log,
+        // generic bits
         transport_kind,
         port,
         username,
         password,
-        session_timeout_ns,
+        // session
+        read_size,
+        read_delay_min_ns,
+        read_delay_max_ns,
+        read_delay_backoff_factor,
+        return_char,
+        username_pattern,
+        password_pattern,
+        passphrase_pattern,
+        in_session_auth_bypass,
+        operation_timeout_ns,
+        operation_max_search_depth,
+        operation_timeout_ns,
+        // transport
+        transport_kind,
+        term_width,
+        term_height,
     );
 
-    const real_driver = driver.NewDriverFromYamlString(
-        allocator,
-        std.mem.span(definition_string),
-        std.mem.span(host),
-        options,
-    ) catch |err| {
-        log.critical("error during NewDriverFromYamlString: {any}", .{err});
+    const host_slice = std.mem.span(host);
+    const definition_file_path_slice = std.mem.span(definition_file_path);
+    const definition_string_slice = std.mem.span(definition_string);
 
-        return 0;
-    };
+    // SAFETY: will always be set (or we'll have exited)
+    const real_driver: driver.Driver = undefined;
+
+    if (definition_file_path_slice.len > 0) {
+        real_driver = driver.NewDriverFromYaml(
+            allocator,
+            definition_file_path_slice,
+            host_slice,
+            options,
+        ) catch |err| {
+            log.critical("error during NewDriverFromYaml: {any}", .{err});
+
+            return 0;
+        };
+    } else {
+        // we'll (in scrapli/scrapligo at least) always get one of these being populated
+        // so we'll let stuff crash out downstream if for some reason it wasnt
+        real_driver = driver.NewDriverFromYamlString(
+            allocator,
+            definition_string_slice,
+            host_slice,
+            options,
+        ) catch |err| {
+            log.critical("error during NewDriverFromYamlString: {any}", .{err});
+
+            return 0;
+        };
+    }
 
     const d = ffi_driver.NewFfiDriver(
         allocator,

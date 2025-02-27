@@ -258,13 +258,7 @@ const Definition = struct {
     ) anyerror!*result.Result {
         const self: *Definition = @ptrCast(@alignCast(self_ptr));
 
-        const res = try result.NewResult(
-            allocator,
-            d.session.transport.host,
-            d.session.transport.port,
-            result.OperationKind.OnOpen,
-            d.definition.input_failed_when_contains,
-        );
+        const res = try d.NewResult(allocator, result.OperationKind.OnOpen);
         errdefer res.deinit();
 
         for (self.on_open_instructions) |instr| {
@@ -327,13 +321,7 @@ const Definition = struct {
     ) anyerror!*result.Result {
         const self: *Definition = @ptrCast(@alignCast(self_ptr));
 
-        const res = try result.NewResult(
-            allocator,
-            d.session.transport.host,
-            d.session.transport.port,
-            result.OperationKind.OnClose,
-            d.definition.input_failed_when_contains,
-        );
+        const res = try d.NewResult(allocator, result.OperationKind.OnClose);
         errdefer res.deinit();
 
         for (self.on_close_instructions) |instr| {

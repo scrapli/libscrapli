@@ -101,13 +101,15 @@ const AuthCallbackData = struct {
     password: [:0]u8,
 };
 
-pub fn NewOptions() transport.ImplementationOptions {
-    return transport.ImplementationOptions{ .SSH2 = Options{
-        .private_key_path = null,
-        .private_key_passphrase = null,
-        .libssh2_trace = false,
-        .netconf = false,
-    } };
+pub fn NewOptions() transport.Options {
+    return transport.Options{
+        .SSH2 = Options{
+            .private_key_path = null,
+            .private_key_passphrase = null,
+            .libssh2_trace = false,
+            .netconf = false,
+        },
+    };
 }
 
 pub const Options = struct {
@@ -120,8 +122,6 @@ pub const Options = struct {
 pub fn NewTransport(
     allocator: std.mem.Allocator,
     log: logger.Logger,
-    host: []const u8,
-    base_options: transport.Options,
     options: Options,
 ) !*Transport {
     const t = try allocator.create(Transport);
@@ -135,8 +135,7 @@ pub fn NewTransport(
     t.* = Transport{
         .allocator = allocator,
         .log = log,
-        .host = host,
-        .base_options = base_options,
+
         .options = options,
 
         .auth_callback_data = a,
@@ -155,8 +154,6 @@ pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
 
-    host: []const u8,
-    base_options: transport.Options,
     options: Options,
 
     auth_callback_data: *AuthCallbackData,
@@ -206,15 +203,28 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        host: []const u8,
+        port: u16,
+        username: ?[]const u8,
+        password: ?[]const u8,
         lookup_fn: lookup.LookupFn,
     ) !void {
-        try self.initSocket();
+        try self.initSocket(host, port);
         try self.initSession(timer, cancel, operation_timeout_ns);
 
         // TODO known hosts things
         // https://github.com/libssh2/libssh2/blob/master/example/ssh2_exec.c#L161-L197
 
-        try self.authenticate(timer, cancel, operation_timeout_ns, lookup_fn);
+        try self.authenticate(
+            timer,
+            cancel,
+            operation_timeout_ns,
+            host,
+            port,
+            username,
+            password,
+            lookup_fn,
+        );
         self.log.info("authentication complete", .{});
 
         try self.openChannel(timer, cancel, operation_timeout_ns);
@@ -225,12 +235,16 @@ pub const Transport = struct {
         // point must acquire the lock to operate against the session!
     }
 
-    fn initSocket(self: *Transport) !void {
+    fn initSocket(
+        self: *Transport,
+        host: []const u8,
+        port: u16,
+    ) !void {
         // doing this here rather than init because it feels more "open-y" than "init-y"
         const resolved_addresses = std.net.getAddressList(
             self.allocator,
-            self.host,
-            self.base_options.port,
+            host,
+            port,
         ) catch |err| {
             self.log.critical("failed initializing resolved addresses, err: {}", .{err});
 
@@ -239,7 +253,7 @@ pub const Transport = struct {
         defer resolved_addresses.deinit();
 
         if (resolved_addresses.addrs.len == 0) {
-            self.log.critical("failed resolving any address for host '{s}'", .{self.host});
+            self.log.critical("failed resolving any address for host '{s}'", .{host});
 
             return error.OpenFailed;
         }
@@ -338,9 +352,13 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        host: []const u8,
+        port: u16,
+        username: ?[]const u8,
+        password: ?[]const u8,
         lookup_fn: lookup.LookupFn,
     ) !void {
-        const _username = self.allocator.dupeZ(u8, self.base_options.username.?) catch |err| {
+        const _username = self.allocator.dupeZ(u8, username.?) catch |err| {
             self.log.critical("failed casting username to c string, err: {}", .{err});
 
             return error.OpenFailed;
@@ -367,13 +385,13 @@ pub const Transport = struct {
             }
         }
 
-        if (self.base_options.username != null and self.base_options.password != null) {
+        if (username != null and password != null) {
             const _password = self.allocator.dupeZ(
                 u8,
                 try lookup.resolveValue(
-                    self.host,
-                    self.base_options.port,
-                    self.base_options.password.?,
+                    host,
+                    port,
+                    password.?,
                     lookup_fn,
                 ),
             ) catch |err| {

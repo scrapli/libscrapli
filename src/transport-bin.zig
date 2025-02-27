@@ -15,19 +15,25 @@ extern fn setsid() callconv(.C) i32;
 extern fn ioctl(fd: i32, request: u32, arg: usize) callconv(.C) i32;
 
 const default_ssh_bin: []const u8 = "/usr/bin/ssh";
+const default_term_height: u16 = 255;
+const default_term_width: u16 = 80;
 
-pub fn NewOptions() transport.ImplementationOptions {
-    return transport.ImplementationOptions{ .Bin = Options{
-        .bin = default_ssh_bin,
-        .extra_open_args = null,
-        .override_open_args = null,
-        .ssh_config_file = null,
-        .known_hosts_file = null,
-        .enable_strict_key = false,
-        .private_key_path = null,
-        .private_key_passphrase = null,
-        .netconf = false,
-    } };
+pub fn NewOptions() transport.Options {
+    return transport.Options{
+        .Bin = Options{
+            .bin = default_ssh_bin,
+            .extra_open_args = null,
+            .override_open_args = null,
+            .ssh_config_file = null,
+            .known_hosts_file = null,
+            .enable_strict_key = false,
+            .private_key_path = null,
+            .private_key_passphrase = null,
+            .term_height = default_term_height,
+            .term_width = default_term_width,
+            .netconf = false,
+        },
+    };
 }
 
 pub const Options = struct {
@@ -46,14 +52,15 @@ pub const Options = struct {
     private_key_path: ?[]const u8,
     private_key_passphrase: ?[]const u8,
 
+    term_height: u16,
+    term_width: u16,
+
     netconf: bool,
 };
 
 pub fn NewTransport(
     allocator: std.mem.Allocator,
     log: logger.Logger,
-    host: []const u8,
-    base_options: transport.Options,
     options: Options,
 ) !*Transport {
     const t = try allocator.create(Transport);
@@ -61,8 +68,6 @@ pub fn NewTransport(
     t.* = Transport{
         .allocator = allocator,
         .log = log,
-        .host = host,
-        .base_options = base_options,
         .options = options,
         .f = null,
         .reader = null,
@@ -77,8 +82,6 @@ pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
 
-    host: []const u8,
-    base_options: transport.Options,
     options: Options,
 
     f: ?std.fs.File,
@@ -100,7 +103,13 @@ pub const Transport = struct {
         self.allocator.destroy(self);
     }
 
-    fn buildArgs(self: *Transport, operation_timeout_ns: u64) !void {
+    fn buildArgs(
+        self: *Transport,
+        host: []const u8,
+        port: u16,
+        username: ?[]const u8,
+        operation_timeout_ns: u64,
+    ) !void {
         if (self.options.override_open_args != null) {
             for (self.options.override_open_args.?) |arg| {
                 try self.open_args.append(
@@ -124,7 +133,7 @@ pub const Transport = struct {
         try self.open_args.append(
             strings.MaybeHeapString{
                 .allocator = null,
-                .string = self.host,
+                .string = host,
             },
         );
 
@@ -141,7 +150,7 @@ pub const Transport = struct {
                 .string = try std.fmt.allocPrint(
                     self.allocator,
                     "{d}",
-                    .{self.base_options.port},
+                    .{port},
                 ),
             },
         );
@@ -182,7 +191,7 @@ pub const Transport = struct {
             },
         );
 
-        if (self.base_options.username != null) {
+        if (username != null) {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -193,7 +202,7 @@ pub const Transport = struct {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
-                    .string = self.base_options.username.?,
+                    .string = username.?,
                 },
             );
         }
@@ -297,8 +306,11 @@ pub const Transport = struct {
     pub fn open(
         self: *Transport,
         operation_timeout_ns: u64,
+        host: []const u8,
+        port: u16,
+        username: ?[]const u8,
     ) !void {
-        self.buildArgs(operation_timeout_ns) catch |err| {
+        self.buildArgs(host, port, username, operation_timeout_ns) catch |err| {
             self.log.critical("failed generating open command, err: {}", .{err});
 
             return error.OpenFailed;
@@ -317,7 +329,13 @@ pub const Transport = struct {
 
         self.log.debug("bin transport opening with args: {s}", .{open_args});
 
-        self.f = openPty(self.allocator, open_args, self.options.netconf) catch |err| {
+        self.f = openPty(
+            self.allocator,
+            open_args,
+            self.options.term_width,
+            self.options.term_height,
+            self.options.netconf,
+        ) catch |err| {
             self.log.critical("failed inizializing master_fd, err: {}", .{err});
 
             return error.OpenFailed;
@@ -379,6 +397,8 @@ pub const Transport = struct {
 fn openPty(
     allocator: std.mem.Allocator,
     open_args: [][]const u8,
+    term_width: u16,
+    term_height: u16,
     netconf: bool,
 ) !std.fs.File {
     const master_fd = try std.fs.openFileAbsolute("/dev/ptmx", .{
@@ -432,7 +452,15 @@ fn openPty(
 
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
         // to see what happened
-        try openPtyChild(master_fd, slave_fd, args, envs, netconf);
+        try openPtyChild(
+            master_fd,
+            slave_fd,
+            args,
+            envs,
+            term_width,
+            term_height,
+            netconf,
+        );
     }
 
     // parent process, close the slave and return the master (pty) to read/write to
@@ -446,6 +474,8 @@ fn openPtyChild(
     slave_fd: std.fs.File,
     args: [:null]?[*:0]const u8,
     envs: [:null]?[*:0]const u8,
+    term_width: u16,
+    term_height: u16,
     netconf: bool,
 ) !void {
     std.posix.close(master_fd.handle);
@@ -462,9 +492,8 @@ fn openPtyChild(
 
     if (!netconf) {
         var size = c.winsize{
-            // TODO make configurable
-            .ws_row = 255,
-            .ws_col = 80,
+            .ws_row = term_height,
+            .ws_col = term_width,
         };
 
         const set_win_size_rc = ioctl(slave_fd.handle, c.TIOCSWINSZ, @intFromPtr(&size));
