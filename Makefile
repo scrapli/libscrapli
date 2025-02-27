@@ -32,10 +32,10 @@ build-release: fmt ## Build the shared objects w/ release optimization.
 	zig build -freference-trace --summary all -- --release
 
 build-examples: fmt ## Build the example binaries
-	zig build -freference-trace --summary all -- --examples --skip-lib
+	zig build -freference-trace --summary all -- --examples --skip-lib --skip-ffi-lib
 
 build-main: fmt ## Build the example binaries
-	zig build -freference-trace --summary all -- --main --skip-lib
+	zig build -freference-trace --summary all -- --main --skip-lib --skip-ffi-lib
 
 build-clab-launcher: ## Builds the clab launcher image
 	docker build \
