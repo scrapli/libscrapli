@@ -76,32 +76,32 @@ fn GetDriver(
 
     var opts = driver.NewOptions();
 
-    opts.lookup_fn = lookup_fn;
-    opts.transport.port = port;
-    opts.transport.username = username;
+    opts.port = port;
+    opts.auth.lookup_fn = lookup_fn;
+    opts.auth.username = username;
 
     if (key == null) {
-        opts.transport.password = "__lookup::login";
+        opts.auth.password = "__lookup::login";
     }
 
     switch (transportKind) {
         .Bin => {
             if (key != null) {
-                opts.transport_implementation.Bin.private_key_path = key;
-                opts.transport_implementation.Bin.private_key_passphrase = passphrase;
+                opts.transport.Bin.private_key_path = key;
+                opts.transport.Bin.private_key_passphrase = passphrase;
             }
         },
         .SSH2 => {
-            opts.transport_implementation = ssh2_transport.NewOptions();
+            opts.transport = ssh2_transport.NewOptions();
 
             if (key != null) {
-                opts.transport_implementation.SSH2.private_key_path = key;
-                opts.transport_implementation.SSH2.private_key_passphrase = passphrase;
+                opts.transport.SSH2.private_key_path = key;
+                opts.transport.SSH2.private_key_passphrase = passphrase;
             }
         },
         .Telnet => {
-            opts.transport_implementation = telnet_transport.NewOptions();
-            opts.transport.port = port - 1;
+            opts.transport = telnet_transport.NewOptions();
+            opts.port = port - 1;
         },
         else => {
             unreachable;

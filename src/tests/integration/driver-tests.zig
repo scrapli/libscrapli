@@ -65,13 +65,12 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
 
     var opts = driver.NewOptions();
 
-    opts.lookup_fn = lookup_fn;
-
     opts.session.recorder = recorder;
 
-    opts.transport.username = "admin";
-    opts.transport.password = "admin";
-    opts.transport.port = 22022;
+    opts.auth.username = "admin";
+    opts.auth.password = "admin";
+    opts.auth.lookup_fn = lookup_fn;
+    opts.port = 22022;
 
     return driver.NewDriverFromYaml(
         std.testing.allocator,
@@ -86,17 +85,17 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
 
     var opts = driver.NewOptions();
 
-    opts.lookup_fn = lookup_fn;
-
     opts.session.read_size = 1;
     opts.session.read_delay_backoff_factor = 1;
     opts.session.read_delay_min_ns = 1;
     opts.session.read_delay_max_ns = 1;
 
-    opts.transport.username = "admin";
-    opts.transport.password = "admin";
-    opts.transport_implementation = test_transport.NewOptions();
-    opts.transport_implementation.Test.f = f;
+    opts.auth.username = "admin";
+    opts.auth.password = "admin";
+    opts.auth.lookup_fn = lookup_fn;
+
+    opts.transport = test_transport.NewOptions();
+    opts.transport.Test.f = f;
 
     return driver.NewDriverFromYaml(
         std.testing.allocator,

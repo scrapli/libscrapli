@@ -10,6 +10,9 @@ const lookup = @import("lookup.zig");
 const result = @import("result.zig");
 const platform_yaml = @import("platform-yaml.zig");
 
+const default_ssh_port: u16 = 22;
+const default_telnet_port: u16 = 23;
+
 pub const DeinitCallback = struct {
     f: *const fn (*anyopaque) void,
     context: *anyopaque,
@@ -19,22 +22,36 @@ pub fn NewOptions() Options {
     return Options{
         .variant_name = null,
         .logger = null,
-        .lookup_fn = null,
+        .port = null,
+        .auth = NewAuthOptions(),
         .session = session.NewOptions(),
-        .transport = transport.NewOptions(),
-        .transport_implementation = transport_bin.NewOptions(),
+        .transport = transport_bin.NewOptions(),
     };
 }
 
 pub const Options = struct {
     variant_name: ?[]const u8,
     logger: ?logger.Logger,
-    // TODO -- expose this to ffi too -- it would be nice to be able to get creds "safely" from
-    // wrapper language of choice
-    lookup_fn: lookup.LookupFn,
+    port: ?u16,
+    auth: AuthOptions,
     session: session.Options,
     transport: transport.Options,
-    transport_implementation: transport.ImplementationOptions,
+};
+
+pub fn NewAuthOptions() AuthOptions {
+    return AuthOptions{
+        .username = null,
+        .password = null,
+        .passphrase = null,
+        .lookup_fn = null,
+    };
+}
+
+pub const AuthOptions = struct {
+    username: ?[]const u8,
+    password: ?[]const u8,
+    passphrase: ?[]const u8,
+    lookup_fn: lookup.LookupFn,
 };
 
 pub fn NewDriverFromYaml(
@@ -98,16 +115,14 @@ pub fn NewDriver(
     const sess = try session.NewSession(
         allocator,
         log,
-        host,
         definition.prompt_pattern,
         options.session,
         options.transport,
-        options.transport_implementation,
     );
 
-    const driver = try allocator.create(Driver);
+    const d = try allocator.create(Driver);
 
-    driver.* = Driver{
+    d.* = Driver{
         .allocator = allocator,
         .log = log,
 
@@ -116,6 +131,9 @@ pub fn NewDriver(
         .definition_source = null,
         .definition = definition,
 
+        .host = host,
+        .port = 0,
+
         .options = options,
 
         .session = sess,
@@ -123,7 +141,20 @@ pub fn NewDriver(
         .current_mode = mode.unknown_mode,
     };
 
-    return driver;
+    if (options.port == null) {
+        switch (options.transport) {
+            transport.Kind.Bin, transport.Kind.SSH2, transport.Kind.Test => {
+                d.port = default_ssh_port;
+            },
+            transport.Kind.Telnet => {
+                d.port = default_telnet_port;
+            },
+        }
+    } else {
+        d.port = options.port.?;
+    }
+
+    return d;
 }
 
 pub const Driver = struct {
@@ -134,6 +165,9 @@ pub const Driver = struct {
 
     definition_source: ?platform_yaml.DefinitionFromYaml,
     definition: platform.Definition,
+
+    host: []const u8,
+    port: u16,
 
     options: Options,
 
@@ -187,15 +221,15 @@ pub const Driver = struct {
         self.allocator.destroy(self);
     }
 
-    fn NewResult(
+    pub fn NewResult(
         self: *Driver,
         allocator: std.mem.Allocator,
         operation_kind: result.OperationKind,
     ) !*result.Result {
         return result.NewResult(
             allocator,
-            self.session.transport.host,
-            self.session.transport.port,
+            self.host,
+            self.port,
             operation_kind,
             self.definition.input_failed_when_contains,
         );
@@ -213,7 +247,12 @@ pub const Driver = struct {
             "", // no "input" for opening
             try self.session.open(
                 allocator,
-                self.options.lookup_fn,
+                self.host,
+                self.port,
+                self.options.auth.username,
+                self.options.auth.password,
+                self.options.auth.passphrase,
+                self.options.auth.lookup_fn,
                 options,
             ),
         );
@@ -413,10 +452,10 @@ pub const Driver = struct {
                     var response: []const u8 = "";
 
                     if (lookup.resolveValue(
-                        self.session.transport.host,
-                        self.session.transport.port,
+                        self.host,
+                        self.port,
                         next_operation.?.SendPromptedInput.response,
-                        self.options.lookup_fn,
+                        self.options.auth.lookup_fn,
                     )) |resolved_response| {
                         response = resolved_response;
                     } else |err| switch (err) {

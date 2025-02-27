@@ -23,8 +23,10 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
-pub fn NewOptions() transport.ImplementationOptions {
-    return transport.ImplementationOptions{ .Telnet = Options{} };
+pub fn NewOptions() transport.Options {
+    return transport.Options{
+        .Telnet = Options{},
+    };
 }
 
 pub const Options = struct {};
@@ -32,8 +34,6 @@ pub const Options = struct {};
 pub fn NewTransport(
     allocator: std.mem.Allocator,
     log: logger.Logger,
-    host: []const u8,
-    base_options: transport.Options,
     options: Options,
 ) !*Transport {
     const t = try allocator.create(Transport);
@@ -41,8 +41,6 @@ pub fn NewTransport(
     t.* = Transport{
         .allocator = allocator,
         .log = log,
-        .host = host,
-        .base_options = base_options,
         .options = options,
         .stream = null,
         .initial_buf = std.ArrayList(u8).init(allocator),
@@ -55,8 +53,6 @@ pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
 
-    host: []const u8,
-    base_options: transport.Options,
     options: Options,
 
     stream: ?std.net.Stream,
@@ -188,13 +184,15 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        host: []const u8,
+        port: u16,
     ) !void {
         self.stream = std.net.tcpConnectToHost(
             self.allocator,
-            self.host,
-            self.base_options.port,
+            host,
+            port,
         ) catch |err| {
-            self.log.critical("failed connecting to host '{s}', err: {}", .{ self.host, err });
+            self.log.critical("failed connecting to host '{s}', err: {}", .{ host, err });
 
             return error.OpenFailed;
         };

@@ -131,18 +131,14 @@ pub const Options = struct {
 pub fn NewSession(
     allocator: std.mem.Allocator,
     log: logger.Logger,
-    host: []const u8,
     prompt_pattern: []const u8,
     options: Options,
     transport_options: transport.Options,
-    transport_implementation_options: transport.ImplementationOptions,
 ) !*Session {
     const t = try transport.Factory(
         allocator,
         log,
-        host,
         transport_options,
-        transport_implementation_options,
     );
 
     const s = try allocator.create(Session);
@@ -263,6 +259,11 @@ pub const Session = struct {
     pub fn open(
         self: *Session,
         allocator: std.mem.Allocator,
+        host: []const u8,
+        port: u16,
+        username: ?[]const u8,
+        password: ?[]const u8,
+        passphrase: ?[]const u8,
         lookup_fn: lookup.LookupFn,
         options: operation.OpenOptions,
     ) ![2][]const u8 {
@@ -276,6 +277,11 @@ pub const Session = struct {
             &timer,
             options.cancel,
             self.options.operation_timeout_ns,
+            host,
+            port,
+            username,
+            password,
+            passphrase,
             lookup_fn,
         );
 
@@ -292,10 +298,10 @@ pub const Session = struct {
             return error.OpenFailed;
         };
 
-        const auth_data = self.transport.GetAuthData();
+        const is_in_session_auth = self.transport.isInSessionAuth();
 
         // check if we have auth bypass or the transport handles auth for us -- if yes we are done
-        if (self.options.auth_bypass or !auth_data.is_in_session) {
+        if (self.options.auth_bypass or !is_in_session_auth) {
             // TODO does trying to free this cause an issue?
             return [2][]const u8{ "", "" };
         }
@@ -304,7 +310,11 @@ pub const Session = struct {
             allocator,
             &timer,
             options.cancel,
-            auth_data,
+            host,
+            port,
+            username,
+            password,
+            passphrase,
             lookup_fn,
         );
     }
@@ -399,7 +409,11 @@ pub const Session = struct {
         allocator: std.mem.Allocator,
         timer: *std.time.Timer,
         cancel: ?*bool,
-        auth_data: transport.AuthData,
+        host: []const u8,
+        port: u16,
+        username: ?[]const u8,
+        password: ?[]const u8,
+        passphrase: ?[]const u8,
         lookup_fn: lookup.LookupFn,
     ) ![2][]const u8 {
         self.log.info("in channel authentication starting...", .{});
@@ -472,7 +486,7 @@ pub const Session = struct {
                 searchable_buf,
             );
             if (password_match.len > 0) {
-                if (auth_data.password == null) {
+                if (password == null) {
                     self.log.critical(
                         "password prompt seen but no password set",
                         .{},
@@ -494,9 +508,9 @@ pub const Session = struct {
 
                 try self.writeAndReturn(
                     try lookup.resolveValue(
-                        self.transport.host,
-                        self.transport.port,
-                        auth_data.password.?,
+                        host,
+                        port,
+                        password.?,
                         lookup_fn,
                     ),
                     true,
@@ -514,7 +528,7 @@ pub const Session = struct {
                 searchable_buf,
             );
             if (username_match.len > 0) {
-                if (auth_data.username == null) {
+                if (username == null) {
                     self.log.critical(
                         "username prompt seen but no username set",
                         .{},
@@ -534,7 +548,7 @@ pub const Session = struct {
                     return error.AuthenicationFailed;
                 }
 
-                try self.writeAndReturn(auth_data.username.?, true);
+                try self.writeAndReturn(username.?, true);
 
                 cur_check_start_idx = bufs.processed.items.len;
 
@@ -548,7 +562,7 @@ pub const Session = struct {
                 searchable_buf,
             );
             if (passphrase_match.len > 0) {
-                if (auth_data.passphrase == null) {
+                if (passphrase == null) {
                     self.log.critical(
                         "private key passphrase prompt seen but no passphrase set",
                         .{},
@@ -570,9 +584,9 @@ pub const Session = struct {
 
                 try self.writeAndReturn(
                     try lookup.resolveValue(
-                        self.transport.host,
-                        self.transport.port,
-                        auth_data.passphrase.?,
+                        host,
+                        port,
+                        passphrase.?,
                         lookup_fn,
                     ),
                     true,

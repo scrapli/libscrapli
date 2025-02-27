@@ -14,7 +14,7 @@ pub fn NewDriverOptionsFromAlloc(
     port: u16,
     username: [*c]const u8,
     password: [*c]const u8,
-    session_timeout_ns: u64,
+    operation_timeout_ns: u64,
 ) driver.Options {
     var opts = driver.NewOptions();
 
@@ -39,7 +39,7 @@ pub fn NewDriverOptionsFromAlloc(
     opts.transport.username = std.mem.span(username);
     opts.transport.password = std.mem.span(password);
 
-    opts.session.operation_timeout_ns = session_timeout_ns;
+    opts.session.operation_timeout_ns = operation_timeout_ns;
 
     return opts;
 }
