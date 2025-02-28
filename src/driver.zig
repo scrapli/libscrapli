@@ -42,14 +42,18 @@ pub fn NewAuthOptions() AuthOptions {
     return AuthOptions{
         .username = null,
         .password = null,
+        .private_key_path = null,
         .passphrase = null,
         .lookup_fn = null,
     };
 }
 
+/// AuthOptions holds all possible authentication options -- this is stored/set separately from
+/// transport options as these values may also be needed in the Session for in-session auth.
 pub const AuthOptions = struct {
     username: ?[]const u8,
     password: ?[]const u8,
+    private_key_path: ?[]const u8,
     passphrase: ?[]const u8,
     lookup_fn: lookup.LookupFn,
 };
@@ -251,6 +255,7 @@ pub const Driver = struct {
                 self.port,
                 self.options.auth.username,
                 self.options.auth.password,
+                self.options.auth.private_key_path,
                 self.options.auth.passphrase,
                 self.options.auth.lookup_fn,
                 options,

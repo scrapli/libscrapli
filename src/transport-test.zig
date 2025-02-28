@@ -1,7 +1,6 @@
 const std = @import("std");
 const transport = @import("transport.zig");
 const file = @import("file.zig");
-const logger = @import("logger.zig");
 
 pub fn NewOptions() transport.Options {
     return transport.Options{
