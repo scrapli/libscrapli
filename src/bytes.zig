@@ -144,3 +144,94 @@ test "charIn" {
         );
     }
 }
+
+pub fn trimWhitespace(
+    allocator: std.mem.Allocator,
+    buf: []const u8,
+) ![]const u8 {
+    const trimmed_buf = std.mem.trim(u8, buf, " \t\n\r");
+    const owned_trimmed_buf = try allocator.alloc(u8, trimmed_buf.len);
+
+    @memcpy(owned_trimmed_buf, trimmed_buf);
+
+    return owned_trimmed_buf;
+}
+
+test "trimWhitespace" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected: []const u8,
+    }{
+        .{
+            .name = "nothing to trim",
+            .input = "foo bar baz",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "left trim newline",
+            .input = "\nfoo bar baz",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "left trim carriage return",
+            .input = "\rfoo bar baz",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "left trim carriage return newline",
+            .input = "\r\nfoo bar baz",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "left trim tab",
+            .input = "\tfoo bar baz",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "left trim spaces",
+            .input = "  foo bar baz",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "right trim newline",
+            .input = "foo bar baz\n",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "right trim carriage return",
+            .input = "foo bar baz\r",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "right trim carriage return newline",
+            .input = "foo bar baz\r\n",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "right trim tab",
+            .input = "foo bar baz\t",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "right trim spaces",
+            .input = "foo bar baz  ",
+            .expected = "foo bar baz",
+        },
+        .{
+            .name = "trim all the things",
+            .input = "\t \r\n foo bar baz\r\n \t ",
+            .expected = "foo bar baz",
+        },
+    };
+
+    for (cases) |case| {
+        const actual = try trimWhitespace(
+            std.testing.allocator,
+            case.input,
+        );
+        defer std.testing.allocator.free(actual);
+
+        try std.testing.expectEqualStrings(case.expected, actual);
+    }
+}

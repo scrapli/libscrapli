@@ -5,7 +5,6 @@ const session = @import("session.zig");
 const transport = @import("transport.zig");
 const transport_bin = @import("transport-bin.zig");
 const operation = @import("operation-netconf.zig");
-const lookup = @import("lookup.zig");
 const result = @import("result-netconf.zig");
 const ascii = @import("ascii.zig");
 const xml = @import("zig-xml");
@@ -273,6 +272,7 @@ pub const Driver = struct {
             self.port,
             self.options.auth.username,
             self.options.auth.password,
+            self.options.auth.private_key_path,
             self.options.auth.passphrase,
             self.options.auth.lookup_fn,
             options,

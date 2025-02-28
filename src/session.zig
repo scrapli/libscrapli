@@ -72,7 +72,7 @@ const ReadBufs = struct {
 
         return [2][]const u8{
             try self.raw.toOwnedSlice(),
-            try trimWhitespace(allocator, processed),
+            try bytes.trimWhitespace(allocator, processed),
         };
     }
 };
@@ -263,6 +263,7 @@ pub const Session = struct {
         port: u16,
         username: ?[]const u8,
         password: ?[]const u8,
+        private_key_path: ?[]const u8,
         passphrase: ?[]const u8,
         lookup_fn: lookup.LookupFn,
         options: operation.OpenOptions,
@@ -281,6 +282,7 @@ pub const Session = struct {
             port,
             username,
             password,
+            private_key_path,
             passphrase,
             lookup_fn,
         );
@@ -427,8 +429,8 @@ pub const Session = struct {
 
         var auth_prompt_seen_count: u8 = 0;
 
-        var buf = try self.allocator.alloc(u8, self.options.read_size);
-        defer self.allocator.free(buf);
+        var buf = try allocator.alloc(u8, self.options.read_size);
+        defer allocator.free(buf);
 
         while (true) {
             if (cancel != null and cancel.?.*) {
@@ -1306,96 +1308,5 @@ test "readUntilFuzzyCheckDone" {
         const actual = try readUntilFuzzyCheckDone(case.haystack, case.read_args);
 
         try std.testing.expectEqual(case.expected, actual);
-    }
-}
-
-fn trimWhitespace(
-    allocator: std.mem.Allocator,
-    buf: []const u8,
-) ![]const u8 {
-    const trimmed_buf = std.mem.trim(u8, buf, " \t\n\r");
-    const owned_trimmed_buf = try allocator.alloc(u8, trimmed_buf.len);
-
-    @memcpy(owned_trimmed_buf, trimmed_buf);
-
-    return owned_trimmed_buf;
-}
-
-test "trimWhitespace" {
-    const cases = [_]struct {
-        name: []const u8,
-        input: []const u8,
-        expected: []const u8,
-    }{
-        .{
-            .name = "nothing to trim",
-            .input = "foo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim newline",
-            .input = "\nfoo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim carriage return",
-            .input = "\rfoo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim carriage return newline",
-            .input = "\r\nfoo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim tab",
-            .input = "\tfoo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim spaces",
-            .input = "  foo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim newline",
-            .input = "foo bar baz\n",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim carriage return",
-            .input = "foo bar baz\r",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim carriage return newline",
-            .input = "foo bar baz\r\n",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim tab",
-            .input = "foo bar baz\t",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim spaces",
-            .input = "foo bar baz  ",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "trim all the things",
-            .input = "\t \r\n foo bar baz\r\n \t ",
-            .expected = "foo bar baz",
-        },
-    };
-
-    for (cases) |case| {
-        const actual = try trimWhitespace(
-            std.testing.allocator,
-            case.input,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try std.testing.expectEqualStrings(case.expected, actual);
     }
 }

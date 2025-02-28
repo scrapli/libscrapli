@@ -27,8 +27,6 @@ pub fn NewOptions() transport.Options {
             .ssh_config_file = null,
             .known_hosts_file = null,
             .enable_strict_key = false,
-            .private_key_path = null,
-            .private_key_passphrase = null,
             .term_height = default_term_height,
             .term_width = default_term_width,
             .netconf = false,
@@ -48,9 +46,6 @@ pub const Options = struct {
     known_hosts_file: ?[]const u8,
 
     enable_strict_key: bool,
-
-    private_key_path: ?[]const u8,
-    private_key_passphrase: ?[]const u8,
 
     term_height: u16,
     term_width: u16,
@@ -108,6 +103,7 @@ pub const Transport = struct {
         host: []const u8,
         port: u16,
         username: ?[]const u8,
+        private_key_path: ?[]const u8,
         operation_timeout_ns: u64,
     ) !void {
         if (self.options.override_open_args != null) {
@@ -207,7 +203,7 @@ pub const Transport = struct {
             );
         }
 
-        if (self.options.private_key_path != null) {
+        if (private_key_path != null) {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -218,7 +214,7 @@ pub const Transport = struct {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
-                    .string = self.options.private_key_path.?,
+                    .string = private_key_path.?,
                 },
             );
         }
@@ -309,8 +305,9 @@ pub const Transport = struct {
         host: []const u8,
         port: u16,
         username: ?[]const u8,
+        private_key_path: ?[]const u8,
     ) !void {
-        self.buildArgs(host, port, username, operation_timeout_ns) catch |err| {
+        self.buildArgs(host, port, username, private_key_path, operation_timeout_ns) catch |err| {
             self.log.critical("failed generating open command, err: {}", .{err});
 
             return error.OpenFailed;
@@ -491,12 +488,18 @@ fn openPtyChild(
     }
 
     if (!netconf) {
-        var size = c.winsize{
-            .ws_row = term_height,
-            .ws_col = term_width,
-        };
-
-        const set_win_size_rc = ioctl(slave_fd.handle, c.TIOCSWINSZ, @intFromPtr(&size));
+        const set_win_size_rc = ioctl(
+            slave_fd.handle,
+            c.TIOCSWINSZ,
+            @intFromPtr(
+                &c.winsize{
+                    .ws_row = term_height,
+                    .ws_col = term_width,
+                    .ws_ypixel = 0,
+                    .ws_xpixel = 0,
+                },
+            ),
+        );
         if (set_win_size_rc != 0) {
             return error.PtyCreationFailedSetWinSize;
         }

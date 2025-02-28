@@ -104,8 +104,6 @@ const AuthCallbackData = struct {
 pub fn NewOptions() transport.Options {
     return transport.Options{
         .SSH2 = Options{
-            .private_key_path = null,
-            .private_key_passphrase = null,
             .libssh2_trace = false,
             .netconf = false,
         },
@@ -113,8 +111,6 @@ pub fn NewOptions() transport.Options {
 }
 
 pub const Options = struct {
-    private_key_path: ?[]const u8,
-    private_key_passphrase: ?[]const u8,
     libssh2_trace: bool,
     netconf: bool,
 };
@@ -207,6 +203,8 @@ pub const Transport = struct {
         port: u16,
         username: ?[]const u8,
         password: ?[]const u8,
+        private_key_path: ?[]const u8,
+        passphrase: ?[]const u8,
         lookup_fn: lookup.LookupFn,
     ) !void {
         try self.initSocket(host, port);
@@ -223,6 +221,8 @@ pub const Transport = struct {
             port,
             username,
             password,
+            private_key_path,
+            passphrase,
             lookup_fn,
         );
         self.log.info("authentication complete", .{});
@@ -356,6 +356,8 @@ pub const Transport = struct {
         port: u16,
         username: ?[]const u8,
         password: ?[]const u8,
+        private_key_path: ?[]const u8,
+        passphrase: ?[]const u8,
         lookup_fn: lookup.LookupFn,
     ) !void {
         const _username = self.allocator.dupeZ(u8, username.?) catch |err| {
@@ -365,12 +367,14 @@ pub const Transport = struct {
         };
         defer self.allocator.free(_username);
 
-        if (self.options.private_key_path != null) {
+        if (private_key_path != null) {
             self.handlePrivateKeyAuth(
                 timer,
                 cancel,
                 operation_timeout_ns,
                 _username,
+                private_key_path,
+                passphrase,
             ) catch blk: {
                 // we can still try to auth with a password if the user provided it, so we continue
                 break :blk;
@@ -469,10 +473,12 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         username: [:0]u8,
+        private_key_path: ?[]const u8,
+        passphrase: ?[]const u8,
     ) !void {
         const _private_key_path = self.allocator.dupeZ(
             u8,
-            self.options.private_key_path.?,
+            private_key_path.?,
         ) catch |err| {
             self.log.critical("failed casting private key path to c string, err: {}", .{err});
 
@@ -483,10 +489,10 @@ pub const Transport = struct {
         // SAFETY: will be set always, but this possibly saves us an allocation
         var _passphrase: [:0]u8 = undefined;
 
-        if (self.options.private_key_passphrase != null) {
+        if (passphrase != null) {
             _passphrase = try self.allocator.dupeZ(
                 u8,
-                self.options.private_key_passphrase.?,
+                passphrase.?,
             );
         } else {
             _passphrase = try std.fmt.allocPrintZ(

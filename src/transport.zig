@@ -166,21 +166,18 @@ pub const Transport = struct {
         port: u16,
         username: ?[]const u8,
         password: ?[]const u8,
+        private_key_path: ?[]const u8,
         passphrase: ?[]const u8,
         lookup_fn: lookup.LookupFn,
     ) !void {
         self.log.debug("transport open start...", .{});
-
-        // *currently* unused, but likely we need to give it to ssh2 for keys w/ passphrase at
-        // some point...
-        _ = passphrase;
 
         switch (self.implementation) {
             Kind.Bin => |t| {
                 // bin transport doesnt need the timer, since we just pass the timeout value to
                 // to the cli args and let openssh do it, then the rest of the timing out bits
                 // happen in in session auth
-                try t.open(operation_timeout_ns, host, port, username);
+                try t.open(operation_timeout_ns, host, port, username, private_key_path);
             },
             Kind.Telnet => |t| {
                 try t.open(timer, cancel, operation_timeout_ns, host, port);
@@ -194,6 +191,8 @@ pub const Transport = struct {
                     port,
                     username,
                     password,
+                    private_key_path,
+                    passphrase,
                     lookup_fn,
                 );
             },

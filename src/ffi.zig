@@ -57,10 +57,10 @@ export fn allocDriver(
     read_delay_min_ns: u64,
     read_delay_max_ns: u64,
     read_delay_backoff_factor: u8,
-    return_char: []const u8,
-    username_pattern: []const u8,
-    password_pattern: []const u8,
-    passphrase_pattern: []const u8,
+    return_char: [*c]const u8,
+    username_pattern: [*c]const u8,
+    password_pattern: [*c]const u8,
+    passphrase_pattern: [*c]const u8,
     in_session_auth_bypass: bool,
     operation_timeout_ns: u64,
     operation_max_search_depth: u64,
@@ -86,11 +86,11 @@ export fn allocDriver(
     }
 
     const options = ffi_options.NewDriverOptionsFromAlloc(
+        // generic bits
         variant_name,
         log,
-        // generic bits
-        transport_kind,
         port,
+        // auth
         username,
         password,
         // session
@@ -105,7 +105,6 @@ export fn allocDriver(
         in_session_auth_bypass,
         operation_timeout_ns,
         operation_max_search_depth,
-        operation_timeout_ns,
         // transport
         transport_kind,
         term_width,
@@ -117,7 +116,7 @@ export fn allocDriver(
     const definition_string_slice = std.mem.span(definition_string);
 
     // SAFETY: will always be set (or we'll have exited)
-    const real_driver: driver.Driver = undefined;
+    var real_driver: *driver.Driver = undefined;
 
     if (definition_file_path_slice.len > 0) {
         real_driver = driver.NewDriverFromYaml(
