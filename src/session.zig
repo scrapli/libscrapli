@@ -14,7 +14,7 @@ const pcre2 = @cImport({
     @cInclude("pcre2.h");
 });
 
-const default_read_size: usize = 4_096;
+const default_read_size: u64 = 4_096;
 const default_read_delay_min_ns: u64 = 1_000;
 const default_read_delay_max_ns: u64 = 1_000_000;
 const default_read_delay_backoff_factor: u8 = 2;
@@ -103,7 +103,7 @@ pub fn NewOptions() Options {
 }
 
 pub const Options = struct {
-    read_size: usize,
+    read_size: u64,
 
     read_delay_min_ns: u64,
     read_delay_max_ns: u64,
@@ -290,7 +290,7 @@ pub const Session = struct {
         const is_in_session_auth = self.transport.isInSessionAuth();
 
         // check if we have auth bypass or the transport handles auth for us -- if yes we are done
-        if (self.auth_options.auth_bypass or !is_in_session_auth) {
+        if (self.auth_options.in_session_auth_bypass or !is_in_session_auth) {
             // TODO does trying to free this cause an issue?
             return [2][]const u8{ "", "" };
         }

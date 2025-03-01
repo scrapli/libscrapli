@@ -49,39 +49,7 @@ export fn allocDriver(
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
     port: u16,
-
-    // auth things
-    username: [*c]const u8,
-    password: [*c]const u8,
-    private_key_path: [*c]const u8,
-    private_key_passphrase: [*c]const u8,
-    in_session_auth_bypass: bool,
-    username_pattern: [*c]const u8,
-    password_pattern: [*c]const u8,
-    passphrase_pattern: [*c]const u8,
-
-    // session things
-    read_size: u64,
-    read_delay_min_ns: u64,
-    read_delay_max_ns: u64,
-    read_delay_backoff_factor: u8,
-    return_char: [*c]const u8,
-    operation_timeout_ns: u64,
-    operation_max_search_depth: u64,
-
-    // in native zig we just pass a tagged union of the transport implementation options, but
-    // we'll pass this explicitly from go/py so we know which args to use/set
     transport_kind: [*c]const u8,
-
-    // bin transport opts
-    bin_transport_bin: [*c]const u8,
-    bin_transport_extra_open_args: [*c]const [*c]const u8,
-    bin_transport_override_open_args: [*c]const [*c]const u8,
-    bin_transport_ssh_config_file: [*c]const u8,
-    bin_transport_known_hosts_file: [*c]const u8,
-    bin_transport_enable_strict_key: bool,
-    bin_transport_term_width: u16,
-    bin_transport_term_height: u16,
 ) usize {
     var log = logger.Logger{ .allocator = allocator, .f = null };
 
@@ -94,34 +62,7 @@ export fn allocDriver(
         definition_variant,
         log,
         port,
-        // auth
-        username,
-        password,
-        private_key_path,
-        private_key_passphrase,
-        in_session_auth_bypass,
-        username_pattern,
-        password_pattern,
-        passphrase_pattern,
-        // session
-        read_size,
-        read_delay_min_ns,
-        read_delay_max_ns,
-        read_delay_backoff_factor,
-        return_char,
-        operation_timeout_ns,
-        operation_max_search_depth,
-        // transport
         transport_kind,
-        // bin transport
-        bin_transport_bin,
-        bin_transport_extra_open_args,
-        bin_transport_override_open_args,
-        bin_transport_ssh_config_file,
-        bin_transport_known_hosts_file,
-        bin_transport_enable_strict_key,
-        bin_transport_term_width,
-        bin_transport_term_height,
     );
 
     const host_slice = std.mem.span(host);

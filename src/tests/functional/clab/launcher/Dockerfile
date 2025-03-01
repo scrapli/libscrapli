@@ -26,7 +26,7 @@ RUN apt-get update -yq && \
         --no-install-recommends \
         docker-ce \
         docker-ce-cli \
-        containerlab=0.60.1 && \
+        containerlab=0.65.1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

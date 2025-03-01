@@ -8,38 +8,10 @@ const ssh2 = @import("transport-ssh2.zig");
 const logger = @import("logger.zig");
 
 pub fn NewDriverOptionsFromAlloc(
-    // generic stuff
     definition_variant: [*c]const u8,
     log: logger.Logger,
     port: u16,
-    // auth
-    username: [*c]const u8,
-    password: [*c]const u8,
-    private_key_path: [*c]const u8,
-    private_key_passphrase: [*c]const u8,
-    in_session_auth_bypass: bool,
-    username_pattern: [*c]const u8,
-    password_pattern: [*c]const u8,
-    passphrase_pattern: [*c]const u8,
-    // session
-    read_size: u64,
-    read_delay_min_ns: u64,
-    read_delay_max_ns: u64,
-    read_delay_backoff_factor: u8,
-    return_char: [*c]const u8,
-    operation_timeout_ns: u64,
-    operation_max_search_depth: u64,
-    // transport
     transport_kind: [*c]const u8,
-    // bin transport
-    bin_transport_bin: [*c]const u8,
-    bin_transport_extra_open_args: [*c]const [*c]const u8,
-    bin_transport_override_open_args: [*c]const [*c]const u8,
-    bin_transport_ssh_config_file: [*c]const u8,
-    bin_transport_known_hosts_file: [*c]const u8,
-    bin_transport_enable_strict_key: bool,
-    bin_transport_term_width: u16,
-    bin_transport_term_height: u16,
 ) driver.Options {
     var opts = driver.NewOptions();
 
@@ -61,39 +33,94 @@ pub fn NewDriverOptionsFromAlloc(
         opts.transport = ssh2.NewOptions();
     }
 
-    opts.auth.username = std.mem.span(username);
-    opts.auth.password = std.mem.span(password);
-
-    opts.session.operation_timeout_ns = operation_timeout_ns;
-
-    // TOOD
-    _ = private_key_path;
-    _ = private_key_passphrase;
-    _ = in_session_auth_bypass;
-    _ = username_pattern;
-    _ = password_pattern;
-    _ = passphrase_pattern;
-
-    _ = read_size;
-    _ = read_delay_min_ns;
-    _ = read_delay_max_ns;
-    _ = read_delay_backoff_factor;
-    _ = return_char;
-    _ = operation_max_search_depth;
-
-    _ = bin_transport_bin;
-    _ = bin_transport_extra_open_args;
-    _ = bin_transport_override_open_args;
-    _ = bin_transport_ssh_config_file;
-    _ = bin_transport_known_hosts_file;
-    _ = bin_transport_enable_strict_key;
-    _ = bin_transport_term_width;
-    _ = bin_transport_term_height;
-
     return opts;
 }
 
-/// Closes the driver, does *not* free/deinit.
+//
+// session options
+//
+
+export fn setDriverOptionSessionReadSize(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.options.read_size = value;
+
+    return 0;
+}
+
+export fn setDriverOptionSessionReadDelayMinNs(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.options.read_delay_min_ns = value;
+
+    return 0;
+}
+
+export fn setDriverOptionSessionReadDelayMaxNs(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.options.read_delay_max_ns = value;
+
+    return 0;
+}
+
+export fn setDriverOptionSessionReadDelayBackoffFactor(
+    d_ptr: usize,
+    value: u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.options.read_delay_backoff_factor = value;
+
+    return 0;
+}
+
+export fn setDriverOptionSessionReturnChar(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.options.return_char = std.mem.span(value);
+
+    return 0;
+}
+
+export fn setDriverOptionSessionOperationTimeoutNs(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.options.operation_timeout_ns = value;
+
+    return 0;
+}
+
+export fn setDriverOptionSessionOperationMaxSearchDepth(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.options.operation_max_search_depth = value;
+
+    return 0;
+}
+
+//
+// auth options
+//
+
 export fn setDriverOptionAuthUsername(
     d_ptr: usize,
     value: [*c]const u8,
@@ -101,6 +128,253 @@ export fn setDriverOptionAuthUsername(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.real_driver.session.auth_options.username = std.mem.span(value);
+
+    return 0;
+}
+
+export fn setDriverOptionAuthPassword(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.auth_options.password = std.mem.span(value);
+
+    return 0;
+}
+
+export fn setDriverOptionAuthPrivateKeyPath(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.auth_options.private_key_path = std.mem.span(value);
+
+    return 0;
+}
+
+export fn setDriverOptionAuthPrivateKeyPassphrase(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.auth_options.private_key_passphrase = std.mem.span(value);
+
+    return 0;
+}
+
+export fn setDriverOptionAuthInSessionAuthBypass(
+    d_ptr: usize,
+    value: bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.auth_options.in_session_auth_bypass = value;
+
+    return 0;
+}
+
+export fn setDriverOptionAuthUsernamePattern(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.auth_options.username_pattern = std.mem.span(value);
+
+    return 0;
+}
+
+export fn setDriverOptionAuthPasswordPattern(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.auth_options.password_pattern = std.mem.span(value);
+
+    return 0;
+}
+
+export fn setDriverOptionAuthPassphrasePattern(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.session.auth_options.passphrase_pattern = std.mem.span(value);
+
+    return 0;
+}
+
+//
+// bin transport options
+//
+
+export fn setDriverOptionBinTransportBin(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .Bin => {
+            d.real_driver.session.transport.implementation.Bin.options.bin = std.mem.span(value);
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+export fn setDriverOptionBinTransportExtraOpenArgs(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .Bin => {
+            d.real_driver.session.transport.implementation.Bin.options.extra_open_args = std.mem.span(value);
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+export fn setDriverOptionBinTransportOverrideOpenArgs(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .Bin => {
+            d.real_driver.session.transport.implementation.Bin.options.override_open_args = std.mem.span(value);
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+export fn setDriverOptionBinTransportSSHConfigPath(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .Bin => {
+            d.real_driver.session.transport.implementation.Bin.options.ssh_config_path = std.mem.span(value);
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+export fn setDriverOptionBinTransportKnownHostsPath(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .Bin => {
+            d.real_driver.session.transport.implementation.Bin.options.known_hosts_path = std.mem.span(value);
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+export fn setDriverOptionBinTransportEnableStrictKey(
+    d_ptr: usize,
+    value: bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .Bin => {
+            d.real_driver.session.transport.implementation.Bin.options.enable_strict_key = value;
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+export fn setDriverOptionBinTransportTermHeight(
+    d_ptr: usize,
+    value: u16,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .Bin => {
+            d.real_driver.session.transport.implementation.Bin.options.term_height = value;
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+export fn setDriverOptionBinTransportTermWidth(
+    d_ptr: usize,
+    value: u16,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .Bin => {
+            d.real_driver.session.transport.implementation.Bin.options.term_width = value;
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+//
+// ssh2 transport options
+//
+
+export fn setDriverOptionSSH2TransportibSSH2Trace(
+    d_ptr: usize,
+    value: bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .SSH2 => {
+            d.real_driver.session.transport.implementation.SSH2.options.libssh2_trace = value;
+        },
+        else => {
+            return 1;
+        },
+    }
 
     return 0;
 }
