@@ -167,11 +167,10 @@ export fn setDriverOptionAuthPrivateKeyPassphrase(
 
 export fn setDriverOptionAuthInSessionAuthBypass(
     d_ptr: usize,
-    value: bool,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.session.auth_options.in_session_auth_bypass = value;
+    d.real_driver.session.auth_options.in_session_auth_bypass = true;
 
     return 0;
 }
@@ -305,13 +304,12 @@ export fn setDriverOptionBinTransportKnownHostsPath(
 
 export fn setDriverOptionBinTransportEnableStrictKey(
     d_ptr: usize,
-    value: bool,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.enable_strict_key = value;
+            d.real_driver.session.transport.implementation.Bin.options.enable_strict_key = true;
         },
         else => {
             return 1;
@@ -361,15 +359,14 @@ export fn setDriverOptionBinTransportTermWidth(
 // ssh2 transport options
 //
 
-export fn setDriverOptionSSH2TransportibSSH2Trace(
+export fn setDriverOptionSSH2TransportSSH2Trace(
     d_ptr: usize,
-    value: bool,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
         .SSH2 => {
-            d.real_driver.session.transport.implementation.SSH2.options.libssh2_trace = value;
+            d.real_driver.session.transport.implementation.SSH2.options.libssh2_trace = true;
         },
         else => {
             return 1;

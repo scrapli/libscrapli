@@ -166,34 +166,36 @@ pub const Transport = struct {
             },
         );
 
-        try self.open_args.append(
-            strings.MaybeHeapString{
-                .allocator = self.allocator,
-                .string = try std.fmt.allocPrint(
-                    self.allocator,
-                    "ConnectTimeout={d}",
-                    .{operation_timeout_ns / std.time.ns_per_s},
-                ),
-            },
-        );
+        if (operation_timeout_ns != 0) {
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = self.allocator,
+                    .string = try std.fmt.allocPrint(
+                        self.allocator,
+                        "ConnectTimeout={d}",
+                        .{operation_timeout_ns / std.time.ns_per_s},
+                    ),
+                },
+            );
 
-        try self.open_args.append(
-            strings.MaybeHeapString{
-                .allocator = null,
-                .string = "-o",
-            },
-        );
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = null,
+                    .string = "-o",
+                },
+            );
 
-        try self.open_args.append(
-            strings.MaybeHeapString{
-                .allocator = self.allocator,
-                .string = try std.fmt.allocPrint(
-                    self.allocator,
-                    "ServerAliveInterval={d}",
-                    .{operation_timeout_ns / std.time.ns_per_s},
-                ),
-            },
-        );
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = self.allocator,
+                    .string = try std.fmt.allocPrint(
+                        self.allocator,
+                        "ServerAliveInterval={d}",
+                        .{operation_timeout_ns / std.time.ns_per_s},
+                    ),
+                },
+            );
+        }
 
         if (auth_options.username != null) {
             try self.open_args.append(

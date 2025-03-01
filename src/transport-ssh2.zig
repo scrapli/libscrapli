@@ -318,7 +318,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -435,7 +435,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -502,7 +502,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -549,7 +549,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -595,7 +595,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -639,7 +639,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -682,7 +682,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -719,7 +719,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;

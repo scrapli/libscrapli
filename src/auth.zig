@@ -1,5 +1,4 @@
 const std = @import("std");
-const logger = @import("logger.zig");
 const bytes = @import("bytes.zig");
 const re = @import("re.zig");
 const lookup = @import("lookup.zig");

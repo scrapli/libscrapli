@@ -424,7 +424,9 @@ pub const Session = struct {
 
             const elapsed_time = timer.read();
 
-            if ((elapsed_time + cur_read_delay_ns) > self.options.operation_timeout_ns) {
+            if (self.options.operation_timeout_ns != 0 and
+                (elapsed_time + cur_read_delay_ns) > self.options.operation_timeout_ns)
+            {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.AuthenicationTimeoutExceeded;
