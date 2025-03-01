@@ -5,6 +5,7 @@ const scrapli = @import("scrapli");
 const driver = scrapli.driver_netconf;
 const ssh2 = scrapli.transport_ssh2;
 const operation = scrapli.operation_netconf;
+const strings = scrapli.strings;
 
 const banner = "********************";
 
@@ -51,26 +52,43 @@ fn get_port() !u16 {
     return try std.fmt.parseInt(u16, port_as_str_or_null.?, 10);
 }
 
+fn get_env_var_or_default(
+    env_var_name: []const u8,
+    default_value: []const u8,
+) !strings.MaybeHeapString {
+    const set_value = std.process.getEnvVarOwned(allocator, env_var_name) catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => default_value,
+        else => return err,
+    };
+
+    if (std.mem.eql(u8, set_value, default_value)) {
+        return strings.MaybeHeapString{
+            .allocator = null,
+            .string = set_value,
+        };
+    }
+
+    return strings.MaybeHeapString{
+        .allocator = allocator,
+        .string = set_value,
+    };
+}
+
 pub fn main() !void {
     defer {
         // mostly i've used this for testing but its kinda nice to double check!
         std.log.info("leak check results >> {any}\n", .{gpa_allocator.deinit()});
     }
 
-    const host = std.process.getEnvVarOwned(allocator, host_env_var_name) catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => default_host,
-        else => return err,
-    };
+    var host = try get_env_var_or_default(host_env_var_name, default_host);
+    defer host.deinit();
 
-    const password = std.process.getEnvVarOwned(allocator, password_env_var_name) catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => default_password,
-        else => return err,
-    };
-
+    var password = try get_env_var_or_default(password_env_var_name, default_password);
+    defer password.deinit();
     var opts = driver.NewOptions();
 
     opts.auth.username = "admin";
-    opts.auth.password = password;
+    opts.auth.password = password.string;
     opts.port = try get_port();
 
     // ssh2; if commented out you'll default to using bin transport (/bin/ssh wrapper)
@@ -90,7 +108,7 @@ pub fn main() !void {
 
     const d = try driver.NewDriver(
         allocator,
-        host,
+        host.string,
         opts,
     );
 

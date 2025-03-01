@@ -6,6 +6,8 @@ const operation = @import("operation.zig");
 const logger = @import("logger.zig");
 const ascii = @import("ascii.zig");
 const lookup = @import("lookup.zig");
+const time = @import("time.zig");
+const auth = @import("auth.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
@@ -17,9 +19,6 @@ const default_read_delay_min_ns: u64 = 1_000;
 const default_read_delay_max_ns: u64 = 1_000_000;
 const default_read_delay_backoff_factor: u8 = 2;
 const default_return_char: []const u8 = "\n";
-const default_username_pattern: []const u8 = "^(.*username:)|(.*login:)\\s?$";
-const default_password_pattern: []const u8 = "(.*@.*)?password:\\s?$";
-const default_passphrase_pattern: []const u8 = "enter passphrase for key";
 const default_operation_timeout_ns: u64 = 10_000_000_000;
 const default_operation_max_search_depth: u64 = 512;
 
@@ -97,10 +96,6 @@ pub fn NewOptions() Options {
         .read_delay_max_ns = default_read_delay_max_ns,
         .read_delay_backoff_factor = default_read_delay_backoff_factor,
         .return_char = default_return_char,
-        .username_pattern = default_username_pattern,
-        .password_pattern = default_password_pattern,
-        .passphrase_pattern = default_passphrase_pattern,
-        .auth_bypass = false,
         .operation_timeout_ns = default_operation_timeout_ns,
         .operation_max_search_depth = default_operation_max_search_depth,
         .recorder = null,
@@ -116,12 +111,6 @@ pub const Options = struct {
 
     return_char: []const u8,
 
-    username_pattern: []const u8,
-    password_pattern: []const u8,
-    passphrase_pattern: []const u8,
-
-    auth_bypass: bool,
-
     operation_timeout_ns: u64,
     operation_max_search_depth: u64,
 
@@ -133,6 +122,7 @@ pub fn NewSession(
     log: logger.Logger,
     prompt_pattern: []const u8,
     options: Options,
+    auth_options: auth.Options,
     transport_options: transport.Options,
 ) !*Session {
     const t = try transport.Factory(
@@ -147,11 +137,15 @@ pub fn NewSession(
         .allocator = allocator,
         .log = log,
         .options = options,
+        .auth_options = auth_options,
         .transport = t,
         .read_thread = null,
         .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.Uninitialized),
         .read_lock = std.Thread.Mutex{},
-        .read_queue = std.fifo.LinearFifo(u8, std.fifo.LinearFifoBufferType.Dynamic).init(allocator),
+        .read_queue = std.fifo.LinearFifo(
+            u8,
+            std.fifo.LinearFifoBufferType.Dynamic,
+        ).init(allocator),
         .compiled_username_pattern = null,
         .compiled_password_pattern = null,
         .compiled_passphrase_pattern = null,
@@ -167,12 +161,16 @@ pub const Session = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
     options: Options,
+    auth_options: auth.Options,
     transport: *transport.Transport,
 
     read_thread: ?std.Thread,
     read_stop: std.atomic.Value(ReadThreadState),
     read_lock: std.Thread.Mutex,
-    read_queue: std.fifo.LinearFifo(u8, std.fifo.LinearFifoBufferType.Dynamic),
+    read_queue: std.fifo.LinearFifo(
+        u8,
+        std.fifo.LinearFifoBufferType.Dynamic,
+    ),
 
     compiled_username_pattern: ?*pcre2.pcre2_code_8,
     compiled_password_pattern: ?*pcre2.pcre2_code_8,
@@ -184,23 +182,32 @@ pub const Session = struct {
     last_consumed_prompt: std.ArrayList(u8),
 
     pub fn init(self: *Session) !void {
-        self.compiled_username_pattern = re.pcre2Compile(self.options.username_pattern);
+        self.compiled_username_pattern = re.pcre2Compile(self.auth_options.username_pattern);
         if (self.compiled_username_pattern == null) {
-            self.log.critical("failed compling username pattern {s}", .{self.options.username_pattern});
+            self.log.critical(
+                "failed compling username pattern {s}",
+                .{self.auth_options.username_pattern},
+            );
 
             return error.InitFailed;
         }
 
-        self.compiled_password_pattern = re.pcre2Compile(self.options.password_pattern);
+        self.compiled_password_pattern = re.pcre2Compile(self.auth_options.password_pattern);
         if (self.compiled_password_pattern == null) {
-            self.log.critical("failed compling password pattern {s}", .{self.options.password_pattern});
+            self.log.critical(
+                "failed compling password pattern {s}",
+                .{self.auth_options.password_pattern},
+            );
 
             return error.InitFailed;
         }
 
-        self.compiled_passphrase_pattern = re.pcre2Compile(self.options.passphrase_pattern);
+        self.compiled_passphrase_pattern = re.pcre2Compile(self.auth_options.passphrase_pattern);
         if (self.compiled_passphrase_pattern == null) {
-            self.log.critical("failed compling passphrase pattern {s}", .{self.options.passphrase_pattern});
+            self.log.critical(
+                "failed compling passphrase pattern {s}",
+                .{self.auth_options.passphrase_pattern},
+            );
 
             return error.InitFailed;
         }
@@ -245,27 +252,11 @@ pub const Session = struct {
         self.allocator.destroy(self);
     }
 
-    fn getReadDelay(self: *Session, cur_read_delay_ns: u64) u64 {
-        var new_read_delay_ns: u64 = cur_read_delay_ns;
-
-        new_read_delay_ns *= self.options.read_delay_backoff_factor;
-        if (new_read_delay_ns > self.options.read_delay_max_ns) {
-            new_read_delay_ns = self.options.read_delay_max_ns;
-        }
-
-        return new_read_delay_ns;
-    }
-
     pub fn open(
         self: *Session,
         allocator: std.mem.Allocator,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        password: ?[]const u8,
-        private_key_path: ?[]const u8,
-        passphrase: ?[]const u8,
-        lookup_fn: lookup.LookupFn,
         options: operation.OpenOptions,
     ) ![2][]const u8 {
         var timer = std.time.Timer.start() catch |err| {
@@ -280,11 +271,7 @@ pub const Session = struct {
             self.options.operation_timeout_ns,
             host,
             port,
-            username,
-            password,
-            private_key_path,
-            passphrase,
-            lookup_fn,
+            self.auth_options,
         );
 
         self.read_stop.store(ReadThreadState.Run, std.builtin.AtomicOrder.unordered);
@@ -303,7 +290,7 @@ pub const Session = struct {
         const is_in_session_auth = self.transport.isInSessionAuth();
 
         // check if we have auth bypass or the transport handles auth for us -- if yes we are done
-        if (self.options.auth_bypass or !is_in_session_auth) {
+        if (self.auth_options.auth_bypass or !is_in_session_auth) {
             // TODO does trying to free this cause an issue?
             return [2][]const u8{ "", "" };
         }
@@ -314,10 +301,6 @@ pub const Session = struct {
             options.cancel,
             host,
             port,
-            username,
-            password,
-            passphrase,
-            lookup_fn,
         );
     }
 
@@ -345,7 +328,11 @@ pub const Session = struct {
             const n = try self.transport.read(buf);
 
             if (n == 0) {
-                cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
+                cur_read_delay_ns = time.getBackoffValue(
+                    cur_read_delay_ns,
+                    self.options.read_delay_max_ns,
+                    self.options.read_delay_backoff_factor,
+                );
 
                 continue;
             } else {
@@ -357,8 +344,8 @@ pub const Session = struct {
             }
 
             self.read_lock.lock();
-            defer self.read_lock.unlock();
             try self.read_queue.write(buf[0..n]);
+            self.read_lock.unlock();
         }
 
         self.log.info("read thread stopped", .{});
@@ -413,10 +400,6 @@ pub const Session = struct {
         cancel: ?*bool,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        password: ?[]const u8,
-        passphrase: ?[]const u8,
-        lookup_fn: lookup.LookupFn,
     ) ![2][]const u8 {
         self.log.info("in channel authentication starting...", .{});
 
@@ -452,7 +435,11 @@ pub const Session = struct {
             const n = self.read(buf);
 
             if (n == 0) {
-                cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
+                cur_read_delay_ns = time.getBackoffValue(
+                    cur_read_delay_ns,
+                    self.options.read_delay_max_ns,
+                    self.options.read_delay_backoff_factor,
+                );
 
                 continue;
             } else {
@@ -470,133 +457,125 @@ pub const Session = struct {
                 );
                 try bufs.processed.resize(new_size);
 
-                try openMessageHandler(self.allocator, bufs.processed.items);
+                try openMessageHandler(allocator, bufs.processed.items);
             }
 
             const searchable_buf = self.getBufSearchView(bufs.processed.items[cur_check_start_idx..]);
 
-            const prompt_match = try re.pcre2Find(
-                self.compiled_prompt_pattern.?,
+            const state = try auth.processSearchableAuthBuf(
                 searchable_buf,
+                self.compiled_prompt_pattern,
+                self.compiled_username_pattern,
+                self.compiled_password_pattern,
+                self.compiled_passphrase_pattern,
             );
-            if (prompt_match.len > 0) {
-                return bufs.toOwnedSlices(allocator);
-            }
 
-            const password_match = try re.pcre2Find(
-                self.compiled_password_pattern.?,
-                searchable_buf,
-            );
-            if (password_match.len > 0) {
-                if (password == null) {
-                    self.log.critical(
-                        "password prompt seen but no password set",
-                        .{},
+            switch (state) {
+                .Complete => {
+                    return bufs.toOwnedSlices(allocator);
+                },
+                .UsernamePrompted => {
+                    if (self.auth_options.username == null) {
+                        self.log.critical(
+                            "username prompt seen but no username set",
+                            .{},
+                        );
+
+                        return error.AuthenicationFailed;
+                    }
+
+                    auth_prompt_seen_count += 1;
+
+                    if (auth_prompt_seen_count > 3) {
+                        self.log.critical(
+                            "username prompt seen multiple times, assuming authentication failed",
+                            .{},
+                        );
+
+                        return error.AuthenicationFailed;
+                    }
+
+                    try self.writeAndReturn(self.auth_options.username.?, true);
+
+                    cur_check_start_idx = bufs.processed.items.len;
+
+                    auth_prompt_seen_count = 0;
+
+                    continue;
+                },
+                .PasswordPrompted => {
+                    if (self.auth_options.password == null) {
+                        self.log.critical(
+                            "password prompt seen but no password set",
+                            .{},
+                        );
+
+                        return error.AuthenicationFailed;
+                    }
+
+                    auth_prompt_seen_count += 1;
+
+                    if (auth_prompt_seen_count > 3) {
+                        self.log.critical(
+                            "password prompt seen multiple times, assuming authentication failed",
+                            .{},
+                        );
+
+                        return error.AuthenicationFailed;
+                    }
+
+                    try self.writeAndReturn(
+                        try lookup.resolveValue(
+                            host,
+                            port,
+                            self.auth_options.password.?,
+                            self.auth_options.lookup_fn,
+                        ),
+                        true,
                     );
 
-                    return error.AuthenicationFailed;
-                }
+                    cur_check_start_idx = bufs.processed.items.len;
 
-                auth_prompt_seen_count += 1;
+                    auth_prompt_seen_count = 0;
 
-                if (auth_prompt_seen_count > 3) {
-                    self.log.critical(
-                        "password prompt seen multiple times, assuming authentication failed",
-                        .{},
+                    continue;
+                },
+                .PassphrasePrompted => {
+                    if (self.auth_options.private_key_passphrase == null) {
+                        self.log.critical(
+                            "private key passphrase prompt seen but no passphrase set",
+                            .{},
+                        );
+
+                        return error.AuthenicationFailed;
+                    }
+
+                    auth_prompt_seen_count += 1;
+
+                    if (auth_prompt_seen_count > 3) {
+                        self.log.critical(
+                            "private key passphrase prompt seen multiple times, assuming authentication failed",
+                            .{},
+                        );
+
+                        return error.AuthenicationFailed;
+                    }
+
+                    try self.writeAndReturn(
+                        try lookup.resolveValue(
+                            host,
+                            port,
+                            self.auth_options.private_key_passphrase.?,
+                            self.auth_options.lookup_fn,
+                        ),
+                        true,
                     );
 
-                    return error.AuthenicationFailed;
-                }
+                    cur_check_start_idx = bufs.processed.items.len;
 
-                try self.writeAndReturn(
-                    try lookup.resolveValue(
-                        host,
-                        port,
-                        password.?,
-                        lookup_fn,
-                    ),
-                    true,
-                );
-
-                cur_check_start_idx = bufs.processed.items.len;
-
-                auth_prompt_seen_count = 0;
-
-                continue;
-            }
-
-            const username_match = try re.pcre2Find(
-                self.compiled_username_pattern.?,
-                searchable_buf,
-            );
-            if (username_match.len > 0) {
-                if (username == null) {
-                    self.log.critical(
-                        "username prompt seen but no username set",
-                        .{},
-                    );
-
-                    return error.AuthenicationFailed;
-                }
-
-                auth_prompt_seen_count += 1;
-
-                if (auth_prompt_seen_count > 3) {
-                    self.log.critical(
-                        "username prompt seen multiple times, assuming authentication failed",
-                        .{},
-                    );
-
-                    return error.AuthenicationFailed;
-                }
-
-                try self.writeAndReturn(username.?, true);
-
-                cur_check_start_idx = bufs.processed.items.len;
-
-                auth_prompt_seen_count = 0;
-
-                continue;
-            }
-
-            const passphrase_match = try re.pcre2Find(
-                self.compiled_passphrase_pattern.?,
-                searchable_buf,
-            );
-            if (passphrase_match.len > 0) {
-                if (passphrase == null) {
-                    self.log.critical(
-                        "private key passphrase prompt seen but no passphrase set",
-                        .{},
-                    );
-
-                    return error.AuthenicationFailed;
-                }
-
-                auth_prompt_seen_count += 1;
-
-                if (auth_prompt_seen_count > 3) {
-                    self.log.critical(
-                        "private key passphrase prompt seen multiple times, assuming authentication failed",
-                        .{},
-                    );
-
-                    return error.AuthenicationFailed;
-                }
-
-                try self.writeAndReturn(
-                    try lookup.resolveValue(
-                        host,
-                        port,
-                        passphrase.?,
-                        lookup_fn,
-                    ),
-                    true,
-                );
-
-                cur_check_start_idx = bufs.processed.items.len;
-
-                auth_prompt_seen_count = 0;
+                    auth_prompt_seen_count = 0;
+                },
+                .Continue => {},
             }
         }
     }
@@ -644,7 +623,11 @@ pub const Session = struct {
             const n = self.read(buf);
 
             if (n == 0) {
-                cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
+                cur_read_delay_ns = time.getBackoffValue(
+                    cur_read_delay_ns,
+                    self.options.read_delay_max_ns,
+                    self.options.read_delay_backoff_factor,
+                );
 
                 continue;
             } else {
@@ -1203,7 +1186,10 @@ fn readUntilExactCheckDone(buf: []const u8, args: ReadArgs) !MatchPositions {
 
     const match_start_index = std.mem.indexOf(u8, buf, args.actual.?);
     if (match_start_index != null) {
-        return MatchPositions{ .start = match_start_index.?, .end = match_start_index.? + args.actual.?.len - 1 };
+        return MatchPositions{
+            .start = match_start_index.?,
+            .end = match_start_index.? + args.actual.?.len - 1,
+        };
     }
 
     return MatchPositions{ .start = 0, .end = 0 };

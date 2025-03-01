@@ -82,7 +82,7 @@ fn GetDriver(
 
     if (key != null) {
         opts.auth.private_key_path = key;
-        opts.auth.passphrase = passphrase;
+        opts.auth.private_key_passphrase = passphrase;
     } else {
         opts.auth.password = "__lookup::login";
     }

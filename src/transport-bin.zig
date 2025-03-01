@@ -1,4 +1,5 @@
 const std = @import("std");
+const auth = @import("auth.zig");
 const transport = @import("transport.zig");
 const file = @import("file.zig");
 const logger = @import("logger.zig");
@@ -102,8 +103,7 @@ pub const Transport = struct {
         self: *Transport,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        private_key_path: ?[]const u8,
+        auth_options: auth.Options,
         operation_timeout_ns: u64,
     ) !void {
         if (self.options.override_open_args != null) {
@@ -187,7 +187,7 @@ pub const Transport = struct {
             },
         );
 
-        if (username != null) {
+        if (auth_options.username != null) {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -198,12 +198,12 @@ pub const Transport = struct {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
-                    .string = username.?,
+                    .string = auth_options.username.?,
                 },
             );
         }
 
-        if (private_key_path != null) {
+        if (auth_options.private_key_path != null) {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -214,7 +214,7 @@ pub const Transport = struct {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
-                    .string = private_key_path.?,
+                    .string = auth_options.private_key_path.?,
                 },
             );
         }
@@ -304,10 +304,9 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        private_key_path: ?[]const u8,
+        auth_options: auth.Options,
     ) !void {
-        self.buildArgs(host, port, username, private_key_path, operation_timeout_ns) catch |err| {
+        self.buildArgs(host, port, auth_options, operation_timeout_ns) catch |err| {
             self.log.critical("failed generating open command, err: {}", .{err});
 
             return error.OpenFailed;

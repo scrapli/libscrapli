@@ -1,4 +1,5 @@
 const std = @import("std");
+const auth = @import("auth.zig");
 const transport_bin = @import("transport-bin.zig");
 const transport_telnet = @import("transport-telnet.zig");
 const transport_ssh2 = @import("transport-ssh2.zig");
@@ -164,11 +165,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        password: ?[]const u8,
-        private_key_path: ?[]const u8,
-        passphrase: ?[]const u8,
-        lookup_fn: lookup.LookupFn,
+        auth_options: auth.Options,
     ) !void {
         self.log.debug("transport open start...", .{});
 
@@ -177,7 +174,7 @@ pub const Transport = struct {
                 // bin transport doesnt need the timer, since we just pass the timeout value to
                 // to the cli args and let openssh do it, then the rest of the timing out bits
                 // happen in in session auth
-                try t.open(operation_timeout_ns, host, port, username, private_key_path);
+                try t.open(operation_timeout_ns, host, port, auth_options);
             },
             Kind.Telnet => |t| {
                 try t.open(timer, cancel, operation_timeout_ns, host, port);
@@ -189,11 +186,7 @@ pub const Transport = struct {
                     operation_timeout_ns,
                     host,
                     port,
-                    username,
-                    password,
-                    private_key_path,
-                    passphrase,
-                    lookup_fn,
+                    auth_options,
                 );
             },
             Kind.Test => |t| {

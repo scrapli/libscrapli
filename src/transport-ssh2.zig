@@ -1,4 +1,5 @@
 const std = @import("std");
+const auth = @import("auth.zig");
 const transport = @import("transport.zig");
 const logger = @import("logger.zig");
 const lookup = @import("lookup.zig");
@@ -201,11 +202,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        password: ?[]const u8,
-        private_key_path: ?[]const u8,
-        passphrase: ?[]const u8,
-        lookup_fn: lookup.LookupFn,
+        auth_options: auth.Options,
     ) !void {
         try self.initSocket(host, port);
         try self.initSession(timer, cancel, operation_timeout_ns);
@@ -219,11 +216,7 @@ pub const Transport = struct {
             operation_timeout_ns,
             host,
             port,
-            username,
-            password,
-            private_key_path,
-            passphrase,
-            lookup_fn,
+            auth_options,
         );
         self.log.info("authentication complete", .{});
 
@@ -354,27 +347,23 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        password: ?[]const u8,
-        private_key_path: ?[]const u8,
-        passphrase: ?[]const u8,
-        lookup_fn: lookup.LookupFn,
+        auth_options: auth.Options,
     ) !void {
-        const _username = self.allocator.dupeZ(u8, username.?) catch |err| {
+        const _username = self.allocator.dupeZ(u8, auth_options.username.?) catch |err| {
             self.log.critical("failed casting username to c string, err: {}", .{err});
 
             return error.OpenFailed;
         };
         defer self.allocator.free(_username);
 
-        if (private_key_path != null) {
+        if (auth_options.private_key_path != null) {
             self.handlePrivateKeyAuth(
                 timer,
                 cancel,
                 operation_timeout_ns,
                 _username,
-                private_key_path,
-                passphrase,
+                auth_options.private_key_path,
+                auth_options.private_key_passphrase,
             ) catch blk: {
                 // we can still try to auth with a password if the user provided it, so we continue
                 break :blk;
@@ -389,14 +378,14 @@ pub const Transport = struct {
             }
         }
 
-        if (username != null and password != null) {
+        if (auth_options.username != null and auth_options.password != null) {
             const _password = self.allocator.dupeZ(
                 u8,
                 try lookup.resolveValue(
                     host,
                     port,
-                    password.?,
-                    lookup_fn,
+                    auth_options.password.?,
+                    auth_options.lookup_fn,
                 ),
             ) catch |err| {
                 self.log.critical("failed casting password to c string, err: {}", .{err});

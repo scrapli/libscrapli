@@ -1,5 +1,5 @@
 const std = @import("std");
-const driver = @import("driver.zig");
+const auth = @import("auth.zig");
 const logger = @import("logger.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
@@ -74,7 +74,7 @@ pub fn NewOptions() Options {
     var opts = Options{
         .logger = null,
         .port = null,
-        .auth = driver.NewAuthOptions(),
+        .auth = auth.NewOptions(),
         .session = session.NewOptions(),
         .transport = transport_bin.NewOptions(),
         .error_tag = default_rpc_error_tag,
@@ -90,7 +90,7 @@ pub fn NewOptions() Options {
 pub const Options = struct {
     logger: ?logger.Logger,
     port: ?u16,
-    auth: driver.AuthOptions,
+    auth: auth.Options,
     session: session.Options,
     transport: transport.Options,
     error_tag: []const u8,
@@ -127,6 +127,7 @@ pub fn NewDriver(
         log,
         delimiter_Version_1_0,
         mut_options.session,
+        mut_options.auth,
         mut_options.transport,
     );
 
@@ -270,11 +271,6 @@ pub const Driver = struct {
             allocator,
             self.host,
             self.port,
-            self.options.auth.username,
-            self.options.auth.password,
-            self.options.auth.private_key_path,
-            self.options.auth.passphrase,
-            self.options.auth.lookup_fn,
             options,
         );
         allocator.free(rets[0]);
@@ -2407,13 +2403,15 @@ pub const Driver = struct {
             try self.processCancelAndTimeout(timer, cancel);
 
             self.messages_lock.lock();
-            defer self.messages_lock.unlock();
 
             if (!self.messages.contains(message_id)) {
+                self.messages_lock.unlock();
                 std.time.sleep(self.options.message_poll_interval_ns);
 
                 continue;
             }
+
+            self.messages_lock.unlock();
 
             return self.messages.get(message_id).?;
         }

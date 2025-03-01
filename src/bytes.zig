@@ -235,3 +235,15 @@ test "trimWhitespace" {
         try std.testing.expectEqualStrings(case.expected, actual);
     }
 }
+
+pub fn getBufSearchView(
+    buf: []u8,
+    depth: u64,
+) []u8 {
+    // TODO use this in the readTimeout func!
+    if (buf.len < depth) {
+        return buf[0..];
+    }
+
+    return buf[buf.len - depth ..];
+}
