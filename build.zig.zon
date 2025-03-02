@@ -10,15 +10,13 @@
         .libssh2 = .{
             .path = "lib/libssh2",
         },
-        .xml = .{
-            // TODO -- repinning to my fork after build.zig.zon requiring fingerprint
-            .url = "https://github.com/carlmontanari/zig-xml/archive/f61c7ae.tar.gz",
-            .hash = "xml-0.1.0-ZTbP32Q5AgD9-yKMQZUOryg_2LVhhK_BM9_t067BW443",
-        },
         .yaml = .{
-            // TODO -- repinning to my fork after build.zig.zon requiring fingerprint
-            .url = "https://github.com/carlmontanari/zig-yaml/archive/8087b35.tar.gz",
-            .hash = "zig_yaml-0.1.0-C1161jJsAgCrIpfIUZTsq8ski-y_EA_ehEyBw6M4_45F",
+            .url = "https://github.com/kubkon/zig-yaml/archive/27f63d3.tar.gz",
+            .hash = "zig_yaml-0.1.0-C1161hVrAgDsyB2EZnq-Vp-QuZ9xJm2y0dECRXGG3UaP",
+        },
+        .xml = .{
+            .url = "https://github.com/ianprime0509/zig-xml/archive/16c68c4.tar.gz",
+            .hash = "xml-0.1.0-ZTbP32Q5AgD9-yKMQZUOryg_2LVhhK_BM9_t067BW443",
         },
     },
     .paths = .{
