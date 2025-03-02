@@ -18,7 +18,7 @@ pub const Definition = struct {
     prompt_pattern: []const u8,
     default_mode: []const u8,
     modes: std.StringHashMap(mode.Mode),
-    input_failed_when_contains: std.ArrayList([]const u8),
+    failure_indicators: std.ArrayList([]const u8),
     on_open_callback: ?*const fn (
         d: *driver.Driver,
         allocator: std.mem.Allocator,
@@ -31,6 +31,8 @@ pub const Definition = struct {
         cancel: ?*bool,
     ) anyerror!*result.Result,
     bound_on_close_callback: ?BoundOnXCallback,
+    ntc_templates_platform: ?[]const u8,
+    genie_platform: ?[]const u8,
 
     pub fn deinit(self: *Definition) void {
         var mode_iter = self.modes.iterator();
@@ -40,6 +42,6 @@ pub const Definition = struct {
         }
 
         self.modes.deinit();
-        self.input_failed_when_contains.deinit();
+        self.failure_indicators.deinit();
     }
 };

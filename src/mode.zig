@@ -28,6 +28,7 @@ pub const SendInput = struct {
 pub const SendPromptedInput = struct {
     input: []const u8,
     prompt: []const u8,
+    // TODO need to support prompt pattern here, and then expose that in yaml definition too
     response: []const u8,
 };
 

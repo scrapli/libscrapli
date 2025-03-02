@@ -27,7 +27,7 @@ default:
         - name: 'privileged_exec'
           send_input:
             input: 'end'
-  input_failed_when_contains:
+  failure_indicators:
     - "% Ambiguous command"
     - "% Error"
     - "% Incomplete command"

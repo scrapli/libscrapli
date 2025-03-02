@@ -158,9 +158,11 @@ const Definition = struct {
             },
         },
     },
-    input_failed_when_contains: ?[][]const u8,
+    failure_indicators: ?[][]const u8,
     on_open_instructions: []OperationInstruction,
     on_close_instructions: []OperationInstruction,
+    ntc_templates_platofrm: ?[]const u8,
+    genie_platform: ?[]const u8,
 
     fn ToDefinition(
         self: *Definition,
@@ -215,10 +217,12 @@ const Definition = struct {
             );
         }
 
-        var failed_when_contains = std.ArrayList([]const u8).init(allocator);
+        var failure_indicators = std.ArrayList([]const u8).init(allocator);
 
-        for (self.input_failed_when_contains.?) |f| {
-            try failed_when_contains.append(f);
+        if (self.failure_indicators != null) {
+            for (self.failure_indicators.?) |f| {
+                try failure_indicators.append(f);
+            }
         }
 
         var def = platform.Definition{
@@ -226,11 +230,13 @@ const Definition = struct {
             .prompt_pattern = self.prompt_pattern,
             .default_mode = self.default_mode,
             .modes = modes,
-            .input_failed_when_contains = failed_when_contains,
+            .failure_indicators = failure_indicators,
             .on_open_callback = null,
             .bound_on_open_callback = null,
             .on_close_callback = null,
             .bound_on_close_callback = null,
+            .ntc_templates_platform = null,
+            .genie_platform = null,
         };
 
         if (self.on_open_instructions.len > 0) {

@@ -217,7 +217,7 @@ pub const Driver = struct {
             self.host,
             self.port,
             operation_kind,
-            self.definition.input_failed_when_contains,
+            self.definition.failure_indicators,
         );
     }
 

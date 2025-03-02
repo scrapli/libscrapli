@@ -19,7 +19,7 @@ default:
         - name: 'exec'
           send_input:
             input: 'discard now'
-  input_failed_when_contains:
+  failure_indicators:
     - "Error:"
     - "error:" # wildcard catch for errors like `Validation error:`, `Parsing error:`
   on_open_instructions: []

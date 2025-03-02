@@ -12,14 +12,14 @@ pub const OperationKind = enum {
     SendPromptedInput,
 };
 
-/// Returns a new Result object, this object *does not own* the input_failed_when_contains arraylist
+/// Returns a new Result object, this object *does not own* the failed_indicators arraylist
 /// and will *not* free any of that memory!
 pub fn NewResult(
     allocator: std.mem.Allocator,
     host: []const u8,
     port: u16,
     operation_kind: OperationKind,
-    input_failed_when_contains: ?std.ArrayList([]const u8),
+    failed_indicators: ?std.ArrayList([]const u8),
 ) !*Result {
     const res = try allocator.create(Result);
 
@@ -28,7 +28,7 @@ pub fn NewResult(
         .host = host,
         .port = port,
         .operation_kind = operation_kind,
-        .input_failed_when_contains = input_failed_when_contains,
+        .failed_indicators = failed_indicators,
         .inputs = std.ArrayList([]const u8).init(allocator),
         .results_raw = std.ArrayList([]const u8).init(allocator),
         .results = std.ArrayList([]const u8).init(allocator),
@@ -49,7 +49,7 @@ pub const Result = struct {
 
     operation_kind: OperationKind,
 
-    input_failed_when_contains: ?std.ArrayList([]const u8),
+    failed_indicators: ?std.ArrayList([]const u8),
 
     inputs: std.ArrayList([]const u8),
 
@@ -94,11 +94,11 @@ pub const Result = struct {
         try self.results_raw.append(rets[0]);
         try self.results.append(rets[1]);
 
-        if (self.input_failed_when_contains == null) {
+        if (self.failed_indicators == null) {
             return;
         }
 
-        for (0.., self.input_failed_when_contains.?.items) |idx, failed_when| {
+        for (0.., self.failed_indicators.?.items) |idx, failed_when| {
             if (std.mem.indexOf(u8, rets[1], failed_when) != null) {
                 self.result_failure_indicated = true;
                 self.result_failure_indicator = @intCast(idx);

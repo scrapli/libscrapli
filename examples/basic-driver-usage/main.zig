@@ -31,7 +31,7 @@ const definition =
     \\        - name: 'exec'
     \\          send_input:
     \\            input: 'discard now'
-    \\  input_failed_when_contains:
+    \\  failed_indicators:
     \\    - "Error:"
     \\    - "error:" # wildcard catch for errors like `Validation error:`, `Parsing error:`
     \\  on_open_instructions:
