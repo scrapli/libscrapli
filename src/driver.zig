@@ -1,6 +1,7 @@
 const std = @import("std");
 const logger = @import("logger.zig");
 const session = @import("session.zig");
+const auth = @import("auth.zig");
 const transport = @import("transport.zig");
 const transport_bin = @import("transport-bin.zig");
 const platform = @import("platform.zig");
@@ -23,7 +24,7 @@ pub fn NewOptions() Options {
         .variant_name = null,
         .logger = null,
         .port = null,
-        .auth = NewAuthOptions(),
+        .auth = auth.NewOptions(),
         .session = session.NewOptions(),
         .transport = transport_bin.NewOptions(),
     };
@@ -33,25 +34,9 @@ pub const Options = struct {
     variant_name: ?[]const u8,
     logger: ?logger.Logger,
     port: ?u16,
-    auth: AuthOptions,
+    auth: auth.Options,
     session: session.Options,
     transport: transport.Options,
-};
-
-pub fn NewAuthOptions() AuthOptions {
-    return AuthOptions{
-        .username = null,
-        .password = null,
-        .passphrase = null,
-        .lookup_fn = null,
-    };
-}
-
-pub const AuthOptions = struct {
-    username: ?[]const u8,
-    password: ?[]const u8,
-    passphrase: ?[]const u8,
-    lookup_fn: lookup.LookupFn,
 };
 
 pub fn NewDriverFromYaml(
@@ -117,6 +102,7 @@ pub fn NewDriver(
         log,
         definition.prompt_pattern,
         options.session,
+        options.auth,
         options.transport,
     );
 
@@ -249,10 +235,6 @@ pub const Driver = struct {
                 allocator,
                 self.host,
                 self.port,
-                self.options.auth.username,
-                self.options.auth.password,
-                self.options.auth.passphrase,
-                self.options.auth.lookup_fn,
                 options,
             ),
         );

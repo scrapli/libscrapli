@@ -80,7 +80,7 @@ fn getZigYamlDep(
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Dependency {
     return b.dependency(
-        "zig-yaml",
+        "yaml",
         .{
             .target = b.resolveTargetQuery(target),
             .optimize = optimize,
@@ -94,7 +94,7 @@ fn getZigXmlDep(
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Dependency {
     return b.dependency(
-        "zig-xml",
+        "xml",
         .{
             .target = b.resolveTargetQuery(target),
             .optimize = optimize,
@@ -124,8 +124,8 @@ fn buildFfiLib(
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
-    lib.root_module.addImport("zig-yaml", yaml.module("yaml"));
-    lib.root_module.addImport("zig-xml", xml.module("xml"));
+    lib.root_module.addImport("yaml", yaml.module("yaml"));
+    lib.root_module.addImport("xml", xml.module("xml"));
 
     const lib_target_output = b.addInstallArtifact(
         lib,
@@ -161,8 +161,8 @@ fn buildExamples(
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
-    lib.root_module.addImport("zig-yaml", yaml.module("yaml"));
-    lib.root_module.addImport("zig-xml", xml.module("xml"));
+    lib.root_module.addImport("yaml", yaml.module("yaml"));
+    lib.root_module.addImport("xml", xml.module("xml"));
 
     for (all_examples) |example| {
         const exe = b.addExecutable(.{
@@ -217,8 +217,8 @@ fn buildTests(
 
     tests.linkLibrary(pcre2.artifact("pcre2-8"));
     tests.linkLibrary(libssh2.artifact("ssh2"));
-    tests.root_module.addImport("zig-yaml", yaml.module("yaml"));
-    tests.root_module.addImport("zig-xml", xml.module("xml"));
+    tests.root_module.addImport("yaml", yaml.module("yaml"));
+    tests.root_module.addImport("xml", xml.module("xml"));
 
     const run_tests = b.addRunArtifact(tests);
 

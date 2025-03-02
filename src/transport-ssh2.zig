@@ -1,4 +1,5 @@
 const std = @import("std");
+const auth = @import("auth.zig");
 const transport = @import("transport.zig");
 const logger = @import("logger.zig");
 const lookup = @import("lookup.zig");
@@ -104,8 +105,6 @@ const AuthCallbackData = struct {
 pub fn NewOptions() transport.Options {
     return transport.Options{
         .SSH2 = Options{
-            .private_key_path = null,
-            .private_key_passphrase = null,
             .libssh2_trace = false,
             .netconf = false,
         },
@@ -113,8 +112,6 @@ pub fn NewOptions() transport.Options {
 }
 
 pub const Options = struct {
-    private_key_path: ?[]const u8,
-    private_key_passphrase: ?[]const u8,
     libssh2_trace: bool,
     netconf: bool,
 };
@@ -205,9 +202,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        password: ?[]const u8,
-        lookup_fn: lookup.LookupFn,
+        auth_options: auth.Options,
     ) !void {
         try self.initSocket(host, port);
         try self.initSession(timer, cancel, operation_timeout_ns);
@@ -221,9 +216,7 @@ pub const Transport = struct {
             operation_timeout_ns,
             host,
             port,
-            username,
-            password,
-            lookup_fn,
+            auth_options,
         );
         self.log.info("authentication complete", .{});
 
@@ -325,7 +318,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -354,23 +347,23 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
-        password: ?[]const u8,
-        lookup_fn: lookup.LookupFn,
+        auth_options: auth.Options,
     ) !void {
-        const _username = self.allocator.dupeZ(u8, username.?) catch |err| {
+        const _username = self.allocator.dupeZ(u8, auth_options.username.?) catch |err| {
             self.log.critical("failed casting username to c string, err: {}", .{err});
 
             return error.OpenFailed;
         };
         defer self.allocator.free(_username);
 
-        if (self.options.private_key_path != null) {
+        if (auth_options.private_key_path != null) {
             self.handlePrivateKeyAuth(
                 timer,
                 cancel,
                 operation_timeout_ns,
                 _username,
+                auth_options.private_key_path,
+                auth_options.private_key_passphrase,
             ) catch blk: {
                 // we can still try to auth with a password if the user provided it, so we continue
                 break :blk;
@@ -385,14 +378,14 @@ pub const Transport = struct {
             }
         }
 
-        if (username != null and password != null) {
+        if (auth_options.username != null and auth_options.password != null) {
             const _password = self.allocator.dupeZ(
                 u8,
                 try lookup.resolveValue(
                     host,
                     port,
-                    password.?,
-                    lookup_fn,
+                    auth_options.password.?,
+                    auth_options.lookup_fn,
                 ),
             ) catch |err| {
                 self.log.critical("failed casting password to c string, err: {}", .{err});
@@ -442,7 +435,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -469,10 +462,12 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         username: [:0]u8,
+        private_key_path: ?[]const u8,
+        passphrase: ?[]const u8,
     ) !void {
         const _private_key_path = self.allocator.dupeZ(
             u8,
-            self.options.private_key_path.?,
+            private_key_path.?,
         ) catch |err| {
             self.log.critical("failed casting private key path to c string, err: {}", .{err});
 
@@ -483,10 +478,10 @@ pub const Transport = struct {
         // SAFETY: will be set always, but this possibly saves us an allocation
         var _passphrase: [:0]u8 = undefined;
 
-        if (self.options.private_key_passphrase != null) {
+        if (passphrase != null) {
             _passphrase = try self.allocator.dupeZ(
                 u8,
-                self.options.private_key_passphrase.?,
+                passphrase.?,
             );
         } else {
             _passphrase = try std.fmt.allocPrintZ(
@@ -507,7 +502,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -554,7 +549,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -600,7 +595,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -644,7 +639,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -687,7 +682,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -724,7 +719,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;

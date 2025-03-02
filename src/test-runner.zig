@@ -22,7 +22,7 @@ pub const std_options = std.Options{
             .level = .err,
         },
         .{
-            .scope = .parse,
+            .scope = .parser,
             .level = .err,
         },
     },

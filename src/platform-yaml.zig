@@ -4,7 +4,7 @@ const platform = @import("platform.zig");
 const mode = @import("mode.zig");
 const operation = @import("operation.zig");
 const file = @import("file.zig");
-const yaml = @import("zig-yaml");
+const yaml = @import("yaml");
 const result = @import("result.zig");
 
 pub const default_variant = "default";

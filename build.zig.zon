@@ -1,7 +1,8 @@
 .{
-    .name = "zigtmp",
+    .name = .libscrapli,
     .version = "0.0.1",
-    .minimum_zig_version = "0.14.0-dev.3296+a7467b9bb",
+    .fingerprint = 0xb0e01d3de97bbf58,
+    .minimum_zig_version = "0.14.0-dev.3445+6c3cbb0c8",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",
@@ -9,13 +10,13 @@
         .libssh2 = .{
             .path = "lib/libssh2",
         },
-        .@"zig-yaml" = .{
-            .url = "https://github.com/kubkon/zig-yaml/archive/73f9cb9.tar.gz",
-            .hash = "12207e7220d406a57e79a473312d4fb94b115084b0f6830ff13a12814f4b1b3a69b7",
+        .yaml = .{
+            .url = "https://github.com/kubkon/zig-yaml/archive/27f63d3.tar.gz",
+            .hash = "zig_yaml-0.1.0-C1161hVrAgDsyB2EZnq-Vp-QuZ9xJm2y0dECRXGG3UaP",
         },
-        .@"zig-xml" = .{
-            .url = "https://github.com/ianprime0509/zig-xml/archive/9781f4f.tar.gz",
-            .hash = "122060eb493b54cf33adf9496673a1e5b436043bf825bf6e5ef5765ac89722f6511f",
+        .xml = .{
+            .url = "https://github.com/ianprime0509/zig-xml/archive/16c68c4.tar.gz",
+            .hash = "xml-0.1.0-ZTbP32Q5AgD9-yKMQZUOryg_2LVhhK_BM9_t067BW443",
         },
     },
     .paths = .{

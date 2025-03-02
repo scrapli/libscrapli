@@ -80,24 +80,18 @@ fn GetDriver(
     opts.auth.lookup_fn = lookup_fn;
     opts.auth.username = username;
 
-    if (key == null) {
+    if (key != null) {
+        opts.auth.private_key_path = key;
+        opts.auth.private_key_passphrase = passphrase;
+    } else {
         opts.auth.password = "__lookup::login";
     }
 
     switch (transportKind) {
-        .Bin => {
-            if (key != null) {
-                opts.transport.Bin.private_key_path = key;
-                opts.transport.Bin.private_key_passphrase = passphrase;
-            }
-        },
+        .Bin,
+        => {},
         .SSH2 => {
             opts.transport = ssh2_transport.NewOptions();
-
-            if (key != null) {
-                opts.transport.SSH2.private_key_path = key;
-                opts.transport.SSH2.private_key_passphrase = passphrase;
-            }
         },
         .Telnet => {
             opts.transport = telnet_transport.NewOptions();

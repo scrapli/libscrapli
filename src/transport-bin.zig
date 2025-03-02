@@ -1,4 +1,5 @@
 const std = @import("std");
+const auth = @import("auth.zig");
 const transport = @import("transport.zig");
 const file = @import("file.zig");
 const logger = @import("logger.zig");
@@ -24,11 +25,9 @@ pub fn NewOptions() transport.Options {
             .bin = default_ssh_bin,
             .extra_open_args = null,
             .override_open_args = null,
-            .ssh_config_file = null,
-            .known_hosts_file = null,
+            .ssh_config_path = null,
+            .known_hosts_path = null,
             .enable_strict_key = false,
-            .private_key_path = null,
-            .private_key_passphrase = null,
             .term_height = default_term_height,
             .term_width = default_term_width,
             .netconf = false,
@@ -40,17 +39,16 @@ pub const Options = struct {
     bin: []const u8,
 
     // extra means append to "standard" args, override overides everything except for the bin,
-    // if you want to override the bin you can do that, just set .bin field
-    extra_open_args: ?[]const []const u8,
-    override_open_args: ?[]const []const u8,
+    // if you want to override the bin you can do that, just set .bin field. both of these options
+    // should be space delimited values like you would pass on the cli -- i.e.
+    // "-o ProxyCommand='foo' -P 1234" etc.
+    extra_open_args: ?[]const u8,
+    override_open_args: ?[]const u8,
 
-    ssh_config_file: ?[]const u8,
-    known_hosts_file: ?[]const u8,
+    ssh_config_path: ?[]const u8,
+    known_hosts_path: ?[]const u8,
 
     enable_strict_key: bool,
-
-    private_key_path: ?[]const u8,
-    private_key_passphrase: ?[]const u8,
 
     term_height: u16,
     term_width: u16,
@@ -107,11 +105,17 @@ pub const Transport = struct {
         self: *Transport,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
+        auth_options: auth.Options,
         operation_timeout_ns: u64,
     ) !void {
         if (self.options.override_open_args != null) {
-            for (self.options.override_open_args.?) |arg| {
+            var override_args_iterator = std.mem.splitSequence(
+                u8,
+                self.options.override_open_args.?,
+                " ",
+            );
+
+            while (override_args_iterator.next()) |arg| {
                 try self.open_args.append(
                     strings.MaybeHeapString{
                         .allocator = null,
@@ -162,36 +166,38 @@ pub const Transport = struct {
             },
         );
 
-        try self.open_args.append(
-            strings.MaybeHeapString{
-                .allocator = self.allocator,
-                .string = try std.fmt.allocPrint(
-                    self.allocator,
-                    "ConnectTimeout={d}",
-                    .{operation_timeout_ns / std.time.ns_per_s},
-                ),
-            },
-        );
+        if (operation_timeout_ns != 0) {
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = self.allocator,
+                    .string = try std.fmt.allocPrint(
+                        self.allocator,
+                        "ConnectTimeout={d}",
+                        .{operation_timeout_ns / std.time.ns_per_s},
+                    ),
+                },
+            );
 
-        try self.open_args.append(
-            strings.MaybeHeapString{
-                .allocator = null,
-                .string = "-o",
-            },
-        );
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = null,
+                    .string = "-o",
+                },
+            );
 
-        try self.open_args.append(
-            strings.MaybeHeapString{
-                .allocator = self.allocator,
-                .string = try std.fmt.allocPrint(
-                    self.allocator,
-                    "ServerAliveInterval={d}",
-                    .{operation_timeout_ns / std.time.ns_per_s},
-                ),
-            },
-        );
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = self.allocator,
+                    .string = try std.fmt.allocPrint(
+                        self.allocator,
+                        "ServerAliveInterval={d}",
+                        .{operation_timeout_ns / std.time.ns_per_s},
+                    ),
+                },
+            );
+        }
 
-        if (username != null) {
+        if (auth_options.username != null) {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -202,12 +208,12 @@ pub const Transport = struct {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
-                    .string = username.?,
+                    .string = auth_options.username.?,
                 },
             );
         }
 
-        if (self.options.private_key_path != null) {
+        if (auth_options.private_key_path != null) {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -218,12 +224,12 @@ pub const Transport = struct {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
-                    .string = self.options.private_key_path.?,
+                    .string = auth_options.private_key_path.?,
                 },
             );
         }
 
-        if (self.options.ssh_config_file != null) {
+        if (self.options.ssh_config_path != null) {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -234,7 +240,7 @@ pub const Transport = struct {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
-                    .string = self.options.ssh_config_file.?,
+                    .string = self.options.ssh_config_path.?,
                 },
             );
         }
@@ -255,7 +261,7 @@ pub const Transport = struct {
             );
         }
 
-        if (self.options.known_hosts_file != null) {
+        if (self.options.known_hosts_path != null) {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -269,18 +275,24 @@ pub const Transport = struct {
                     .string = try std.fmt.allocPrint(
                         self.allocator,
                         "UserKnownHostsFile={s}",
-                        .{self.options.known_hosts_file.?},
+                        .{self.options.known_hosts_path.?},
                     ),
                 },
             );
         }
 
         if (self.options.extra_open_args != null and self.options.extra_open_args.?.len > 0) {
-            for (self.options.extra_open_args.?) |extra_arg| {
+            var extra_args_iterator = std.mem.splitSequence(
+                u8,
+                self.options.extra_open_args.?,
+                " ",
+            );
+
+            while (extra_args_iterator.next()) |arg| {
                 try self.open_args.append(
                     strings.MaybeHeapString{
                         .allocator = null,
-                        .string = extra_arg,
+                        .string = arg,
                     },
                 );
             }
@@ -308,9 +320,9 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        username: ?[]const u8,
+        auth_options: auth.Options,
     ) !void {
-        self.buildArgs(host, port, username, operation_timeout_ns) catch |err| {
+        self.buildArgs(host, port, auth_options, operation_timeout_ns) catch |err| {
             self.log.critical("failed generating open command, err: {}", .{err});
 
             return error.OpenFailed;
@@ -491,12 +503,18 @@ fn openPtyChild(
     }
 
     if (!netconf) {
-        var size = c.winsize{
-            .ws_row = term_height,
-            .ws_col = term_width,
-        };
-
-        const set_win_size_rc = ioctl(slave_fd.handle, c.TIOCSWINSZ, @intFromPtr(&size));
+        const set_win_size_rc = ioctl(
+            slave_fd.handle,
+            c.TIOCSWINSZ,
+            @intFromPtr(
+                &c.winsize{
+                    .ws_row = term_height,
+                    .ws_col = term_width,
+                    .ws_ypixel = 0,
+                    .ws_xpixel = 0,
+                },
+            ),
+        );
         if (set_win_size_rc != 0) {
             return error.PtyCreationFailedSetWinSize;
         }

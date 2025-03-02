@@ -18,7 +18,7 @@ pub fn NewDriverOptionsFromAlloc(
     var opts = driver.NewOptions();
 
     opts.logger = log;
-    opts.transport.port = port;
+    opts.port = port;
 
     // transport kind will always be passed by the higher level lang as a valid string matching
     // one of the transport kinds; but before comparison cast to zig style from c style to make
@@ -26,15 +26,15 @@ pub fn NewDriverOptionsFromAlloc(
     const _transport_kind = std.mem.span(transport_kind);
 
     if (std.mem.eql(u8, @tagName(transport.Kind.Bin), _transport_kind)) {
-        opts.transport_implementation = bin.NewOptions();
+        opts.transport = bin.NewOptions();
     } else if (std.mem.eql(u8, @tagName(transport.Kind.Telnet), _transport_kind)) {
-        opts.transport_implementation = telnet.NewOptions();
+        opts.transport = telnet.NewOptions();
     } else if (std.mem.eql(u8, @tagName(transport.Kind.SSH2), _transport_kind)) {
-        opts.transport_implementation = ssh2.NewOptions();
+        opts.transport = ssh2.NewOptions();
     }
 
-    opts.transport.username = std.mem.span(username);
-    opts.transport.password = std.mem.span(password);
+    opts.auth.username = std.mem.span(username);
+    opts.auth.password = std.mem.span(password);
 
     opts.session.operation_timeout_ns = session_timeout_ns;
 
