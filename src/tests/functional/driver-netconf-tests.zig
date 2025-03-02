@@ -1,8 +1,8 @@
 // zlint-disable suppressed-errors, no-undefined, unsafe-undefined, unused-decls
 const std = @import("std");
 
-const xml = @import("zig-xml");
-const yaml = @import("zig-yaml");
+const xml = @import("xml");
+const yaml = @import("yaml");
 
 const driver = @import("../../driver-netconf.zig");
 const transport = @import("../../transport.zig");

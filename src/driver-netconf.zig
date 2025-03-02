@@ -7,7 +7,7 @@ const transport_bin = @import("transport-bin.zig");
 const operation = @import("operation-netconf.zig");
 const result = @import("result-netconf.zig");
 const ascii = @import("ascii.zig");
-const xml = @import("zig-xml");
+const xml = @import("xml");
 const test_helper = @import("test-helper.zig");
 
 const ProcessThreadState = enum(u8) {
