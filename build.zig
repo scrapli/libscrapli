@@ -319,8 +319,8 @@ fn buildMainExe(
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
-    lib.root_module.addImport("zig-yaml", yaml.module("yaml"));
-    lib.root_module.addImport("zig-xml", xml.module("xml"));
+    lib.root_module.addImport("yaml", yaml.module("yaml"));
+    lib.root_module.addImport("xml", xml.module("xml"));
 
     const exe = b.addExecutable(.{
         .name = "scrapli",
