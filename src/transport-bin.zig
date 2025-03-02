@@ -159,14 +159,14 @@ pub const Transport = struct {
             },
         );
 
-        try self.open_args.append(
-            strings.MaybeHeapString{
-                .allocator = null,
-                .string = "-o",
-            },
-        );
-
         if (operation_timeout_ns != 0) {
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = null,
+                    .string = "-o",
+                },
+            );
+
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
