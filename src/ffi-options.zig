@@ -6,6 +6,7 @@ const bin = @import("transport-bin.zig");
 const telnet = @import("transport-telnet.zig");
 const ssh2 = @import("transport-ssh2.zig");
 const logger = @import("logger.zig");
+const strings = @import("strings.zig");
 
 pub fn NewDriverOptionsFromAlloc(
     definition_variant: [*c]const u8,
@@ -127,7 +128,11 @@ export fn setDriverOptionAuthUsername(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.session.auth_options.username = std.mem.span(value);
+    // TODO
+    d.real_driver.options.auth.username = d.real_driver.options.auth.allocator.?.dupe(u8, std.mem.span(value)) catch {
+        std.debug.print("BAD BINGO\n", .{});
+        return 1;
+    };
 
     return 0;
 }
@@ -138,7 +143,11 @@ export fn setDriverOptionAuthPassword(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.session.auth_options.password = std.mem.span(value);
+    // TODO
+    d.real_driver.options.auth.password = d.real_driver.options.auth.allocator.?.dupe(u8, std.mem.span(value)) catch {
+        std.debug.print("BAD BINGO\n", .{});
+        return 1;
+    };
 
     return 0;
 }

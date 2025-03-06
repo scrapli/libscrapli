@@ -25,11 +25,15 @@ const control_chars_actionable_do_dont = [2]u8{
 
 pub fn NewOptions() transport.Options {
     return transport.Options{
-        .Telnet = Options{},
+        .Telnet = Options{
+            .allocator = null,
+        },
     };
 }
 
-pub const Options = struct {};
+pub const Options = struct {
+    allocator: ?std.mem.Allocator,
+};
 
 pub fn NewTransport(
     allocator: std.mem.Allocator,

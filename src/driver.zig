@@ -21,6 +21,7 @@ pub const DeinitCallback = struct {
 
 pub fn NewOptions() Options {
     return Options{
+        .allocator = null,
         .variant_name = null,
         .logger = null,
         .port = null,
@@ -31,12 +32,104 @@ pub fn NewOptions() Options {
 }
 
 pub const Options = struct {
+    allocator: ?std.mem.Allocator,
     variant_name: ?[]const u8,
     logger: ?logger.Logger,
     port: ?u16,
     auth: auth.Options,
     session: session.Options,
     transport: transport.Options,
+
+    // unnecessary (but safe) to call unless created via the private ToHeapOptions method or
+    // manually created w/ an allocator and heap allocated fields.
+    pub fn deinit(self: *Options) void {
+        if (self.allocator == null) {
+            return;
+        }
+
+        self.allocator.?.destroy(self);
+    }
+
+    // TODO i think this is a decent pattern... basically if users create options on the stack they
+    //  can just ignore allocator and use the main constructor
+    //  then for the driver which needs things (at least non const literal things) to exist for the
+    //  lifetime of the driver, we can then call this method to get a copied heap allocated version
+    //  usiung the driver's allcoator -- this makes it so there is literally only *one* place that
+    //  a user needs to pass an allocator in for creation of stuff which is cool. it also solves the
+    //  problem of heap allocating shit for transport options -- we can just say opts.FOO and replace
+    //  the dfefault bin transport opts w/ whatever they want
+    // moreover this cna be private :)
+    fn ToHeapOptions(self: Options, allocator: std.mem.Allocator) !*Options {
+        const o = try allocator.create(Options);
+
+        const oa = try allocator.create(auth.Options);
+        const sa = try allocator.create(session.Options);
+        const ta = try allocator.create(transport.Options);
+
+        o.* = Options{
+            .allocator = allocator,
+            .variant_name = null,
+            .logger = null,
+            .port = null,
+            .auth = oa.*,
+            .session = sa.*,
+            .transport = ta.*,
+        };
+
+        if (self.variant_name != null) {}
+
+        if (self.logger != null) {
+            o.logger = self.logger;
+        }
+
+        if (self.port != null) {
+            if (self.port == default_telnet_port) {
+                o.port = default_telnet_port;
+            } else if (self.port == default_ssh_port) {
+                o.port = default_ssh_port;
+            } else {
+                // TODO dupe to heap
+                o.port = self.port;
+            }
+        }
+
+        oa.* = auth.NewOptions();
+        oa.allocator = allocator;
+
+        if (self.auth.username != null) {
+            // TODO dupe to heap
+            oa.username = self.auth.username;
+        }
+
+        if (self.auth.password != null) {
+            // TODO dupe to heap
+            oa.password = self.auth.password;
+        }
+
+        if (&self.auth.username_pattern[0] != &auth.default_username_pattern[0]) {
+            // the user's value is *not* the default, dupe and set
+        }
+
+        o.auth = oa.*;
+
+        sa.* = session.NewOptions();
+        sa.allocator = allocator;
+
+        o.session = sa.*;
+
+        switch (self.transport) {
+            .Bin => {
+                var _to = transport_bin.NewOptions();
+                _to.Bin.allocator = allocator;
+                o.transport = _to;
+            },
+            .Telnet => {},
+            .SSH2 => {},
+            .Test => {},
+        }
+
+        return o;
+    }
 };
 
 pub fn NewDriverFromYaml(
@@ -95,15 +188,19 @@ pub fn NewDriver(
     definition: platform.Definition,
     options: Options,
 ) !*Driver {
-    const log = options.logger orelse logger.Logger{ .allocator = allocator, .f = logger.noopLogf };
+    // TODO the idea is to create a dupe of the *stack allocated options* we got where we dupe any
+    //   non default fields to persist them as long as our driver exists
+    const _options = try options.ToHeapOptions(allocator);
+
+    const log = _options.logger orelse logger.Logger{ .allocator = allocator, .f = logger.noopLogf };
 
     const sess = try session.NewSession(
         allocator,
         log,
         definition.prompt_pattern,
-        options.session,
-        options.auth,
-        options.transport,
+        &_options.session,
+        &_options.auth,
+        &_options.transport,
     );
 
     const d = try allocator.create(Driver);
@@ -120,15 +217,15 @@ pub fn NewDriver(
         .host = host,
         .port = 0,
 
-        .options = options,
+        .options = _options,
 
         .session = sess,
 
         .current_mode = mode.unknown_mode,
     };
 
-    if (options.port == null) {
-        switch (options.transport) {
+    if (_options.port == null) {
+        switch (_options.transport) {
             transport.Kind.Bin, transport.Kind.SSH2, transport.Kind.Test => {
                 d.port = default_ssh_port;
             },
@@ -155,7 +252,7 @@ pub const Driver = struct {
     host: []const u8,
     port: u16,
 
-    options: Options,
+    options: *Options,
 
     session: *session.Session,
 
@@ -203,6 +300,8 @@ pub const Driver = struct {
         if (self.definition_source != null) {
             self.definition_source.?.deinit();
         }
+
+        self.options.deinit();
 
         self.allocator.destroy(self);
     }

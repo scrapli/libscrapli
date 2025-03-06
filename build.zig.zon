@@ -2,7 +2,7 @@
     .name = .libscrapli,
     .version = "0.0.1",
     .fingerprint = 0xb0e01d3de97bbf58,
-    .minimum_zig_version = "0.14.0-dev.3445+6c3cbb0c8",
+    .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",

@@ -56,12 +56,13 @@ pub const Options = union(Kind) {
 pub fn Factory(
     allocator: std.mem.Allocator,
     log: logger.Logger,
-    options: Options,
+    options: *Options,
 ) !*Transport {
     const t = try allocator.create(Transport);
 
-    switch (options) {
+    switch (options.*) {
         .Bin => {
+            std.debug.print("BIN \n", .{});
             t.* = Transport{
                 .allocator = allocator,
                 .log = log,
@@ -75,6 +76,7 @@ pub fn Factory(
             };
         },
         .Telnet => {
+            std.debug.print("TELNET \n", .{});
             t.* = Transport{
                 .allocator = allocator,
                 .log = log,
@@ -88,6 +90,7 @@ pub fn Factory(
             };
         },
         .SSH2 => {
+            std.debug.print("SSH2 \n", .{});
             t.* = Transport{
                 .allocator = allocator,
                 .log = log,
@@ -165,7 +168,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
     ) !void {
         self.log.debug("transport open start...", .{});
 

@@ -71,7 +71,8 @@ const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 
 pub fn NewOptions() Options {
-    var opts = Options{
+    var o = Options{
+        .allocator = null,
         .logger = null,
         .port = null,
         .auth = auth.NewOptions(),
@@ -82,12 +83,13 @@ pub fn NewOptions() Options {
         .message_poll_interval_ns = default_message_poll_interval_ns,
     };
 
-    opts.session.operation_max_search_depth = default_initial_operation_max_search_depth;
+    o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
 
-    return opts;
+    return o;
 }
 
 pub const Options = struct {
+    allocator: ?std.mem.Allocator,
     logger: ?logger.Logger,
     port: ?u16,
     auth: auth.Options,
@@ -96,23 +98,53 @@ pub const Options = struct {
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
+
+    // unnecessary to call unless created via the private ToHeapOptions method or manually
+    // created w/ an allocator and heap allocated fields.
+    pub fn deinit(self: *Options) void {
+        if (self.allocator == null) {
+            return;
+        }
+
+        self.allocator.?.destroy(self);
+    }
+
+    fn ToHeapOptions(self: Options, allocator: std.mem.Allocator) !*Options {
+        const o = try allocator.create(Options);
+
+        o.* = Options{
+            .allocator = allocator,
+            .logger = self.logger,
+            .port = self.port,
+            .auth = self.auth,
+            .session = self.session,
+            .transport = self.transport,
+            .error_tag = self.error_tag,
+            .preferred_version = self.preferred_version,
+            .message_poll_interval_ns = self.message_poll_interval_ns,
+        };
+
+        return o;
+    }
 };
 
+/// Creates a new netconf Driver -- Driver owns and will deinit the provided options on
+/// Driver.deinit().
 pub fn NewDriver(
     allocator: std.mem.Allocator,
     host: []const u8,
     options: Options,
 ) !*Driver {
-    const log = options.logger orelse logger.Logger{ .allocator = allocator, .f = logger.noopLogf };
+    const _options = try options.ToHeapOptions(allocator);
 
-    var mut_options = options;
+    const log = options.logger orelse logger.Logger{ .allocator = allocator, .f = logger.noopLogf };
 
     switch (options.transport) {
         .Bin => {
-            mut_options.transport.Bin.netconf = true;
+            _options.transport.Bin.netconf = true;
         },
         .SSH2 => {
-            mut_options.transport.SSH2.netconf = true;
+            _options.transport.SSH2.netconf = true;
         },
         .Test => {
             // nothing to do for test transport, but its "allowed" so dont return an error
@@ -126,9 +158,9 @@ pub fn NewDriver(
         allocator,
         log,
         delimiter_Version_1_0,
-        mut_options.session,
-        mut_options.auth,
-        mut_options.transport,
+        &_options.session,
+        &_options.auth,
+        &_options.transport,
     );
 
     const d = try allocator.create(Driver);
@@ -140,7 +172,7 @@ pub fn NewDriver(
         .host = host,
         .port = 0,
 
-        .options = options,
+        .options = _options,
 
         .session = sess,
 
@@ -192,7 +224,7 @@ pub const Driver = struct {
     host: []const u8,
     port: u16,
 
-    options: Options,
+    options: *Options,
 
     session: *session.Session,
 
@@ -238,6 +270,8 @@ pub const Driver = struct {
 
         self.messages.deinit();
         self.subscriptions.deinit();
+
+        self.options.deinit();
 
         self.allocator.destroy(self);
     }

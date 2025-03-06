@@ -33,7 +33,8 @@ pub const std_options = std.Options{
 
 // gpa for testing allocs
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa_allocator.allocator();
+// TODO temp pub
+pub const allocator = gpa_allocator.allocator();
 
 export fn assertNoLeaks() bool {
     switch (gpa_allocator.deinit()) {
@@ -495,7 +496,6 @@ export fn netconfAllocDriver(
     username: [*c]const u8,
     password: [*c]const u8,
     session_timeout_ns: u64,
-    // TODO all the other opts
 ) usize {
     var log = logger.Logger{ .allocator = allocator, .f = null };
 

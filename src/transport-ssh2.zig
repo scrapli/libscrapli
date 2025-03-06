@@ -105,6 +105,7 @@ const AuthCallbackData = struct {
 pub fn NewOptions() transport.Options {
     return transport.Options{
         .SSH2 = Options{
+            .allocator = null,
             .libssh2_trace = false,
             .netconf = false,
         },
@@ -112,6 +113,7 @@ pub fn NewOptions() transport.Options {
 }
 
 pub const Options = struct {
+    allocator: ?std.mem.Allocator,
     libssh2_trace: bool,
     netconf: bool,
 };
@@ -191,7 +193,6 @@ pub const Transport = struct {
 
         // any data set in this obj will be freed during auth itself
         self.allocator.destroy(self.auth_callback_data);
-
         self.allocator.destroy(self);
     }
 
@@ -202,7 +203,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
     ) !void {
         try self.initSocket(host, port);
         try self.initSession(timer, cancel, operation_timeout_ns);
@@ -347,7 +348,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
     ) !void {
         const _username = self.allocator.dupeZ(u8, auth_options.username.?) catch |err| {
             self.log.critical("failed casting username to c string, err: {}", .{err});

@@ -91,6 +91,7 @@ const MatchPositions = struct {
 
 pub fn NewOptions() Options {
     return Options{
+        .allocator = null,
         .read_size = default_read_size,
         .read_delay_min_ns = default_read_delay_min_ns,
         .read_delay_max_ns = default_read_delay_max_ns,
@@ -103,6 +104,8 @@ pub fn NewOptions() Options {
 }
 
 pub const Options = struct {
+    allocator: ?std.mem.Allocator,
+
     read_size: u64,
 
     read_delay_min_ns: u64,
@@ -115,15 +118,20 @@ pub const Options = struct {
     operation_max_search_depth: u64,
 
     recorder: ?std.fs.File.Writer,
+
+    pub fn deinit(self: *Options) void {
+        // TODO
+        _ = self;
+    }
 };
 
 pub fn NewSession(
     allocator: std.mem.Allocator,
     log: logger.Logger,
     prompt_pattern: []const u8,
-    options: Options,
-    auth_options: auth.Options,
-    transport_options: transport.Options,
+    options: *Options,
+    auth_options: *auth.Options,
+    transport_options: *transport.Options,
 ) !*Session {
     const t = try transport.Factory(
         allocator,
@@ -160,8 +168,8 @@ pub fn NewSession(
 pub const Session = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
-    options: Options,
-    auth_options: auth.Options,
+    options: *Options,
+    auth_options: *auth.Options,
     transport: *transport.Transport,
 
     read_thread: ?std.Thread,
@@ -249,6 +257,10 @@ pub const Session = struct {
 
         self.transport.deinit();
         self.read_queue.deinit();
+
+        self.auth_options.deinit();
+        self.options.deinit();
+
         self.allocator.destroy(self);
     }
 
@@ -360,7 +372,8 @@ pub const Session = struct {
 
     pub fn write(self: *Session, buf: []const u8, redacted: bool) !void {
         if (!redacted) {
-            self.log.debug("channel write: '{s}'", .{buf});
+            // TODO make this repr or w/e the equivalent is
+            self.log.debug("write: '{s}'", .{buf});
         }
 
         try self.transport.write(buf);
@@ -401,7 +414,7 @@ pub const Session = struct {
         host: []const u8,
         port: u16,
     ) ![2][]const u8 {
-        self.log.info("in channel authentication starting...", .{});
+        self.log.info("in session authentication starting...", .{});
 
         var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
 
@@ -410,7 +423,9 @@ pub const Session = struct {
 
         var cur_check_start_idx: usize = 0;
 
-        var auth_prompt_seen_count: u8 = 0;
+        var auth_username_prompt_seen_count: u8 = 0;
+        var auth_password_prompt_seen_count: u8 = 0;
+        var auth_passphrase_prompt_seen_count: u8 = 0;
 
         var buf = try allocator.alloc(u8, self.options.read_size);
         defer allocator.free(buf);
@@ -465,6 +480,7 @@ pub const Session = struct {
             const searchable_buf = self.getBufSearchView(bufs.processed.items[cur_check_start_idx..]);
 
             const state = try auth.processSearchableAuthBuf(
+                self.allocator,
                 searchable_buf,
                 self.compiled_prompt_pattern,
                 self.compiled_username_pattern,
@@ -486,9 +502,9 @@ pub const Session = struct {
                         return error.AuthenicationFailed;
                     }
 
-                    auth_prompt_seen_count += 1;
+                    auth_username_prompt_seen_count += 1;
 
-                    if (auth_prompt_seen_count > 3) {
+                    if (auth_username_prompt_seen_count > 2) {
                         self.log.critical(
                             "username prompt seen multiple times, assuming authentication failed",
                             .{},
@@ -500,8 +516,6 @@ pub const Session = struct {
                     try self.writeAndReturn(self.auth_options.username.?, true);
 
                     cur_check_start_idx = bufs.processed.items.len;
-
-                    auth_prompt_seen_count = 0;
 
                     continue;
                 },
@@ -515,9 +529,9 @@ pub const Session = struct {
                         return error.AuthenicationFailed;
                     }
 
-                    auth_prompt_seen_count += 1;
+                    auth_password_prompt_seen_count += 1;
 
-                    if (auth_prompt_seen_count > 3) {
+                    if (auth_password_prompt_seen_count > 2) {
                         self.log.critical(
                             "password prompt seen multiple times, assuming authentication failed",
                             .{},
@@ -538,8 +552,6 @@ pub const Session = struct {
 
                     cur_check_start_idx = bufs.processed.items.len;
 
-                    auth_prompt_seen_count = 0;
-
                     continue;
                 },
                 .PassphrasePrompted => {
@@ -552,9 +564,9 @@ pub const Session = struct {
                         return error.AuthenicationFailed;
                     }
 
-                    auth_prompt_seen_count += 1;
+                    auth_passphrase_prompt_seen_count += 1;
 
-                    if (auth_prompt_seen_count > 3) {
+                    if (auth_passphrase_prompt_seen_count > 2) {
                         self.log.critical(
                             "private key passphrase prompt seen multiple times, assuming authentication failed",
                             .{},
@@ -574,8 +586,6 @@ pub const Session = struct {
                     );
 
                     cur_check_start_idx = bufs.processed.items.len;
-
-                    auth_prompt_seen_count = 0;
                 },
                 .Continue => {},
             }
@@ -635,6 +645,11 @@ pub const Session = struct {
             } else {
                 cur_read_delay_ns = self.options.read_delay_min_ns;
             }
+            // TODO -- could experiment w/ *not* doing the processing/check on every single read
+            //  -- basically an inverse backoff where we check less times in the start of an op
+            //  then more, maybe up till every time after some duration/amount of checks? the idea
+            //  would be that every time we search we do a re and that is expensive/slow, so if we
+            //  can save on that that would be a win
 
             try bufs.appendSliceBoth(buf[0..n]);
 

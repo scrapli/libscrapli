@@ -3,6 +3,8 @@ const std = @import("std");
 pub const LookupPrefix = "__lookup::";
 
 pub const LookupFn = ?*const fn (host: []const u8, port: u16, k: []const u8) ?[]const u8;
+// TODO this seems like it could work on c abi but... jank
+// pub const LookupFn = ?*const fn (host: [*c]const u8, port: u16, k: [*c]const u8) callconv(.C) [*c]const u8;
 
 pub fn resolveValue(
     host: []const u8,

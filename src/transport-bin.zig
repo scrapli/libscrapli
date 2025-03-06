@@ -22,6 +22,7 @@ const default_term_width: u16 = 80;
 pub fn NewOptions() transport.Options {
     return transport.Options{
         .Bin = Options{
+            .allocator = null,
             .bin = default_ssh_bin,
             .extra_open_args = null,
             .override_open_args = null,
@@ -36,6 +37,8 @@ pub fn NewOptions() transport.Options {
 }
 
 pub const Options = struct {
+    allocator: ?std.mem.Allocator,
+
     bin: []const u8,
 
     // extra means append to "standard" args, override overides everything except for the bin,
@@ -105,7 +108,7 @@ pub const Transport = struct {
         self: *Transport,
         host: []const u8,
         port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
         operation_timeout_ns: u64,
     ) !void {
         if (self.options.override_open_args != null) {
@@ -320,7 +323,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
     ) !void {
         self.buildArgs(host, port, auth_options, operation_timeout_ns) catch |err| {
             self.log.critical("failed generating open command, err: {}", .{err});

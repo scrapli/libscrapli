@@ -7,6 +7,7 @@ const telnet = @import("transport-telnet.zig");
 const ssh2 = @import("transport-ssh2.zig");
 const logger = @import("logger.zig");
 
+// TODO this should just go away, its same as the non netconf one no?
 pub fn NewDriverOptionsFromAlloc(
     log: logger.Logger,
     transport_kind: [*c]const u8,
@@ -33,8 +34,11 @@ pub fn NewDriverOptionsFromAlloc(
         opts.transport = ssh2.NewOptions();
     }
 
-    opts.auth.username = std.mem.span(username);
-    opts.auth.password = std.mem.span(password);
+    // TODO TEMP
+    _ = username;
+    _ = password;
+    // opts.auth.username = std.mem.span(username);
+    // opts.auth.password = std.mem.span(password);
 
     opts.session.operation_timeout_ns = session_timeout_ns;
 

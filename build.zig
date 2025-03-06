@@ -9,10 +9,10 @@ const libscrapli_version = std.SemanticVersion{
 
 const targets: []const std.Target.Query = &.{
     .{ .cpu_arch = .aarch64, .os_tag = .macos },
-    .{ .cpu_arch = .aarch64, .os_tag = .linux },
-    .{ .cpu_arch = .x86_64, .os_tag = .macos },
-    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
-    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
+    // .{ .cpu_arch = .aarch64, .os_tag = .linux },
+    // .{ .cpu_arch = .x86_64, .os_tag = .macos },
+    // .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
+    // .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
 };
 
 const all_examples: []const []const u8 = &.{
@@ -44,6 +44,8 @@ pub fn build(b: *std.Build) !void {
     if (main) {
         try buildMainExe(b, optimize, default_target);
     }
+
+    buildCheck(b, optimize, default_target);
 }
 
 fn getPcre2Dep(
@@ -334,4 +336,31 @@ fn buildMainExe(
     const exe_target_output = b.addInstallArtifact(exe, .{});
 
     b.getInstallStep().dependOn(&exe_target_output.step);
+}
+
+fn buildCheck(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    target: std.Build.ResolvedTarget,
+) void {
+    const pcre2 = getPcre2Dep(b, target.query, optimize);
+    const libssh2 = getLibssh2Dep(b, target.query, optimize);
+    const yaml = getZigYamlDep(b, target.query, optimize);
+    const xml = getZigXmlDep(b, target.query, optimize);
+
+    const lib = b.addStaticLibrary(.{
+        .name = "scrapli",
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .version = libscrapli_version,
+    });
+
+    lib.linkLibrary(pcre2.artifact("pcre2-8"));
+    lib.linkLibrary(libssh2.artifact("ssh2"));
+    lib.root_module.addImport("yaml", yaml.module("yaml"));
+    lib.root_module.addImport("xml", xml.module("xml"));
+
+    const check = b.step("check", "complitaion check step for zls");
+    check.dependOn(&lib.step);
 }

@@ -5,12 +5,14 @@ const file = @import("file.zig");
 pub fn NewOptions() transport.Options {
     return transport.Options{
         .Test = Options{
+            .allocator = null,
             .f = null,
         },
     };
 }
 
 pub const Options = struct {
+    allocator: ?std.mem.Allocator,
     f: ?[]const u8,
 };
 

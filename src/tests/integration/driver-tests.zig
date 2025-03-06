@@ -38,30 +38,30 @@ fn eosOnOpen(
     );
 }
 
-fn getPlatformPath() ![]const u8 {
+fn getPlatformPath(buf: []u8) !usize {
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd = try std.posix.getcwd(&cwd_buf);
 
-    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     var platform_path_len: usize = 0;
 
-    @memcpy(platform_path_buf[0..cwd.len], cwd[0..cwd.len]);
+    @memcpy(buf[0..cwd.len], cwd[0..cwd.len]);
     platform_path_len += cwd.len;
 
-    platform_path_buf[platform_path_len] = "/"[0];
+    buf[platform_path_len] = "/"[0];
     platform_path_len += 1;
 
     @memcpy(
-        platform_path_buf[platform_path_len .. platform_path_len + arista_eos_platform_path_from_project_root.len],
+        buf[platform_path_len .. platform_path_len + arista_eos_platform_path_from_project_root.len],
         arista_eos_platform_path_from_project_root,
     );
     platform_path_len += arista_eos_platform_path_from_project_root.len;
 
-    return platform_path_buf[0..platform_path_len];
+    return platform_path_len;
 }
 
 fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
-    const platform_path = try getPlatformPath();
+    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const platform_path_len = try getPlatformPath(&platform_path_buf);
 
     var opts = driver.NewOptions();
 
@@ -74,14 +74,15 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
 
     return driver.NewDriverFromYaml(
         std.testing.allocator,
-        platform_path,
+        platform_path_buf[0..platform_path_len],
         "localhost",
         opts,
     );
 }
 
 fn GetTestDriver(f: []const u8) !*driver.Driver {
-    const platform_path = try getPlatformPath();
+    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const platform_path_len = try getPlatformPath(&platform_path_buf);
 
     var opts = driver.NewOptions();
 
@@ -99,7 +100,7 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
 
     return driver.NewDriverFromYaml(
         std.testing.allocator,
-        platform_path,
+        platform_path_buf[0..platform_path_len],
         "dummy",
         opts,
     );
