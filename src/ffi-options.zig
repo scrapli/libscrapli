@@ -2,19 +2,16 @@ const std = @import("std");
 const ffi_driver = @import("ffi-driver.zig");
 const driver = @import("driver.zig");
 const transport = @import("transport.zig");
-const bin = @import("transport-bin.zig");
-const telnet = @import("transport-telnet.zig");
-const ssh2 = @import("transport-ssh2.zig");
 const logger = @import("logger.zig");
-const strings = @import("strings.zig");
+const auth = @import("auth.zig");
 
 pub fn NewDriverOptionsFromAlloc(
     definition_variant: [*c]const u8,
     log: logger.Logger,
     port: u16,
     transport_kind: [*c]const u8,
-) driver.Options {
-    var opts = driver.NewOptions();
+) driver.OptionsInputs {
+    var opts = driver.OptionsInputs{};
 
     opts.variant_name = std.mem.span(definition_variant);
 
@@ -27,11 +24,11 @@ pub fn NewDriverOptionsFromAlloc(
     const _transport_kind = std.mem.span(transport_kind);
 
     if (std.mem.eql(u8, @tagName(transport.Kind.Bin), _transport_kind)) {
-        opts.transport = bin.NewOptions();
+        opts.transport = .{ .Bin = .{} };
     } else if (std.mem.eql(u8, @tagName(transport.Kind.Telnet), _transport_kind)) {
-        opts.transport = telnet.NewOptions();
+        opts.transport = .{ .Telnet = .{} };
     } else if (std.mem.eql(u8, @tagName(transport.Kind.SSH2), _transport_kind)) {
-        opts.transport = ssh2.NewOptions();
+        opts.transport = .{ .SSH2 = .{} };
     }
 
     return opts;
@@ -129,7 +126,7 @@ export fn setDriverOptionAuthUsername(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     // TODO
-    d.real_driver.options.auth.username = d.real_driver.options.auth.allocator.?.dupe(u8, std.mem.span(value)) catch {
+    d.real_driver.options.auth.username = d.real_driver.options.auth.allocator.dupe(u8, std.mem.span(value)) catch {
         std.debug.print("BAD BINGO\n", .{});
         return 1;
     };
@@ -144,7 +141,7 @@ export fn setDriverOptionAuthPassword(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     // TODO
-    d.real_driver.options.auth.password = d.real_driver.options.auth.allocator.?.dupe(u8, std.mem.span(value)) catch {
+    d.real_driver.options.auth.password = d.real_driver.options.auth.allocator.dupe(u8, std.mem.span(value)) catch {
         std.debug.print("BAD BINGO\n", .{});
         return 1;
     };
@@ -180,6 +177,57 @@ export fn setDriverOptionAuthInSessionAuthBypass(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.real_driver.session.auth_options.in_session_auth_bypass = true;
+
+    return 0;
+}
+
+export fn setDriverOptionAuthLookupKeyValue(
+    d_ptr: usize,
+    key: [*c]const u8,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    if (d.real_driver.session.auth_options.lookup_map == null) {
+        d.real_driver.session.auth_options.lookup_map = d.real_driver.options.auth.allocator.alloc(
+            auth.LookupKeyValue,
+            1,
+        ) catch {
+            std.debug.print("BAD BINGO\n", .{});
+            return 1;
+        };
+    } else {
+        // TODO this should work i think...?
+        // const resized = d.real_driver.options.auth.allocator.?.resize(
+        //     d.real_driver.session.auth_options.lookup_map.?,
+        //     d.real_driver.session.auth_options.lookup_map.?.len + 1,
+        // );
+        // if (!resized) {
+        //     std.debug.print("BAD BINGO RESIZE\n", .{});
+        //     return 1;
+        // }
+    }
+
+    const lookup_map = @constCast(d.real_driver.session.auth_options.lookup_map.?);
+
+    for (0..lookup_map.len) |idx| {
+        lookup_map[idx] = .{
+            .key = d.real_driver.options.auth.allocator.dupe(
+                u8,
+                std.mem.span(key),
+            ) catch {
+                std.debug.print("BAD BINGO\n", .{});
+                return 1;
+            },
+            .value = d.real_driver.options.auth.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                std.debug.print("BAD BINGO\n", .{});
+                return 1;
+            },
+        };
+    }
 
     return 0;
 }

@@ -42,14 +42,21 @@ fn GetDriver(
     passphrase: ?[]const u8,
 ) !*driver.Driver {
     var platform_definition_path: []const u8 = undefined;
-    var port: u16 = undefined;
+    var opts = driver.OptionsInputs{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         platform_definition_path = nokia_srlinux_platform_path_from_project_root;
-        port = 21022;
+        opts.port = 21022;
+        opts.auth.lookup_map = &.{
+            .{ .key = "login", .value = "NokiaSrl1!" },
+        };
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
         platform_definition_path = arista_eos_platform_path_from_project_root;
-        port = 22022;
+        opts.port = 22022;
+        opts.auth.lookup_map = &.{
+            .{ .key = "login", .value = "admin" },
+            .{ .key = "enable", .value = "libscrapli" },
+        };
     } else {
         return error.UnknownPlatform;
     }
@@ -74,10 +81,6 @@ fn GetDriver(
 
     const platform_path = platform_path_buf[0..platform_path_len];
 
-    var opts = driver.NewOptions();
-
-    opts.port = port;
-    opts.auth.lookup_fn = lookup_fn;
     opts.auth.username = username;
 
     if (key != null) {
@@ -91,11 +94,15 @@ fn GetDriver(
         .Bin,
         => {},
         .SSH2 => {
-            opts.transport = ssh2_transport.NewOptions();
+            opts.transport = transport.OptionsInputs{
+                .SSH2 = .{},
+            };
         },
         .Telnet => {
-            opts.transport = telnet_transport.NewOptions();
-            opts.port = port - 1;
+            opts.transport = transport.OptionsInputs{
+                .Telnet = .{},
+            };
+            opts.port = opts.port.? - 1;
         },
         else => {
             unreachable;
@@ -214,7 +221,6 @@ test "driver open" {
         var d = try GetDriver(case.transportKind, case.platform, case.username, case.key, case.passphrase);
         d.definition.on_open_callback = case.on_open_callback;
 
-        try d.init();
         defer d.deinit();
 
         const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());

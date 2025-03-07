@@ -4,21 +4,17 @@
 const std = @import("std");
 
 const driver = @import("../../driver.zig");
-const test_transport = @import("../../transport-test.zig");
 const operation = @import("../../operation.zig");
 const mode = @import("../../mode.zig");
 const flags = @import("../../flags.zig");
 const ascii = @import("../../ascii.zig");
 const file = @import("../../file.zig");
 const result = @import("../../result.zig");
+const transport = @import("../../transport.zig");
 
 const helper = @import("../../test-helper.zig");
 
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
-
-fn lookup_fn(_: []const u8, _: u16, _: []const u8) ?[]const u8 {
-    return "";
-}
 
 fn eosOnOpen(
     d: *driver.Driver,
@@ -63,13 +59,12 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    var opts = driver.NewOptions();
+    var opts = driver.OptionsInputs{};
 
     opts.session.recorder = recorder;
 
     opts.auth.username = "admin";
     opts.auth.password = "admin";
-    opts.auth.lookup_fn = lookup_fn;
     opts.port = 22022;
 
     return driver.NewDriverFromYaml(
@@ -84,7 +79,7 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    var opts = driver.NewOptions();
+    var opts = driver.OptionsInputs{};
 
     opts.session.read_size = 1;
     opts.session.read_delay_backoff_factor = 1;
@@ -93,10 +88,8 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
 
     opts.auth.username = "admin";
     opts.auth.password = "admin";
-    opts.auth.lookup_fn = lookup_fn;
 
-    opts.transport = test_transport.NewOptions();
-    opts.transport.Test.f = f;
+    opts.transport = transport.OptionsInputs{ .Test = .{ .f = f } };
 
     return driver.NewDriverFromYaml(
         std.testing.allocator,
@@ -263,7 +256,6 @@ test "driver open" {
 
         d.definition.on_open_callback = case.on_open_callback;
 
-        try d.init();
         defer d.deinit();
 
         const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -299,7 +291,6 @@ test "driver open-timeout" {
     var d = try GetTestDriver(fixture_filename);
     d.session.options.operation_timeout_ns = 100_000;
 
-    try d.init();
     defer d.deinit();
 
     try std.testing.expectError(
@@ -327,7 +318,6 @@ test "driver open-cancellation" {
 
     var d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
     var open_options = operation.NewOpenOptions();
@@ -420,7 +410,6 @@ test "driver get-prompt" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -468,7 +457,6 @@ test "driver get-prompt-timeout" {
 
     const d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
     const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -510,7 +498,6 @@ test "driver get-prompt-cancellation" {
 
     const d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
     const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -622,7 +609,6 @@ test "driver enter-mode" {
 
         d.definition.default_mode = case.default_mode;
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -666,7 +652,6 @@ test "driver enter-mode-timeout" {
 
     var d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
     const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -700,7 +685,6 @@ test "driver enter-mode-cancellation" {
 
     const d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
     const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -833,7 +817,6 @@ test "driver send-input" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -895,7 +878,6 @@ test "driver send-input-timeout" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -942,7 +924,6 @@ test "driver send-input-cancellation" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -1077,7 +1058,6 @@ test "driver send-inputs" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -1139,7 +1119,6 @@ test "driver send-inputs-timeout" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -1186,7 +1165,6 @@ test "driver send-inputs-cancellation" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -1318,7 +1296,6 @@ test "driver send-prompted-input" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -1384,7 +1361,6 @@ test "driver send-prompted-input-timeout" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -1464,7 +1440,6 @@ test "driver send-prompted-input-cancellation" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());

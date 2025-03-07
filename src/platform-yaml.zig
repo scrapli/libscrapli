@@ -75,8 +75,9 @@ fn definitionFromYamlString(
     definition_string: []const u8,
     variant_name: ?[]const u8,
 ) !DefinitionFromYaml {
-    var untyped = try yaml.Yaml.load(allocator, definition_string);
+    var untyped: yaml.Yaml = .{ .source = definition_string };
     errdefer untyped.deinit(allocator);
+    try untyped.load(allocator);
 
     // variations needs to escape to the heap -- if it doesnt then the fields in our chosen
     // definition will segfault since they'll be pointing to stack scoped (and gone) memory for

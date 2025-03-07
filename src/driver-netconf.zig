@@ -3,7 +3,6 @@ const auth = @import("auth.zig");
 const logger = @import("logger.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
-const transport_bin = @import("transport-bin.zig");
 const operation = @import("operation-netconf.zig");
 const result = @import("result-netconf.zig");
 const ascii = @import("ascii.zig");
@@ -70,151 +69,78 @@ const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 
-pub fn NewOptions() Options {
-    var o = Options{
-        .allocator = null,
-        .logger = null,
-        .port = null,
-        .auth = auth.NewOptions(),
-        .session = session.NewOptions(),
-        .transport = transport_bin.NewOptions(),
-        .error_tag = default_rpc_error_tag,
-        .preferred_version = null,
-        .message_poll_interval_ns = default_message_poll_interval_ns,
-    };
-
-    o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
-
-    return o;
-}
+pub const OptionsInputs = struct {
+    logger: ?logger.Logger = null,
+    port: ?u16 = null,
+    auth: auth.OptionsInputs = .{},
+    session: session.OptionsInputs = .{},
+    transport: transport.OptionsInputs = .{ .Bin = .{} },
+    error_tag: []const u8 = default_rpc_error_tag,
+    preferred_version: ?Version = null,
+    message_poll_interval_ns: u64 = default_message_poll_interval_ns,
+};
 
 pub const Options = struct {
-    allocator: ?std.mem.Allocator,
+    allocator: std.mem.Allocator,
     logger: ?logger.Logger,
     port: ?u16,
-    auth: auth.Options,
-    session: session.Options,
-    transport: transport.Options,
+    auth: *auth.Options,
+    session: *session.Options,
+    transport: *transport.Options,
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
 
-    // unnecessary to call unless created via the private ToHeapOptions method or manually
-    // created w/ an allocator and heap allocated fields.
-    pub fn deinit(self: *Options) void {
-        if (self.allocator == null) {
-            return;
-        }
-
-        self.allocator.?.destroy(self);
-    }
-
-    fn ToHeapOptions(self: Options, allocator: std.mem.Allocator) !*Options {
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
 
         o.* = Options{
             .allocator = allocator,
-            .logger = self.logger,
-            .port = self.port,
-            .auth = self.auth,
-            .session = self.session,
-            .transport = self.transport,
-            .error_tag = self.error_tag,
-            .preferred_version = self.preferred_version,
-            .message_poll_interval_ns = self.message_poll_interval_ns,
+            .logger = opts.logger,
+            .port = opts.port,
+            .auth = try auth.Options.init(allocator, opts.auth),
+            .session = try session.Options.init(allocator, opts.session),
+            .transport = try transport.Options.init(allocator, opts.transport),
+            .error_tag = opts.error_tag,
+            .preferred_version = opts.preferred_version,
+            .message_poll_interval_ns = opts.message_poll_interval_ns,
         };
+
+        o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
+
+        if (&o.error_tag[0] != &default_rpc_error_tag[0]) {
+            o.error_tag = try o.allocator.dupe(u8, o.error_tag);
+        }
 
         return o;
     }
+
+    pub fn deinit(self: *Options) void {
+        if (&self.error_tag[0] != &default_rpc_error_tag[0]) {
+            self.allocator.free(self.error_tag);
+        }
+
+        self.auth.deinit();
+        self.session.deinit();
+        self.transport.deinit();
+
+        self.allocator.destroy(self);
+    }
 };
 
-/// Creates a new netconf Driver -- Driver owns and will deinit the provided options on
-/// Driver.deinit().
+/// Creates a new netconf Driver, unnecessary as you can just Driver.init(...) but exists for
+/// consistency with telnet/ssh flavor that can be spawned from string/yaml file.
 pub fn NewDriver(
     allocator: std.mem.Allocator,
     host: []const u8,
-    options: Options,
+    options: OptionsInputs,
 ) !*Driver {
-    const _options = try options.ToHeapOptions(allocator);
-
-    const log = options.logger orelse logger.Logger{ .allocator = allocator, .f = logger.noopLogf };
-
-    switch (options.transport) {
-        .Bin => {
-            _options.transport.Bin.netconf = true;
-        },
-        .SSH2 => {
-            _options.transport.SSH2.netconf = true;
-        },
-        .Test => {
-            // nothing to do for test transport, but its "allowed" so dont return an error
-        },
-        else => {
-            return error.UnsupportedTransport;
-        },
-    }
-
-    const sess = try session.NewSession(
+    return Driver.init(
         allocator,
-        log,
-        delimiter_Version_1_0,
-        &_options.session,
-        &_options.auth,
-        &_options.transport,
+        host,
+        options,
     );
-
-    const d = try allocator.create(Driver);
-
-    d.* = Driver{
-        .allocator = allocator,
-        .log = log,
-
-        .host = host,
-        .port = 0,
-
-        .options = _options,
-
-        .session = sess,
-
-        .server_capabilities = std.ArrayList(Capability).init(allocator),
-        .negotiated_version = Version.Version_1_0,
-
-        .process_thread = null,
-        .process_stop = std.atomic.Value(ProcessThreadState).init(ProcessThreadState.Uninitialized),
-
-        .message_id = 101,
-
-        .messages = std.HashMap(
-            u64,
-            []const u8,
-            std.hash_map.AutoContext(u64),
-            std.hash_map.default_max_load_percentage,
-        ).init(allocator),
-        .messages_lock = std.Thread.Mutex{},
-
-        .subscriptions = std.HashMap(
-            u64,
-            []const u8,
-            std.hash_map.AutoContext(u64),
-            std.hash_map.default_max_load_percentage,
-        ).init(allocator),
-        .subscriptions_lock = std.Thread.Mutex{},
-    };
-
-    if (options.port == null) {
-        switch (options.transport) {
-            transport.Kind.Bin, transport.Kind.SSH2, transport.Kind.Test => {
-                d.port = default_netconf_port;
-            },
-            else => {
-                return error.UnsupportedTransport;
-            },
-        }
-    } else {
-        d.port = options.port.?;
-    }
-
-    return d;
 }
 
 pub const Driver = struct {
@@ -222,7 +148,6 @@ pub const Driver = struct {
     log: logger.Logger,
 
     host: []const u8,
-    port: u16,
 
     options: *Options,
 
@@ -252,8 +177,86 @@ pub const Driver = struct {
     ),
     subscriptions_lock: std.Thread.Mutex,
 
-    pub fn init(self: *Driver) !void {
-        return self.session.init();
+    pub fn init(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        options: OptionsInputs,
+    ) !*Driver {
+        const opts = try Options.init(allocator, options);
+
+        const log = opts.logger orelse logger.Logger{
+            .allocator = allocator,
+            .f = logger.noopLogf,
+        };
+
+        switch (opts.transport.*) {
+            .Bin => {
+                opts.transport.Bin.netconf = true;
+            },
+            .SSH2 => {
+                opts.transport.SSH2.netconf = true;
+            },
+            .Test => {
+                // nothing to do for test transport, but its "allowed" so dont return an error
+            },
+            else => {
+                return error.UnsupportedTransport;
+            },
+        }
+
+        if (opts.port == null) {
+            opts.port = default_netconf_port;
+        }
+
+        const sess = try session.NewSession(
+            allocator,
+            log,
+            delimiter_Version_1_0,
+            opts.session,
+            opts.auth,
+            opts.transport,
+        );
+
+        const d = try allocator.create(Driver);
+
+        d.* = Driver{
+            .allocator = allocator,
+            .log = log,
+
+            .host = host,
+
+            .options = opts,
+
+            .session = sess,
+
+            .server_capabilities = std.ArrayList(Capability).init(allocator),
+            .negotiated_version = Version.Version_1_0,
+
+            .process_thread = null,
+            .process_stop = std.atomic.Value(ProcessThreadState).init(ProcessThreadState.Uninitialized),
+
+            .message_id = 101,
+
+            .messages = std.HashMap(
+                u64,
+                []const u8,
+                std.hash_map.AutoContext(u64),
+                std.hash_map.default_max_load_percentage,
+            ).init(allocator),
+            .messages_lock = std.Thread.Mutex{},
+
+            .subscriptions = std.HashMap(
+                u64,
+                []const u8,
+                std.hash_map.AutoContext(u64),
+                std.hash_map.default_max_load_percentage,
+            ).init(allocator),
+            .subscriptions_lock = std.Thread.Mutex{},
+        };
+
+        try d.session.init();
+
+        return d;
     }
 
     pub fn deinit(self: *Driver) void {
@@ -284,7 +287,7 @@ pub const Driver = struct {
         return result.NewResult(
             allocator,
             self.host,
-            self.port,
+            self.options.port.?,
             self.negotiated_version,
             self.options.error_tag,
             operation_kind,
@@ -298,13 +301,16 @@ pub const Driver = struct {
     ) !*result.Result {
         var timer = try std.time.Timer.start();
 
-        var res = try self.NewResult(allocator, operation.Kind.Open);
+        var res = try self.NewResult(
+            allocator,
+            operation.Kind.Open,
+        );
         errdefer res.deinit();
 
         const rets = try self.session.open(
             allocator,
             self.host,
-            self.port,
+            self.options.port.?,
             options,
         );
         allocator.free(rets[0]);
@@ -348,7 +354,11 @@ pub const Driver = struct {
                 );
             },
             else => {
-                cap_buf = try self.receiveServerCapabilities(allocator, options, &timer);
+                cap_buf = try self.receiveServerCapabilities(
+                    allocator,
+                    options,
+                    &timer,
+                );
                 try res.results.append(try allocator.dupe(u8, cap_buf));
             },
         }
@@ -367,7 +377,10 @@ pub const Driver = struct {
         try self.determineVersion();
         try self.sendClientCapabilities(allocator, options, &timer);
 
-        self.process_stop.store(ProcessThreadState.Run, std.builtin.AtomicOrder.unordered);
+        self.process_stop.store(
+            ProcessThreadState.Run,
+            std.builtin.AtomicOrder.unordered,
+        );
 
         self.process_thread = std.Thread.spawn(
             .{},
@@ -2486,9 +2499,9 @@ test "buildGetConfigElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2542,9 +2555,9 @@ test "builEditConfigElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2590,9 +2603,9 @@ test "builCopyConfigElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2638,9 +2651,9 @@ test "builDeleteConfigElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2686,9 +2699,9 @@ test "buildLockElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2734,9 +2747,9 @@ test "buildUnlockElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2782,9 +2795,9 @@ test "buildGetElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2830,9 +2843,9 @@ test "buildCloseSessionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2884,9 +2897,9 @@ test "buildKillSessionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2932,9 +2945,9 @@ test "buildCommitElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2980,9 +2993,9 @@ test "buildDiscardElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3028,9 +3041,9 @@ test "buildCancelCommitElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3076,9 +3089,9 @@ test "buildValidateElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3124,9 +3137,9 @@ test "buildCreateSubscriptionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3172,9 +3185,9 @@ test "buildEstablishSubscriptionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3220,9 +3233,9 @@ test "buildModifySubscriptionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3268,9 +3281,9 @@ test "buildDeleteSubscriptionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3316,9 +3329,9 @@ test "buildResyncSubscriptionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3364,9 +3377,9 @@ test "buildKillSubscriptionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3412,9 +3425,9 @@ test "buildGetSchemaElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3460,9 +3473,9 @@ test "buildGetDataElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3508,9 +3521,9 @@ test "builEditDataElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3556,9 +3569,9 @@ test "builActionElem" {
         const d = try NewDriver(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;

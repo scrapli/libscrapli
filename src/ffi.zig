@@ -33,8 +33,7 @@ pub const std_options = std.Options{
 
 // gpa for testing allocs
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-// TODO temp pub
-pub const allocator = gpa_allocator.allocator();
+const allocator = gpa_allocator.allocator();
 
 export fn assertNoLeaks() bool {
     switch (gpa_allocator.deinit()) {
@@ -80,12 +79,6 @@ export fn allocDriver(
         real_driver,
     ) catch |err| {
         log.critical("error during NewFfiDriver: {any}", .{err});
-
-        return 0;
-    };
-
-    d.init() catch |err| {
-        log.critical("error during driver init: {any}", .{err});
 
         return 0;
     };
@@ -522,12 +515,6 @@ export fn netconfAllocDriver(
         log.critical("error during alloc driver {any}", .{err});
 
         return 0;
-    };
-
-    d.init() catch |err| {
-        d.real_driver.log.critical("error during init driver {any}", .{err});
-
-        return 1;
     };
 
     return @intFromPtr(d);

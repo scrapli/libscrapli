@@ -1,5 +1,4 @@
 const std = @import("std");
-const transport = @import("transport.zig");
 const file = @import("file.zig");
 const bytes = @import("bytes.zig");
 const logger = @import("logger.zig");
@@ -23,22 +22,31 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
-pub fn NewOptions() transport.Options {
-    return transport.Options{
-        .Telnet = Options{
-            .allocator = null,
-        },
-    };
-}
+pub const OptionsInputs = struct {};
 
 pub const Options = struct {
-    allocator: ?std.mem.Allocator,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, _: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
+
+        o.* = Options{
+            .allocator = allocator,
+        };
+
+        return o;
+    }
+
+    pub fn deinit(self: *Options) void {
+        self.allocator.destroy(self);
+    }
 };
 
 pub fn NewTransport(
     allocator: std.mem.Allocator,
     log: logger.Logger,
-    options: Options,
+    options: *Options,
 ) !*Transport {
     const t = try allocator.create(Transport);
 
@@ -57,7 +65,7 @@ pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
 
-    options: Options,
+    options: *Options,
 
     stream: ?std.net.Stream,
     initial_buf: std.ArrayList(u8),

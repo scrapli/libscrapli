@@ -1,7 +1,6 @@
 const std = @import("std");
 const bytes = @import("bytes.zig");
 const re = @import("re.zig");
-const lookup = @import("lookup.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
@@ -12,6 +11,9 @@ pub const default_username_pattern: []const u8 = "^(.*username:)|(.*login:)\\s?$
 pub const default_password_pattern: []const u8 = "(.*@.*)?password:\\s?$";
 pub const default_passphrase_pattern: []const u8 = "enter passphrase for key";
 
+pub const lookup_prefix = "__lookup::";
+pub const lookup_default_key = "__default__";
+
 pub const State = enum {
     Complete,
     UsernamePrompted,
@@ -20,48 +22,173 @@ pub const State = enum {
     Continue,
 };
 
-pub fn NewOptions() Options {
-    return Options{
-        .allocator = null,
+pub const LookupKeyValue = struct {
+    key: []const u8,
+    value: []const u8,
+};
+
+pub fn NewOptions(allocator: std.mem.Allocator) !*Options {
+    const o = try allocator.create(Options);
+
+    o.* = Options{
+        .allocator = allocator,
         .username = null,
         .password = null,
         .private_key_path = null,
         .private_key_passphrase = null,
-        .lookup_fn = null,
         .lookup_map = null,
-        // TODO i think the play is get rid of lookup fn and add a lookup hashmap
-        //   the remaining quesiotn is who owns the memory. esp in the ffi case
         .in_session_auth_bypass = false,
         .username_pattern = default_username_pattern,
         .password_pattern = default_password_pattern,
         .passphrase_pattern = default_passphrase_pattern,
     };
+
+    return o;
 }
 
+pub const OptionsInputs = struct {
+    username: ?[]const u8 = null,
+    password: ?[]const u8 = null,
+    private_key_path: ?[]const u8 = null,
+    private_key_passphrase: ?[]const u8 = null,
+    lookup_map: ?[]const LookupKeyValue = null,
+    in_session_auth_bypass: bool = false,
+    username_pattern: []const u8 = default_username_pattern,
+    password_pattern: []const u8 = default_password_pattern,
+    passphrase_pattern: []const u8 = default_passphrase_pattern,
+};
+
 pub const Options = struct {
-    allocator: ?std.mem.Allocator,
+    allocator: std.mem.Allocator,
     username: ?[]const u8,
     password: ?[]const u8,
     private_key_path: ?[]const u8,
     private_key_passphrase: ?[]const u8,
-    lookup_fn: lookup.LookupFn,
-    lookup_map: ?std.StringHashMapUnmanaged(
-        []const u8,
-    ),
+    lookup_map: ?[]const LookupKeyValue,
     in_session_auth_bypass: bool,
     username_pattern: []const u8,
     password_pattern: []const u8,
     passphrase_pattern: []const u8,
 
-    pub fn deinit(self: *Options) void {
-        // TODO if allocator is not nil, check each field, if not default, free it
-        if (self.allocator == null) {
-            return;
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
+
+        o.* = Options{
+            .allocator = allocator,
+            .username = opts.username,
+            .password = opts.password,
+            .private_key_path = opts.private_key_path,
+            .private_key_passphrase = opts.private_key_passphrase,
+            .lookup_map = opts.lookup_map,
+            .in_session_auth_bypass = opts.in_session_auth_bypass,
+            .username_pattern = opts.username_pattern,
+            .password_pattern = opts.password_pattern,
+            .passphrase_pattern = opts.passphrase_pattern,
+        };
+
+        if (o.username != null) {
+            o.username = try o.allocator.dupe(u8, o.username.?);
         }
+
+        if (o.password != null) {
+            o.password = try o.allocator.dupe(u8, o.password.?);
+        }
+
+        if (o.private_key_path != null) {
+            o.private_key_path = try o.allocator.dupe(u8, o.private_key_path.?);
+        }
+
+        if (o.private_key_passphrase != null) {
+            o.private_key_passphrase = try o.allocator.dupe(u8, o.private_key_passphrase.?);
+        }
+
+        if (o.lookup_map != null) {
+            // TODO
+        }
+
+        if (&o.username_pattern[0] != &default_username_pattern[0]) {
+            o.username_pattern = try o.allocator.dupe(u8, o.username_pattern);
+        }
+
+        if (&o.password_pattern[0] != &default_password_pattern[0]) {
+            o.password_pattern = try o.allocator.dupe(u8, o.password_pattern);
+        }
+
+        if (&o.passphrase_pattern[0] != &default_passphrase_pattern[0]) {
+            o.passphrase_pattern = try o.allocator.dupe(u8, o.passphrase_pattern);
+        }
+
+        return o;
     }
 
-    pub fn setUsername(self: *Options, v: []const u8) !void {
-        self.username = try self.allocator.dupe(u8, v);
+    pub fn deinit(self: *Options) void {
+        if (self.username != null) {
+            self.allocator.free(self.username.?);
+        }
+
+        if (self.password != null) {
+            self.allocator.free(self.password.?);
+        }
+
+        if (self.private_key_path != null) {
+            self.allocator.free(self.private_key_path.?);
+        }
+
+        if (self.private_key_passphrase != null) {
+            self.allocator.free(self.private_key_passphrase.?);
+        }
+
+        if (self.lookup_map != null) {
+            // TODO
+            // self.allocator.free(self.lookup_map.?);
+        }
+
+        if (&self.username_pattern[0] != &default_username_pattern[0]) {
+            self.allocator.free(self.username_pattern);
+        }
+
+        if (&self.password_pattern[0] != &default_password_pattern[0]) {
+            self.allocator.free(self.password_pattern);
+        }
+
+        if (&self.passphrase_pattern[0] != &default_passphrase_pattern[0]) {
+            self.allocator.free(self.passphrase_pattern);
+        }
+
+        self.allocator.destroy(self);
+    }
+
+    pub fn resolveAuthValue(self: *Options, v: []const u8) ![]const u8 {
+        if (!std.mem.startsWith(u8, v, lookup_prefix)) {
+            return v;
+        }
+
+        if (self.lookup_map == null) {
+            return error.LookupFailure;
+        }
+
+        var default_idx: ?usize = null;
+
+        const lookup_key = v[lookup_prefix.len..];
+
+        std.debug.print(">>>!!! {any}\n", .{self.lookup_map.?});
+
+        for (0.., self.lookup_map.?) |idx, lookup_item| {
+            if (std.mem.eql(u8, lookup_item.key, lookup_default_key)) {
+                default_idx = idx;
+            }
+
+            if (std.mem.eql(u8, lookup_key, lookup_item.key)) {
+                return lookup_item.value;
+            }
+        }
+
+        if (default_idx != null) {
+            return self.lookup_map.?[default_idx.?].value;
+        }
+
+        return error.LookupFailure;
     }
 };
 

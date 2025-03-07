@@ -3,11 +3,9 @@ const logger = @import("logger.zig");
 const session = @import("session.zig");
 const auth = @import("auth.zig");
 const transport = @import("transport.zig");
-const transport_bin = @import("transport-bin.zig");
 const platform = @import("platform.zig");
 const operation = @import("operation.zig");
 const mode = @import("mode.zig");
-const lookup = @import("lookup.zig");
 const result = @import("result.zig");
 const platform_yaml = @import("platform-yaml.zig");
 
@@ -19,116 +17,57 @@ pub const DeinitCallback = struct {
     context: *anyopaque,
 };
 
-pub fn NewOptions() Options {
-    return Options{
-        .allocator = null,
-        .variant_name = null,
-        .logger = null,
-        .port = null,
-        .auth = auth.NewOptions(),
-        .session = session.NewOptions(),
-        .transport = transport_bin.NewOptions(),
-    };
-}
+pub const OptionsInputs = struct {
+    variant_name: ?[]const u8 = null,
+    logger: ?logger.Logger = null,
+    port: ?u16 = null,
+    auth: auth.OptionsInputs = .{},
+    session: session.OptionsInputs = .{},
+    transport: transport.OptionsInputs = .{ .Bin = .{} },
+};
 
 pub const Options = struct {
-    allocator: ?std.mem.Allocator,
+    allocator: std.mem.Allocator,
     variant_name: ?[]const u8,
     logger: ?logger.Logger,
     port: ?u16,
-    auth: auth.Options,
-    session: session.Options,
-    transport: transport.Options,
+    auth: *auth.Options,
+    session: *session.Options,
+    transport: *transport.Options,
 
-    // unnecessary (but safe) to call unless created via the private ToHeapOptions method or
-    // manually created w/ an allocator and heap allocated fields.
-    pub fn deinit(self: *Options) void {
-        if (self.allocator == null) {
-            return;
-        }
-
-        self.allocator.?.destroy(self);
-    }
-
-    // TODO i think this is a decent pattern... basically if users create options on the stack they
-    //  can just ignore allocator and use the main constructor
-    //  then for the driver which needs things (at least non const literal things) to exist for the
-    //  lifetime of the driver, we can then call this method to get a copied heap allocated version
-    //  usiung the driver's allcoator -- this makes it so there is literally only *one* place that
-    //  a user needs to pass an allocator in for creation of stuff which is cool. it also solves the
-    //  problem of heap allocating shit for transport options -- we can just say opts.FOO and replace
-    //  the dfefault bin transport opts w/ whatever they want
-    // moreover this cna be private :)
-    fn ToHeapOptions(self: Options, allocator: std.mem.Allocator) !*Options {
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
 
-        const oa = try allocator.create(auth.Options);
-        const sa = try allocator.create(session.Options);
-        const ta = try allocator.create(transport.Options);
+        // TODO probably should just arena alloc this shit?
 
         o.* = Options{
             .allocator = allocator,
-            .variant_name = null,
-            .logger = null,
-            .port = null,
-            .auth = oa.*,
-            .session = sa.*,
-            .transport = ta.*,
+            .variant_name = opts.variant_name,
+            .logger = opts.logger,
+            .port = opts.port,
+            .auth = try auth.Options.init(allocator, opts.auth),
+            .session = try session.Options.init(allocator, opts.session),
+            .transport = try transport.Options.init(allocator, opts.transport),
         };
 
-        if (self.variant_name != null) {}
-
-        if (self.logger != null) {
-            o.logger = self.logger;
-        }
-
-        if (self.port != null) {
-            if (self.port == default_telnet_port) {
-                o.port = default_telnet_port;
-            } else if (self.port == default_ssh_port) {
-                o.port = default_ssh_port;
-            } else {
-                // TODO dupe to heap
-                o.port = self.port;
-            }
-        }
-
-        oa.* = auth.NewOptions();
-        oa.allocator = allocator;
-
-        if (self.auth.username != null) {
-            // TODO dupe to heap
-            oa.username = self.auth.username;
-        }
-
-        if (self.auth.password != null) {
-            // TODO dupe to heap
-            oa.password = self.auth.password;
-        }
-
-        if (&self.auth.username_pattern[0] != &auth.default_username_pattern[0]) {
-            // the user's value is *not* the default, dupe and set
-        }
-
-        o.auth = oa.*;
-
-        sa.* = session.NewOptions();
-        sa.allocator = allocator;
-
-        o.session = sa.*;
-
-        switch (self.transport) {
-            .Bin => {
-                var _to = transport_bin.NewOptions();
-                _to.Bin.allocator = allocator;
-                o.transport = _to;
-            },
-            .Telnet => {},
-            .SSH2 => {},
-            .Test => {},
+        if (o.variant_name != null) {
+            o.variant_name = try o.allocator.dupe(u8, opts.variant_name.?);
         }
 
         return o;
+    }
+
+    pub fn deinit(self: *Options) void {
+        if (self.variant_name != null) {
+            self.allocator.free(self.variant_name.?);
+        }
+
+        self.auth.deinit();
+        self.session.deinit();
+        self.transport.deinit();
+
+        self.allocator.destroy(self);
     }
 };
 
@@ -136,7 +75,7 @@ pub fn NewDriverFromYaml(
     allocator: std.mem.Allocator,
     file_path: []const u8,
     host: []const u8,
-    options: Options,
+    options: OptionsInputs,
 ) !*Driver {
     var yaml_definition = try platform_yaml.DefinitionFromFilePath(
         allocator,
@@ -145,13 +84,15 @@ pub fn NewDriverFromYaml(
     );
     errdefer yaml_definition.deinit();
 
-    var d = try NewDriver(
+    var d = try Driver.init(
         allocator,
         host,
         yaml_definition.definition,
         options,
     );
 
+    // TODO clean this/remove this? DefinitionFromX should just return the definition on the heap
+    //  and clean anything else as it goes (i.e. loaded yaml, filepath, etc.)
     d.definition_source = yaml_definition;
 
     return d;
@@ -161,7 +102,7 @@ pub fn NewDriverFromYamlString(
     allocator: std.mem.Allocator,
     definition_string: []const u8,
     host: []const u8,
-    options: Options,
+    options: OptionsInputs,
 ) !*Driver {
     var yaml_definition = try platform_yaml.DefinitionFromYamlString(
         allocator,
@@ -170,7 +111,7 @@ pub fn NewDriverFromYamlString(
     );
     errdefer yaml_definition.deinit();
 
-    var d = try NewDriver(
+    var d = try Driver.init(
         allocator,
         host,
         yaml_definition.definition,
@@ -178,64 +119,6 @@ pub fn NewDriverFromYamlString(
     );
 
     d.definition_source = yaml_definition;
-
-    return d;
-}
-
-pub fn NewDriver(
-    allocator: std.mem.Allocator,
-    host: []const u8,
-    definition: platform.Definition,
-    options: Options,
-) !*Driver {
-    // TODO the idea is to create a dupe of the *stack allocated options* we got where we dupe any
-    //   non default fields to persist them as long as our driver exists
-    const _options = try options.ToHeapOptions(allocator);
-
-    const log = _options.logger orelse logger.Logger{ .allocator = allocator, .f = logger.noopLogf };
-
-    const sess = try session.NewSession(
-        allocator,
-        log,
-        definition.prompt_pattern,
-        &_options.session,
-        &_options.auth,
-        &_options.transport,
-    );
-
-    const d = try allocator.create(Driver);
-
-    d.* = Driver{
-        .allocator = allocator,
-        .log = log,
-
-        .deinit_callbacks = std.ArrayList(DeinitCallback).init(allocator),
-
-        .definition_source = null,
-        .definition = definition,
-
-        .host = host,
-        .port = 0,
-
-        .options = _options,
-
-        .session = sess,
-
-        .current_mode = mode.unknown_mode,
-    };
-
-    if (_options.port == null) {
-        switch (_options.transport) {
-            transport.Kind.Bin, transport.Kind.SSH2, transport.Kind.Test => {
-                d.port = default_ssh_port;
-            },
-            transport.Kind.Telnet => {
-                d.port = default_telnet_port;
-            },
-        }
-    } else {
-        d.port = options.port.?;
-    }
 
     return d;
 }
@@ -258,10 +141,59 @@ pub const Driver = struct {
 
     current_mode: []const u8,
 
-    pub fn init(self: *Driver) !void {
-        self.deinit_callbacks = std.ArrayList(DeinitCallback).init(self.allocator);
+    pub fn init(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        definition: platform.Definition,
+        options: OptionsInputs,
+    ) !*Driver {
+        const opts = try Options.init(allocator, options);
 
-        return self.session.init();
+        const log = opts.logger orelse logger.Logger{
+            .allocator = allocator,
+            .f = logger.noopLogf,
+        };
+
+        const sess = try session.NewSession(
+            allocator,
+            log,
+            definition.prompt_pattern,
+            opts.session,
+            opts.auth,
+            opts.transport,
+        );
+
+        const d = try allocator.create(Driver);
+
+        d.* = Driver{
+            .allocator = allocator,
+            .log = log,
+            .deinit_callbacks = std.ArrayList(DeinitCallback).init(allocator),
+            .definition_source = null,
+            .definition = definition,
+            .host = host,
+            .port = 0,
+            .options = opts,
+            .session = sess,
+            .current_mode = mode.unknown_mode,
+        };
+
+        if (opts.port == null) {
+            switch (opts.transport.*) {
+                transport.Kind.Bin, transport.Kind.SSH2, transport.Kind.Test => {
+                    d.port = default_ssh_port;
+                },
+                transport.Kind.Telnet => {
+                    d.port = default_telnet_port;
+                },
+            }
+        } else {
+            d.port = opts.port.?;
+        }
+
+        try d.session.init();
+
+        return d;
     }
 
     // lets us register things that should be deinit'd when the driver is deinit'd
@@ -532,11 +464,8 @@ pub const Driver = struct {
                 .SendPromptedInput => {
                     var response: []const u8 = "";
 
-                    if (lookup.resolveValue(
-                        self.host,
-                        self.port,
+                    if (self.options.auth.resolveAuthValue(
                         next_operation.?.SendPromptedInput.response,
-                        self.options.auth.lookup_fn,
                     )) |resolved_response| {
                         response = resolved_response;
                     } else |err| switch (err) {

@@ -5,7 +5,6 @@ const bytes = @import("bytes.zig");
 const operation = @import("operation.zig");
 const logger = @import("logger.zig");
 const ascii = @import("ascii.zig");
-const lookup = @import("lookup.zig");
 const time = @import("time.zig");
 const auth = @import("auth.zig");
 
@@ -89,9 +88,11 @@ const MatchPositions = struct {
     }
 };
 
-pub fn NewOptions() Options {
-    return Options{
-        .allocator = null,
+pub fn NewOptions(allocator: std.mem.Allocator) !*Options {
+    const o = try allocator.create(Options);
+
+    o.* = Options{
+        .allocator = allocator,
         .read_size = default_read_size,
         .read_delay_min_ns = default_read_delay_min_ns,
         .read_delay_max_ns = default_read_delay_max_ns,
@@ -101,27 +102,61 @@ pub fn NewOptions() Options {
         .operation_max_search_depth = default_operation_max_search_depth,
         .recorder = null,
     };
+
+    return o;
 }
 
+pub const OptionsInputs = struct {
+    read_size: u64 = default_read_size,
+    read_delay_min_ns: u64 = default_read_delay_min_ns,
+    read_delay_max_ns: u64 = default_read_delay_max_ns,
+    read_delay_backoff_factor: u8 = default_read_delay_backoff_factor,
+    return_char: []const u8 = default_return_char,
+    operation_timeout_ns: u64 = default_operation_timeout_ns,
+    operation_max_search_depth: u64 = default_operation_max_search_depth,
+    recorder: ?std.fs.File.Writer = null,
+};
+
 pub const Options = struct {
-    allocator: ?std.mem.Allocator,
-
+    allocator: std.mem.Allocator,
     read_size: u64,
-
     read_delay_min_ns: u64,
     read_delay_max_ns: u64,
     read_delay_backoff_factor: u8,
-
     return_char: []const u8,
-
     operation_timeout_ns: u64,
     operation_max_search_depth: u64,
-
     recorder: ?std.fs.File.Writer,
 
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
+
+        o.* = Options{
+            .allocator = allocator,
+            .read_size = opts.read_size,
+            .read_delay_min_ns = opts.read_delay_min_ns,
+            .read_delay_max_ns = opts.read_delay_max_ns,
+            .read_delay_backoff_factor = opts.read_delay_backoff_factor,
+            .return_char = opts.return_char,
+            .operation_timeout_ns = opts.operation_timeout_ns,
+            .operation_max_search_depth = opts.operation_max_search_depth,
+            .recorder = opts.recorder,
+        };
+
+        if (&o.return_char[0] != &default_return_char[0]) {
+            o.return_char = try o.allocator.dupe(u8, o.return_char);
+        }
+
+        return o;
+    }
+
     pub fn deinit(self: *Options) void {
-        // TODO
-        _ = self;
+        if (&self.return_char[0] != &default_return_char[0]) {
+            self.allocator.free(self.return_char);
+        }
+
+        self.allocator.destroy(self);
     }
 };
 
@@ -258,8 +293,9 @@ pub const Session = struct {
         self.transport.deinit();
         self.read_queue.deinit();
 
-        self.auth_options.deinit();
-        self.options.deinit();
+        // TODO options parent is now cleaning these
+        // self.auth_options.deinit();
+        // self.options.deinit();
 
         self.allocator.destroy(self);
     }
@@ -311,8 +347,6 @@ pub const Session = struct {
             allocator,
             &timer,
             options.cancel,
-            host,
-            port,
         );
     }
 
@@ -411,8 +445,6 @@ pub const Session = struct {
         allocator: std.mem.Allocator,
         timer: *std.time.Timer,
         cancel: ?*bool,
-        host: []const u8,
-        port: u16,
     ) ![2][]const u8 {
         self.log.info("in session authentication starting...", .{});
 
@@ -541,11 +573,8 @@ pub const Session = struct {
                     }
 
                     try self.writeAndReturn(
-                        try lookup.resolveValue(
-                            host,
-                            port,
+                        try self.auth_options.resolveAuthValue(
                             self.auth_options.password.?,
-                            self.auth_options.lookup_fn,
                         ),
                         true,
                     );
@@ -576,11 +605,8 @@ pub const Session = struct {
                     }
 
                     try self.writeAndReturn(
-                        try lookup.resolveValue(
-                            host,
-                            port,
+                        try self.auth_options.resolveAuthValue(
                             self.auth_options.private_key_passphrase.?,
-                            self.auth_options.lookup_fn,
                         ),
                         true,
                     );

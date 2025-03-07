@@ -5,15 +5,6 @@ const transport_telnet = @import("transport-telnet.zig");
 const transport_ssh2 = @import("transport-ssh2.zig");
 const transport_test = @import("transport-test.zig");
 const logger = @import("logger.zig");
-const lookup = @import("lookup.zig");
-
-pub const AuthOptions = struct {
-    is_in_session: bool,
-    username: ?[]const u8,
-    password: ?[]const u8,
-    passphrase: ?[]const u8,
-    lookup_fn: lookup.LookupFn,
-};
 
 pub const Kind = enum {
     Bin,
@@ -46,11 +37,90 @@ pub const Implementation = union(Kind) {
     Test: *transport_test.Transport,
 };
 
+pub const OptionsInputs = union(Kind) {
+    Bin: transport_bin.OptionsInputs,
+    Telnet: transport_telnet.OptionsInputs,
+    SSH2: transport_ssh2.OptionsInputs,
+    Test: transport_test.OptionsInputs,
+};
+
 pub const Options = union(Kind) {
-    Bin: transport_bin.Options,
-    Telnet: transport_telnet.Options,
-    SSH2: transport_ssh2.Options,
-    Test: transport_test.Options,
+    Bin: *transport_bin.Options,
+    Telnet: *transport_telnet.Options,
+    SSH2: *transport_ssh2.Options,
+    Test: *transport_test.Options,
+
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
+
+        switch (opts) {
+            .Bin => |impl_option_inputs| {
+                o.* = Options{
+                    .Bin = try transport_bin.Options.init(
+                        allocator,
+                        impl_option_inputs,
+                    ),
+                };
+            },
+            .SSH2 => |impl_option_inputs| {
+                o.* = Options{
+                    .SSH2 = try transport_ssh2.Options.init(
+                        allocator,
+                        impl_option_inputs,
+                    ),
+                };
+            },
+            .Telnet => |impl_option_inputs| {
+                o.* = Options{
+                    .Telnet = try transport_telnet.Options.init(
+                        allocator,
+                        impl_option_inputs,
+                    ),
+                };
+            },
+            .Test => |impl_option_inputs| {
+                o.* = Options{
+                    .Test = try transport_test.Options.init(
+                        allocator,
+                        impl_option_inputs,
+                    ),
+                };
+            },
+        }
+
+        return o;
+    }
+
+    pub fn deinit(self: *Options) void {
+        switch (self.*) {
+            .Bin => |o| {
+                // clunky since the tagged union doesnt have the allocator... but works
+                var _o = o;
+                var _a = _o.allocator;
+                _o.deinit();
+                _a.destroy(self);
+            },
+            .SSH2 => |o| {
+                var _o = o;
+                var _a = _o.allocator;
+                _o.deinit();
+                _a.destroy(self);
+            },
+            .Telnet => |o| {
+                var _o = o;
+                var _a = _o.allocator;
+                _o.deinit();
+                _a.destroy(self);
+            },
+            .Test => |o| {
+                var _o = o;
+                var _a = _o.allocator;
+                _o.deinit();
+                _a.destroy(self);
+            },
+        }
+    }
 };
 
 pub fn Factory(
@@ -62,7 +132,6 @@ pub fn Factory(
 
     switch (options.*) {
         .Bin => {
-            std.debug.print("BIN \n", .{});
             t.* = Transport{
                 .allocator = allocator,
                 .log = log,
@@ -76,7 +145,6 @@ pub fn Factory(
             };
         },
         .Telnet => {
-            std.debug.print("TELNET \n", .{});
             t.* = Transport{
                 .allocator = allocator,
                 .log = log,
@@ -90,7 +158,6 @@ pub fn Factory(
             };
         },
         .SSH2 => {
-            std.debug.print("SSH2 \n", .{});
             t.* = Transport{
                 .allocator = allocator,
                 .log = log,

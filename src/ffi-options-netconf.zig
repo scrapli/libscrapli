@@ -2,9 +2,6 @@ const std = @import("std");
 
 const driver = @import("driver-netconf.zig");
 const transport = @import("transport.zig");
-const bin = @import("transport-bin.zig");
-const telnet = @import("transport-telnet.zig");
-const ssh2 = @import("transport-ssh2.zig");
 const logger = @import("logger.zig");
 
 // TODO this should just go away, its same as the non netconf one no?
@@ -15,8 +12,8 @@ pub fn NewDriverOptionsFromAlloc(
     username: [*c]const u8,
     password: [*c]const u8,
     session_timeout_ns: u64,
-) driver.Options {
-    var opts = driver.NewOptions();
+) driver.OptionsInputs {
+    var opts = driver.OptionsInputs{};
 
     opts.logger = log;
     opts.port = port;
@@ -27,11 +24,9 @@ pub fn NewDriverOptionsFromAlloc(
     const _transport_kind = std.mem.span(transport_kind);
 
     if (std.mem.eql(u8, @tagName(transport.Kind.Bin), _transport_kind)) {
-        opts.transport = bin.NewOptions();
-    } else if (std.mem.eql(u8, @tagName(transport.Kind.Telnet), _transport_kind)) {
-        opts.transport = telnet.NewOptions();
+        opts.transport = .{ .Bin = .{} };
     } else if (std.mem.eql(u8, @tagName(transport.Kind.SSH2), _transport_kind)) {
-        opts.transport = ssh2.NewOptions();
+        opts.transport = .{ .SSH2 = .{} };
     }
 
     // TODO TEMP

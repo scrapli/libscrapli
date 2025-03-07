@@ -3,13 +3,13 @@ const std = @import("std");
 const driver = @import("../../driver-netconf.zig");
 const operation = @import("../../operation-netconf.zig");
 const ascii = @import("../../ascii.zig");
-const test_transport = @import("../../transport-test.zig");
+const transport = @import("../../transport.zig");
 const flags = @import("../../flags.zig");
 const file = @import("../../file.zig");
 const helper = @import("../../test-helper.zig");
 
 fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
-    var opts = driver.NewOptions();
+    var opts = driver.OptionsInputs{};
 
     opts.session.recorder = recorder;
 
@@ -25,7 +25,7 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
 }
 
 fn GetTestDriver(f: []const u8) !*driver.Driver {
-    var opts = driver.NewOptions();
+    var opts = driver.OptionsInputs{};
 
     // with read size 1 we end up donig a ZILLION regexs which is slow af,
     // by turning all the timeouts off and having the default netconf search
@@ -36,20 +36,23 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
     opts.session.read_delay_max_ns = 0;
     opts.session.operation_timeout_ns = std.time.ns_per_min * 1;
 
-    // the default initial search depth of 256 will be too deep and consume some of the
-    // server hello. this is just an issue due to how the test transport reads the file
-    opts.session.operation_max_search_depth = 32;
-
     opts.auth.username = "admin";
     opts.auth.password = "admin";
-    opts.transport = test_transport.NewOptions();
-    opts.transport.Test.f = f;
+    opts.transport = transport.OptionsInputs{ .Test = .{ .f = f } };
 
-    return driver.NewDriver(
+    const d = try driver.NewDriver(
         std.testing.allocator,
         "dummy",
         opts,
     );
+
+    // the default initial search depth of 256 will be too deep and consume some of the
+    // server hello. this is just an issue due to how the test transport reads the file
+    // we have to set it *after* init since the NewDriver defaults the size (for now its not
+    // configurable) to sane things that break the tests
+    d.options.session.operation_max_search_depth = 32;
+
+    return d;
 }
 
 test "driver-netconf open" {
@@ -106,8 +109,6 @@ test "driver-netconf open" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        try d.init();
         defer d.deinit();
 
         const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -186,8 +187,6 @@ test "driver-netconf get-config" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -275,8 +274,6 @@ test "driver-netconf lock" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
@@ -361,8 +358,6 @@ test "driver-netconf unlock" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        try d.init();
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());

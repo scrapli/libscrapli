@@ -102,10 +102,6 @@ pub const FfiDriver = struct {
         OperationResult,
     ),
 
-    pub fn init(self: *FfiDriver) !void {
-        return self.real_driver.init();
-    }
-
     pub fn deinit(self: *FfiDriver) void {
         self.operation_queue.deinit();
         self.operation_results.deinit();

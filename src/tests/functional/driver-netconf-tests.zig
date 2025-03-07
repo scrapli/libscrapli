@@ -14,19 +14,6 @@ const flags = @import("../../flags.zig");
 const file = @import("../../file.zig");
 const helper = @import("../../test-helper.zig");
 
-fn lookup_fn(_: []const u8, port: u16, k: []const u8) ?[]const u8 {
-    _ = k;
-    // testing is assuming containerlab on the host, so we just differentiate based on port
-    // since this can work on nix and darwin
-    if (port == 21830) {
-        return "NokiaSrl1!";
-    } else if (port == 22830) {
-        return "admin";
-    }
-
-    return "";
-}
-
 fn GetDriver(
     transportKind: transport.Kind,
     platform: []const u8,
@@ -34,20 +21,22 @@ fn GetDriver(
     key: ?[]const u8,
     passphrase: ?[]const u8,
 ) !*driver.Driver {
-    var port: u16 = undefined;
+    var opts = driver.OptionsInputs{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
-        port = 21830;
+        opts.port = 21830;
+        opts.auth.lookup_map = &.{
+            .{ .key = "login", .value = "NokiaSrl1!" },
+        };
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
-        port = 22830;
+        opts.port = 22830;
+        opts.auth.lookup_map = &.{
+            .{ .key = "login", .value = "admin" },
+        };
     } else {
         return error.UnknownPlatform;
     }
 
-    var opts = driver.NewOptions();
-
-    opts.port = port;
-    opts.auth.lookup_fn = lookup_fn;
     opts.auth.username = username;
 
     if (key != null) {
@@ -60,7 +49,9 @@ fn GetDriver(
     switch (transportKind) {
         .Bin => {},
         .SSH2 => {
-            opts.transport = ssh2_transport.NewOptions();
+            opts.transport = transport.OptionsInputs{
+                .SSH2 = .{},
+            };
         },
         else => {
             unreachable;
@@ -220,8 +211,6 @@ test "driver-netconf open" {
             case.key,
             case.passphrase,
         );
-
-        try d.init();
         defer d.deinit();
 
         const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
