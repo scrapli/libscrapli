@@ -17,7 +17,7 @@ pub const DeinitCallback = struct {
     context: *anyopaque,
 };
 
-pub const OptionsInputs = struct {
+pub const Config = struct {
     variant_name: ?[]const u8 = null,
     logger: ?logger.Logger = null,
     port: ?u16 = null,
@@ -35,7 +35,7 @@ pub const Options = struct {
     session: *session.Options,
     transport: *transport.Options,
 
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+    pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
 
@@ -43,16 +43,16 @@ pub const Options = struct {
 
         o.* = Options{
             .allocator = allocator,
-            .variant_name = opts.variant_name,
-            .logger = opts.logger,
-            .port = opts.port,
-            .auth = try auth.Options.init(allocator, opts.auth),
-            .session = try session.Options.init(allocator, opts.session),
-            .transport = try transport.Options.init(allocator, opts.transport),
+            .variant_name = config.variant_name,
+            .logger = config.logger,
+            .port = config.port,
+            .auth = try auth.Options.init(allocator, config.auth),
+            .session = try session.Options.init(allocator, config.session),
+            .transport = try transport.Options.init(allocator, config.transport),
         };
 
         if (o.variant_name != null) {
-            o.variant_name = try o.allocator.dupe(u8, opts.variant_name.?);
+            o.variant_name = try o.allocator.dupe(u8, config.variant_name.?);
         }
 
         return o;
@@ -75,12 +75,12 @@ pub fn NewDriverFromYaml(
     allocator: std.mem.Allocator,
     file_path: []const u8,
     host: []const u8,
-    options: OptionsInputs,
+    config: Config,
 ) !*Driver {
     var yaml_definition = try platform_yaml.DefinitionFromFilePath(
         allocator,
         file_path,
-        options.variant_name,
+        config.variant_name,
     );
     errdefer yaml_definition.deinit();
 
@@ -88,7 +88,7 @@ pub fn NewDriverFromYaml(
         allocator,
         host,
         yaml_definition.definition,
-        options,
+        config,
     );
 
     // TODO clean this/remove this? DefinitionFromX should just return the definition on the heap
@@ -102,12 +102,12 @@ pub fn NewDriverFromYamlString(
     allocator: std.mem.Allocator,
     definition_string: []const u8,
     host: []const u8,
-    options: OptionsInputs,
+    config: Config,
 ) !*Driver {
     var yaml_definition = try platform_yaml.DefinitionFromYamlString(
         allocator,
         definition_string,
-        options.variant_name,
+        config.variant_name,
     );
     errdefer yaml_definition.deinit();
 
@@ -115,7 +115,7 @@ pub fn NewDriverFromYamlString(
         allocator,
         host,
         yaml_definition.definition,
-        options,
+        config,
     );
 
     d.definition_source = yaml_definition;
@@ -145,9 +145,9 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         host: []const u8,
         definition: platform.Definition,
-        options: OptionsInputs,
+        config: Config,
     ) !*Driver {
-        const opts = try Options.init(allocator, options);
+        const opts = try Options.init(allocator, config);
 
         const log = opts.logger orelse logger.Logger{
             .allocator = allocator,

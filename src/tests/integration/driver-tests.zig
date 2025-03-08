@@ -10,7 +10,6 @@ const flags = @import("../../flags.zig");
 const ascii = @import("../../ascii.zig");
 const file = @import("../../file.zig");
 const result = @import("../../result.zig");
-const transport = @import("../../transport.zig");
 
 const helper = @import("../../test-helper.zig");
 
@@ -59,19 +58,20 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    var opts = driver.OptionsInputs{};
-
-    opts.session.recorder = recorder;
-
-    opts.auth.username = "admin";
-    opts.auth.password = "admin";
-    opts.port = 22022;
-
     return driver.NewDriverFromYaml(
         std.testing.allocator,
         platform_path_buf[0..platform_path_len],
         "localhost",
-        opts,
+        .{
+            .port = 22022,
+            .auth = .{
+                .username = "admin",
+                .password = "password",
+            },
+            .session = .{
+                .recorder = recorder,
+            },
+        },
     );
 }
 
@@ -79,23 +79,28 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    var opts = driver.OptionsInputs{};
-
-    opts.session.read_size = 1;
-    opts.session.read_delay_backoff_factor = 1;
-    opts.session.read_delay_min_ns = 1;
-    opts.session.read_delay_max_ns = 1;
-
-    opts.auth.username = "admin";
-    opts.auth.password = "admin";
-
-    opts.transport = transport.OptionsInputs{ .Test = .{ .f = f } };
-
     return driver.NewDriverFromYaml(
         std.testing.allocator,
         platform_path_buf[0..platform_path_len],
         "dummy",
-        opts,
+        .{
+            .port = 22022,
+            .auth = .{
+                .username = "admin",
+                .password = "password",
+            },
+            .session = .{
+                .read_size = 1,
+                .read_delay_backoff_factor = 1,
+                .read_delay_min_ns = 1,
+                .read_delay_max_ns = 1,
+            },
+            .transport = .{
+                .Test = .{
+                    .f = f,
+                },
+            },
+        },
     );
 }
 

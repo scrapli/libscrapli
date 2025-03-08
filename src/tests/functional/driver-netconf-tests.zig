@@ -21,35 +21,35 @@ fn GetDriver(
     key: ?[]const u8,
     passphrase: ?[]const u8,
 ) !*driver.Driver {
-    var opts = driver.OptionsInputs{};
+    var config = driver.Config{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
-        opts.port = 21830;
-        opts.auth.lookup_map = &.{
+        config.port = 21830;
+        config.auth.lookup_map = &.{
             .{ .key = "login", .value = "NokiaSrl1!" },
         };
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
-        opts.port = 22830;
-        opts.auth.lookup_map = &.{
+        config.port = 22830;
+        config.auth.lookup_map = &.{
             .{ .key = "login", .value = "admin" },
         };
     } else {
         return error.UnknownPlatform;
     }
 
-    opts.auth.username = username;
+    config.auth.username = username;
 
     if (key != null) {
-        opts.auth.private_key_path = key;
-        opts.auth.private_key_passphrase = passphrase;
+        config.auth.private_key_path = key;
+        config.auth.private_key_passphrase = passphrase;
     } else {
-        opts.auth.password = "__lookup::login";
+        config.auth.password = "__lookup::login";
     }
 
     switch (transportKind) {
         .Bin => {},
         .SSH2 => {
-            opts.transport = transport.OptionsInputs{
+            config.transport = transport.OptionsInputs{
                 .SSH2 = .{},
             };
         },
@@ -61,7 +61,7 @@ fn GetDriver(
     return driver.NewDriver(
         std.testing.allocator,
         "localhost",
-        opts,
+        config,
     );
 }
 

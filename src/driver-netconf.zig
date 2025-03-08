@@ -69,7 +69,7 @@ const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 
-pub const OptionsInputs = struct {
+pub const Config = struct {
     logger: ?logger.Logger = null,
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
@@ -91,20 +91,20 @@ pub const Options = struct {
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
 
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+    pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
 
         o.* = Options{
             .allocator = allocator,
-            .logger = opts.logger,
-            .port = opts.port,
-            .auth = try auth.Options.init(allocator, opts.auth),
-            .session = try session.Options.init(allocator, opts.session),
-            .transport = try transport.Options.init(allocator, opts.transport),
-            .error_tag = opts.error_tag,
-            .preferred_version = opts.preferred_version,
-            .message_poll_interval_ns = opts.message_poll_interval_ns,
+            .logger = config.logger,
+            .port = config.port,
+            .auth = try auth.Options.init(allocator, config.auth),
+            .session = try session.Options.init(allocator, config.session),
+            .transport = try transport.Options.init(allocator, config.transport),
+            .error_tag = config.error_tag,
+            .preferred_version = config.preferred_version,
+            .message_poll_interval_ns = config.message_poll_interval_ns,
         };
 
         o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
@@ -134,12 +134,12 @@ pub const Options = struct {
 pub fn NewDriver(
     allocator: std.mem.Allocator,
     host: []const u8,
-    options: OptionsInputs,
+    config: Config,
 ) !*Driver {
     return Driver.init(
         allocator,
         host,
-        options,
+        config,
     );
 }
 
@@ -180,9 +180,9 @@ pub const Driver = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         host: []const u8,
-        options: OptionsInputs,
+        config: Config,
     ) !*Driver {
-        const opts = try Options.init(allocator, options);
+        const opts = try Options.init(allocator, config);
 
         const log = opts.logger orelse logger.Logger{
             .allocator = allocator,

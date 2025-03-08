@@ -3,47 +3,53 @@ const std = @import("std");
 const driver = @import("../../driver-netconf.zig");
 const operation = @import("../../operation-netconf.zig");
 const ascii = @import("../../ascii.zig");
-const transport = @import("../../transport.zig");
 const flags = @import("../../flags.zig");
 const file = @import("../../file.zig");
 const helper = @import("../../test-helper.zig");
 
 fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
-    var opts = driver.OptionsInputs{};
-
-    opts.session.recorder = recorder;
-
-    opts.auth.username = "admin";
-    opts.auth.password = "admin";
-    opts.port = 22830;
-
     return driver.NewDriver(
         std.testing.allocator,
         "localhost",
-        opts,
+        .{
+            .port = 22830,
+            .auth = .{
+                .username = "admin",
+                .password = "admin",
+            },
+            .session = .{
+                .recorder = recorder,
+            },
+        },
     );
 }
 
 fn GetTestDriver(f: []const u8) !*driver.Driver {
-    var opts = driver.OptionsInputs{};
-
-    // with read size 1 we end up donig a ZILLION regexs which is slow af,
-    // by turning all the timeouts off and having the default netconf search
-    // depth be low we speed up the tests quite a bit
-    opts.session.read_size = 1;
-    opts.session.read_delay_backoff_factor = 0;
-    opts.session.read_delay_min_ns = 0;
-    opts.session.read_delay_max_ns = 0;
-    opts.session.operation_timeout_ns = std.time.ns_per_min * 1;
-
-    opts.auth.username = "admin";
-    opts.auth.password = "admin";
-    opts.transport = transport.OptionsInputs{ .Test = .{ .f = f } };
-
     const d = try driver.NewDriver(
         std.testing.allocator,
         "dummy",
-        opts,
+        .{
+            .port = 22830,
+            .auth = .{
+                .username = "admin",
+                .password = "admin",
+            },
+            .session = .{
+                // with read size 1 we end up donig a ZILLION regexs which is slow af,
+                // by turning all the timeouts off and having the default netconf search
+                // depth be low we speed up the tests quite a bit
+                .read_size = 1,
+                .read_delay_backoff_factor = 0,
+                .read_delay_min_ns = 0,
+                .read_delay_max_ns = 0,
+                .operation_timeout_ns = std.time.ns_per_min * 1,
+            },
+            .transport = .{
+                .Test = .{
+                    .f = f,
+                },
+            },
+        },
     );
 
     // the default initial search depth of 256 will be too deep and consume some of the

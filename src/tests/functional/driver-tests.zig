@@ -17,23 +17,6 @@ const helper = @import("../../test-helper.zig");
 const nokia_srlinux_platform_path_from_project_root = "src/tests/fixtures/platform_nokia_srlinux_no_open_close_callbacks.yaml";
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
-fn lookup_fn(_: []const u8, port: u16, k: []const u8) ?[]const u8 {
-    // testing is assuming containerlab on the host, so we just differentiate based on port
-    // since this can work on nix and darwin
-    if (port == 21022) {
-        return "NokiaSrl1!";
-    } else if (port == 22022) {
-        if (std.mem.startsWith(u8, k, "login")) {
-            return "admin";
-        }
-
-        // eos has no enable password set in testing
-        return "libscrapli";
-    }
-
-    return "";
-}
-
 fn GetDriver(
     transportKind: transport.Kind,
     platform: []const u8,
@@ -42,18 +25,18 @@ fn GetDriver(
     passphrase: ?[]const u8,
 ) !*driver.Driver {
     var platform_definition_path: []const u8 = undefined;
-    var opts = driver.OptionsInputs{};
+    var config = driver.Config{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         platform_definition_path = nokia_srlinux_platform_path_from_project_root;
-        opts.port = 21022;
-        opts.auth.lookup_map = &.{
+        config.port = 21022;
+        config.auth.lookup_map = &.{
             .{ .key = "login", .value = "NokiaSrl1!" },
         };
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
         platform_definition_path = arista_eos_platform_path_from_project_root;
-        opts.port = 22022;
-        opts.auth.lookup_map = &.{
+        config.port = 22022;
+        config.auth.lookup_map = &.{
             .{ .key = "login", .value = "admin" },
             .{ .key = "enable", .value = "libscrapli" },
         };
@@ -81,28 +64,28 @@ fn GetDriver(
 
     const platform_path = platform_path_buf[0..platform_path_len];
 
-    opts.auth.username = username;
+    config.auth.username = username;
 
     if (key != null) {
-        opts.auth.private_key_path = key;
-        opts.auth.private_key_passphrase = passphrase;
+        config.auth.private_key_path = key;
+        config.auth.private_key_passphrase = passphrase;
     } else {
-        opts.auth.password = "__lookup::login";
+        config.auth.password = "__lookup::login";
     }
 
     switch (transportKind) {
         .Bin,
         => {},
         .SSH2 => {
-            opts.transport = transport.OptionsInputs{
+            config.transport = transport.OptionsInputs{
                 .SSH2 = .{},
             };
         },
         .Telnet => {
-            opts.transport = transport.OptionsInputs{
+            config.transport = transport.OptionsInputs{
                 .Telnet = .{},
             };
-            opts.port = opts.port.? - 1;
+            config.port = config.port.? - 1;
         },
         else => {
             unreachable;
@@ -113,7 +96,7 @@ fn GetDriver(
         std.testing.allocator,
         platform_path,
         "localhost",
-        opts,
+        config,
     );
 }
 
