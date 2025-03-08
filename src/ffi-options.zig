@@ -87,7 +87,12 @@ export fn setDriverOptionSessionReturnChar(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.session.options.return_char = std.mem.span(value);
+    d.real_driver.session.options.return_char = d.real_driver.session.options.allocator.dupe(
+        u8,
+        std.mem.span(value),
+    ) catch {
+        return 1;
+    };
 
     return 0;
 }
@@ -124,9 +129,10 @@ export fn setDriverOptionAuthUsername(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    // TODO
-    d.real_driver.options.auth.username = d.real_driver.options.auth.allocator.dupe(u8, std.mem.span(value)) catch {
-        std.debug.print("BAD BINGO\n", .{});
+    d.real_driver.options.auth.username = d.real_driver.options.auth.allocator.dupe(
+        u8,
+        std.mem.span(value),
+    ) catch {
         return 1;
     };
 
@@ -140,8 +146,10 @@ export fn setDriverOptionAuthPassword(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     // TODO
-    d.real_driver.options.auth.password = d.real_driver.options.auth.allocator.dupe(u8, std.mem.span(value)) catch {
-        std.debug.print("BAD BINGO\n", .{});
+    d.real_driver.options.auth.password = d.real_driver.options.auth.allocator.dupe(
+        u8,
+        std.mem.span(value),
+    ) catch {
         return 1;
     };
 
@@ -154,8 +162,12 @@ export fn setDriverOptionAuthPrivateKeyPath(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    // TODO
-    d.real_driver.session.auth_options.private_key_path = std.mem.span(value);
+    d.real_driver.options.auth.private_key_path = d.real_driver.options.auth.allocator.dupe(
+        u8,
+        std.mem.span(value),
+    ) catch {
+        return 1;
+    };
 
     return 0;
 }
@@ -166,8 +178,12 @@ export fn setDriverOptionAuthPrivateKeyPassphrase(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    // TODO -- all of the strings basically
-    d.real_driver.session.auth_options.private_key_passphrase = std.mem.span(value);
+    d.real_driver.options.auth.private_key_passphrase = d.real_driver.options.auth.allocator.dupe(
+        u8,
+        std.mem.span(value),
+    ) catch {
+        return 1;
+    };
 
     return 0;
 }
@@ -193,7 +209,6 @@ export fn setDriverOptionAuthLookupKeyValue(
         std.mem.span(key),
         std.mem.span(value),
     ) catch {
-        std.debug.print("BAD BINGO\n", .{});
         return 1;
     };
 
@@ -206,7 +221,12 @@ export fn setDriverOptionAuthUsernamePattern(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.session.auth_options.username_pattern = std.mem.span(value);
+    d.real_driver.session.auth_options.username_pattern = d.real_driver.options.auth.allocator.dupe(
+        u8,
+        std.mem.span(value),
+    ) catch {
+        return 1;
+    };
 
     return 0;
 }
@@ -217,7 +237,12 @@ export fn setDriverOptionAuthPasswordPattern(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.session.auth_options.password_pattern = std.mem.span(value);
+    d.real_driver.session.auth_options.password_pattern = d.real_driver.options.auth.allocator.dupe(
+        u8,
+        std.mem.span(value),
+    ) catch {
+        return 1;
+    };
 
     return 0;
 }
@@ -228,7 +253,12 @@ export fn setDriverOptionAuthPassphrasePattern(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.session.auth_options.passphrase_pattern = std.mem.span(value);
+    d.real_driver.session.auth_options.passphrase_pattern = d.real_driver.options.auth.allocator.dupe(
+        u8,
+        std.mem.span(value),
+    ) catch {
+        return 1;
+    };
 
     return 0;
 }
@@ -245,7 +275,12 @@ export fn setDriverOptionBinTransportBin(
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.bin = std.mem.span(value);
+            d.real_driver.options.transport.Bin.bin = d.real_driver.options.transport.Bin.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                return 1;
+            };
         },
         else => {
             return 1;
@@ -263,7 +298,12 @@ export fn setDriverOptionBinTransportExtraOpenArgs(
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.extra_open_args = std.mem.span(value);
+            d.real_driver.options.transport.Bin.extra_open_args = d.real_driver.options.transport.Bin.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                return 1;
+            };
         },
         else => {
             return 1;
@@ -281,7 +321,12 @@ export fn setDriverOptionBinTransportOverrideOpenArgs(
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.override_open_args = std.mem.span(value);
+            d.real_driver.options.transport.Bin.override_open_args = d.real_driver.options.transport.Bin.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                return 1;
+            };
         },
         else => {
             return 1;
@@ -299,7 +344,12 @@ export fn setDriverOptionBinTransportSSHConfigPath(
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.ssh_config_path = std.mem.span(value);
+            d.real_driver.options.transport.Bin.ssh_config_path = d.real_driver.options.transport.Bin.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                return 1;
+            };
         },
         else => {
             return 1;
@@ -317,7 +367,12 @@ export fn setDriverOptionBinTransportKnownHostsPath(
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.known_hosts_path = std.mem.span(value);
+            d.real_driver.options.transport.Bin.known_hosts_path = d.real_driver.options.transport.Bin.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                return 1;
+            };
         },
         else => {
             return 1;
@@ -334,7 +389,7 @@ export fn setDriverOptionBinTransportEnableStrictKey(
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.enable_strict_key = true;
+            d.real_driver.options.transport.Bin.enable_strict_key = true;
         },
         else => {
             return 1;
@@ -352,7 +407,7 @@ export fn setDriverOptionBinTransportTermHeight(
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.term_height = value;
+            d.real_driver.options.transport.Bin.term_height = value;
         },
         else => {
             return 1;
@@ -370,7 +425,7 @@ export fn setDriverOptionBinTransportTermWidth(
 
     switch (d.real_driver.session.transport.implementation) {
         .Bin => {
-            d.real_driver.session.transport.implementation.Bin.options.term_width = value;
+            d.real_driver.options.transport.Bin.term_width = value;
         },
         else => {
             return 1;
@@ -391,7 +446,7 @@ export fn setDriverOptionSSH2TransportSSH2Trace(
 
     switch (d.real_driver.session.transport.implementation) {
         .SSH2 => {
-            d.real_driver.session.transport.implementation.SSH2.options.libssh2_trace = true;
+            d.real_driver.options.transport.SSH2.libssh2_trace = true;
         },
         else => {
             return 1;
