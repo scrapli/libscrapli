@@ -1,13 +1,13 @@
 const std = @import("std");
 
 const ffi_options = @import("ffi-options.zig");
+const ffi_options_netconf = @import("ffi-options-netconf.zig");
 const ffi_driver = @import("ffi-driver.zig");
+const ffi_driver_netconf = @import("ffi-driver-netconf.zig");
 const ffi_operation = @import("ffi-operation.zig");
 const operation = @import("operation.zig");
+const operation_netconf = @import("operation-netconf.zig");
 const driver = @import("driver.zig");
-const netconf_ffi_options = @import("ffi-options-netconf.zig");
-const netconf_ffi_driver = @import("ffi-driver-netconf.zig");
-const netconf_operation = @import("operation-netconf.zig");
 const logger = @import("logger.zig");
 const ascii = @import("ascii.zig");
 
@@ -484,11 +484,8 @@ export fn sendPromptedInput(
 export fn netconfAllocDriver(
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
-    transport_kind: [*c]const u8,
     port: u16,
-    username: [*c]const u8,
-    password: [*c]const u8,
-    session_timeout_ns: u64,
+    transport_kind: [*c]const u8,
 ) usize {
     var log = logger.Logger{ .allocator = allocator, .f = null };
 
@@ -498,16 +495,13 @@ export fn netconfAllocDriver(
 
     const host_slice = std.mem.span(host);
 
-    const opts = netconf_ffi_options.NewDriverOptionsFromAlloc(
+    const opts = ffi_options_netconf.NewDriverOptionsFromAlloc(
         log,
         transport_kind,
         port,
-        username,
-        password,
-        session_timeout_ns,
     );
 
-    const d = netconf_ffi_driver.NewFfiDriver(
+    const d = ffi_driver_netconf.NewFfiDriver(
         allocator,
         host_slice,
         opts,
@@ -523,7 +517,7 @@ export fn netconfAllocDriver(
 export fn netconfFreeDriver(
     d_ptr: usize,
 ) void {
-    const d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    const d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     d.deinit();
 }
@@ -533,7 +527,7 @@ export fn netconfOpenDriver(
     operation_id: *u32,
     cancel: *bool,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
         d.real_driver.log.critical("error during driver open {any}", .{err});
@@ -541,10 +535,10 @@ export fn netconfOpenDriver(
         return 1;
     };
 
-    const _operation_id = d.queueOperation(netconf_ffi_driver.OperationOptions{
-        .Open = netconf_ffi_driver.OpenOperation{
+    const _operation_id = d.queueOperation(ffi_driver_netconf.OperationOptions{
+        .Open = ffi_driver_netconf.OpenOperation{
             .id = 0,
-            .options = netconf_operation.OpenOptions{
+            .options = operation_netconf.OpenOptions{
                 .cancel = cancel,
             },
         },
@@ -563,7 +557,7 @@ export fn netconfCloseDriver(
     d_ptr: usize,
     cancel: *bool,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     d.close(cancel) catch |err| {
         d.real_driver.log.critical("error during driver close {any}", .{err});
@@ -582,7 +576,7 @@ export fn netconfPollOperation(
     operation_result_size: *u64,
     operation_error_size: *u64,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.pollOperation(operation_id, false) catch |err| {
         d.real_driver.log.critical("error during poll operation {any}", .{err});
@@ -618,7 +612,7 @@ export fn netconfWaitOperation(
     operation_result_size: *u64,
     operation_error_size: *u64,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     while (true) {
         const ret = d.pollOperation(operation_id, false) catch |err| {
@@ -656,7 +650,7 @@ export fn netconfFetchOperation(
     operation_result: *[]u8,
     operation_error: *[]u8,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.pollOperation(operation_id, true) catch |err| {
         d.real_driver.log.critical("error during fetch operation {any}", .{err});
@@ -718,13 +712,13 @@ export fn netconfGetConfig(
     operation_id: *u32,
     cancel: *bool,
 ) u8 {
-    const d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    const d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
-    var opts = netconf_operation.NewGetConfigOptions();
+    var opts = operation_netconf.NewGetConfigOptions();
     opts.cancel = cancel;
 
-    const _operation_id = d.queueOperation(netconf_ffi_driver.OperationOptions{
-        .GetConfig = netconf_ffi_driver.GetConfigOperation{
+    const _operation_id = d.queueOperation(ffi_driver_netconf.OperationOptions{
+        .GetConfig = ffi_driver_netconf.GetConfigOperation{
             .id = 0,
             .options = opts,
         },

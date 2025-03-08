@@ -305,6 +305,7 @@ pub const Transport = struct {
     }
 
     pub fn write(self: *Transport, buf: []const u8) !void {
+        // TODO should move this to session and add the "redacted" flag
         self.log.debug("transport write start, writing '{s}'", .{buf});
 
         switch (self.implementation) {
