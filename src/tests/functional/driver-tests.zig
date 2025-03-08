@@ -25,7 +25,12 @@ fn GetDriver(
     passphrase: ?[]const u8,
 ) !*driver.Driver {
     var platform_definition_path: []const u8 = undefined;
-    var config = driver.Config{};
+
+    var config = driver.Config{
+        .definition = .{
+            .file = "",
+        },
+    };
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         platform_definition_path = nokia_srlinux_platform_path_from_project_root;
@@ -62,7 +67,7 @@ fn GetDriver(
     );
     platform_path_len += platform_definition_path.len;
 
-    const platform_path = platform_path_buf[0..platform_path_len];
+    config.definition.file = platform_path_buf[0..platform_path_len];
 
     config.auth.username = username;
 
@@ -92,9 +97,8 @@ fn GetDriver(
         },
     }
 
-    return driver.NewDriverFromYaml(
+    return driver.Driver.init(
         std.testing.allocator,
-        platform_path,
         "localhost",
         config,
     );

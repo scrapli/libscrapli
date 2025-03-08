@@ -6,6 +6,9 @@ const transport_ssh2 = @import("transport-ssh2.zig");
 const transport_test = @import("transport-test.zig");
 const logger = @import("logger.zig");
 
+// TODO i think its idiomatic now(?) for these to be lower -- check w/ 0.14.0 prs cuz this changed
+// recently i think, also maybe look in zig-yaml since i think same cahnges there -- then normalize
+// whole lib like the right way, should mostly be here...
 pub const Kind = enum {
     Bin,
     Telnet,

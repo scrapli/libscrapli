@@ -35,12 +35,12 @@ pub const OperationOptions = union(OperationKind) {
 pub fn NewFfiDriver(
     allocator: std.mem.Allocator,
     host: []const u8,
-    options: driver.OptionsInputs,
+    config: driver.Config,
 ) !*FfiDriver {
     const real_driver = try driver.NewDriver(
         allocator,
         host,
-        options,
+        config,
     );
 
     const ffi_driver = try allocator.create(FfiDriver);

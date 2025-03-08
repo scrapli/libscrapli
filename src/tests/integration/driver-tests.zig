@@ -58,11 +58,13 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    return driver.NewDriverFromYaml(
+    return driver.Driver.init(
         std.testing.allocator,
-        platform_path_buf[0..platform_path_len],
         "localhost",
         .{
+            .definition = .{
+                .file = platform_path_buf[0..platform_path_len],
+            },
             .port = 22022,
             .auth = .{
                 .username = "admin",
@@ -79,11 +81,13 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    return driver.NewDriverFromYaml(
+    return driver.Driver.init(
         std.testing.allocator,
-        platform_path_buf[0..platform_path_len],
         "dummy",
         .{
+            .definition = .{
+                .file = platform_path_buf[0..platform_path_len],
+            },
             .port = 22022,
             .auth = .{
                 .username = "admin",
@@ -548,22 +552,18 @@ test "driver enter-mode" {
 
     const cases = [_]struct {
         name: []const u8,
-        default_mode: []const u8,
         requested_mode: []const u8,
     }{
         .{
             .name = "no-change",
-            .default_mode = mode.default_mode,
             .requested_mode = "exec",
         },
         .{
             .name = "priv-exec-to-priv-exec",
-            .default_mode = mode.default_mode,
             .requested_mode = "privileged_exec",
         },
         .{
             .name = "exec-to-configuration",
-            .default_mode = mode.default_mode,
             .requested_mode = "configuration",
         },
     };
@@ -611,8 +611,6 @@ test "driver enter-mode" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        d.definition.default_mode = case.default_mode;
 
         defer d.deinit();
 

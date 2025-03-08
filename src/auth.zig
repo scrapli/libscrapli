@@ -72,7 +72,7 @@ pub const Options = struct {
 
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
+        errdefer o.deinit();
 
         o.* = Options{
             .allocator = allocator,
@@ -134,27 +134,6 @@ pub const Options = struct {
         return o;
     }
 
-    pub fn extendLookupMap(self: *Options, k: []const u8, v: []const u8) !void {
-        var cur_size: usize = 0;
-
-        if (self.lookup_map != null) {
-            cur_size = self.lookup_map.?.len;
-        }
-
-        const lm = try self.allocator.alloc(LookupKeyValue, cur_size + 1);
-
-        if (cur_size > 1) {
-            @memcpy(lm[0..cur_size], self.lookup_map.?[0..]);
-        }
-
-        lm[cur_size] = .{
-            .key = try self.allocator.dupe(u8, k),
-            .value = try self.allocator.dupe(u8, v),
-        };
-
-        self.lookup_map = lm;
-    }
-
     pub fn deinit(self: *Options) void {
         if (self.username != null) {
             self.allocator.free(self.username.?);
@@ -194,6 +173,27 @@ pub const Options = struct {
         }
 
         self.allocator.destroy(self);
+    }
+
+    pub fn extendLookupMap(self: *Options, k: []const u8, v: []const u8) !void {
+        var cur_size: usize = 0;
+
+        if (self.lookup_map != null) {
+            cur_size = self.lookup_map.?.len;
+        }
+
+        const lm = try self.allocator.alloc(LookupKeyValue, cur_size + 1);
+
+        if (cur_size > 1) {
+            @memcpy(lm[0..cur_size], self.lookup_map.?[0..]);
+        }
+
+        lm[cur_size] = .{
+            .key = try self.allocator.dupe(u8, k),
+            .value = try self.allocator.dupe(u8, v),
+        };
+
+        self.lookup_map = lm;
     }
 
     pub fn resolveAuthValue(self: *Options, v: []const u8) ![]const u8 {

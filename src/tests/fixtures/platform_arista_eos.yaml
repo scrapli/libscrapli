@@ -1,49 +1,50 @@
 ---
-kind: 'arista_eos'
-default:
-  prompt_pattern: '^.*[>#$]\s?+$'
-  default_mode: 'privileged_exec'
-  modes:
-    - name: 'exec'
-      prompt_pattern: '^.*>'
-      accessible_modes:
-        - name: 'privileged_exec'
-          send_prompted_input:
-            input: 'enable'
-            prompt: 'Password:'
-            response: '__lookup::enable'
-    - name: 'privileged_exec'
-      prompt_pattern: '^.*#'
-      accessible_modes:
-        - name: 'exec'
-          send_input:
+prompt_pattern: '^.*[>#$]\s?+$'
+default_mode: 'privileged_exec'
+modes:
+  - name: 'exec'
+    prompt_pattern: '^.*>'
+    accessible_modes:
+      - name: 'privileged_exec'
+        instructions:
+          - send_prompted_input:
+              input: 'enable'
+              prompt: 'Password:'
+              response: '__lookup::enable'
+  - name: 'privileged_exec'
+    prompt_pattern: '^.*#'
+    accessible_modes:
+      - name: 'exec'
+        instructions:
+          - send_input:
             input: 'disable'
-        - name: 'configuration'
-          send_input:
+      - name: 'configuration'
+        instructions:
+          - send_input:
             input: 'configure terminal'
-    - name: 'configuration'
-      prompt_pattern: '^.*\(conf.*\)#'
-      accessible_modes:
-        - name: 'privileged_exec'
-          send_input:
+  - name: 'configuration'
+    prompt_pattern: '^.*\(conf.*\)#'
+    accessible_modes:
+      - name: 'privileged_exec'
+        instructions:
+          - send_input:
             input: 'end'
-  failure_indicators:
-    - "% Ambiguous command"
-    - "% Error"
-    - "% Incomplete command"
-    - "% Invalid input"
-    - "% Cannot commit"
-    - "% Unavailable command"
-  on_open_instructions:
-    - enter_mode:
-        requested_mode: 'privileged_exec'
-    - send_input:
-        input: 'term width 32767'
-    - send_input:
-        input: 'term len 0'
-  on_close_instructions:
-    - enter_mode:
-        requested_mode: 'privileged_exec'
-    - write:
-        input: 'exit'
-variants: []
+failure_indicators:
+  - "% Ambiguous command"
+  - "% Error"
+  - "% Incomplete command"
+  - "% Invalid input"
+  - "% Cannot commit"
+  - "% Unavailable command"
+on_open_instructions:
+  - enter_mode:
+      requested_mode: 'privileged_exec'
+  - send_input:
+      input: 'term width 32767'
+  - send_input:
+      input: 'term len 0'
+on_close_instructions:
+  - enter_mode:
+      requested_mode: 'privileged_exec'
+  - write:
+      input: 'exit'

@@ -7,7 +7,6 @@ const platform = @import("platform.zig");
 const operation = @import("operation.zig");
 const mode = @import("mode.zig");
 const result = @import("result.zig");
-const platform_yaml = @import("platform-yaml.zig");
 
 const default_ssh_port: u16 = 22;
 const default_telnet_port: u16 = 23;
@@ -17,8 +16,14 @@ pub const DeinitCallback = struct {
     context: *anyopaque,
 };
 
+pub const DefinitionSource = union(enum) {
+    string: []const u8,
+    file: []const u8,
+    definition: *platform.Definition,
+};
+
 pub const Config = struct {
-    variant_name: ?[]const u8 = null,
+    definition: DefinitionSource,
     logger: ?logger.Logger = null,
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
@@ -28,7 +33,6 @@ pub const Config = struct {
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
-    variant_name: ?[]const u8,
     logger: ?logger.Logger,
     port: ?u16,
     auth: *auth.Options,
@@ -39,11 +43,8 @@ pub const Options = struct {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
 
-        // TODO probably should just arena alloc this shit?
-
         o.* = Options{
             .allocator = allocator,
-            .variant_name = config.variant_name,
             .logger = config.logger,
             .port = config.port,
             .auth = try auth.Options.init(allocator, config.auth),
@@ -51,130 +52,73 @@ pub const Options = struct {
             .transport = try transport.Options.init(allocator, config.transport),
         };
 
-        if (o.variant_name != null) {
-            o.variant_name = try o.allocator.dupe(u8, config.variant_name.?);
-        }
-
         return o;
     }
 
     pub fn deinit(self: *Options) void {
-        if (self.variant_name != null) {
-            self.allocator.free(self.variant_name.?);
-        }
-
         self.auth.deinit();
         self.session.deinit();
         self.transport.deinit();
-
         self.allocator.destroy(self);
     }
 };
 
-pub fn NewDriverFromYaml(
-    allocator: std.mem.Allocator,
-    file_path: []const u8,
-    host: []const u8,
-    config: Config,
-) !*Driver {
-    var yaml_definition = try platform_yaml.DefinitionFromFilePath(
-        allocator,
-        file_path,
-        config.variant_name,
-    );
-    errdefer yaml_definition.deinit();
-
-    var d = try Driver.init(
-        allocator,
-        host,
-        yaml_definition.definition,
-        config,
-    );
-
-    // TODO clean this/remove this? DefinitionFromX should just return the definition on the heap
-    //  and clean anything else as it goes (i.e. loaded yaml, filepath, etc.)
-    d.definition_source = yaml_definition;
-
-    return d;
-}
-
-pub fn NewDriverFromYamlString(
-    allocator: std.mem.Allocator,
-    definition_string: []const u8,
-    host: []const u8,
-    config: Config,
-) !*Driver {
-    var yaml_definition = try platform_yaml.DefinitionFromYamlString(
-        allocator,
-        definition_string,
-        config.variant_name,
-    );
-    errdefer yaml_definition.deinit();
-
-    var d = try Driver.init(
-        allocator,
-        host,
-        yaml_definition.definition,
-        config,
-    );
-
-    d.definition_source = yaml_definition;
-
-    return d;
-}
-
 pub const Driver = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
-
-    deinit_callbacks: std.ArrayList(DeinitCallback),
-
-    definition_source: ?platform_yaml.DefinitionFromYaml,
-    definition: platform.Definition,
-
+    definition: *platform.Definition,
     host: []const u8,
     port: u16,
-
     options: *Options,
-
     session: *session.Session,
-
     current_mode: []const u8,
 
     pub fn init(
         allocator: std.mem.Allocator,
         host: []const u8,
-        definition: platform.Definition,
         config: Config,
     ) !*Driver {
         const opts = try Options.init(allocator, config);
+        errdefer opts.deinit();
 
         const log = opts.logger orelse logger.Logger{
             .allocator = allocator,
             .f = logger.noopLogf,
         };
 
-        const sess = try session.NewSession(
-            allocator,
-            log,
-            definition.prompt_pattern,
-            opts.session,
-            opts.auth,
-            opts.transport,
-        );
+        const definition = switch (config.definition) {
+            .string => |d| try platform.YamlDefinition.ToDefinition(
+                allocator,
+                .{
+                    .string = d,
+                },
+            ),
+            .file => |d| try platform.YamlDefinition.ToDefinition(
+                allocator,
+                .{
+                    .file = d,
+                },
+            ),
+            .definition => |d| d,
+        };
 
         const d = try allocator.create(Driver);
 
         d.* = Driver{
             .allocator = allocator,
             .log = log,
-            .deinit_callbacks = std.ArrayList(DeinitCallback).init(allocator),
-            .definition_source = null,
             .definition = definition,
             .host = host,
             .port = 0,
             .options = opts,
-            .session = sess,
+            .session = try session.NewSession(
+                allocator,
+                log,
+                definition.prompt_pattern,
+                opts.session,
+                opts.auth,
+                opts.transport,
+            ),
             .current_mode = mode.unknown_mode,
         };
 
@@ -196,45 +140,10 @@ pub const Driver = struct {
         return d;
     }
 
-    // lets us register things that should be deinit'd when the driver is deinit'd
-    pub fn registerDeinitCallback(
-        self: *Driver,
-        ptr: anytype,
-        comptime deinitFn: fn (arg: @TypeOf(ptr)) void,
-    ) !void {
-        const Ptr = @TypeOf(ptr);
-        const Wrapper = struct {
-            fn wrapped(ctx: *anyopaque) void {
-                const typed_ptr = @as(Ptr, @ptrFromInt(@intFromPtr(ctx)));
-                deinitFn(typed_ptr);
-            }
-        };
-
-        try self.deinit_callbacks.append(.{
-            .f = &Wrapper.wrapped,
-            .context = @ptrFromInt(@intFromPtr(ptr)),
-        });
-    }
-
     pub fn deinit(self: *Driver) void {
         self.session.deinit();
         self.definition.deinit();
-
-        var i: usize = self.deinit_callbacks.items.len;
-        while (i > 0) {
-            i -= 1;
-            const callback = self.deinit_callbacks.items[i];
-            callback.f(callback.context);
-        }
-
-        self.deinit_callbacks.deinit();
-
-        if (self.definition_source != null) {
-            self.definition_source.?.deinit();
-        }
-
         self.options.deinit();
-
         self.allocator.destroy(self);
     }
 
@@ -288,25 +197,23 @@ pub const Driver = struct {
         {
             self.log.info("on open callback set, executing...", .{});
 
-            var on_open_res: ?*result.Result = null;
-
             if (self.definition.on_open_callback != null) {
-                on_open_res = try self.definition.on_open_callback.?(
-                    self,
-                    allocator,
-                    options.cancel,
+                try res.recordExtend(
+                    try self.definition.on_open_callback.?(
+                        self,
+                        allocator,
+                        options.cancel,
+                    ),
                 );
             } else {
-                on_open_res = try self.definition.bound_on_open_callback.?.callback(
-                    self.definition.bound_on_open_callback.?.ptr,
-                    self,
-                    allocator,
-                    options.cancel,
+                try res.recordExtend(
+                    try self.definition.bound_on_open_callback.?.callback(
+                        allocator,
+                        self,
+                        options.cancel,
+                    ),
                 );
             }
-
-            // cant be null if we get here
-            try res.recordExtend(on_open_res.?);
         }
 
         return res;
@@ -328,25 +235,23 @@ pub const Driver = struct {
         {
             self.log.info("on close callback set, executing...", .{});
 
-            var on_close_res: ?*result.Result = null;
-
             if (self.definition.on_open_callback != null) {
-                on_close_res = try self.definition.on_close_callback.?(
-                    self,
-                    allocator,
-                    options.cancel,
+                try res.recordExtend(
+                    try self.definition.on_close_callback.?(
+                        self,
+                        allocator,
+                        options.cancel,
+                    ),
                 );
             } else {
-                on_close_res = try self.definition.bound_on_close_callback.?.callback(
-                    self.definition.bound_on_open_callback.?.ptr,
-                    self,
-                    allocator,
-                    options.cancel,
+                try res.recordExtend(
+                    try self.definition.bound_on_close_callback.?.callback(
+                        allocator,
+                        self,
+                        options.cancel,
+                    ),
                 );
             }
-
-            // cant be null if we get here
-            try res.recordExtend(on_close_res.?);
         }
 
         self.session.close();
@@ -405,7 +310,6 @@ pub const Driver = struct {
                 get_prompt_options,
             ),
         );
-
         self.current_mode = try mode.determineMode(
             self.definition.modes,
             res.results.items[0],
@@ -444,42 +348,9 @@ pub const Driver = struct {
                 return error.UnknownMode;
             }
 
-            switch (next_operation.?) {
-                .SendInput => {
-                    var opts = operation.NewSendInputOptions();
-
-                    opts.cancel = options.cancel;
-                    opts.requested_mode = self.current_mode;
-                    opts.retain_input = true;
-                    opts.retain_trailing_prompt = true;
-
-                    try res.recordExtend(
-                        try self.sendInput(
-                            allocator,
-                            next_operation.?.SendInput.input,
-                            opts,
-                        ),
-                    );
-                },
-                .SendPromptedInput => {
-                    var response: []const u8 = "";
-
-                    if (self.options.auth.resolveAuthValue(
-                        next_operation.?.SendPromptedInput.response,
-                    )) |resolved_response| {
-                        response = resolved_response;
-                    } else |err| switch (err) {
-                        else => {},
-                    }
-
-                    if (response.len == 0) {
-                        // no "response" (usually "enable"/escalation type password), so we will
-                        // log it and just try a send input rather than "prompted" input
-                        self.log.warn(
-                            "prompted input requested to change to mode '{s}', but no response found, trying standard send input",
-                            .{requested_mode_name},
-                        );
-
+            for (next_operation.?) |op| {
+                switch (op) {
+                    .send_input => {
                         var opts = operation.NewSendInputOptions();
 
                         opts.cancel = options.cancel;
@@ -490,28 +361,63 @@ pub const Driver = struct {
                         try res.recordExtend(
                             try self.sendInput(
                                 allocator,
-                                next_operation.?.SendPromptedInput.input,
+                                op.send_input.send_input.input,
                                 opts,
                             ),
                         );
-                    } else {
-                        var opts = operation.NewSendPromptedInputOptions();
+                    },
+                    .send_prompted_input => {
+                        var response: []const u8 = "";
 
-                        opts.cancel = options.cancel;
-                        opts.requested_mode = self.current_mode;
-                        opts.retain_trailing_prompt = true;
+                        if (self.options.auth.resolveAuthValue(
+                            op.send_prompted_input.send_prompted_input.response,
+                        )) |resolved_response| {
+                            response = resolved_response;
+                        } else |err| switch (err) {
+                            else => {},
+                        }
 
-                        try res.recordExtend(
-                            try self.sendPromptedInput(
-                                allocator,
-                                next_operation.?.SendPromptedInput.input,
-                                next_operation.?.SendPromptedInput.prompt,
-                                response,
-                                opts,
-                            ),
-                        );
-                    }
-                },
+                        if (response.len == 0) {
+                            // no "response" (usually "enable"/escalation type password), so we will
+                            // log it and just try a send input rather than "prompted" input
+                            self.log.warn(
+                                "prompted input requested to change to mode '{s}', but no response found, trying standard send input",
+                                .{requested_mode_name},
+                            );
+
+                            var opts = operation.NewSendInputOptions();
+
+                            opts.cancel = options.cancel;
+                            opts.requested_mode = self.current_mode;
+                            opts.retain_input = true;
+                            opts.retain_trailing_prompt = true;
+
+                            try res.recordExtend(
+                                try self.sendInput(
+                                    allocator,
+                                    op.send_prompted_input.send_prompted_input.input,
+                                    opts,
+                                ),
+                            );
+                        } else {
+                            var opts = operation.NewSendPromptedInputOptions();
+
+                            opts.cancel = options.cancel;
+                            opts.requested_mode = self.current_mode;
+                            opts.retain_trailing_prompt = true;
+
+                            try res.recordExtend(
+                                try self.sendPromptedInput(
+                                    allocator,
+                                    op.send_prompted_input.send_prompted_input.input,
+                                    op.send_prompted_input.send_prompted_input.prompt,
+                                    response,
+                                    opts,
+                                ),
+                            );
+                        }
+                    },
+                }
             }
         }
 

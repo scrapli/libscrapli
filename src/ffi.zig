@@ -1,7 +1,5 @@
 const std = @import("std");
 
-const ffi_options = @import("ffi-options.zig");
-const ffi_options_netconf = @import("ffi-options-netconf.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_driver_netconf = @import("ffi-driver-netconf.zig");
 const ffi_operation = @import("ffi-operation.zig");
@@ -10,6 +8,7 @@ const operation_netconf = @import("operation-netconf.zig");
 const driver = @import("driver.zig");
 const logger = @import("logger.zig");
 const ascii = @import("ascii.zig");
+const transport = @import("transport.zig");
 
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
@@ -42,9 +41,20 @@ export fn assertNoLeaks() bool {
     }
 }
 
+fn getTransport(transport_kind: []const u8) transport.Kind {
+    if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.Bin))) {
+        return transport.Kind.Bin;
+    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.Telnet))) {
+        return transport.Kind.Telnet;
+    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.SSH2))) {
+        return transport.Kind.SSH2;
+    } else {
+        @panic("unsupported transport");
+    }
+}
+
 export fn allocDriver(
     definition_string: [*c]const u8,
-    definition_variant: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
     port: u16,
@@ -56,18 +66,24 @@ export fn allocDriver(
         log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
     }
 
-    const options = ffi_options.NewDriverOptionsFromAlloc(
-        definition_variant,
-        log,
-        port,
-        transport_kind,
-    );
-
-    const real_driver = driver.NewDriverFromYamlString(
+    const real_driver = driver.Driver.init(
         allocator,
-        std.mem.span(definition_string),
         std.mem.span(host),
-        options,
+        .{
+            .definition = .{
+                .string = std.mem.span(definition_string),
+            },
+            .logger = log,
+            .port = port,
+            .transport = switch (getTransport(std.mem.span(transport_kind))) {
+                transport.Kind.Bin => .{ .Bin = .{} },
+                transport.Kind.Telnet => .{ .Telnet = .{} },
+                transport.Kind.SSH2 => .{ .SSH2 = .{} },
+                else => {
+                    unreachable;
+                },
+            },
+        },
     ) catch |err| {
         log.critical("error during NewDriverFromYamlString: {any}", .{err});
 
@@ -493,18 +509,20 @@ export fn netconfAllocDriver(
         log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
     }
 
-    const host_slice = std.mem.span(host);
-
-    const opts = ffi_options_netconf.NewDriverOptionsFromAlloc(
-        log,
-        transport_kind,
-        port,
-    );
-
     const d = ffi_driver_netconf.NewFfiDriver(
         allocator,
-        host_slice,
-        opts,
+        std.mem.span(host),
+        .{
+            .logger = log,
+            .port = port,
+            .transport = switch (getTransport(std.mem.span(transport_kind))) {
+                transport.Kind.Bin => .{ .Bin = .{} },
+                transport.Kind.SSH2 => .{ .SSH2 = .{} },
+                else => {
+                    unreachable;
+                },
+            },
+        },
     ) catch |err| {
         log.critical("error during alloc driver {any}", .{err});
 
