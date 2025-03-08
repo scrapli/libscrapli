@@ -104,7 +104,19 @@ pub const Options = struct {
         }
 
         if (o.lookup_map != null) {
-            // TODO
+            const lm = try o.allocator.alloc(
+                LookupKeyValue,
+                o.lookup_map.?.len,
+            );
+
+            for (0..o.lookup_map.?.len) |idx| {
+                lm[idx] = .{
+                    .key = try o.allocator.dupe(u8, o.lookup_map.?[idx].key),
+                    .value = try o.allocator.dupe(u8, o.lookup_map.?[idx].value),
+                };
+            }
+
+            o.lookup_map = lm;
         }
 
         if (&o.username_pattern[0] != &default_username_pattern[0]) {
@@ -120,6 +132,27 @@ pub const Options = struct {
         }
 
         return o;
+    }
+
+    pub fn extendLookupMap(self: *Options, k: []const u8, v: []const u8) !void {
+        var cur_size: usize = 0;
+
+        if (self.lookup_map != null) {
+            cur_size = self.lookup_map.?.len;
+        }
+
+        const lm = try self.allocator.alloc(LookupKeyValue, cur_size + 1);
+
+        if (cur_size > 1) {
+            @memcpy(lm[0..cur_size], self.lookup_map.?[0..]);
+        }
+
+        lm[cur_size] = .{
+            .key = try self.allocator.dupe(u8, k),
+            .value = try self.allocator.dupe(u8, v),
+        };
+
+        self.lookup_map = lm;
     }
 
     pub fn deinit(self: *Options) void {
@@ -140,8 +173,12 @@ pub const Options = struct {
         }
 
         if (self.lookup_map != null) {
-            // TODO
-            // self.allocator.free(self.lookup_map.?);
+            for (self.lookup_map.?) |lookup_entry| {
+                self.allocator.free(lookup_entry.key);
+                self.allocator.free(lookup_entry.value);
+            }
+
+            self.allocator.free(self.lookup_map.?);
         }
 
         if (&self.username_pattern[0] != &default_username_pattern[0]) {

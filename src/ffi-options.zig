@@ -3,7 +3,6 @@ const ffi_driver = @import("ffi-driver.zig");
 const driver = @import("driver.zig");
 const transport = @import("transport.zig");
 const logger = @import("logger.zig");
-const auth = @import("auth.zig");
 
 pub fn NewDriverOptionsFromAlloc(
     definition_variant: [*c]const u8,
@@ -155,6 +154,7 @@ export fn setDriverOptionAuthPrivateKeyPath(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
+    // TODO
     d.real_driver.session.auth_options.private_key_path = std.mem.span(value);
 
     return 0;
@@ -166,6 +166,7 @@ export fn setDriverOptionAuthPrivateKeyPassphrase(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
+    // TODO -- all of the strings basically
     d.real_driver.session.auth_options.private_key_passphrase = std.mem.span(value);
 
     return 0;
@@ -188,46 +189,13 @@ export fn setDriverOptionAuthLookupKeyValue(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    if (d.real_driver.session.auth_options.lookup_map == null) {
-        d.real_driver.session.auth_options.lookup_map = d.real_driver.options.auth.allocator.alloc(
-            auth.LookupKeyValue,
-            1,
-        ) catch {
-            std.debug.print("BAD BINGO\n", .{});
-            return 1;
-        };
-    } else {
-        // TODO this should work i think...?
-        // const resized = d.real_driver.options.auth.allocator.?.resize(
-        //     d.real_driver.session.auth_options.lookup_map.?,
-        //     d.real_driver.session.auth_options.lookup_map.?.len + 1,
-        // );
-        // if (!resized) {
-        //     std.debug.print("BAD BINGO RESIZE\n", .{});
-        //     return 1;
-        // }
-    }
-
-    const lookup_map = @constCast(d.real_driver.session.auth_options.lookup_map.?);
-
-    for (0..lookup_map.len) |idx| {
-        lookup_map[idx] = .{
-            .key = d.real_driver.options.auth.allocator.dupe(
-                u8,
-                std.mem.span(key),
-            ) catch {
-                std.debug.print("BAD BINGO\n", .{});
-                return 1;
-            },
-            .value = d.real_driver.options.auth.allocator.dupe(
-                u8,
-                std.mem.span(value),
-            ) catch {
-                std.debug.print("BAD BINGO\n", .{});
-                return 1;
-            },
-        };
-    }
+    d.real_driver.options.auth.extendLookupMap(
+        std.mem.span(key),
+        std.mem.span(value),
+    ) catch {
+        std.debug.print("BAD BINGO\n", .{});
+        return 1;
+    };
 
     return 0;
 }
