@@ -293,10 +293,6 @@ pub const Session = struct {
         self.transport.deinit();
         self.read_queue.deinit();
 
-        // TODO options parent is now cleaning these
-        // self.auth_options.deinit();
-        // self.options.deinit();
-
         self.allocator.destroy(self);
     }
 
@@ -406,8 +402,7 @@ pub const Session = struct {
 
     pub fn write(self: *Session, buf: []const u8, redacted: bool) !void {
         if (!redacted) {
-            // TODO make this repr or w/e the equivalent is
-            self.log.debug("write: '{s}'", .{buf});
+            self.log.debug("write: '{s}'", .{std.fmt.fmtSliceEscapeLower(buf)});
         }
 
         try self.transport.write(buf);

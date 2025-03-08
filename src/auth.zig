@@ -209,8 +209,6 @@ pub const Options = struct {
 
         const lookup_key = v[lookup_prefix.len..];
 
-        std.debug.print(">>>!!! {any}\n", .{self.lookup_map.?});
-
         for (0.., self.lookup_map.?) |idx, lookup_item| {
             if (std.mem.eql(u8, lookup_item.key, lookup_default_key)) {
                 default_idx = idx;

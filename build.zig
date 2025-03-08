@@ -9,10 +9,10 @@ const libscrapli_version = std.SemanticVersion{
 
 const targets: []const std.Target.Query = &.{
     .{ .cpu_arch = .aarch64, .os_tag = .macos },
-    // .{ .cpu_arch = .aarch64, .os_tag = .linux },
-    // .{ .cpu_arch = .x86_64, .os_tag = .macos },
-    // .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
-    // .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
+    .{ .cpu_arch = .aarch64, .os_tag = .linux },
+    .{ .cpu_arch = .x86_64, .os_tag = .macos },
+    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
+    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
 };
 
 const all_examples: []const []const u8 = &.{
@@ -114,8 +114,6 @@ fn buildFfiLib(
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
 
-    // TODO figure out how to emit header file too
-    // see also: https://github.com/ziglang/zig/issues/9698
     const lib = b.addSharedLibrary(.{
         .name = "scrapli",
         .root_source_file = b.path("src/ffi.zig"),

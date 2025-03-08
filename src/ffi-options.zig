@@ -145,7 +145,6 @@ export fn setDriverOptionAuthPassword(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    // TODO
     d.real_driver.options.auth.password = d.real_driver.options.auth.allocator.dupe(
         u8,
         std.mem.span(value),

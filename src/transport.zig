@@ -305,9 +305,6 @@ pub const Transport = struct {
     }
 
     pub fn write(self: *Transport, buf: []const u8) !void {
-        // TODO should move this to session and add the "redacted" flag
-        self.log.debug("transport write start, writing '{s}'", .{buf});
-
         switch (self.implementation) {
             Kind.Bin => |t| {
                 try t.write(buf);
@@ -322,8 +319,6 @@ pub const Transport = struct {
                 try t.write(buf);
             },
         }
-
-        self.log.debug("transport write sucessful...", .{});
     }
 
     pub fn read(self: *Transport, buf: []u8) !usize {
@@ -342,10 +337,6 @@ pub const Transport = struct {
             Kind.Test => |t| {
                 n = try t.read(buf);
             },
-        }
-
-        if (n > 0) {
-            self.log.debug("transport read succesful, read {} bytes: '{s}'", .{ n, buf[0..n] });
         }
 
         return n;
