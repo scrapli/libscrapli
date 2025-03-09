@@ -45,7 +45,7 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
                 .operation_timeout_ns = std.time.ns_per_min * 1,
             },
             .transport = .{
-                .Test = .{
+                .test_ = .{
                     .f = f,
                 },
             },

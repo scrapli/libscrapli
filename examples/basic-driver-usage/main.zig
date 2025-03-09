@@ -152,7 +152,7 @@ pub fn main() !void {
             },
             .transport = .{
                 // comment out to use bin transport if desired
-                .SSH2 = .{},
+                .ssh2 = .{},
             },
         },
     );

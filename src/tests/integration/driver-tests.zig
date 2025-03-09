@@ -100,7 +100,7 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
                 .read_delay_max_ns = 1,
             },
             .transport = .{
-                .Test = .{
+                .test_ = .{
                     .f = f,
                 },
             },

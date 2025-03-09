@@ -79,16 +79,16 @@ fn GetDriver(
     }
 
     switch (transportKind) {
-        .Bin,
+        .bin,
         => {},
-        .SSH2 => {
+        .ssh2 => {
             config.transport = transport.OptionsInputs{
-                .SSH2 = .{},
+                .ssh2 = .{},
             };
         },
-        .Telnet => {
+        .telnet => {
             config.transport = transport.OptionsInputs{
-                .Telnet = .{},
+                .telnet = .{},
             };
             config.port = config.port.? - 1;
         },
@@ -122,7 +122,7 @@ test "driver open" {
     }{
         .{
             .name = "simple",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "nokia-srlinux",
             .on_open_callback = null,
             .username = "admin",
@@ -131,7 +131,7 @@ test "driver open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "nokia-srlinux",
             .on_open_callback = null,
             .username = "admin",
@@ -140,7 +140,7 @@ test "driver open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin",
@@ -149,7 +149,7 @@ test "driver open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin",
@@ -158,7 +158,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin-sshkey",
@@ -167,7 +167,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin-sshkey",
@@ -176,7 +176,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin-sshkey-passphrase",
@@ -185,7 +185,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin-sshkey-passphrase",

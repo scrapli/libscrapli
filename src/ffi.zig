@@ -42,12 +42,12 @@ export fn assertNoLeaks() bool {
 }
 
 fn getTransport(transport_kind: []const u8) transport.Kind {
-    if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.Bin))) {
-        return transport.Kind.Bin;
-    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.Telnet))) {
-        return transport.Kind.Telnet;
-    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.SSH2))) {
-        return transport.Kind.SSH2;
+    if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.bin))) {
+        return transport.Kind.bin;
+    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.telnet))) {
+        return transport.Kind.telnet;
+    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.ssh2))) {
+        return transport.Kind.ssh2;
     } else {
         @panic("unsupported transport");
     }
@@ -76,9 +76,9 @@ export fn allocDriver(
             .logger = log,
             .port = port,
             .transport = switch (getTransport(std.mem.span(transport_kind))) {
-                transport.Kind.Bin => .{ .Bin = .{} },
-                transport.Kind.Telnet => .{ .Telnet = .{} },
-                transport.Kind.SSH2 => .{ .SSH2 = .{} },
+                transport.Kind.bin => .{ .bin = .{} },
+                transport.Kind.telnet => .{ .telnet = .{} },
+                transport.Kind.ssh2 => .{ .ssh2 = .{} },
                 else => {
                     unreachable;
                 },
@@ -516,8 +516,8 @@ export fn netconfAllocDriver(
             .logger = log,
             .port = port,
             .transport = switch (getTransport(std.mem.span(transport_kind))) {
-                transport.Kind.Bin => .{ .Bin = .{} },
-                transport.Kind.SSH2 => .{ .SSH2 = .{} },
+                transport.Kind.bin => .{ .bin = .{} },
+                transport.Kind.ssh2 => .{ .ssh2 = .{} },
                 else => {
                     unreachable;
                 },

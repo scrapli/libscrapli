@@ -74,7 +74,7 @@ pub const Config = struct {
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
-    transport: transport.OptionsInputs = .{ .Bin = .{} },
+    transport: transport.OptionsInputs = .{ .bin = .{} },
     error_tag: []const u8 = default_rpc_error_tag,
     preferred_version: ?Version = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
@@ -190,13 +190,13 @@ pub const Driver = struct {
         };
 
         switch (opts.transport.*) {
-            .Bin => {
-                opts.transport.Bin.netconf = true;
+            .bin => {
+                opts.transport.bin.netconf = true;
             },
-            .SSH2 => {
-                opts.transport.SSH2.netconf = true;
+            .ssh2 => {
+                opts.transport.ssh2.netconf = true;
             },
-            .Test => {
+            .test_ => {
                 // nothing to do for test transport, but its "allowed" so dont return an error
             },
             else => {
@@ -322,7 +322,7 @@ pub const Driver = struct {
         var cap_buf: []u8 = undefined;
 
         switch (self.session.transport.implementation) {
-            .Bin, .Test => {
+            .bin, .test_ => {
                 // bin will have already consumed the caps, anything else we will need
                 // to read the caps off the channel! (and by anything else == ssh2)
                 // bin will need to clean up the open buf though so we only send a valid

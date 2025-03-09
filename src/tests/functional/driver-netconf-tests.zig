@@ -47,10 +47,10 @@ fn GetDriver(
     }
 
     switch (transportKind) {
-        .Bin => {},
-        .SSH2 => {
+        .bin => {},
+        .ssh2 => {
             config.transport = transport.OptionsInputs{
-                .SSH2 = .{},
+                .ssh2 = .{},
             };
         },
         else => {
@@ -130,7 +130,7 @@ test "driver-netconf open" {
     }{
         .{
             .name = "simple",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "nokia-srlinux",
             .username = "admin",
             .key = null,
@@ -138,7 +138,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "nokia-srlinux",
             .username = "admin",
             .key = null,
@@ -146,7 +146,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin",
             .key = null,
@@ -154,7 +154,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin",
             .key = null,
@@ -162,7 +162,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
@@ -170,7 +170,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
@@ -178,7 +178,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
@@ -186,7 +186,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",

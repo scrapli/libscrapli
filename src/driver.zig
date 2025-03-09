@@ -28,7 +28,7 @@ pub const Config = struct {
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
-    transport: transport.OptionsInputs = .{ .Bin = .{} },
+    transport: transport.OptionsInputs = .{ .bin = .{} },
 };
 
 pub const Options = struct {
@@ -124,10 +124,10 @@ pub const Driver = struct {
 
         if (opts.port == null) {
             switch (opts.transport.*) {
-                transport.Kind.Bin, transport.Kind.SSH2, transport.Kind.Test => {
+                transport.Kind.bin, transport.Kind.ssh2, transport.Kind.test_ => {
                     d.port = default_ssh_port;
                 },
-                transport.Kind.Telnet => {
+                transport.Kind.telnet => {
                     d.port = default_telnet_port;
                 },
             }
