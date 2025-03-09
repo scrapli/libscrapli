@@ -27,6 +27,7 @@ const ReadThreadState = enum(u8) {
     Stop,
 };
 
+// TODO get rid of this
 fn NewReadArgs() ReadArgs {
     return ReadArgs{
         .pattern = null,
@@ -37,10 +38,11 @@ fn NewReadArgs() ReadArgs {
 
 const ReadArgs = struct {
     pattern: ?*pcre2.pcre2_code_8,
-    patterns: ?[]?*pcre2.pcre2_code_8,
+    patterns: ?[]const ?*pcre2.pcre2_code_8,
     actual: ?[]const u8,
 };
 
+// TODO get rid of this (use init)
 fn NewReadBufs(allocator: std.mem.Allocator) ReadBufs {
     return ReadBufs{
         .raw = std.ArrayList(u8).init(allocator),
@@ -821,7 +823,7 @@ pub const Session = struct {
         if (!options.retain_trailing_prompt) {
             // using the prompt indexes, replace that range holding the trailing prompt out
             // of the processed buf
-            try bufs.processed.replaceRange(prompt_indexes.start, prompt_indexes.len(), "");
+            try bufs.processed.replaceRange(prompt_indexes.start, prompt_indexes.len(), "",);
         }
 
         return bufs.toOwnedSlices(allocator);
@@ -831,13 +833,29 @@ pub const Session = struct {
         self: *Session,
         allocator: std.mem.Allocator,
         input: []const u8,
-        prompt: []const u8,
+        prompt: ?[]const u8,
+        prompt_pattern: ?[]const u8,
         response: []const u8,
         options: operation.SendPromptedInputOptions,
     ) ![2][]const u8 {
         self.log.info("send prompted input requested", .{});
 
         var timer = try std.time.Timer.start();
+
+        var compiled_pattern: ?*pcre2.pcre2_code_8 = null;
+
+        if (prompt_pattern) |pattern| {
+            compiled_pattern = re.pcre2Compile(pattern);
+            if (compiled_pattern == null) {
+                return error.CompilePromptPatternFailed;
+            }
+        }
+
+        defer {
+            if (compiled_pattern) |p| {
+                re.pcre2Free(p);
+            }
+        }
 
         if (options.abort_input) |abort_input| {
             errdefer {
@@ -870,8 +888,17 @@ pub const Session = struct {
 
         var args = NewReadArgs();
 
-        args.pattern = self.compiled_prompt_pattern;
+        if (compiled_pattern) |cp| {
+            args.patterns = &[_]?*pcre2.pcre2_code_8{
+                self.compiled_prompt_pattern,
+                cp,
+            };
+        } else {
+            args.pattern = self.compiled_prompt_pattern;
+        }
+
         args.actual = prompt;
+        args.patterns = &[_]?*pcre2.pcre2_code_8{self.compiled_prompt_pattern};
 
         _ = try self.readTimeout(
             &timer,
@@ -908,7 +935,11 @@ pub const Session = struct {
         if (!options.retain_trailing_prompt) {
             // using the prompt indexes, replace that range holding the trailing prompt out
             // of the processed buf
-            try bufs.processed.replaceRange(prompt_indexes.start, prompt_indexes.len(), "");
+            try bufs.processed.replaceRange(
+                prompt_indexes.start,
+                prompt_indexes.len(),
+                "",
+            );
         }
 
         return bufs.toOwnedSlices(allocator);

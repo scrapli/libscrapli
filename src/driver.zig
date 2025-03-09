@@ -403,6 +403,7 @@ pub const Driver = struct {
                                     allocator,
                                     op.send_prompted_input.send_prompted_input.input,
                                     op.send_prompted_input.send_prompted_input.prompt,
+                                    op.send_prompted_input.send_prompted_input.prompt_pattern,
                                     response,
                                     .{
                                         .cancel = options.cancel,
@@ -497,7 +498,8 @@ pub const Driver = struct {
         self: *Driver,
         allocator: std.mem.Allocator,
         input: []const u8,
-        prompt: []const u8,
+        prompt: ?[]const u8,
+        prompt_pattern: ?[]const u8,
         response: []const u8,
         options: operation.SendPromptedInputOptions,
     ) !*result.Result {
@@ -528,6 +530,7 @@ pub const Driver = struct {
                 allocator,
                 input,
                 prompt,
+                prompt_pattern,
                 response,
                 options,
             ),

@@ -19,8 +19,8 @@ pub const Operation = union(enum) {
     send_prompted_input: struct {
         send_prompted_input: struct {
             input: []const u8,
-            prompt: []const u8,
-            // TODO need to support prompt pattern here, and then expose that in yaml definition too
+            prompt: ?[]const u8 = null,
+            prompt_pattern: ?[]const u8 = null,
             response: []const u8,
         },
     },
@@ -92,21 +92,45 @@ pub const Mode = struct {
                             instructions[idx] = Operation{
                                 .send_input = .{
                                     .send_input = .{
-                                        .input = try allocator.dupe(u8, instr.send_input.send_input.input),
+                                        .input = try allocator.dupe(
+                                            u8,
+                                            instr.send_input.send_input.input,
+                                        ),
                                     },
                                 },
                             };
                         },
                         .send_prompted_input => {
-                            instructions[idx] = Operation{
+                            var o = Operation{
                                 .send_prompted_input = .{
                                     .send_prompted_input = .{
-                                        .input = try allocator.dupe(u8, instr.send_prompted_input.send_prompted_input.input),
-                                        .prompt = try allocator.dupe(u8, instr.send_prompted_input.send_prompted_input.prompt),
-                                        .response = try allocator.dupe(u8, instr.send_prompted_input.send_prompted_input.response),
+                                        .input = try allocator.dupe(
+                                            u8,
+                                            instr.send_prompted_input.send_prompted_input.input,
+                                        ),
+                                        .response = try allocator.dupe(
+                                            u8,
+                                            instr.send_prompted_input.send_prompted_input.response,
+                                        ),
                                     },
                                 },
                             };
+
+                            if (instr.send_prompted_input.send_prompted_input.prompt) |prompt| {
+                                o.send_prompted_input.send_prompted_input.prompt = try allocator.dupe(
+                                    u8,
+                                    prompt,
+                                );
+                            }
+
+                            if (instr.send_prompted_input.send_prompted_input.prompt_pattern) |prompt_pattern| {
+                                o.send_prompted_input.send_prompted_input.prompt_pattern = try allocator.dupe(
+                                    u8,
+                                    prompt_pattern,
+                                );
+                            }
+
+                            instructions[idx] = o;
                         },
                     }
                 }
@@ -144,7 +168,15 @@ pub const Mode = struct {
                     },
                     .send_prompted_input => |op| {
                         self.allocator.free(op.send_prompted_input.input);
-                        self.allocator.free(op.send_prompted_input.prompt);
+
+                        if (op.send_prompted_input.prompt) |prompt| {
+                            self.allocator.free(prompt);
+                        }
+
+                        if (op.send_prompted_input.prompt_pattern) |prompt_pattern| {
+                            self.allocator.free(prompt_pattern);
+                        }
+
                         self.allocator.free(op.send_prompted_input.response);
                     },
                 }

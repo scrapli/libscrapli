@@ -31,7 +31,8 @@ pub const BoundOnXCallbackInstruction = union(enum) {
     send_prompted_input: struct {
         send_prompted_input: struct {
             input: []const u8,
-            prompt: []const u8,
+            prompt: ?[]const u8 = null,
+            prompt_pattern: ?[]const u8 = null,
             response: []const u8,
         },
     },
@@ -48,8 +49,6 @@ pub const BoundOnXCallback = struct {
         instructions: []BoundOnXCallbackInstruction,
     ) !*BoundOnXCallback {
         const cb = try allocator.create(BoundOnXCallback);
-
-        // TODO need to dupe instructions to heap, then clean up in deinit
 
         cb.* = BoundOnXCallback{
             .allocator = allocator,
@@ -99,16 +98,12 @@ pub const BoundOnXCallback = struct {
                     };
                 },
                 .send_prompted_input => {
-                    cb.instructions[idx] = BoundOnXCallbackInstruction{
+                    var o = BoundOnXCallbackInstruction{
                         .send_prompted_input = .{
                             .send_prompted_input = .{
                                 .input = try allocator.dupe(
                                     u8,
                                     instr.send_prompted_input.send_prompted_input.input,
-                                ),
-                                .prompt = try allocator.dupe(
-                                    u8,
-                                    instr.send_prompted_input.send_prompted_input.prompt,
                                 ),
                                 .response = try allocator.dupe(
                                     u8,
@@ -117,6 +112,22 @@ pub const BoundOnXCallback = struct {
                             },
                         },
                     };
+
+                    if (instr.send_prompted_input.send_prompted_input.prompt) |prompt| {
+                        o.send_prompted_input.send_prompted_input.prompt = try allocator.dupe(
+                            u8,
+                            prompt,
+                        );
+                    }
+
+                    if (instr.send_prompted_input.send_prompted_input.prompt_pattern) |prompt_pattern| {
+                        o.send_prompted_input.send_prompted_input.prompt_pattern = try allocator.dupe(
+                            u8,
+                            prompt_pattern,
+                        );
+                    }
+
+                    cb.instructions[idx] = o;
                 },
             }
         }
@@ -138,7 +149,15 @@ pub const BoundOnXCallback = struct {
                 },
                 .send_prompted_input => {
                     self.allocator.free(instr.send_prompted_input.send_prompted_input.input);
-                    self.allocator.free(instr.send_prompted_input.send_prompted_input.prompt);
+
+                    if (instr.send_prompted_input.send_prompted_input.prompt) |prompt| {
+                        self.allocator.free(prompt);
+                    }
+
+                    if (instr.send_prompted_input.send_prompted_input.prompt_pattern) |prompt_pattern| {
+                        self.allocator.free(prompt_pattern);
+                    }
+
                     self.allocator.free(instr.send_prompted_input.send_prompted_input.response);
                 },
             }
@@ -191,6 +210,7 @@ pub const BoundOnXCallback = struct {
                             allocator,
                             instr.send_prompted_input.send_prompted_input.input,
                             instr.send_prompted_input.send_prompted_input.prompt,
+                            instr.send_prompted_input.send_prompted_input.prompt_pattern,
                             instr.send_prompted_input.send_prompted_input.response,
                             .{ .cancel = cancel },
                         ),

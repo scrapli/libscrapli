@@ -191,7 +191,14 @@ fn runDriverSendPromptedInputInThread(
 ) !void {
     try std.testing.expectError(
         error.Cancelled,
-        d.sendPromptedInput(allocator, input, prompt, response, options),
+        d.sendPromptedInput(
+            allocator,
+            input,
+            prompt,
+            null,
+            response,
+            options,
+        ),
     );
 
     cancelled.* = true;
@@ -1316,6 +1323,7 @@ test "driver send-prompted-input" {
             std.testing.allocator,
             case.input,
             case.prompt,
+            null,
             case.response,
             .{
                 .retain_trailing_prompt = case.retain_trailing_prompt,
@@ -1458,6 +1466,7 @@ test "driver send-prompted-input-cancellation" {
                 std.testing.allocator,
                 "clear logging",
                 "Clear logging buffer [confirm]",
+                null,
                 "",
                 .{},
             ),
