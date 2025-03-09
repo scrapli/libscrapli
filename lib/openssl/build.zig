@@ -1,10 +1,13 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream = b.dependency("openssl", .{});
+    const upstream = b.dependency("openssl", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const generate = std.Build.Step.Run.create(b, "Generate openssl files");
     generate.has_side_effects = true;
     generate.expectExitCode(0);
@@ -46,7 +49,10 @@ fn libssl(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
-    const upstream = b.dependency("openssl", .{});
+    const upstream = b.dependency("openssl", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const lib = b.addStaticLibrary(
         .{
             .name = "ssl",
@@ -158,9 +164,7 @@ fn libssl(
     });
 
     if (lib.rootModuleTarget().isDarwinLibC()) {
-        lib.root_module.addIncludePath(
-            .{ .cwd_relative = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include" },
-        );
+        lib.root_module.addIncludePath(b.path("include"));
     }
 
     return lib;
@@ -171,7 +175,10 @@ fn libcrypto(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
-    const upstream = b.dependency("openssl", .{});
+    const upstream = b.dependency("openssl", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const lib = b.addStaticLibrary(
         .{
             .name = "crypto",
@@ -1139,9 +1146,7 @@ fn libcrypto(
     });
 
     if (lib.rootModuleTarget().isDarwinLibC()) {
-        lib.root_module.addIncludePath(
-            .{ .cwd_relative = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include" },
-        );
+        lib.root_module.addIncludePath(b.path("include"));
     }
 
     return lib;
