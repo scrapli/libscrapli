@@ -22,37 +22,27 @@ const default_operation_timeout_ns: u64 = 10_000_000_000;
 const default_operation_max_search_depth: u64 = 512;
 
 const ReadThreadState = enum(u8) {
-    Uninitialized,
-    Run,
-    Stop,
+    uninitialized,
+    run,
+    stop,
 };
-
-// TODO get rid of this
-fn NewReadArgs() ReadArgs {
-    return ReadArgs{
-        .pattern = null,
-        .patterns = null,
-        .actual = null,
-    };
-}
 
 const ReadArgs = struct {
-    pattern: ?*pcre2.pcre2_code_8,
-    patterns: ?[]const ?*pcre2.pcre2_code_8,
-    actual: ?[]const u8,
+    pattern: ?*pcre2.pcre2_code_8 = null,
+    patterns: ?[]const ?*pcre2.pcre2_code_8 = null,
+    actual: ?[]const u8 = null,
 };
-
-// TODO get rid of this (use init)
-fn NewReadBufs(allocator: std.mem.Allocator) ReadBufs {
-    return ReadBufs{
-        .raw = std.ArrayList(u8).init(allocator),
-        .processed = std.ArrayList(u8).init(allocator),
-    };
-}
 
 const ReadBufs = struct {
     raw: std.ArrayList(u8),
     processed: std.ArrayList(u8),
+
+    fn init(allocator: std.mem.Allocator) ReadBufs {
+        return ReadBufs{
+            .raw = std.ArrayList(u8).init(allocator),
+            .processed = std.ArrayList(u8).init(allocator),
+        };
+    }
 
     fn deinit(self: *ReadBufs) void {
         self.raw.deinit();
@@ -192,7 +182,7 @@ pub const Session = struct {
             .auth_options = auth_options,
             .transport = t,
             .read_thread = null,
-            .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.Uninitialized),
+            .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.uninitialized),
             .read_lock = std.Thread.Mutex{},
             .read_queue = std.fifo.LinearFifo(
                 u8,
@@ -250,7 +240,7 @@ pub const Session = struct {
     pub fn deinit(self: *Session) void {
         self.last_consumed_prompt.deinit();
 
-        if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.Run) {
+        if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.run) {
             // if for whatever reason (likely because a call to driver.open failed causing a defer
             // close to *not* trigger) the session didnt get "closed", ensure we do that...
             self.close();
@@ -300,7 +290,7 @@ pub const Session = struct {
             self.auth_options,
         );
 
-        self.read_stop.store(ReadThreadState.Run, std.builtin.AtomicOrder.unordered);
+        self.read_stop.store(ReadThreadState.run, std.builtin.AtomicOrder.unordered);
 
         // start read thread
         self.read_thread = std.Thread.spawn(
@@ -329,7 +319,7 @@ pub const Session = struct {
     }
 
     pub fn close(self: *Session) void {
-        self.read_stop.store(ReadThreadState.Stop, std.builtin.AtomicOrder.unordered);
+        self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         if (self.read_thread != null) {
             self.read_thread.?.join();
@@ -346,7 +336,7 @@ pub const Session = struct {
 
         var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
 
-        while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.Stop) {
+        while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
             defer std.time.sleep(cur_read_delay_ns);
 
             const n = try self.transport.read(buf);
@@ -413,7 +403,7 @@ pub const Session = struct {
 
         var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
 
-        var bufs = NewReadBufs(allocator);
+        var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
         var cur_check_start_idx: usize = 0;
@@ -683,13 +673,9 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("get prompt requested", .{});
 
-        var args = NewReadArgs();
-
-        args.pattern = self.compiled_prompt_pattern;
-
         try self.writeReturn();
 
-        var bufs = NewReadBufs(allocator);
+        var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
         var timer = try std.time.Timer.start();
@@ -698,7 +684,9 @@ pub const Session = struct {
             &timer,
             options.cancel,
             readUntilPatternCheckDone,
-            args,
+            .{
+                .pattern = self.compiled_prompt_pattern,
+            },
             &bufs,
         );
 
@@ -730,10 +718,10 @@ pub const Session = struct {
         input_handling: operation.InputHandling,
         bufs: *ReadBufs,
     ) !MatchPositions {
-        var args = NewReadArgs();
-
-        args.pattern = self.compiled_prompt_pattern;
-        args.actual = input;
+        const args = ReadArgs{
+            .pattern = self.compiled_prompt_pattern,
+            .actual = input,
+        };
 
         try self.write(input, false);
 
@@ -780,7 +768,7 @@ pub const Session = struct {
 
         var timer = try std.time.Timer.start();
 
-        var bufs = NewReadBufs(allocator);
+        var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
         if (self.last_consumed_prompt.items.len != 0) {
@@ -803,16 +791,14 @@ pub const Session = struct {
             try bufs.processed.resize(0);
         }
 
-        var args = NewReadArgs();
-
-        args.pattern = self.compiled_prompt_pattern;
-        args.actual = input;
-
         var prompt_indexes = try self.readTimeout(
             &timer,
             options.cancel,
             readUntilPatternCheckDone,
-            args,
+            .{
+                .pattern = self.compiled_prompt_pattern,
+                .actual = input,
+            },
             &bufs,
         );
 
@@ -823,7 +809,11 @@ pub const Session = struct {
         if (!options.retain_trailing_prompt) {
             // using the prompt indexes, replace that range holding the trailing prompt out
             // of the processed buf
-            try bufs.processed.replaceRange(prompt_indexes.start, prompt_indexes.len(), "",);
+            try bufs.processed.replaceRange(
+                prompt_indexes.start,
+                prompt_indexes.len(),
+                "",
+            );
         }
 
         return bufs.toOwnedSlices(allocator);
@@ -845,9 +835,11 @@ pub const Session = struct {
         var compiled_pattern: ?*pcre2.pcre2_code_8 = null;
 
         if (prompt_pattern) |pattern| {
-            compiled_pattern = re.pcre2Compile(pattern);
-            if (compiled_pattern == null) {
-                return error.CompilePromptPatternFailed;
+            if (pattern.len > 0) {
+                compiled_pattern = re.pcre2Compile(pattern);
+                if (compiled_pattern == null) {
+                    return error.CompilePromptPatternFailed;
+                }
             }
         }
 
@@ -868,7 +860,7 @@ pub const Session = struct {
             }
         }
 
-        var bufs = NewReadBufs(allocator);
+        var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
         if (self.last_consumed_prompt.items.len != 0) {
@@ -886,7 +878,9 @@ pub const Session = struct {
             &bufs,
         );
 
-        var args = NewReadArgs();
+        var args = ReadArgs{
+            .actual = prompt,
+        };
 
         if (compiled_pattern) |cp| {
             args.patterns = &[_]?*pcre2.pcre2_code_8{
@@ -896,9 +890,6 @@ pub const Session = struct {
         } else {
             args.pattern = self.compiled_prompt_pattern;
         }
-
-        args.actual = prompt;
-        args.patterns = &[_]?*pcre2.pcre2_code_8{self.compiled_prompt_pattern};
 
         _ = try self.readTimeout(
             &timer,

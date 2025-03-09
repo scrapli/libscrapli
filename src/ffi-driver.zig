@@ -45,7 +45,8 @@ pub const SendInputOperation = struct {
 pub const SendPromptedInputOperation = struct {
     id: u32,
     input: []const u8,
-    prompt: []const u8,
+    prompt: ?[]const u8,
+    prompt_pattern: ?[]const u8,
     response: []const u8,
     options: operation.SendPromptedInputOptions,
 };
@@ -246,6 +247,7 @@ pub const FfiDriver = struct {
                         self.allocator,
                         o.input,
                         o.prompt,
+                        o.prompt_pattern,
                         o.response,
                         o.options,
                     ) catch |err| blk: {
