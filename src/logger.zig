@@ -43,7 +43,7 @@ pub const Logger = struct {
     f: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
 
     fn sprintf(
-        self: *Logger,
+        self: Logger,
         comptime format: []const u8,
         args: anytype,
     ) []u8 {
@@ -65,7 +65,7 @@ pub const Logger = struct {
     }
 
     pub fn debug(
-        self: *Logger,
+        self: Logger,
         comptime format: []const u8,
         args: anytype,
     ) void {
@@ -80,7 +80,7 @@ pub const Logger = struct {
     }
 
     pub fn info(
-        self: *Logger,
+        self: Logger,
         comptime format: []const u8,
         args: anytype,
     ) void {
@@ -95,7 +95,7 @@ pub const Logger = struct {
     }
 
     pub fn warn(
-        self: *Logger,
+        self: Logger,
         comptime format: []const u8,
         args: anytype,
     ) void {
@@ -110,7 +110,7 @@ pub const Logger = struct {
     }
 
     pub fn critical(
-        self: *Logger,
+        self: Logger,
         comptime format: []const u8,
         args: anytype,
     ) void {
@@ -125,7 +125,7 @@ pub const Logger = struct {
     }
 
     pub fn fatal(
-        self: *Logger,
+        self: Logger,
         comptime format: []const u8,
         args: anytype,
     ) void {

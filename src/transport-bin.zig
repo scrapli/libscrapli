@@ -116,40 +116,33 @@ pub const Options = struct {
     }
 };
 
-pub fn NewTransport(
-    allocator: std.mem.Allocator,
-    log: logger.Logger,
-    options: *Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
-
-    t.* = Transport{
-        .allocator = allocator,
-        .log = log,
-        .options = options,
-        .f = null,
-        .reader = null,
-        .writer = null,
-        .open_args = std.ArrayList(strings.MaybeHeapString).init(allocator),
-    };
-
-    return t;
-}
-
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
 
     options: *Options,
 
-    f: ?std.fs.File,
-    reader: ?std.fs.File.Reader,
-    writer: ?std.fs.File.Writer,
+    f: ?std.fs.File = null,
+    reader: ?std.fs.File.Reader = null,
+    writer: ?std.fs.File.Writer = null,
 
     open_args: std.ArrayList(strings.MaybeHeapString),
 
-    pub fn init(self: *Transport) !void {
-        _ = self;
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logger.Logger,
+        options: *Options,
+    ) !*Transport {
+        const t = try allocator.create(Transport);
+
+        t.* = Transport{
+            .allocator = allocator,
+            .log = log,
+            .options = options,
+            .open_args = std.ArrayList(strings.MaybeHeapString).init(allocator),
+        };
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {

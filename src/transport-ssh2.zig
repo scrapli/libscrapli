@@ -128,37 +128,6 @@ pub const Options = struct {
     }
 };
 
-pub fn NewTransport(
-    allocator: std.mem.Allocator,
-    log: logger.Logger,
-    options: *Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
-    const a = try allocator.create(AuthCallbackData);
-
-    a.* = AuthCallbackData{
-        // SAFETY: used in C callback, so think this is expected/fine
-        .password = undefined,
-    };
-
-    t.* = Transport{
-        .allocator = allocator,
-        .log = log,
-
-        .options = options,
-
-        .auth_callback_data = a,
-
-        .session_lock = std.Thread.Mutex{},
-
-        .socket = null,
-        .session = null,
-        .channel = null,
-    };
-
-    return t;
-}
-
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
@@ -169,17 +138,39 @@ pub const Transport = struct {
 
     session_lock: std.Thread.Mutex,
 
-    socket: ?std.posix.socket_t,
-    session: ?*ssh2.struct__LIBSSH2_SESSION,
-    channel: ?*ssh2.struct__LIBSSH2_CHANNEL,
+    socket: ?std.posix.socket_t = null,
+    session: ?*ssh2.struct__LIBSSH2_SESSION = null,
+    channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null,
 
-    pub fn init(self: *Transport) !void {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logger.Logger,
+        options: *Options,
+    ) !*Transport {
         const rc = ssh2InitializeOnce();
         if (rc != 0) {
-            self.log.critical("failed initializing ssh2", .{});
+            log.critical("failed initializing ssh2", .{});
 
             return error.OpenFailed;
         }
+
+        const t = try allocator.create(Transport);
+        const a = try allocator.create(AuthCallbackData);
+
+        a.* = AuthCallbackData{
+            // SAFETY: used in C callback, so think this is expected/fine
+            .password = undefined,
+        };
+
+        t.* = Transport{
+            .allocator = allocator,
+            .log = log,
+            .options = options,
+            .auth_callback_data = a,
+            .session_lock = std.Thread.Mutex{},
+        };
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {

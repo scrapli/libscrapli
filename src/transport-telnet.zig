@@ -43,24 +43,6 @@ pub const Options = struct {
     }
 };
 
-pub fn NewTransport(
-    allocator: std.mem.Allocator,
-    log: logger.Logger,
-    options: *Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
-
-    t.* = Transport{
-        .allocator = allocator,
-        .log = log,
-        .options = options,
-        .stream = null,
-        .initial_buf = std.ArrayList(u8).init(allocator),
-    };
-
-    return t;
-}
-
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
@@ -70,8 +52,22 @@ pub const Transport = struct {
     stream: ?std.net.Stream,
     initial_buf: std.ArrayList(u8),
 
-    pub fn init(self: *Transport) !void {
-        _ = self;
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logger.Logger,
+        options: *Options,
+    ) !*Transport {
+        const t = try allocator.create(Transport);
+
+        t.* = Transport{
+            .allocator = allocator,
+            .log = log,
+            .options = options,
+            .stream = null,
+            .initial_buf = std.ArrayList(u8).init(allocator),
+        };
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {

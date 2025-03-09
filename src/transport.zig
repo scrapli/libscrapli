@@ -123,90 +123,73 @@ pub const Options = union(Kind) {
     }
 };
 
-pub fn Factory(
-    allocator: std.mem.Allocator,
-    log: logger.Logger,
-    options: *Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
-
-    switch (options.*) {
-        .bin => {
-            t.* = Transport{
-                .allocator = allocator,
-                .log = log,
-                .implementation = Implementation{
-                    .bin = try transport_bin.NewTransport(
-                        allocator,
-                        log,
-                        options.bin,
-                    ),
-                },
-            };
-        },
-        .telnet => {
-            t.* = Transport{
-                .allocator = allocator,
-                .log = log,
-                .implementation = Implementation{
-                    .telnet = try transport_telnet.NewTransport(
-                        allocator,
-                        log,
-                        options.telnet,
-                    ),
-                },
-            };
-        },
-        .ssh2 => {
-            t.* = Transport{
-                .allocator = allocator,
-                .log = log,
-                .implementation = Implementation{
-                    .ssh2 = try transport_ssh2.NewTransport(
-                        allocator,
-                        log,
-                        options.ssh2,
-                    ),
-                },
-            };
-        },
-        .test_ => {
-            t.* = Transport{
-                .allocator = allocator,
-                .log = log,
-                .implementation = Implementation{
-                    .test_ = try transport_test.NewTransport(
-                        allocator,
-                        options.test_,
-                    ),
-                },
-            };
-        },
-    }
-
-    return t;
-}
-
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
     implementation: Implementation,
 
-    pub fn init(self: *Transport) !void {
-        switch (self.implementation) {
-            Kind.bin => |t| {
-                try t.init();
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logger.Logger,
+        options: *Options,
+    ) !*Transport {
+        const t = try allocator.create(Transport);
+
+        switch (options.*) {
+            .bin => {
+                t.* = Transport{
+                    .allocator = allocator,
+                    .log = log,
+                    .implementation = Implementation{
+                        .bin = try transport_bin.Transport.init(
+                            allocator,
+                            log,
+                            options.bin,
+                        ),
+                    },
+                };
             },
-            Kind.telnet => |t| {
-                try t.init();
+            .telnet => {
+                t.* = Transport{
+                    .allocator = allocator,
+                    .log = log,
+                    .implementation = Implementation{
+                        .telnet = try transport_telnet.Transport.init(
+                            allocator,
+                            log,
+                            options.telnet,
+                        ),
+                    },
+                };
             },
-            Kind.ssh2 => |t| {
-                try t.init();
+            .ssh2 => {
+                t.* = Transport{
+                    .allocator = allocator,
+                    .log = log,
+                    .implementation = Implementation{
+                        .ssh2 = try transport_ssh2.Transport.init(
+                            allocator,
+                            log,
+                            options.ssh2,
+                        ),
+                    },
+                };
             },
-            Kind.test_ => |t| {
-                try t.init();
+            .test_ => {
+                t.* = Transport{
+                    .allocator = allocator,
+                    .log = log,
+                    .implementation = Implementation{
+                        .test_ = try transport_test.Transport.init(
+                            allocator,
+                            options.test_,
+                        ),
+                    },
+                };
             },
         }
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {

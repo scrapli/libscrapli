@@ -34,21 +34,6 @@ pub const Options = struct {
     }
 };
 
-pub fn NewTransport(
-    allocator: std.mem.Allocator,
-    options: *Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
-
-    t.* = Transport{
-        .allocator = allocator,
-        .options = options,
-        .reader = null,
-    };
-
-    return t;
-}
-
 pub const Transport = struct {
     allocator: std.mem.Allocator,
 
@@ -56,8 +41,19 @@ pub const Transport = struct {
 
     reader: ?std.fs.File.Reader,
 
-    pub fn init(self: *Transport) !void {
-        _ = self;
+    pub fn init(
+        allocator: std.mem.Allocator,
+        options: *Options,
+    ) !*Transport {
+        const t = try allocator.create(Transport);
+
+        t.* = Transport{
+            .allocator = allocator,
+            .options = options,
+            .reader = null,
+        };
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {

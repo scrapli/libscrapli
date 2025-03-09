@@ -174,7 +174,7 @@ pub const Session = struct {
         auth_options: *auth.Options,
         transport_options: *transport.Options,
     ) !*Session {
-        const t = try transport.Factory(
+        const t = try transport.Transport.init(
             allocator,
             log,
             transport_options,
@@ -241,8 +241,6 @@ pub const Session = struct {
 
             return error.InitFailed;
         }
-
-        try s.transport.init();
 
         return s;
     }
