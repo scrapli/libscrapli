@@ -182,13 +182,12 @@ pub const Driver = struct {
         // getting prompt also ensures we vacuum up anything in the buffer from after login (matters
         // for in channel auth stuff). we *dont* try to acquire default priv mode because there may
         // be things in on open that need to happen first, so let that do that!
-        var get_prompt_options = operation.NewGetPromptOptions();
-        get_prompt_options.cancel = options.cancel;
-
         try res.recordExtend(
             try self.getPrompt(
                 allocator,
-                get_prompt_options,
+                .{
+                    .cancel = options.cancel,
+                },
             ),
         );
 
@@ -301,13 +300,12 @@ pub const Driver = struct {
             return res;
         }
 
-        var get_prompt_options = operation.NewGetPromptOptions();
-        get_prompt_options.cancel = options.cancel;
-
         try res.recordExtend(
             try self.getPrompt(
                 allocator,
-                get_prompt_options,
+                .{
+                    .cancel = options.cancel,
+                },
             ),
         );
         self.current_mode = try mode.determineMode(
@@ -351,18 +349,16 @@ pub const Driver = struct {
             for (next_operation.?) |op| {
                 switch (op) {
                     .send_input => {
-                        var opts = operation.NewSendInputOptions();
-
-                        opts.cancel = options.cancel;
-                        opts.requested_mode = self.current_mode;
-                        opts.retain_input = true;
-                        opts.retain_trailing_prompt = true;
-
                         try res.recordExtend(
                             try self.sendInput(
                                 allocator,
                                 op.send_input.send_input.input,
-                                opts,
+                                .{
+                                    .cancel = options.cancel,
+                                    .requested_mode = self.current_mode,
+                                    .retain_input = true,
+                                    .retain_trailing_prompt = true,
+                                },
                             ),
                         );
                     },
@@ -385,34 +381,30 @@ pub const Driver = struct {
                                 .{requested_mode_name},
                             );
 
-                            var opts = operation.NewSendInputOptions();
-
-                            opts.cancel = options.cancel;
-                            opts.requested_mode = self.current_mode;
-                            opts.retain_input = true;
-                            opts.retain_trailing_prompt = true;
-
                             try res.recordExtend(
                                 try self.sendInput(
                                     allocator,
                                     op.send_prompted_input.send_prompted_input.input,
-                                    opts,
+                                    .{
+                                        .cancel = options.cancel,
+                                        .requested_mode = self.current_mode,
+                                        .retain_input = true,
+                                        .retain_trailing_prompt = true,
+                                    },
                                 ),
                             );
                         } else {
-                            var opts = operation.NewSendPromptedInputOptions();
-
-                            opts.cancel = options.cancel;
-                            opts.requested_mode = self.current_mode;
-                            opts.retain_trailing_prompt = true;
-
                             try res.recordExtend(
                                 try self.sendPromptedInput(
                                     allocator,
                                     op.send_prompted_input.send_prompted_input.input,
                                     op.send_prompted_input.send_prompted_input.prompt,
                                     response,
-                                    opts,
+                                    .{
+                                        .cancel = options.cancel,
+                                        .requested_mode = self.current_mode,
+                                        .retain_trailing_prompt = true,
+                                    },
                                 ),
                             );
                         }
@@ -440,11 +432,11 @@ pub const Driver = struct {
         }
 
         if (!std.mem.eql(u8, target_mode, self.current_mode)) {
-            var opts = operation.NewEnterModeOptions();
-
-            opts.cancel = options.cancel;
-
-            const ret = try self.enterMode(allocator, target_mode, opts);
+            const ret = try self.enterMode(
+                allocator,
+                target_mode,
+                .{ .cancel = options.cancel },
+            );
             ret.deinit();
         }
 
@@ -469,11 +461,11 @@ pub const Driver = struct {
         }
 
         if (!std.mem.eql(u8, target_mode, self.current_mode)) {
-            var opts = operation.NewEnterModeOptions();
-
-            opts.cancel = options.cancel;
-
-            const ret = try self.enterMode(allocator, target_mode, opts);
+            const ret = try self.enterMode(
+                allocator,
+                target_mode,
+                .{ .cancel = options.cancel },
+            );
             ret.deinit();
         }
 
@@ -512,11 +504,11 @@ pub const Driver = struct {
         }
 
         if (!std.mem.eql(u8, target_mode, self.current_mode)) {
-            var opts = operation.NewEnterModeOptions();
-
-            opts.cancel = options.cancel;
-
-            const ret = try self.enterMode(allocator, target_mode, opts);
+            const ret = try self.enterMode(
+                allocator,
+                target_mode,
+                .{ .cancel = options.cancel },
+            );
             ret.deinit();
         }
 

@@ -8,9 +8,9 @@ pub fn SendInputOptionsFromArgs(
     retain_input: bool,
     retain_trailing_prompt: bool,
 ) operation.SendInputOptions {
-    var options = operation.NewSendInputOptions();
-
-    options.cancel = cancel;
+    var options = operation.SendInputOptions{
+        .cancel = cancel,
+    };
 
     const _requested_mode = std.mem.span(requested_mode);
     if (_requested_mode.len > 0) {
@@ -19,12 +19,12 @@ pub fn SendInputOptionsFromArgs(
 
     const _input_handling = std.mem.span(input_handling);
 
-    if (std.mem.eql(u8, @tagName(operation.InputHandling.Exact), _input_handling)) {
-        options.input_handling = operation.InputHandling.Exact;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.Fuzzy), _input_handling)) {
-        options.input_handling = operation.InputHandling.Fuzzy;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.Ignore), _input_handling)) {
-        options.input_handling = operation.InputHandling.Ignore;
+    if (std.mem.eql(u8, @tagName(operation.InputHandling.exact), _input_handling)) {
+        options.input_handling = operation.InputHandling.exact;
+    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.fuzzy), _input_handling)) {
+        options.input_handling = operation.InputHandling.fuzzy;
+    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.ignore), _input_handling)) {
+        options.input_handling = operation.InputHandling.ignore;
     }
 
     options.retain_input = retain_input;
@@ -41,9 +41,9 @@ pub fn SendPromptedInputOptionsFromArgs(
     input_handling: [*c]const u8,
     retain_trailing_prompt: bool,
 ) operation.SendPromptedInputOptions {
-    var options = operation.NewSendPromptedInputOptions();
-
-    options.cancel = cancel;
+    var options = operation.SendPromptedInputOptions{
+        .cancel = cancel,
+    };
 
     const _requested_mode = std.mem.span(requested_mode);
     if (_requested_mode.len > 0) {
@@ -52,12 +52,12 @@ pub fn SendPromptedInputOptionsFromArgs(
 
     const _input_handling = std.mem.span(input_handling);
 
-    if (std.mem.eql(u8, @tagName(operation.InputHandling.Exact), _input_handling)) {
-        options.input_handling = operation.InputHandling.Exact;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.Fuzzy), _input_handling)) {
-        options.input_handling = operation.InputHandling.Fuzzy;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.Ignore), _input_handling)) {
-        options.input_handling = operation.InputHandling.Ignore;
+    if (std.mem.eql(u8, @tagName(operation.InputHandling.exact), _input_handling)) {
+        options.input_handling = operation.InputHandling.exact;
+    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.fuzzy), _input_handling)) {
+        options.input_handling = operation.InputHandling.fuzzy;
+    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.ignore), _input_handling)) {
+        options.input_handling = operation.InputHandling.ignore;
     }
 
     options.hidden_response = hidden_response;

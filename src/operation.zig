@@ -1,106 +1,53 @@
 const mode = @import("mode.zig");
 
+pub const InputHandling = enum {
+    exact,
+    fuzzy,
+    ignore,
+};
+
 pub const OpenOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
 
 pub const CloseOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
 
 pub const GetPromptOptions = struct {
-    cancel: ?*bool,
-};
-
-pub const InputHandling = enum {
-    Exact,
-    Fuzzy,
-    Ignore,
+    cancel: ?*bool = null,
 };
 
 pub const SendInputOptions = struct {
-    cancel: ?*bool,
-
+    cancel: ?*bool = null,
     // the mode (formerly "privilege level") to send the input at
-    requested_mode: []const u8,
+    requested_mode: []const u8 = mode.default_mode,
     // how to handle the input -- do we ensure we read it off the channel before sending a return
     // (default), do we fuzzily read it before sending a return, or do we just ship it
-    input_handling: InputHandling,
-
+    input_handling: InputHandling = .fuzzy,
     // retain the initial prompt and input, default=false
-    retain_input: bool,
+    retain_input: bool = false,
     // retain the prompt shown after the input, default=false.
-    retain_trailing_prompt: bool,
-
+    retain_trailing_prompt: bool = false,
     // stop on any indicated failure (default) or continue just shipping inputs. only relevant
     // when executing a plural send inputS operation of course.
-    stop_on_indicated_failure: bool,
+    stop_on_indicated_failure: bool = true,
 };
 
 pub const SendPromptedInputOptions = struct {
-    cancel: ?*bool,
-
+    cancel: ?*bool = null,
     // the mode (formerly "privilege level") to send the input at
-    requested_mode: []const u8,
+    requested_mode: []const u8 = mode.default_mode,
     // how to handle the input -- do we ensure we read it off the channel before sending a return
     // (default), do we fuzzily read it before sending a return, or do we just ship it
-    input_handling: InputHandling,
-
-    hidden_response: bool,
-
+    input_handling: InputHandling = .fuzzy,
+    hidden_response: bool = false,
     // retain the prompt shown after the input, default=false.
-    retain_trailing_prompt: bool,
-
+    retain_trailing_prompt: bool = false,
     // input to send to abort the SendPromptedInput if things timeout or are cancelled
-    abort_input: []const u8,
+    abort_input: ?[]const u8 = null,
 };
 
 pub const EnterModeOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
-
-pub fn NewOpenOptions() OpenOptions {
-    return OpenOptions{
-        .cancel = null,
-    };
-}
-
-pub fn NewCloseOptions() CloseOptions {
-    return CloseOptions{
-        .cancel = null,
-    };
-}
-
-pub fn NewGetPromptOptions() GetPromptOptions {
-    return GetPromptOptions{
-        .cancel = null,
-    };
-}
-
-pub fn NewSendInputOptions() SendInputOptions {
-    return SendInputOptions{
-        .cancel = null,
-        .requested_mode = mode.default_mode,
-        .input_handling = InputHandling.Fuzzy,
-        .retain_input = false,
-        .retain_trailing_prompt = false,
-        .stop_on_indicated_failure = true,
-    };
-}
-
-pub fn NewSendPromptedInputOptions() SendPromptedInputOptions {
-    return SendPromptedInputOptions{
-        .cancel = null,
-        .requested_mode = mode.default_mode,
-        .input_handling = InputHandling.Fuzzy,
-        .hidden_response = false,
-        .retain_trailing_prompt = false,
-        .abort_input = "",
-    };
-}
-
-pub fn NewEnterModeOptions() EnterModeOptions {
-    return EnterModeOptions{
-        .cancel = null,
-    };
-}

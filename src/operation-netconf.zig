@@ -2,6 +2,7 @@
 // import all operation things from the netconf operation package when doing netconf bits.
 const operation = @import("operation.zig");
 
+// TODO omg so many enums to lower case
 pub const Kind = enum {
     // not "standard" netconf operations, but operations for us!
     Open,
@@ -358,14 +359,6 @@ pub const ActionOptions = struct {
     cancel: ?*bool,
     action: []const u8,
 };
-
-pub fn NewOpenOptions() operation.OpenOptions {
-    return operation.NewOpenOptions();
-}
-
-pub fn NewCloseOptions() CloseOptions {
-    return operation.NewCloseOptions();
-}
 
 pub fn NewGetConfigOptions() GetConfigOptions {
     return GetConfigOptions{

@@ -1,7 +1,6 @@
 const std = @import("std");
 const driver = @import("driver.zig");
 const mode = @import("mode.zig");
-const operation = @import("operation.zig");
 const yaml = @import("yaml");
 const strings = @import("strings.zig");
 const result = @import("result.zig");
@@ -165,43 +164,35 @@ pub const BoundOnXCallback = struct {
                     try d.session.writeAndReturn(instr.write.write.input, false);
                 },
                 .enter_mode => {
-                    var opts = operation.NewEnterModeOptions();
-                    opts.cancel = cancel;
-
                     try res.recordExtend(
                         try d.enterMode(
                             allocator,
                             instr.enter_mode.enter_mode.requested_mode,
-                            opts,
+                            .{ .cancel = cancel },
                         ),
                     );
                 },
                 .send_input => {
-                    var opts = operation.NewSendInputOptions();
-                    opts.cancel = cancel;
-
-                    opts.retain_input = true;
-                    opts.retain_trailing_prompt = true;
-
                     try res.recordExtend(
                         try d.sendInput(
                             allocator,
                             instr.send_input.send_input.input,
-                            opts,
+                            .{
+                                .cancel = cancel,
+                                .retain_input = true,
+                                .retain_trailing_prompt = true,
+                            },
                         ),
                     );
                 },
                 .send_prompted_input => {
-                    var opts = operation.NewSendPromptedInputOptions();
-                    opts.cancel = cancel;
-
                     try res.recordExtend(
                         try d.sendPromptedInput(
                             allocator,
                             instr.send_prompted_input.send_prompted_input.input,
                             instr.send_prompted_input.send_prompted_input.prompt,
                             instr.send_prompted_input.send_prompted_input.response,
-                            opts,
+                            .{ .cancel = cancel },
                         ),
                     );
                 },

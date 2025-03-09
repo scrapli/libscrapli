@@ -164,7 +164,7 @@ export fn openDriver(
     };
 
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .Open = ffi_driver.OpenOperation{
+        .open = ffi_driver.OpenOperation{
             .id = 0,
             .options = operation.OpenOptions{
                 .cancel = cancel,
@@ -374,7 +374,7 @@ export fn enterMode(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .EnterMode = ffi_driver.EnterModeOperation{
+        .enter_mode = ffi_driver.EnterModeOperation{
             .id = 0,
             .requested_mode = std.mem.span(requested_mode),
             .options = operation.EnterModeOptions{
@@ -400,7 +400,7 @@ export fn getPrompt(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .GetPrompt = ffi_driver.GetPromptOperation{
+        .get_prompt = ffi_driver.GetPromptOperation{
             .id = 0,
             .options = operation.GetPromptOptions{
                 .cancel = cancel,
@@ -438,7 +438,7 @@ export fn sendInput(
     );
 
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .SendInput = ffi_driver.SendInputOperation{
+        .send_input = ffi_driver.SendInputOperation{
             .id = 0,
             .input = std.mem.span(input),
             .options = options,
@@ -479,7 +479,7 @@ export fn sendPromptedInput(
     );
 
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .SendPromptedInput = ffi_driver.SendPromptedInputOperation{
+        .send_prompted_input = ffi_driver.SendPromptedInputOperation{
             .id = 0,
             .input = std.mem.span(input),
             .prompt = std.mem.span(prompt),

@@ -767,11 +767,12 @@ pub const Session = struct {
 
         try self.write(input, false);
 
+        // TODO this saftey is/was a lie lol, ingore case does *not*
         // SAFETY: will always be set or we'll error
         var match_indexes: MatchPositions = undefined;
 
         switch (input_handling) {
-            operation.InputHandling.Exact => {
+            operation.InputHandling.exact => {
                 match_indexes = try self.readTimeout(
                     timer,
                     cancel,
@@ -780,7 +781,7 @@ pub const Session = struct {
                     bufs,
                 );
             },
-            operation.InputHandling.Fuzzy => {
+            operation.InputHandling.fuzzy => {
                 match_indexes = try self.readTimeout(
                     timer,
                     cancel,
@@ -789,7 +790,7 @@ pub const Session = struct {
                     bufs,
                 );
             },
-            operation.InputHandling.Ignore => {
+            operation.InputHandling.ignore => {
                 // ignore, not reading input
             },
         }
@@ -870,9 +871,9 @@ pub const Session = struct {
 
         var timer = try std.time.Timer.start();
 
-        if (options.abort_input.len != 0) {
+        if (options.abort_input) |abort_input| {
             errdefer {
-                self.writeAndReturn(options.abort_input, false) catch |err| {
+                self.writeAndReturn(abort_input, false) catch |err| {
                     self.log.critical(
                         "failed sending abort sequence after error in prompted input, err: {}",
                         .{err},

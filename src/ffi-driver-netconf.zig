@@ -129,10 +129,10 @@ pub const FfiDriver = struct {
             self.operation_thread.?.join();
         }
 
-        var opts = operation.NewCloseOptions();
-        opts.cancel = cancel;
-
-        const close_res = try self.real_driver.close(self.allocator, opts);
+        const close_res = try self.real_driver.close(
+            self.allocator,
+            .{ .cancel = cancel },
+        );
         close_res.deinit();
     }
 
