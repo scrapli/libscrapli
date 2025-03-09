@@ -401,20 +401,6 @@ pub const Session = struct {
         try self.writeReturn();
     }
 
-    fn getBufSearchView(
-        self: *Session,
-        buf: []u8,
-    ) []u8 {
-        // TODO use this in the readTimeout func!
-        const depth = self.options.operation_max_search_depth;
-
-        if (buf.len < depth) {
-            return buf[0..];
-        }
-
-        return buf[buf.len - depth ..];
-    }
-
     fn authenticate(
         self: *Session,
         allocator: std.mem.Allocator,
@@ -484,7 +470,10 @@ pub const Session = struct {
                 try openMessageHandler(allocator, bufs.processed.items);
             }
 
-            const searchable_buf = self.getBufSearchView(bufs.processed.items[cur_check_start_idx..]);
+            const searchable_buf = bytes.getBufSearchView(
+                bufs.processed.items[cur_check_start_idx..],
+                self.options.operation_max_search_depth,
+            );
 
             const state = try auth.processSearchableAuthBuf(
                 self.allocator,
@@ -667,20 +656,19 @@ pub const Session = struct {
                 try bufs.processed.resize(new_size);
             }
 
-            var search_depth: u64 = self.options.operation_max_search_depth;
-
-            if (bufs.processed.items[op_processed_buf_starting_len..].len < search_depth) {
-                search_depth = bufs.processed.items[op_processed_buf_starting_len..].len;
-            }
+            const searchable_buf = bytes.getBufSearchView(
+                bufs.processed.items[op_processed_buf_starting_len..],
+                self.options.operation_max_search_depth,
+            );
 
             var match_indexes = try check_read_operation_done(
-                bufs.processed.items[bufs.processed.items.len - search_depth ..],
+                searchable_buf,
                 args,
             );
 
             if (!(match_indexes.start == 0 and match_indexes.end == 0)) {
-                match_indexes.start += (bufs.processed.items.len - search_depth);
-                match_indexes.end += (bufs.processed.items.len - search_depth);
+                match_indexes.start += (bufs.processed.items.len - searchable_buf.len);
+                match_indexes.end += (bufs.processed.items.len - searchable_buf.len);
                 return match_indexes;
             }
         }
