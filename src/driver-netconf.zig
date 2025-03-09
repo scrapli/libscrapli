@@ -1,6 +1,6 @@
 const std = @import("std");
 const auth = @import("auth.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
 const operation = @import("operation-netconf.zig");
@@ -70,7 +70,7 @@ const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 
 pub const Config = struct {
-    logger: ?logger.Logger = null,
+    logger: ?logging.Logger = null,
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
@@ -82,7 +82,7 @@ pub const Config = struct {
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
-    logger: ?logger.Logger,
+    logger: ?logging.Logger,
     port: ?u16,
     auth: *auth.Options,
     session: *session.Options,
@@ -131,7 +131,7 @@ pub const Options = struct {
 
 pub const Driver = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
 
     host: []const u8,
 
@@ -170,9 +170,9 @@ pub const Driver = struct {
     ) !*Driver {
         const opts = try Options.init(allocator, config);
 
-        const log = opts.logger orelse logger.Logger{
+        const log = opts.logger orelse logging.Logger{
             .allocator = allocator,
-            .f = logger.noopLogf,
+            .f = logging.noopLogf,
         };
 
         switch (opts.transport.*) {

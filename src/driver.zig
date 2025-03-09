@@ -1,5 +1,5 @@
 const std = @import("std");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 const session = @import("session.zig");
 const auth = @import("auth.zig");
 const transport = @import("transport.zig");
@@ -24,7 +24,7 @@ pub const DefinitionSource = union(enum) {
 
 pub const Config = struct {
     definition: DefinitionSource,
-    logger: ?logger.Logger = null,
+    logger: ?logging.Logger = null,
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
@@ -33,7 +33,7 @@ pub const Config = struct {
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
-    logger: ?logger.Logger,
+    logger: ?logging.Logger,
     port: ?u16,
     auth: *auth.Options,
     session: *session.Options,
@@ -65,7 +65,7 @@ pub const Options = struct {
 
 pub const Driver = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
     definition: *platform.Definition,
     host: []const u8,
     port: u16,
@@ -81,9 +81,9 @@ pub const Driver = struct {
         const opts = try Options.init(allocator, config);
         errdefer opts.deinit();
 
-        const log = opts.logger orelse logger.Logger{
+        const log = opts.logger orelse logging.Logger{
             .allocator = allocator,
-            .f = logger.noopLogf,
+            .f = logging.noopLogf,
         };
 
         const definition = switch (config.definition) {

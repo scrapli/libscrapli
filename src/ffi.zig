@@ -5,7 +5,7 @@ const ffi_driver_netconf = @import("ffi-driver-netconf.zig");
 const ffi_operation = @import("ffi-operation.zig");
 const operation = @import("operation.zig");
 const operation_netconf = @import("operation-netconf.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
 const transport = @import("transport.zig");
 
@@ -59,13 +59,13 @@ export fn allocDriver(
     port: u16,
     transport_kind: [*c]const u8,
 ) usize {
-    var log = logger.Logger{
+    var log = logging.Logger{
         .allocator = allocator,
         .f = null,
     };
 
     if (logger_callback != null) {
-        log = logger.Logger{
+        log = logging.Logger{
             .allocator = allocator,
             .f = logger_callback.?,
         };
@@ -502,13 +502,13 @@ export fn netconfAllocDriver(
     port: u16,
     transport_kind: [*c]const u8,
 ) usize {
-    var log = logger.Logger{
+    var log = logging.Logger{
         .allocator = allocator,
         .f = null,
     };
 
     if (logger_callback != null) {
-        log = logger.Logger{
+        log = logging.Logger{
             .allocator = allocator,
             .f = logger_callback.?,
         };

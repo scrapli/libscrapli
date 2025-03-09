@@ -3,7 +3,7 @@ const transport = @import("transport.zig");
 const re = @import("re.zig");
 const bytes = @import("bytes.zig");
 const operation = @import("operation.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
 const time = @import("time.zig");
 const auth = @import("auth.zig");
@@ -144,7 +144,7 @@ pub const Options = struct {
 
 pub const Session = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
     options: *Options,
     auth_options: *auth.Options,
     transport: *transport.Transport,
@@ -168,7 +168,7 @@ pub const Session = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        log: logger.Logger,
+        log: logging.Logger,
         prompt_pattern: []const u8,
         options: *Options,
         auth_options: *auth.Options,

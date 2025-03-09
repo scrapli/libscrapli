@@ -4,7 +4,7 @@ const transport_bin = @import("transport-bin.zig");
 const transport_telnet = @import("transport-telnet.zig");
 const transport_ssh2 = @import("transport-ssh2.zig");
 const transport_test = @import("transport-test.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 
 pub const Kind = enum {
     bin,
@@ -125,12 +125,12 @@ pub const Options = union(Kind) {
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
     implementation: Implementation,
 
     pub fn init(
         allocator: std.mem.Allocator,
-        log: logger.Logger,
+        log: logging.Logger,
         options: *Options,
     ) !*Transport {
         const t = try allocator.create(Transport);

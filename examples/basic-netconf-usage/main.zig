@@ -92,7 +92,7 @@ pub fn main() !void {
     // defer f.close();
     // then uncomment recorder in OptionsInputs below
 
-    const d = try driver.NewDriver(
+    const d = try driver.Driver.init(
         allocator,
         host.string,
         .{

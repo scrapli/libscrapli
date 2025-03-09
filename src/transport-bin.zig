@@ -1,7 +1,7 @@
 const std = @import("std");
 const auth = @import("auth.zig");
 const file = @import("file.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 const strings = @import("strings.zig");
 
 const c = @cImport({
@@ -118,7 +118,7 @@ pub const Options = struct {
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
 
     options: *Options,
 
@@ -130,7 +130,7 @@ pub const Transport = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        log: logger.Logger,
+        log: logging.Logger,
         options: *Options,
     ) !*Transport {
         const t = try allocator.create(Transport);
