@@ -1,0 +1,35 @@
+---
+name: build
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: load env vars for workflow run
+        run: |
+          source .github/vars.env
+          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
+          echo "ZLINT_VERSION=$ZLINT_VERSION" >> "$GITHUB_ENV"
+          echo "KCOV_VERSION=$KCOV_VERSION" >> "$GITHUB_ENV"
+
+      - name: setup zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: build the examples
+        run: |
+          make build-examples
+
+      - name: build the library and ffi layer
+        run: |
+          make build
