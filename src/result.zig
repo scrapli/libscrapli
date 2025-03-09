@@ -2,44 +2,15 @@ const std = @import("std");
 const ascii = @import("ascii.zig");
 
 pub const OperationKind = enum {
-    Open,
-    OnOpen,
-    OnClose,
-    Close,
-    EnterMode,
-    GetPrompt,
-    SendInput,
-    SendPromptedInput,
+    open,
+    on_open,
+    on_close,
+    close,
+    enter_mode,
+    get_prompt,
+    send_input,
+    send_prompted_input,
 };
-
-/// Returns a new Result object, this object *does not own* the failed_indicators arraylist
-/// and will *not* free any of that memory!
-pub fn NewResult(
-    allocator: std.mem.Allocator,
-    host: []const u8,
-    port: u16,
-    operation_kind: OperationKind,
-    failed_indicators: ?std.ArrayList([]const u8),
-) !*Result {
-    const res = try allocator.create(Result);
-
-    res.* = Result{
-        .allocator = allocator,
-        .host = host,
-        .port = port,
-        .operation_kind = operation_kind,
-        .failed_indicators = failed_indicators,
-        .inputs = std.ArrayList([]const u8).init(allocator),
-        .results_raw = std.ArrayList([]const u8).init(allocator),
-        .results = std.ArrayList([]const u8).init(allocator),
-        .start_time_ns = std.time.nanoTimestamp(),
-        .splits_ns = std.ArrayList(i128).init(allocator),
-        .result_failure_indicated = false,
-        .result_failure_indicator = -1,
-    };
-
-    return res;
-}
 
 pub const Result = struct {
     allocator: std.mem.Allocator,
@@ -64,6 +35,35 @@ pub const Result = struct {
     // index of the given failed when contains list so we dont need to bother managing possible
     // memory to hold the substring, < 0 means no failure
     result_failure_indicator: i16,
+
+    /// Initializes a heap allocated Result object, this object *does not own* the failed_indicators
+    /// arraylist and will *not* free any of that memory!
+    pub fn init(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        port: u16,
+        operation_kind: OperationKind,
+        failed_indicators: ?std.ArrayList([]const u8),
+    ) !*Result {
+        const res = try allocator.create(Result);
+
+        res.* = Result{
+            .allocator = allocator,
+            .host = host,
+            .port = port,
+            .operation_kind = operation_kind,
+            .failed_indicators = failed_indicators,
+            .inputs = std.ArrayList([]const u8).init(allocator),
+            .results_raw = std.ArrayList([]const u8).init(allocator),
+            .results = std.ArrayList([]const u8).init(allocator),
+            .start_time_ns = std.time.nanoTimestamp(),
+            .splits_ns = std.ArrayList(i128).init(allocator),
+            .result_failure_indicated = false,
+            .result_failure_indicator = -1,
+        };
+
+        return res;
+    }
 
     pub fn deinit(
         self: *Result,

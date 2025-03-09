@@ -160,7 +160,7 @@ pub fn main() !void {
 
     const open_result = try d.open(
         allocator,
-        operation.NewOpenOptions(),
+        .{},
     );
     defer open_result.deinit();
 
@@ -177,7 +177,7 @@ pub fn main() !void {
     const send_input_result = try d.sendInput(
         allocator,
         "info interface *",
-        operation.NewSendInputOptions(),
+        .{},
     );
     defer send_input_result.deinit();
 
@@ -191,6 +191,6 @@ pub fn main() !void {
         },
     );
 
-    const close_result = try d.close(allocator, operation.NewCloseOptions());
+    const close_result = try d.close(allocator, .{});
     defer close_result.deinit();
 }

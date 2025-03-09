@@ -118,7 +118,7 @@ pub fn main() !void {
 
     const open_result = try d.open(
         allocator,
-        operation.NewOpenOptions(),
+        .{},
     );
     defer open_result.deinit();
 
@@ -132,7 +132,7 @@ pub fn main() !void {
         },
     );
 
-    const get_result = try d.getConfig(allocator, operation.NewGetConfigOptions());
+    const get_result = try d.getConfig(allocator, .{});
     defer get_result.deinit();
 
     std.debug.print(
@@ -145,10 +145,9 @@ pub fn main() !void {
         },
     );
 
-    var get_options = operation.NewGetOptions();
-    get_options.filter = "<system><aaa><authentication></authentication></aaa></system>";
-
-    const get_config_result = try d.get(allocator, get_options);
+    const get_config_result = try d.get(allocator, .{
+        .filter = "<system><aaa><authentication></authentication></aaa></system>",
+    });
     defer get_config_result.deinit();
 
     std.debug.print(
@@ -161,6 +160,6 @@ pub fn main() !void {
         },
     );
 
-    const close_result = try d.close(allocator, operation.NewCloseOptions());
+    const close_result = try d.close(allocator, .{});
     defer close_result.deinit();
 }

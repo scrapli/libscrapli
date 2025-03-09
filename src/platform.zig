@@ -376,14 +376,14 @@ pub const YamlDefinition = struct {
                 .bound_on_open_callback = if (parsed_definition.on_open_instructions) |instr|
                     try BoundOnXCallback.init(
                         allocator,
-                        result.OperationKind.OnOpen,
+                        result.OperationKind.on_open,
                         instr,
                     )
                 else
                     null,
                 .bound_on_close_callback = if (parsed_definition.on_close_instructions) |instr| try BoundOnXCallback.init(
                     allocator,
-                    result.OperationKind.OnClose,
+                    result.OperationKind.on_close,
                     instr,
                 ) else null,
                 .ntc_templates_platform = parsed_definition.ntc_templates_platform,

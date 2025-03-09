@@ -13,8 +13,8 @@ pub const OperationResult = struct {
 };
 
 pub const OperationKind = enum {
-    Open,
-    GetConfig,
+    open,
+    get_config,
 };
 
 pub const OpenOperation = struct {
@@ -28,8 +28,8 @@ pub const GetConfigOperation = struct {
 };
 
 pub const OperationOptions = union(OperationKind) {
-    Open: OpenOperation,
-    GetConfig: GetConfigOperation,
+    open: OpenOperation,
+    get_config: GetConfigOperation,
 };
 
 pub fn NewFfiDriver(
@@ -159,23 +159,23 @@ pub const FfiDriver = struct {
             var ret_err: ?anyerror = null;
 
             switch (op.?) {
-                OperationKind.Open => {
-                    operation_id = op.?.Open.id;
+                OperationKind.open => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.open(
                         self.allocator,
-                        op.?.Open.options,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
-                OperationKind.GetConfig => {
-                    operation_id = op.?.GetConfig.id;
+                OperationKind.get_config => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.getConfig(
                         self.allocator,
-                        op.?.GetConfig.options,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
@@ -283,11 +283,11 @@ pub const FfiDriver = struct {
         });
 
         switch (options) {
-            OperationKind.Open => {
-                mut_options.Open.id = operation_id;
+            OperationKind.open => {
+                mut_options.open.id = operation_id;
             },
-            OperationKind.GetConfig => {
-                mut_options.GetConfig.id = operation_id;
+            OperationKind.get_config => {
+                mut_options.get_config.id = operation_id;
             },
         }
 

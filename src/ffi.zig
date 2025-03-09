@@ -554,7 +554,7 @@ export fn netconfOpenDriver(
     };
 
     const _operation_id = d.queueOperation(ffi_driver_netconf.OperationOptions{
-        .Open = ffi_driver_netconf.OpenOperation{
+        .open = ffi_driver_netconf.OpenOperation{
             .id = 0,
             .options = operation_netconf.OpenOptions{
                 .cancel = cancel,
@@ -732,13 +732,12 @@ export fn netconfGetConfig(
 ) u8 {
     const d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
-    var opts = operation_netconf.NewGetConfigOptions();
-    opts.cancel = cancel;
-
     const _operation_id = d.queueOperation(ffi_driver_netconf.OperationOptions{
-        .GetConfig = ffi_driver_netconf.GetConfigOperation{
+        .get_config = ffi_driver_netconf.GetConfigOperation{
             .id = 0,
-            .options = opts,
+            .options = .{
+                .cancel = cancel,
+            },
         },
     }) catch |err| {
         d.real_driver.log.critical("error during queue getConfig {any}", .{err});

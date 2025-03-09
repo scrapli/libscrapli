@@ -27,25 +27,6 @@ pub const LookupKeyValue = struct {
     value: []const u8,
 };
 
-pub fn NewOptions(allocator: std.mem.Allocator) !*Options {
-    const o = try allocator.create(Options);
-
-    o.* = Options{
-        .allocator = allocator,
-        .username = null,
-        .password = null,
-        .private_key_path = null,
-        .private_key_passphrase = null,
-        .lookup_map = null,
-        .in_session_auth_bypass = false,
-        .username_pattern = default_username_pattern,
-        .password_pattern = default_password_pattern,
-        .passphrase_pattern = default_passphrase_pattern,
-    };
-
-    return o;
-}
-
 pub const OptionsInputs = struct {
     username: ?[]const u8 = null,
     password: ?[]const u8 = null,

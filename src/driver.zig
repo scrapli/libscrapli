@@ -152,7 +152,7 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         operation_kind: result.OperationKind,
     ) !*result.Result {
-        return result.NewResult(
+        return result.Result.init(
             allocator,
             self.host,
             self.port,
@@ -166,7 +166,10 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.OpenOptions,
     ) !*result.Result {
-        var res = try self.NewResult(allocator, result.OperationKind.Open);
+        var res = try self.NewResult(
+            allocator,
+            result.OperationKind.open,
+        );
         errdefer res.deinit();
 
         try res.record(
@@ -223,7 +226,10 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CloseOptions,
     ) !*result.Result {
-        var res = try self.NewResult(allocator, result.OperationKind.Open);
+        var res = try self.NewResult(
+            allocator,
+            result.OperationKind.open,
+        );
         errdefer res.deinit();
 
         var op_buf = std.ArrayList(u8).init(allocator);
@@ -267,7 +273,7 @@ pub const Driver = struct {
 
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.GetPrompt,
+            result.OperationKind.get_prompt,
         );
         errdefer res.deinit();
 
@@ -292,7 +298,7 @@ pub const Driver = struct {
 
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.EnterMode,
+            result.OperationKind.enter_mode,
         );
         errdefer res.deinit();
 
@@ -422,7 +428,7 @@ pub const Driver = struct {
         input: []const u8,
         options: operation.SendInputOptions,
     ) !*result.Result {
-        var res = try self.NewResult(allocator, result.OperationKind.SendInput);
+        var res = try self.NewResult(allocator, result.OperationKind.send_input);
         errdefer res.deinit();
 
         var target_mode = options.requested_mode;
@@ -471,12 +477,15 @@ pub const Driver = struct {
 
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.SendInput,
+            result.OperationKind.send_input,
         );
         errdefer res.deinit();
 
         for (inputs) |input| {
-            try res.record(input, try self.session.sendInput(allocator, input, options));
+            try res.record(
+                input,
+                try self.session.sendInput(allocator, input, options),
+            );
 
             if (options.stop_on_indicated_failure and res.result_failure_indicated) {
                 return res;
@@ -494,7 +503,10 @@ pub const Driver = struct {
         response: []const u8,
         options: operation.SendPromptedInputOptions,
     ) !*result.Result {
-        var res = try self.NewResult(allocator, result.OperationKind.SendPromptedInput);
+        var res = try self.NewResult(
+            allocator,
+            result.OperationKind.send_prompted_input,
+        );
         errdefer res.deinit();
 
         var target_mode = options.requested_mode;
