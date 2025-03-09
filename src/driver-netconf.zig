@@ -194,7 +194,7 @@ pub const Driver = struct {
             opts.port = default_netconf_port;
         }
 
-        const sess = try session.NewSession(
+        const sess = try session.Session.init(
             allocator,
             log,
             delimiter_Version_1_0,
@@ -239,8 +239,6 @@ pub const Driver = struct {
             ).init(allocator),
             .subscriptions_lock = std.Thread.Mutex{},
         };
-
-        try d.session.init();
 
         return d;
     }

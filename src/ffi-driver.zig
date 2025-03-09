@@ -58,35 +58,6 @@ pub const OperationOptions = union(OperationKind) {
     send_prompted_input: SendPromptedInputOperation,
 };
 
-pub fn NewFfiDriver(
-    allocator: std.mem.Allocator,
-    real_driver: *driver.Driver,
-) !*FfiDriver {
-    const ffi_driver = try allocator.create(FfiDriver);
-
-    ffi_driver.* = FfiDriver{
-        .allocator = allocator,
-        .real_driver = real_driver,
-        .operation_id_counter = 0,
-        .operation_thread = null,
-        .operation_ready = std.atomic.Value(bool).init(false),
-        .operation_stop = std.atomic.Value(bool).init(false),
-        .operation_lock = std.Thread.Mutex{},
-        .operation_condition = std.Thread.Condition{},
-        .operation_predicate = 0,
-        .operation_queue = std.fifo.LinearFifo(
-            OperationOptions,
-            std.fifo.LinearFifoBufferType.Dynamic,
-        ).init(allocator),
-        .operation_results = std.AutoHashMap(
-            u32,
-            OperationResult,
-        ).init(allocator),
-    };
-
-    return ffi_driver;
-}
-
 pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
 
@@ -107,6 +78,40 @@ pub const FfiDriver = struct {
         u32,
         OperationResult,
     ),
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        config: driver.Config,
+    ) !*FfiDriver {
+        const ffi_driver = try allocator.create(FfiDriver);
+
+        ffi_driver.* = FfiDriver{
+            .allocator = allocator,
+            .real_driver = try driver.Driver.init(
+                allocator,
+                host,
+                config,
+            ),
+            .operation_id_counter = 0,
+            .operation_thread = null,
+            .operation_ready = std.atomic.Value(bool).init(false),
+            .operation_stop = std.atomic.Value(bool).init(false),
+            .operation_lock = std.Thread.Mutex{},
+            .operation_condition = std.Thread.Condition{},
+            .operation_predicate = 0,
+            .operation_queue = std.fifo.LinearFifo(
+                OperationOptions,
+                std.fifo.LinearFifoBufferType.Dynamic,
+            ).init(allocator),
+            .operation_results = std.AutoHashMap(
+                u32,
+                OperationResult,
+            ).init(allocator),
+        };
+
+        return ffi_driver;
+    }
 
     pub fn deinit(self: *FfiDriver) void {
         self.operation_queue.deinit();

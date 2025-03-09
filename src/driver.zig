@@ -111,7 +111,7 @@ pub const Driver = struct {
             .host = host,
             .port = 0,
             .options = opts,
-            .session = try session.NewSession(
+            .session = try session.Session.init(
                 allocator,
                 log,
                 definition.prompt_pattern,
@@ -134,8 +134,6 @@ pub const Driver = struct {
         } else {
             d.port = opts.port.?;
         }
-
-        try d.session.init();
 
         return d;
     }

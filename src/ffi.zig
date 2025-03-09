@@ -5,7 +5,6 @@ const ffi_driver_netconf = @import("ffi-driver-netconf.zig");
 const ffi_operation = @import("ffi-operation.zig");
 const operation = @import("operation.zig");
 const operation_netconf = @import("operation-netconf.zig");
-const driver = @import("driver.zig");
 const logger = @import("logger.zig");
 const ascii = @import("ascii.zig");
 const transport = @import("transport.zig");
@@ -60,13 +59,19 @@ export fn allocDriver(
     port: u16,
     transport_kind: [*c]const u8,
 ) usize {
-    var log = logger.Logger{ .allocator = allocator, .f = null };
+    var log = logger.Logger{
+        .allocator = allocator,
+        .f = null,
+    };
 
     if (logger_callback != null) {
-        log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
+        log = logger.Logger{
+            .allocator = allocator,
+            .f = logger_callback.?,
+        };
     }
 
-    const real_driver = driver.Driver.init(
+    const d = ffi_driver.FfiDriver.init(
         allocator,
         std.mem.span(host),
         .{
@@ -85,16 +90,7 @@ export fn allocDriver(
             },
         },
     ) catch |err| {
-        log.critical("error during NewDriverFromYamlString: {any}", .{err});
-
-        return 0;
-    };
-
-    const d = ffi_driver.NewFfiDriver(
-        allocator,
-        real_driver,
-    ) catch |err| {
-        log.critical("error during NewFfiDriver: {any}", .{err});
+        log.critical("error during FfiDriver.init: {any}", .{err});
 
         return 0;
     };
@@ -487,7 +483,10 @@ export fn sendPromptedInput(
             .options = options,
         },
     }) catch |err| {
-        d.real_driver.log.critical("error during queue sendPromptedInput {any}", .{err});
+        d.real_driver.log.critical(
+            "error during queue sendPromptedInput {any}",
+            .{err},
+        );
 
         return 1;
     };
@@ -503,13 +502,19 @@ export fn netconfAllocDriver(
     port: u16,
     transport_kind: [*c]const u8,
 ) usize {
-    var log = logger.Logger{ .allocator = allocator, .f = null };
+    var log = logger.Logger{
+        .allocator = allocator,
+        .f = null,
+    };
 
     if (logger_callback != null) {
-        log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
+        log = logger.Logger{
+            .allocator = allocator,
+            .f = logger_callback.?,
+        };
     }
 
-    const d = ffi_driver_netconf.NewFfiDriver(
+    const d = ffi_driver_netconf.FfiDriver.init(
         allocator,
         std.mem.span(host),
         .{

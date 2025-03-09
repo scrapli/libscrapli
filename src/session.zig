@@ -88,24 +88,6 @@ const MatchPositions = struct {
     }
 };
 
-pub fn NewOptions(allocator: std.mem.Allocator) !*Options {
-    const o = try allocator.create(Options);
-
-    o.* = Options{
-        .allocator = allocator,
-        .read_size = default_read_size,
-        .read_delay_min_ns = default_read_delay_min_ns,
-        .read_delay_max_ns = default_read_delay_max_ns,
-        .read_delay_backoff_factor = default_read_delay_backoff_factor,
-        .return_char = default_return_char,
-        .operation_timeout_ns = default_operation_timeout_ns,
-        .operation_max_search_depth = default_operation_max_search_depth,
-        .recorder = null,
-    };
-
-    return o;
-}
-
 pub const OptionsInputs = struct {
     read_size: u64 = default_read_size,
     read_delay_min_ns: u64 = default_read_delay_min_ns,
@@ -160,46 +142,6 @@ pub const Options = struct {
     }
 };
 
-pub fn NewSession(
-    allocator: std.mem.Allocator,
-    log: logger.Logger,
-    prompt_pattern: []const u8,
-    options: *Options,
-    auth_options: *auth.Options,
-    transport_options: *transport.Options,
-) !*Session {
-    const t = try transport.Factory(
-        allocator,
-        log,
-        transport_options,
-    );
-
-    const s = try allocator.create(Session);
-
-    s.* = Session{
-        .allocator = allocator,
-        .log = log,
-        .options = options,
-        .auth_options = auth_options,
-        .transport = t,
-        .read_thread = null,
-        .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.Uninitialized),
-        .read_lock = std.Thread.Mutex{},
-        .read_queue = std.fifo.LinearFifo(
-            u8,
-            std.fifo.LinearFifoBufferType.Dynamic,
-        ).init(allocator),
-        .compiled_username_pattern = null,
-        .compiled_password_pattern = null,
-        .compiled_passphrase_pattern = null,
-        .prompt_pattern = prompt_pattern,
-        .compiled_prompt_pattern = null,
-        .last_consumed_prompt = std.ArrayList(u8).init(allocator),
-    };
-
-    return s;
-}
-
 pub const Session = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
@@ -224,45 +166,85 @@ pub const Session = struct {
 
     last_consumed_prompt: std.ArrayList(u8),
 
-    pub fn init(self: *Session) !void {
-        self.compiled_username_pattern = re.pcre2Compile(self.auth_options.username_pattern);
-        if (self.compiled_username_pattern == null) {
-            self.log.critical(
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logger.Logger,
+        prompt_pattern: []const u8,
+        options: *Options,
+        auth_options: *auth.Options,
+        transport_options: *transport.Options,
+    ) !*Session {
+        const t = try transport.Factory(
+            allocator,
+            log,
+            transport_options,
+        );
+        errdefer t.deinit();
+
+        const s = try allocator.create(Session);
+
+        s.* = Session{
+            .allocator = allocator,
+            .log = log,
+            .options = options,
+            .auth_options = auth_options,
+            .transport = t,
+            .read_thread = null,
+            .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.Uninitialized),
+            .read_lock = std.Thread.Mutex{},
+            .read_queue = std.fifo.LinearFifo(
+                u8,
+                std.fifo.LinearFifoBufferType.Dynamic,
+            ).init(allocator),
+            .compiled_username_pattern = null,
+            .compiled_password_pattern = null,
+            .compiled_passphrase_pattern = null,
+            .prompt_pattern = prompt_pattern,
+            .compiled_prompt_pattern = null,
+            .last_consumed_prompt = std.ArrayList(u8).init(allocator),
+        };
+        errdefer s.deinit();
+
+        s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern);
+        if (s.compiled_username_pattern == null) {
+            s.log.critical(
                 "failed compling username pattern {s}",
-                .{self.auth_options.username_pattern},
+                .{s.auth_options.username_pattern},
             );
 
             return error.InitFailed;
         }
 
-        self.compiled_password_pattern = re.pcre2Compile(self.auth_options.password_pattern);
-        if (self.compiled_password_pattern == null) {
-            self.log.critical(
+        s.compiled_password_pattern = re.pcre2Compile(s.auth_options.password_pattern);
+        if (s.compiled_password_pattern == null) {
+            s.log.critical(
                 "failed compling password pattern {s}",
-                .{self.auth_options.password_pattern},
+                .{s.auth_options.password_pattern},
             );
 
             return error.InitFailed;
         }
 
-        self.compiled_passphrase_pattern = re.pcre2Compile(self.auth_options.passphrase_pattern);
-        if (self.compiled_passphrase_pattern == null) {
-            self.log.critical(
+        s.compiled_passphrase_pattern = re.pcre2Compile(s.auth_options.passphrase_pattern);
+        if (s.compiled_passphrase_pattern == null) {
+            s.log.critical(
                 "failed compling passphrase pattern {s}",
-                .{self.auth_options.passphrase_pattern},
+                .{s.auth_options.passphrase_pattern},
             );
 
             return error.InitFailed;
         }
 
-        self.compiled_prompt_pattern = re.pcre2Compile(self.prompt_pattern);
-        if (self.compiled_prompt_pattern == null) {
-            self.log.critical("failed compling prompt pattern {s}", .{self.prompt_pattern});
+        s.compiled_prompt_pattern = re.pcre2Compile(s.prompt_pattern);
+        if (s.compiled_prompt_pattern == null) {
+            s.log.critical("failed compling prompt pattern {s}", .{s.prompt_pattern});
 
             return error.InitFailed;
         }
 
-        try self.transport.init();
+        try s.transport.init();
+
+        return s;
     }
 
     pub fn deinit(self: *Session) void {
