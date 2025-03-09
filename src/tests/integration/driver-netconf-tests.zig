@@ -117,11 +117,11 @@ test "driver-netconf open" {
         }
         defer d.deinit();
 
-        const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 
@@ -195,14 +195,14 @@ test "driver-netconf get-config" {
         }
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        const actual_res = try d.getConfig(std.testing.allocator, operation.NewGetConfigOptions());
+        const actual_res = try d.getConfig(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 
@@ -282,7 +282,7 @@ test "driver-netconf lock" {
         }
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         var lock_unlock_options = operation.NewLockUnlockOptions();
@@ -292,7 +292,7 @@ test "driver-netconf lock" {
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 
@@ -366,7 +366,7 @@ test "driver-netconf unlock" {
         }
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         var lock_unlock_options = operation.NewLockUnlockOptions();
@@ -379,7 +379,7 @@ test "driver-netconf unlock" {
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 

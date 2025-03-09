@@ -10,14 +10,14 @@ const xml = @import("xml");
 const test_helper = @import("test-helper.zig");
 
 const ProcessThreadState = enum(u8) {
-    Uninitialized,
-    Run,
-    Stop,
+    uninitialized,
+    run,
+    stop,
 };
 
 pub const Version = enum {
-    Version_1_0,
-    Version_1_1,
+    version_1_0,
+    version_1_1,
 };
 
 pub const Capability = struct {
@@ -230,10 +230,10 @@ pub const Driver = struct {
             .session = sess,
 
             .server_capabilities = std.ArrayList(Capability).init(allocator),
-            .negotiated_version = Version.Version_1_0,
+            .negotiated_version = Version.version_1_0,
 
             .process_thread = null,
-            .process_stop = std.atomic.Value(ProcessThreadState).init(ProcessThreadState.Uninitialized),
+            .process_stop = std.atomic.Value(ProcessThreadState).init(ProcessThreadState.uninitialized),
 
             .message_id = 101,
 
@@ -378,7 +378,7 @@ pub const Driver = struct {
         try self.sendClientCapabilities(allocator, options, &timer);
 
         self.process_stop.store(
-            ProcessThreadState.Run,
+            ProcessThreadState.run,
             std.builtin.AtomicOrder.unordered,
         );
 
@@ -403,7 +403,7 @@ pub const Driver = struct {
         // TODO send CloseSession rpc and then we will care about options for cancel
         _ = options;
 
-        self.process_stop.store(ProcessThreadState.Stop, std.builtin.AtomicOrder.unordered);
+        self.process_stop.store(ProcessThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         if (self.process_thread != null) {
             self.process_thread.?.join();
@@ -613,9 +613,9 @@ pub const Driver = struct {
 
         if (hasVersion_1_1) {
             // we default to preferring 1.1
-            self.negotiated_version = Version.Version_1_1;
+            self.negotiated_version = Version.version_1_1;
         } else if (hasVersion_1_0) {
-            self.negotiated_version = Version.Version_1_0;
+            self.negotiated_version = Version.version_1_0;
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
@@ -628,16 +628,16 @@ pub const Driver = struct {
         }
 
         switch (self.options.preferred_version.?) {
-            Version.Version_1_0 => {
+            Version.version_1_0 => {
                 if (hasVersion_1_0) {
-                    self.negotiated_version = Version.Version_1_0;
+                    self.negotiated_version = Version.version_1_0;
                 }
 
                 return error.PreferredCapabilityUnavailable;
             },
-            Version.Version_1_1 => {
+            Version.version_1_1 => {
                 if (hasVersion_1_1) {
-                    self.negotiated_version = Version.Version_1_1;
+                    self.negotiated_version = Version.version_1_1;
                 }
 
                 return error.PreferredCapabilityUnavailable;
@@ -655,7 +655,7 @@ pub const Driver = struct {
 
         var caps: []const u8 = version_1_0_capability;
 
-        if (self.negotiated_version == Version.Version_1_1) {
+        if (self.negotiated_version == Version.version_1_1) {
             caps = version_1_1_capability;
         }
 
@@ -745,15 +745,15 @@ pub const Driver = struct {
         // SAFETY: will always be set in switch
         var message_complete_delim: []const u8 = undefined;
         switch (self.negotiated_version) {
-            Version.Version_1_0 => {
+            Version.version_1_0 => {
                 message_complete_delim = delimiter_Version_1_0;
             },
-            Version.Version_1_1 => {
+            Version.version_1_1 => {
                 message_complete_delim = delimiter_Version_1_1;
             },
         }
 
-        while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.Stop) {
+        while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
             defer std.time.sleep(cur_read_delay_ns);
 
             var n = self.session.read(buf);
@@ -965,7 +965,7 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         elem_conent: []const u8,
     ) ![]const u8 {
-        if (self.negotiated_version == Version.Version_1_0) {
+        if (self.negotiated_version == Version.version_1_0) {
             return std.fmt.allocPrint(
                 allocator,
                 "{s}\n{s}",
@@ -2442,7 +2442,7 @@ pub const Driver = struct {
     ) ![]const u8 {
         try self.session.writeAndReturn(input, false);
 
-        if (self.negotiated_version == Version.Version_1_1) {
+        if (self.negotiated_version == Version.version_1_1) {
             try self.session.writeReturn();
         }
 
@@ -2476,7 +2476,7 @@ test "buildGetConfigElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewGetConfigOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
@@ -2485,7 +2485,7 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewGetConfigOptions(),
             .expected =
             \\#175
@@ -2524,7 +2524,7 @@ test "builEditConfigElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -2537,7 +2537,7 @@ test "builEditConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -2580,7 +2580,7 @@ test "builCopyConfigElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewCopyConfigOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><copy-config><source><running></running></source><target><startup></startup></target></copy-config></rpc>
@@ -2589,7 +2589,7 @@ test "builCopyConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewCopyConfigOptions(),
             .expected =
             \\#213
@@ -2628,7 +2628,7 @@ test "builDeleteConfigElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewDeleteConfigOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-config><target><running></running></target></delete-config></rpc>
@@ -2637,7 +2637,7 @@ test "builDeleteConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewDeleteConfigOptions(),
             .expected =
             \\#181
@@ -2676,7 +2676,7 @@ test "buildLockElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewLockUnlockOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><lock><target><running></running></target></lock></rpc>
@@ -2685,7 +2685,7 @@ test "buildLockElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewLockUnlockOptions(),
             .expected =
             \\#163
@@ -2724,7 +2724,7 @@ test "buildUnlockElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewLockUnlockOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><unlock><target><running></running></target></unlock></rpc>
@@ -2733,7 +2733,7 @@ test "buildUnlockElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewLockUnlockOptions(),
             .expected =
             \\#167
@@ -2772,7 +2772,7 @@ test "buildGetElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewGetOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get></get></rpc>
@@ -2781,7 +2781,7 @@ test "buildGetElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewGetOptions(),
             .expected =
             \\#125
@@ -2820,7 +2820,7 @@ test "buildCloseSessionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewCloseSessionOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><close-session></close-session></rpc>
@@ -2829,7 +2829,7 @@ test "buildCloseSessionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewCloseSessionOptions(),
             .expected =
             \\#145
@@ -2868,7 +2868,7 @@ test "buildKillSessionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -2880,7 +2880,7 @@ test "buildKillSessionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -2922,7 +2922,7 @@ test "buildCommitElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewCommitOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><commit></commit></rpc>
@@ -2931,7 +2931,7 @@ test "buildCommitElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewCommitOptions(),
             .expected =
             \\#131
@@ -2970,7 +2970,7 @@ test "buildDiscardElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewDiscardOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><discard-changes></discard-changes></rpc>
@@ -2979,7 +2979,7 @@ test "buildDiscardElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewDiscardOptions(),
             .expected =
             \\#149
@@ -3018,7 +3018,7 @@ test "buildCancelCommitElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewCancelCommitOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><cancel-commit></cancel-commit></rpc>
@@ -3027,7 +3027,7 @@ test "buildCancelCommitElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewCancelCommitOptions(),
             .expected =
             \\#145
@@ -3066,7 +3066,7 @@ test "buildValidateElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewValidateOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate><source><running></running></source></validate></rpc>
@@ -3075,7 +3075,7 @@ test "buildValidateElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewValidateOptions(),
             .expected =
             \\#171
@@ -3114,7 +3114,7 @@ test "buildCreateSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewCreateSubscriptionOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></create-subscription></rpc>
@@ -3123,7 +3123,7 @@ test "buildCreateSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewCreateSubscriptionOptions(),
             .expected =
             \\#213
@@ -3162,7 +3162,7 @@ test "buildEstablishSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewEstablishSubscriptionOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"></establish-subscription></rpc>
@@ -3171,7 +3171,7 @@ test "buildEstablishSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewEstablishSubscriptionOptions(),
             .expected =
             \\#283
@@ -3210,7 +3210,7 @@ test "buildModifySubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewModifySubscriptionOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><modify-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></modify-subscription></rpc>
@@ -3219,7 +3219,7 @@ test "buildModifySubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewModifySubscriptionOptions(),
             .expected =
             \\#287
@@ -3258,7 +3258,7 @@ test "buildDeleteSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewDeleteSubscriptionOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></delete-subscription></rpc>
@@ -3267,7 +3267,7 @@ test "buildDeleteSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewDeleteSubscriptionOptions(),
             .expected =
             \\#287
@@ -3306,7 +3306,7 @@ test "buildResyncSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewResyncSubscriptionOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><resync-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></resync-subscription></rpc>
@@ -3315,7 +3315,7 @@ test "buildResyncSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewResyncSubscriptionOptions(),
             .expected =
             \\#287
@@ -3354,7 +3354,7 @@ test "buildKillSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewKillSubscriptionOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><kill-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></kill-subscription></rpc>
@@ -3363,7 +3363,7 @@ test "buildKillSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewKillSubscriptionOptions(),
             .expected =
             \\#283
@@ -3402,7 +3402,7 @@ test "buildGetSchemaElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewGetSchemaOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier></identifier><format>yang</format></get-schema></rpc>
@@ -3411,7 +3411,7 @@ test "buildGetSchemaElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewGetSchemaOptions(),
             .expected =
             \\#245
@@ -3450,7 +3450,7 @@ test "buildGetDataElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewGetDataOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore><config-filter>true</config-filter></get-data></rpc>
@@ -3459,7 +3459,7 @@ test "buildGetDataElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewGetDataOptions(),
             .expected =
             \\#363
@@ -3498,7 +3498,7 @@ test "builEditDataElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewEditDataOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore></edit-data></rpc>
@@ -3507,7 +3507,7 @@ test "builEditDataElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewEditDataOptions(),
             .expected =
             \\#279
@@ -3546,7 +3546,7 @@ test "builActionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.NewActionOptions(),
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1"></action></rpc>
@@ -3555,7 +3555,7 @@ test "builActionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.NewActionOptions(),
             .expected =
             \\#169

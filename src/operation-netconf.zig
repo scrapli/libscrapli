@@ -197,19 +197,19 @@ pub const OpenOptions = operation.OpenOptions;
 pub const CloseOptions = operation.CloseOptions;
 
 pub const GetConfigOptions = struct {
-    cancel: ?*bool,
-    source: DatastoreType,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    defaults_type: ?DefaultsType,
+    cancel: ?*bool = null,
+    source: DatastoreType = DatastoreType.Running,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.Subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    defaults_type: ?DefaultsType = null,
 };
 
 pub const EditConfigOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     config: []const u8,
-    target: DatastoreType,
+    target: DatastoreType = DatastoreType.Running,
     // TODO: https://www.rfc-editor.org/rfc/rfc4741.html#section-7.2
     // defaults_operation: null,
     // test_option: null,
@@ -217,59 +217,59 @@ pub const EditConfigOptions = struct {
 };
 
 pub const CopyConfigOptions = struct {
-    cancel: ?*bool,
-    target: DatastoreType,
-    source: DatastoreType,
+    cancel: ?*bool = null,
+    target: DatastoreType = DatastoreType.Startup,
+    source: DatastoreType = DatastoreType.Running,
 };
 
 pub const DeleteConfigOptions = struct {
-    cancel: ?*bool,
-    target: DatastoreType,
+    cancel: ?*bool = null,
+    target: DatastoreType = DatastoreType.Running,
 };
 
 pub const LockUnlockOptions = struct {
-    cancel: ?*bool,
-    target: DatastoreType,
+    cancel: ?*bool = null,
+    target: DatastoreType = DatastoreType.Running,
 };
 
 pub const GetOptions = struct {
-    cancel: ?*bool,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    defaults_type: ?DefaultsType,
+    cancel: ?*bool = null,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.Subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    defaults_type: ?DefaultsType = null,
 };
 
 pub const CloseSessionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
 
 pub const KillSessionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     session_id: u64,
 };
 
 pub const CommitOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
 
 pub const DiscardOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
 
 pub const CancelCommitOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     // TODO add persist-id param -> https://datatracker.ietf.org/doc/html/rfc6241#section-8.4.4.1
 };
 
 pub const ValidateOptions = struct {
-    cancel: ?*bool,
-    source: DatastoreType,
+    cancel: ?*bool = null,
+    source: DatastoreType = DatastoreType.Running,
 };
 
 pub const CreateSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     stream: ?[]const u8,
     filter: ?[]const u8,
     filter_type: FilterType,
@@ -280,22 +280,22 @@ pub const CreateSubscriptionOptions = struct {
 };
 
 pub const EstablishSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     stream: []const u8,
     filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
+    filter_type: FilterType = FilterType.Subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
     period: ?u64,
     stop_time: ?u64,
     dscp: ?u8,
     weighting: ?u8,
     dependency: ?u32,
-    encoding: ?[]const u8,
+    encoding: ?[]const u8 = null,
 };
 
 pub const ModifySubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     id: u64,
     stream: []const u8,
     filter: ?[]const u8,
@@ -311,46 +311,46 @@ pub const ModifySubscriptionOptions = struct {
 };
 
 pub const DeleteSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     id: u64,
 };
 
 pub const ResyncSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     id: u64,
 };
 
 pub const KillSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     id: u64,
 };
 
 pub const GetSchemaOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     identifier: []const u8,
-    version: ?[]const u8,
-    format: SchemaFormat,
+    version: ?[]const u8 = null,
+    format: SchemaFormat = SchemaFormat.Yang,
 };
 
 pub const GetDataOptions = struct {
     // https://datatracker.ietf.org/doc/rfc8526/ section 3.1.1
-    cancel: ?*bool,
-    datastore: DatastoreType,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    config_filter: bool,
+    cancel: ?*bool = null,
+    datastore: DatastoreType = DatastoreType.Running,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.Subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    config_filter: bool = true,
     // TODO check if this should/could be typed or if it makes more sense to leave as a str
-    origin_filters: ?[]const u8,
-    max_depth: ?u32,
-    with_origin: ?bool,
-    defaults_type: ?DefaultsType,
+    origin_filters: ?[]const u8 = null,
+    max_depth: ?u32 = null,
+    with_origin: ?bool = null,
+    defaults_type: ?DefaultsType = null,
 };
 
 pub const EditDataOptions = struct {
     cancel: ?*bool,
-    datastore: DatastoreType,
+    datastore: DatastoreType = DatastoreType.Running,
     // TODO -- same as edit-config rpc -> defaults_operation: null,
     edit_content: []const u8,
 };

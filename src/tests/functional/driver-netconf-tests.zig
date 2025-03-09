@@ -213,11 +213,11 @@ test "driver-netconf open" {
         );
         defer d.deinit();
 
-        const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 
