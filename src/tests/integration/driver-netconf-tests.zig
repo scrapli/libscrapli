@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const driver = @import("../../driver-netconf.zig");
-const operation = @import("../../operation-netconf.zig");
 const ascii = @import("../../ascii.zig");
 const flags = @import("../../flags.zig");
 const file = @import("../../file.zig");
@@ -285,10 +284,7 @@ test "driver-netconf lock" {
         const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        var lock_unlock_options = operation.NewLockUnlockOptions();
-        lock_unlock_options.target = operation.DatastoreType.Candidate;
-
-        const actual_res = try d.lock(std.testing.allocator, lock_unlock_options);
+        const actual_res = try d.lock(std.testing.allocator, .{ .target = .candidate });
         defer actual_res.deinit();
 
         defer {
@@ -369,13 +365,10 @@ test "driver-netconf unlock" {
         const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        var lock_unlock_options = operation.NewLockUnlockOptions();
-        lock_unlock_options.target = operation.DatastoreType.Candidate;
-
-        const lock_res = try d.lock(std.testing.allocator, lock_unlock_options);
+        const lock_res = try d.lock(std.testing.allocator, .{ .target = .candidate });
         defer lock_res.deinit();
 
-        const actual_res = try d.unlock(std.testing.allocator, lock_unlock_options);
+        const actual_res = try d.unlock(std.testing.allocator, .{ .target = .candidate });
         defer actual_res.deinit();
 
         defer {
