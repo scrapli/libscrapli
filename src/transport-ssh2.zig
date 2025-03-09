@@ -1,8 +1,6 @@
 const std = @import("std");
 const auth = @import("auth.zig");
-const transport = @import("transport.zig");
-const logger = @import("logger.zig");
-const lookup = @import("lookup.zig");
+const logging = @import("logging.zig");
 
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
@@ -102,72 +100,77 @@ const AuthCallbackData = struct {
     password: [:0]u8,
 };
 
-pub fn NewOptions() transport.Options {
-    return transport.Options{
-        .SSH2 = Options{
-            .libssh2_trace = false,
-            .netconf = false,
-        },
-    };
-}
-
-pub const Options = struct {
-    libssh2_trace: bool,
-    netconf: bool,
+pub const OptionsInputs = struct {
+    libssh2_trace: bool = false,
+    netconf: bool = false,
 };
 
-pub fn NewTransport(
+pub const Options = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
-    options: Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
-    const a = try allocator.create(AuthCallbackData);
+    libssh2_trace: bool,
+    netconf: bool,
 
-    a.* = AuthCallbackData{
-        // SAFETY: used in C callback, so think this is expected/fine
-        .password = undefined,
-    };
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
 
-    t.* = Transport{
-        .allocator = allocator,
-        .log = log,
+        o.* = Options{
+            .allocator = allocator,
+            .libssh2_trace = opts.libssh2_trace,
+            .netconf = opts.netconf,
+        };
 
-        .options = options,
+        return o;
+    }
 
-        .auth_callback_data = a,
-
-        .session_lock = std.Thread.Mutex{},
-
-        .socket = null,
-        .session = null,
-        .channel = null,
-    };
-
-    return t;
-}
+    pub fn deinit(self: *Options) void {
+        self.allocator.destroy(self);
+    }
+};
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
 
-    options: Options,
+    options: *Options,
 
     auth_callback_data: *AuthCallbackData,
 
     session_lock: std.Thread.Mutex,
 
-    socket: ?std.posix.socket_t,
-    session: ?*ssh2.struct__LIBSSH2_SESSION,
-    channel: ?*ssh2.struct__LIBSSH2_CHANNEL,
+    socket: ?std.posix.socket_t = null,
+    session: ?*ssh2.struct__LIBSSH2_SESSION = null,
+    channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null,
 
-    pub fn init(self: *Transport) !void {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logging.Logger,
+        options: *Options,
+    ) !*Transport {
         const rc = ssh2InitializeOnce();
         if (rc != 0) {
-            self.log.critical("failed initializing ssh2", .{});
+            log.critical("failed initializing ssh2", .{});
 
             return error.OpenFailed;
         }
+
+        const t = try allocator.create(Transport);
+        const a = try allocator.create(AuthCallbackData);
+
+        a.* = AuthCallbackData{
+            // SAFETY: used in C callback, so think this is expected/fine
+            .password = undefined,
+        };
+
+        t.* = Transport{
+            .allocator = allocator,
+            .log = log,
+            .options = options,
+            .auth_callback_data = a,
+            .session_lock = std.Thread.Mutex{},
+        };
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {
@@ -191,7 +194,6 @@ pub const Transport = struct {
 
         // any data set in this obj will be freed during auth itself
         self.allocator.destroy(self.auth_callback_data);
-
         self.allocator.destroy(self);
     }
 
@@ -202,7 +204,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
     ) !void {
         try self.initSocket(host, port);
         try self.initSession(timer, cancel, operation_timeout_ns);
@@ -214,8 +216,6 @@ pub const Transport = struct {
             timer,
             cancel,
             operation_timeout_ns,
-            host,
-            port,
             auth_options,
         );
         self.log.info("authentication complete", .{});
@@ -345,9 +345,7 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
-        host: []const u8,
-        port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
     ) !void {
         const _username = self.allocator.dupeZ(u8, auth_options.username.?) catch |err| {
             self.log.critical("failed casting username to c string, err: {}", .{err});
@@ -381,11 +379,8 @@ pub const Transport = struct {
         if (auth_options.username != null and auth_options.password != null) {
             const _password = self.allocator.dupeZ(
                 u8,
-                try lookup.resolveValue(
-                    host,
-                    port,
+                try auth_options.resolveAuthValue(
                     auth_options.password.?,
-                    auth_options.lookup_fn,
                 ),
             ) catch |err| {
                 self.log.critical("failed casting password to c string, err: {}", .{err});

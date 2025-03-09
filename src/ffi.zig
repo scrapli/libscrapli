@@ -1,15 +1,17 @@
 const std = @import("std");
 
-const ffi_options = @import("ffi-options.zig");
 const ffi_driver = @import("ffi-driver.zig");
+const ffi_driver_netconf = @import("ffi-driver-netconf.zig");
+const ffi_operation = @import("ffi-operation.zig");
 const operation = @import("operation.zig");
-const driver = @import("driver.zig");
-const netconf_ffi_options = @import("ffi-options-netconf.zig");
-const netconf_ffi_driver = @import("ffi-driver-netconf.zig");
-const netconf_operation = @import("operation-netconf.zig");
-const logger = @import("logger.zig");
-const mode = @import("mode.zig");
+const operation_netconf = @import("operation-netconf.zig");
+const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
+const transport = @import("transport.zig");
+
+const ffi_options = @import("ffi-options.zig");
+
+pub export const _force_include = &ffi_options.noop;
 
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
@@ -22,12 +24,13 @@ pub const std_options = std.Options{
             .level = .err,
         },
         .{
-            .scope = .parse,
+            .scope = .parser,
             .level = .err,
         },
     },
 };
 
+// TODO should ensure that we use std page alloc for release/gpa for test
 // std page allocator
 // const allocator = std.heap.page_allocator;
 
@@ -42,73 +45,57 @@ export fn assertNoLeaks() bool {
     }
 }
 
+fn getTransport(transport_kind: []const u8) transport.Kind {
+    if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.bin))) {
+        return transport.Kind.bin;
+    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.telnet))) {
+        return transport.Kind.telnet;
+    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.ssh2))) {
+        return transport.Kind.ssh2;
+    } else {
+        @panic("unsupported transport");
+    }
+}
+
 export fn allocDriver(
-    definition_file_path: [*c]const u8,
     definition_string: [*c]const u8,
-    definition_variant: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
     port: u16,
     transport_kind: [*c]const u8,
 ) usize {
-    var log = logger.Logger{ .allocator = allocator, .f = null };
-
-    if (logger_callback != null) {
-        log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
-    }
-
-    const options = ffi_options.NewDriverOptionsFromAlloc(
-        // generic bits
-        definition_variant,
-        log,
-        port,
-        transport_kind,
-    );
-
-    const host_slice = std.mem.span(host);
-    const definition_file_path_slice = std.mem.span(definition_file_path);
-    const definition_string_slice = std.mem.span(definition_string);
-
-    // SAFETY: will always be set (or we'll have exited)
-    var real_driver: *driver.Driver = undefined;
-
-    if (definition_file_path_slice.len > 0) {
-        real_driver = driver.NewDriverFromYaml(
-            allocator,
-            definition_file_path_slice,
-            host_slice,
-            options,
-        ) catch |err| {
-            log.critical("error during NewDriverFromYaml: {any}", .{err});
-
-            return 0;
-        };
-    } else {
-        // we'll (in scrapli/scrapligo at least) always get one of these being populated
-        // so we'll let stuff crash out downstream if for some reason it wasnt
-        real_driver = driver.NewDriverFromYamlString(
-            allocator,
-            definition_string_slice,
-            host_slice,
-            options,
-        ) catch |err| {
-            log.critical("error during NewDriverFromYamlString: {any}", .{err});
-
-            return 0;
-        };
-    }
-
-    const d = ffi_driver.NewFfiDriver(
-        allocator,
-        real_driver,
-    ) catch |err| {
-        log.critical("error during NewFfiDriver: {any}", .{err});
-
-        return 0;
+    var log = logging.Logger{
+        .allocator = allocator,
+        .f = null,
     };
 
-    d.init() catch |err| {
-        log.critical("error during driver init: {any}", .{err});
+    if (logger_callback != null) {
+        log = logging.Logger{
+            .allocator = allocator,
+            .f = logger_callback.?,
+        };
+    }
+
+    const d = ffi_driver.FfiDriver.init(
+        allocator,
+        std.mem.span(host),
+        .{
+            .definition = .{
+                .string = std.mem.span(definition_string),
+            },
+            .logger = log,
+            .port = port,
+            .transport = switch (getTransport(std.mem.span(transport_kind))) {
+                transport.Kind.bin => .{ .bin = .{} },
+                transport.Kind.telnet => .{ .telnet = .{} },
+                transport.Kind.ssh2 => .{ .ssh2 = .{} },
+                else => {
+                    unreachable;
+                },
+            },
+        },
+    ) catch |err| {
+        log.critical("error during FfiDriver.init: {any}", .{err});
 
         return 0;
     };
@@ -122,6 +109,46 @@ export fn freeDriver(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.deinit();
+}
+
+/// writes the ntc template platform from the driver's definition into the character slice at
+/// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
+/// 256?). while unused in zig, ntc templates platform is useful in python land.
+export fn getNtcTemplatePlatform(
+    d_ptr: usize,
+    ntc_template_platform: *[]u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    if (d.real_driver.definition.ntc_templates_platform == null) {
+        return 0;
+    }
+
+    for (0.., d.real_driver.definition.ntc_templates_platform.?) |idx, char| {
+        ntc_template_platform.*[idx] = char;
+    }
+
+    return 0;
+}
+
+/// writes the genie platform from the driver's definition into the character slice at
+/// `genie_platform` -- this slice should be pre populated w/ sufficient size (lets say
+/// 256?). while unused in zig, genie platform/parser is useful in python land.
+export fn getGeniePlatform(
+    d_ptr: usize,
+    genie_platform: *[]u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    if (d.real_driver.definition.genie_platform == null) {
+        return 0;
+    }
+
+    for (0.., d.real_driver.definition.genie_platform.?) |idx, char| {
+        genie_platform.*[idx] = char;
+    }
+
+    return 0;
 }
 
 export fn openDriver(
@@ -138,7 +165,7 @@ export fn openDriver(
     };
 
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .Open = ffi_driver.OpenOperation{
+        .open = ffi_driver.OpenOperation{
             .id = 0,
             .options = operation.OpenOptions{
                 .cancel = cancel,
@@ -210,7 +237,7 @@ export fn pollOperation(
         operation_error_size.* = 0;
 
         if (ret.result.?.result_failure_indicated) {
-            operation_failure_indicator_size.* = ret.result.?.input_failed_when_contains.?.items[@intCast(ret.result.?.result_failure_indicator)].len;
+            operation_failure_indicator_size.* = ret.result.?.failed_indicators.?.items[@intCast(ret.result.?.result_failure_indicator)].len;
         }
     }
 
@@ -252,7 +279,7 @@ export fn waitOperation(
             operation_error_size.* = 0;
 
             if (ret.result.?.result_failure_indicated) {
-                operation_failure_indicator_size.* = ret.result.?.input_failed_when_contains.?.items[@intCast(ret.result.?.result_failure_indicator)].len;
+                operation_failure_indicator_size.* = ret.result.?.failed_indicators.?.items[@intCast(ret.result.?.result_failure_indicator)].len;
             }
         }
 
@@ -327,7 +354,10 @@ export fn fetchOperation(
         }
 
         if (_ret.result_failure_indicated) {
-            @memcpy(operation_result_failed_indicator.*, _ret.input_failed_when_contains.?.items[@intCast(_ret.result_failure_indicator)]);
+            @memcpy(
+                operation_result_failed_indicator.*,
+                _ret.failed_indicators.?.items[@intCast(_ret.result_failure_indicator)],
+            );
         }
 
         operation_error.* = "";
@@ -345,7 +375,7 @@ export fn enterMode(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .EnterMode = ffi_driver.EnterModeOperation{
+        .enter_mode = ffi_driver.EnterModeOperation{
             .id = 0,
             .requested_mode = std.mem.span(requested_mode),
             .options = operation.EnterModeOptions{
@@ -371,7 +401,7 @@ export fn getPrompt(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .GetPrompt = ffi_driver.GetPromptOperation{
+        .get_prompt = ffi_driver.GetPromptOperation{
             .id = 0,
             .options = operation.GetPromptOptions{
                 .cancel = cancel,
@@ -393,21 +423,26 @@ export fn sendInput(
     operation_id: *u32,
     cancel: *bool,
     input: [*c]const u8,
+    requested_mode: [*c]const u8,
+    input_handling: [*c]const u8,
+    retain_input: bool,
+    retain_trailing_prompt: bool,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
+    const options = ffi_operation.SendInputOptionsFromArgs(
+        cancel,
+        requested_mode,
+        input_handling,
+        retain_input,
+        retain_trailing_prompt,
+    );
+
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .SendInput = ffi_driver.SendInputOperation{
+        .send_input = ffi_driver.SendInputOperation{
             .id = 0,
             .input = std.mem.span(input),
-            .options = operation.SendInputOptions{
-                .cancel = cancel,
-                .input_handling = operation.InputHandling.Fuzzy,
-                .retain_input = false,
-                .retain_trailing_prompt = false,
-                .requested_mode = mode.default_mode,
-                .stop_on_indicated_failure = true,
-            },
+            .options = options,
         },
     }) catch |err| {
         d.real_driver.log.critical("error during queue sendInput {any}", .{err});
@@ -426,29 +461,39 @@ export fn sendPromptedInput(
     cancel: *bool,
     input: [*c]const u8,
     prompt: [*c]const u8,
+    prompt_pattern: [*c]const u8,
     response: [*c]const u8,
     hidden_response: bool,
     abort_input: [*c]const u8,
+    requested_mode: [*c]const u8,
+    input_handling: [*c]const u8,
+    retain_trailing_prompt: bool,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
+    const options = ffi_operation.SendPromptedInputOptionsFromArgs(
+        cancel,
+        hidden_response,
+        abort_input,
+        requested_mode,
+        input_handling,
+        retain_trailing_prompt,
+    );
+
     const _operation_id = d.queueOperation(ffi_driver.OperationOptions{
-        .SendPromptedInput = ffi_driver.SendPromptedInputOperation{
+        .send_prompted_input = ffi_driver.SendPromptedInputOperation{
             .id = 0,
             .input = std.mem.span(input),
             .prompt = std.mem.span(prompt),
+            .prompt_pattern = std.mem.span(prompt_pattern),
             .response = std.mem.span(response),
-            .options = operation.SendPromptedInputOptions{
-                .cancel = cancel,
-                .requested_mode = mode.default_mode,
-                .input_handling = operation.InputHandling.Fuzzy,
-                .hidden_response = hidden_response,
-                .retain_trailing_prompt = false,
-                .abort_input = std.mem.span(abort_input),
-            },
+            .options = options,
         },
     }) catch |err| {
-        d.real_driver.log.critical("error during queue sendPromptedInput {any}", .{err});
+        d.real_driver.log.critical(
+            "error during queue sendPromptedInput {any}",
+            .{err},
+        );
 
         return 1;
     };
@@ -461,44 +506,39 @@ export fn sendPromptedInput(
 export fn netconfAllocDriver(
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
-    transport_kind: [*c]const u8,
     port: u16,
-    username: [*c]const u8,
-    password: [*c]const u8,
-    session_timeout_ns: u64,
-    // TODO all the other opts
+    transport_kind: [*c]const u8,
 ) usize {
-    var log = logger.Logger{ .allocator = allocator, .f = null };
+    var log = logging.Logger{
+        .allocator = allocator,
+        .f = null,
+    };
 
     if (logger_callback != null) {
-        log = logger.Logger{ .allocator = allocator, .f = logger_callback.? };
+        log = logging.Logger{
+            .allocator = allocator,
+            .f = logger_callback.?,
+        };
     }
 
-    const host_slice = std.mem.span(host);
-
-    const opts = netconf_ffi_options.NewDriverOptionsFromAlloc(
-        log,
-        transport_kind,
-        port,
-        username,
-        password,
-        session_timeout_ns,
-    );
-
-    const d = netconf_ffi_driver.NewFfiDriver(
+    const d = ffi_driver_netconf.FfiDriver.init(
         allocator,
-        host_slice,
-        opts,
+        std.mem.span(host),
+        .{
+            .logger = log,
+            .port = port,
+            .transport = switch (getTransport(std.mem.span(transport_kind))) {
+                transport.Kind.bin => .{ .bin = .{} },
+                transport.Kind.ssh2 => .{ .ssh2 = .{} },
+                else => {
+                    unreachable;
+                },
+            },
+        },
     ) catch |err| {
         log.critical("error during alloc driver {any}", .{err});
 
         return 0;
-    };
-
-    d.init() catch |err| {
-        d.real_driver.log.critical("error during init driver {any}", .{err});
-
-        return 1;
     };
 
     return @intFromPtr(d);
@@ -507,7 +547,7 @@ export fn netconfAllocDriver(
 export fn netconfFreeDriver(
     d_ptr: usize,
 ) void {
-    const d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    const d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     d.deinit();
 }
@@ -517,7 +557,7 @@ export fn netconfOpenDriver(
     operation_id: *u32,
     cancel: *bool,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
         d.real_driver.log.critical("error during driver open {any}", .{err});
@@ -525,10 +565,10 @@ export fn netconfOpenDriver(
         return 1;
     };
 
-    const _operation_id = d.queueOperation(netconf_ffi_driver.OperationOptions{
-        .Open = netconf_ffi_driver.OpenOperation{
+    const _operation_id = d.queueOperation(ffi_driver_netconf.OperationOptions{
+        .open = ffi_driver_netconf.OpenOperation{
             .id = 0,
-            .options = netconf_operation.OpenOptions{
+            .options = operation_netconf.OpenOptions{
                 .cancel = cancel,
             },
         },
@@ -547,7 +587,7 @@ export fn netconfCloseDriver(
     d_ptr: usize,
     cancel: *bool,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     d.close(cancel) catch |err| {
         d.real_driver.log.critical("error during driver close {any}", .{err});
@@ -566,7 +606,7 @@ export fn netconfPollOperation(
     operation_result_size: *u64,
     operation_error_size: *u64,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.pollOperation(operation_id, false) catch |err| {
         d.real_driver.log.critical("error during poll operation {any}", .{err});
@@ -602,7 +642,7 @@ export fn netconfWaitOperation(
     operation_result_size: *u64,
     operation_error_size: *u64,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     while (true) {
         const ret = d.pollOperation(operation_id, false) catch |err| {
@@ -640,7 +680,7 @@ export fn netconfFetchOperation(
     operation_result: *[]u8,
     operation_error: *[]u8,
 ) u8 {
-    var d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.pollOperation(operation_id, true) catch |err| {
         d.real_driver.log.critical("error during fetch operation {any}", .{err});
@@ -702,15 +742,14 @@ export fn netconfGetConfig(
     operation_id: *u32,
     cancel: *bool,
 ) u8 {
-    const d: *netconf_ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+    const d: *ffi_driver_netconf.FfiDriver = @ptrFromInt(d_ptr);
 
-    var opts = netconf_operation.NewGetConfigOptions();
-    opts.cancel = cancel;
-
-    const _operation_id = d.queueOperation(netconf_ffi_driver.OperationOptions{
-        .GetConfig = netconf_ffi_driver.GetConfigOperation{
+    const _operation_id = d.queueOperation(ffi_driver_netconf.OperationOptions{
+        .get_config = ffi_driver_netconf.GetConfigOperation{
             .id = 0,
-            .options = opts,
+            .options = .{
+                .cancel = cancel,
+            },
         },
     }) catch |err| {
         d.real_driver.log.critical("error during queue getConfig {any}", .{err});

@@ -4,7 +4,6 @@
 const std = @import("std");
 
 const driver = @import("../../driver.zig");
-const test_transport = @import("../../transport-test.zig");
 const operation = @import("../../operation.zig");
 const mode = @import("../../mode.zig");
 const flags = @import("../../flags.zig");
@@ -16,92 +15,95 @@ const helper = @import("../../test-helper.zig");
 
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
-fn lookup_fn(_: []const u8, _: u16, _: []const u8) ?[]const u8 {
-    return "";
-}
-
 fn eosOnOpen(
     d: *driver.Driver,
     allocator: std.mem.Allocator,
     cancel: ?*bool,
 ) anyerror!*result.Result {
-    var opts = operation.NewSendInputOptions();
-    opts.cancel = cancel;
-    opts.retain_input = true;
-    opts.retain_trailing_prompt = true;
-    opts.requested_mode = "privileged_exec";
-
     return d.sendInputs(
         allocator,
         &[_][]const u8{ "term len 0", "term width 32767" },
-        opts,
+        .{
+            .cancel = cancel,
+            .retain_input = true,
+            .retain_trailing_prompt = true,
+            .requested_mode = "privileged_exec",
+        },
     );
 }
 
-fn getPlatformPath() ![]const u8 {
+fn getPlatformPath(buf: []u8) !usize {
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd = try std.posix.getcwd(&cwd_buf);
 
-    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     var platform_path_len: usize = 0;
 
-    @memcpy(platform_path_buf[0..cwd.len], cwd[0..cwd.len]);
+    @memcpy(buf[0..cwd.len], cwd[0..cwd.len]);
     platform_path_len += cwd.len;
 
-    platform_path_buf[platform_path_len] = "/"[0];
+    buf[platform_path_len] = "/"[0];
     platform_path_len += 1;
 
     @memcpy(
-        platform_path_buf[platform_path_len .. platform_path_len + arista_eos_platform_path_from_project_root.len],
+        buf[platform_path_len .. platform_path_len + arista_eos_platform_path_from_project_root.len],
         arista_eos_platform_path_from_project_root,
     );
     platform_path_len += arista_eos_platform_path_from_project_root.len;
 
-    return platform_path_buf[0..platform_path_len];
+    return platform_path_len;
 }
 
 fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
-    const platform_path = try getPlatformPath();
+    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    var opts = driver.NewOptions();
-
-    opts.session.recorder = recorder;
-
-    opts.auth.username = "admin";
-    opts.auth.password = "admin";
-    opts.auth.lookup_fn = lookup_fn;
-    opts.port = 22022;
-
-    return driver.NewDriverFromYaml(
+    return driver.Driver.init(
         std.testing.allocator,
-        platform_path,
         "localhost",
-        opts,
+        .{
+            .definition = .{
+                .file = platform_path_buf[0..platform_path_len],
+            },
+            .port = 22022,
+            .auth = .{
+                .username = "admin",
+                .password = "password",
+            },
+            .session = .{
+                .recorder = recorder,
+            },
+        },
     );
 }
 
 fn GetTestDriver(f: []const u8) !*driver.Driver {
-    const platform_path = try getPlatformPath();
+    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    var opts = driver.NewOptions();
-
-    opts.session.read_size = 1;
-    opts.session.read_delay_backoff_factor = 1;
-    opts.session.read_delay_min_ns = 1;
-    opts.session.read_delay_max_ns = 1;
-
-    opts.auth.username = "admin";
-    opts.auth.password = "admin";
-    opts.auth.lookup_fn = lookup_fn;
-
-    opts.transport = test_transport.NewOptions();
-    opts.transport.Test.f = f;
-
-    return driver.NewDriverFromYaml(
+    return driver.Driver.init(
         std.testing.allocator,
-        platform_path,
         "dummy",
-        opts,
+        .{
+            .definition = .{
+                .file = platform_path_buf[0..platform_path_len],
+            },
+            .port = 22022,
+            .auth = .{
+                .username = "admin",
+                .password = "password",
+            },
+            .session = .{
+                .read_size = 1,
+                .read_delay_backoff_factor = 1,
+                .read_delay_min_ns = 1,
+                .read_delay_max_ns = 1,
+            },
+            .transport = .{
+                .test_ = .{
+                    .f = f,
+                },
+            },
+        },
     );
 }
 
@@ -189,7 +191,14 @@ fn runDriverSendPromptedInputInThread(
 ) !void {
     try std.testing.expectError(
         error.Cancelled,
-        d.sendPromptedInput(allocator, input, prompt, response, options),
+        d.sendPromptedInput(
+            allocator,
+            input,
+            prompt,
+            null,
+            response,
+            options,
+        ),
     );
 
     cancelled.* = true;
@@ -262,14 +271,13 @@ test "driver open" {
 
         d.definition.on_open_callback = case.on_open_callback;
 
-        try d.init();
         defer d.deinit();
 
-        const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
             close_res.deinit();
         }
 
@@ -298,12 +306,11 @@ test "driver open-timeout" {
     var d = try GetTestDriver(fixture_filename);
     d.session.options.operation_timeout_ns = 100_000;
 
-    try d.init();
     defer d.deinit();
 
     try std.testing.expectError(
         error.AuthenicationTimeoutExceeded,
-        d.open(std.testing.allocator, operation.NewOpenOptions()),
+        d.open(std.testing.allocator, .{}),
     );
 }
 
@@ -326,16 +333,11 @@ test "driver open-cancellation" {
 
     var d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
-
-    var open_options = operation.NewOpenOptions();
-
     const cancel_ptr = try std.testing.allocator.create(bool);
     defer std.testing.allocator.destroy(cancel_ptr);
 
     cancel_ptr.* = false;
-    open_options.cancel = cancel_ptr;
 
     const cancelled_ptr = try std.testing.allocator.create(bool);
     defer std.testing.allocator.destroy(cancelled_ptr);
@@ -347,7 +349,12 @@ test "driver open-cancellation" {
     var open_thread = try std.Thread.spawn(
         .{},
         runDriverOpenInThread,
-        .{ d, cancelled_ptr, std.testing.allocator, open_options },
+        .{
+            d,
+            cancelled_ptr,
+            std.testing.allocator,
+            operation.OpenOptions{ .cancel = cancel_ptr },
+        },
     );
 
     std.time.sleep(1_000);
@@ -419,20 +426,19 @@ test "driver get-prompt" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
             close_res.deinit();
         }
 
         const res = try d.getPrompt(
             std.testing.allocator,
-            operation.NewGetPromptOptions(),
+            .{},
         );
         defer res.deinit();
 
@@ -467,14 +473,13 @@ test "driver get-prompt-timeout" {
 
     const d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
-    const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+    const open_res = try d.open(std.testing.allocator, .{});
     defer open_res.deinit();
 
     defer {
-        const close_res = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+        const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
         close_res.deinit();
     }
 
@@ -485,7 +490,7 @@ test "driver get-prompt-timeout" {
         error.Timeout,
         d.getPrompt(
             std.testing.allocator,
-            operation.NewGetPromptOptions(),
+            .{},
         ),
     );
 }
@@ -509,19 +514,15 @@ test "driver get-prompt-cancellation" {
 
     const d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
-    const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+    const open_res = try d.open(std.testing.allocator, .{});
     defer open_res.deinit();
-
-    var getPrompt_options = operation.NewGetPromptOptions();
 
     const cancel_ptr = try std.testing.allocator.create(bool);
     defer std.testing.allocator.destroy(cancel_ptr);
 
     cancel_ptr.* = false;
-    getPrompt_options.cancel = cancel_ptr;
 
     const cancelled_ptr = try std.testing.allocator.create(bool);
     defer std.testing.allocator.destroy(cancelled_ptr);
@@ -533,7 +534,12 @@ test "driver get-prompt-cancellation" {
     var getPrompt_thread = try std.Thread.spawn(
         .{},
         runDriverGetPromptInThread,
-        .{ d, cancelled_ptr, std.testing.allocator, getPrompt_options },
+        .{
+            d,
+            cancelled_ptr,
+            std.testing.allocator,
+            operation.GetPromptOptions{ .cancel = cancel_ptr },
+        },
     );
 
     std.time.sleep(1_000);
@@ -555,22 +561,18 @@ test "driver enter-mode" {
 
     const cases = [_]struct {
         name: []const u8,
-        default_mode: []const u8,
         requested_mode: []const u8,
     }{
         .{
             .name = "no-change",
-            .default_mode = mode.default_mode,
             .requested_mode = "exec",
         },
         .{
             .name = "priv-exec-to-priv-exec",
-            .default_mode = mode.default_mode,
             .requested_mode = "privileged_exec",
         },
         .{
             .name = "exec-to-configuration",
-            .default_mode = mode.default_mode,
             .requested_mode = "configuration",
         },
     };
@@ -619,25 +621,20 @@ test "driver enter-mode" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        d.definition.default_mode = case.default_mode;
-
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
             close_res.deinit();
         }
-
-        const opts = operation.NewEnterModeOptions();
 
         const res = try d.enterMode(
             std.testing.allocator,
             case.requested_mode,
-            opts,
+            .{},
         );
         defer res.deinit();
 
@@ -665,10 +662,9 @@ test "driver enter-mode-timeout" {
 
     var d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
-    const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+    const open_res = try d.open(std.testing.allocator, .{});
     defer open_res.deinit();
 
     // so the test is faster of course
@@ -676,7 +672,7 @@ test "driver enter-mode-timeout" {
 
     try std.testing.expectError(
         error.Timeout,
-        d.enterMode(std.testing.allocator, "configuration", operation.NewEnterModeOptions()),
+        d.enterMode(std.testing.allocator, "configuration", .{}),
     );
 }
 
@@ -699,19 +695,15 @@ test "driver enter-mode-cancellation" {
 
     const d = try GetTestDriver(fixture_filename);
 
-    try d.init();
     defer d.deinit();
 
-    const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+    const open_res = try d.open(std.testing.allocator, .{});
     defer open_res.deinit();
-
-    var enterMode_options = operation.NewEnterModeOptions();
 
     const cancel_ptr = try std.testing.allocator.create(bool);
     defer std.testing.allocator.destroy(cancel_ptr);
 
     cancel_ptr.* = false;
-    enterMode_options.cancel = cancel_ptr;
 
     const cancelled_ptr = try std.testing.allocator.create(bool);
     defer std.testing.allocator.destroy(cancelled_ptr);
@@ -723,7 +715,13 @@ test "driver enter-mode-cancellation" {
     var enterMode_thread = try std.Thread.spawn(
         .{},
         runDriverEnterModeInThread,
-        .{ d, cancelled_ptr, std.testing.allocator, "configuration", enterMode_options },
+        .{
+            d,
+            cancelled_ptr,
+            std.testing.allocator,
+            "configuration",
+            operation.EnterModeOptions{ .cancel = cancel_ptr },
+        },
     );
 
     std.time.sleep(1_000);
@@ -832,26 +830,24 @@ test "driver send-input" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
             close_res.deinit();
         }
-
-        var opts = operation.NewSendInputOptions();
-        opts.retain_input = case.retain_input;
-        opts.retain_trailing_prompt = case.retain_trailing_prompt;
-        opts.requested_mode = case.requested_mode;
 
         const res = try d.sendInput(
             std.testing.allocator,
             case.input,
-            opts,
+            .{
+                .retain_input = case.retain_input,
+                .retain_trailing_prompt = case.retain_trailing_prompt,
+                .requested_mode = case.requested_mode,
+            },
         );
         defer res.deinit();
 
@@ -894,10 +890,9 @@ test "driver send-input-timeout" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         // so the test is faster of course
@@ -908,7 +903,7 @@ test "driver send-input-timeout" {
             d.sendInput(
                 std.testing.allocator,
                 "show run int vlan 1",
-                operation.NewSendInputOptions(),
+                .{},
             ),
         );
     }
@@ -941,19 +936,13 @@ test "driver send-input-cancellation" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
-
-        var send_input_options = operation.NewSendInputOptions();
 
         const cancel_ptr = try std.testing.allocator.create(bool);
         defer std.testing.allocator.destroy(cancel_ptr);
-
-        cancel_ptr.* = false;
-        send_input_options.cancel = cancel_ptr;
 
         const cancelled_ptr = try std.testing.allocator.create(bool);
         defer std.testing.allocator.destroy(cancelled_ptr);
@@ -965,7 +954,15 @@ test "driver send-input-cancellation" {
         var send_input_thread = try std.Thread.spawn(
             .{},
             runDriverSendInputInThread,
-            .{ d, cancelled_ptr, std.testing.allocator, "show ip route", send_input_options },
+            .{
+                d,
+                cancelled_ptr,
+                std.testing.allocator,
+                "show ip route",
+                operation.SendInputOptions{
+                    .cancel = cancel_ptr,
+                },
+            },
         );
 
         std.time.sleep(1_000);
@@ -1076,26 +1073,24 @@ test "driver send-inputs" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
             close_res.deinit();
         }
-
-        var opts = operation.NewSendInputOptions();
-        opts.retain_input = case.retain_input;
-        opts.retain_trailing_prompt = case.retain_trailing_prompt;
-        opts.requested_mode = case.requested_mode;
 
         const res = try d.sendInputs(
             std.testing.allocator,
             case.inputs,
-            opts,
+            .{
+                .retain_input = case.retain_input,
+                .retain_trailing_prompt = case.retain_trailing_prompt,
+                .requested_mode = case.requested_mode,
+            },
         );
         defer res.deinit();
 
@@ -1138,10 +1133,9 @@ test "driver send-inputs-timeout" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         // so the test is faster of course
@@ -1152,7 +1146,7 @@ test "driver send-inputs-timeout" {
             d.sendInputs(
                 std.testing.allocator,
                 &[_][]const u8{ "show run int vlan 1", "show run | i hostname" },
-                operation.NewSendInputOptions(),
+                .{},
             ),
         );
     }
@@ -1185,19 +1179,15 @@ test "driver send-inputs-cancellation" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
-
-        var send_input_options = operation.NewSendInputOptions();
 
         const cancel_ptr = try std.testing.allocator.create(bool);
         defer std.testing.allocator.destroy(cancel_ptr);
 
         cancel_ptr.* = false;
-        send_input_options.cancel = cancel_ptr;
 
         const cancelled_ptr = try std.testing.allocator.create(bool);
         defer std.testing.allocator.destroy(cancelled_ptr);
@@ -1214,7 +1204,9 @@ test "driver send-inputs-cancellation" {
                 cancelled_ptr,
                 std.testing.allocator,
                 &[_][]const u8{ "show run int vlan 1", "show run | i hostname" },
-                send_input_options,
+                operation.SendInputOptions{
+                    .cancel = cancel_ptr,
+                },
             },
         );
 
@@ -1317,27 +1309,26 @@ test "driver send-prompted-input" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
             close_res.deinit();
         }
-
-        var opts = operation.NewSendPromptedInputOptions();
-        opts.retain_trailing_prompt = case.retain_trailing_prompt;
-        opts.requested_mode = case.requested_mode;
 
         const res = try d.sendPromptedInput(
             std.testing.allocator,
             case.input,
             case.prompt,
+            null,
             case.response,
-            opts,
+            .{
+                .retain_trailing_prompt = case.retain_trailing_prompt,
+                .requested_mode = case.requested_mode,
+            },
         );
         defer res.deinit();
 
@@ -1383,19 +1374,15 @@ test "driver send-prompted-input-timeout" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
-
-        var send_prompted_input_options = operation.NewSendPromptedInputOptions();
 
         const cancel_ptr = try std.testing.allocator.create(bool);
         defer std.testing.allocator.destroy(cancel_ptr);
 
         cancel_ptr.* = false;
-        send_prompted_input_options.cancel = cancel_ptr;
 
         const cancelled_ptr = try std.testing.allocator.create(bool);
         defer std.testing.allocator.destroy(cancelled_ptr);
@@ -1414,7 +1401,9 @@ test "driver send-prompted-input-timeout" {
                 "write erase",
                 "Proceed with erasing startup configuration? [confirm]",
                 "",
-                send_prompted_input_options,
+                operation.SendPromptedInputOptions{
+                    .cancel = cancel_ptr,
+                },
             },
         );
 
@@ -1463,10 +1452,9 @@ test "driver send-prompted-input-cancellation" {
 
         var d = try GetTestDriver(fixture_filename);
 
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
         // so the test is faster of course
@@ -1478,8 +1466,9 @@ test "driver send-prompted-input-cancellation" {
                 std.testing.allocator,
                 "clear logging",
                 "Clear logging buffer [confirm]",
+                null,
                 "",
-                operation.NewSendPromptedInputOptions(),
+                .{},
             ),
         );
     }

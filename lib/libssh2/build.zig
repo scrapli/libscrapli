@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) !void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -12,7 +12,13 @@ pub fn build(b: *std.Build) !void {
         },
     );
 
-    const upstream = b.dependency("libssh2", .{});
+    const upstream = b.dependency(
+        "libssh2",
+        .{
+            .target = target,
+            .optimize = optimize,
+        },
+    );
 
     const lib = b.addStaticLibrary(
         .{

@@ -1,7 +1,6 @@
 const std = @import("std");
 const re = @import("re.zig");
 const hashmaps = @import("hashmaps.zig");
-const arrays = @import("arrays.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
@@ -11,100 +10,200 @@ const pcre2 = @cImport({
 pub const unknown_mode = "__unknown__";
 pub const default_mode = "__default__";
 
-pub const Instruction = enum {
-    SendInput,
-    SendPromptedInput,
+pub const Operation = union(enum) {
+    send_input: struct {
+        send_input: struct {
+            input: []const u8,
+        },
+    },
+    send_prompted_input: struct {
+        send_prompted_input: struct {
+            input: []const u8,
+            prompt: ?[]const u8 = null,
+            prompt_pattern: ?[]const u8 = null,
+            response: []const u8,
+        },
+    },
 };
 
-pub const Operation = union(Instruction) {
-    SendInput: SendInput,
-    SendPromptedInput: SendPromptedInput,
+pub const Options = struct {
+    name: []const u8,
+    prompt_exact: ?[]const u8 = null,
+    prompt_pattern: ?[]const u8 = null,
+    prompt_excludes: ?[]const []const u8 = null,
+    accessible_modes: ?[]const AccessibleMode = null,
 };
 
-pub const SendInput = struct {
-    input: []const u8,
+pub const AccessibleMode = struct {
+    name: []const u8,
+    instructions: []const Operation,
 };
-
-pub const SendPromptedInput = struct {
-    input: []const u8,
-    prompt: []const u8,
-    response: []const u8,
-};
-
-pub fn NewMode(
-    allocator: std.mem.Allocator,
-    prompt_exact: ?[]const u8,
-    prompt_pattern: ?[]const u8,
-    prompt_excludes: ?std.ArrayList([]const u8),
-    accessible_modes: ?std.StringHashMap(Operation),
-) !Mode {
-    var m = Mode{
-        .allocator = allocator,
-        .prompt_exact = "",
-        .prompt_pattern = "",
-        .compiled_prompt_pattern = null,
-        .prompt_excludes = std.ArrayList([]const u8).init(allocator),
-        .accessible_modes = std.StringHashMap(Operation).init(allocator),
-    };
-
-    if (prompt_exact != null) {
-        m.prompt_exact = prompt_exact.?;
-    }
-
-    if (prompt_pattern != null) {
-        const compiled = re.pcre2Compile(prompt_pattern.?);
-        if (compiled == null) {
-            return error.RegexError;
-        }
-
-        m.compiled_prompt_pattern = compiled;
-    }
-
-    if (prompt_excludes != null) {
-        m.prompt_excludes.deinit();
-        m.prompt_excludes = prompt_excludes.?;
-    }
-
-    if (accessible_modes != null) {
-        m.accessible_modes.deinit();
-        m.accessible_modes = accessible_modes.?;
-    }
-
-    return m;
-}
 
 pub const Mode = struct {
     allocator: std.mem.Allocator,
-
-    prompt_exact: []const u8,
-    prompt_pattern: []const u8,
+    prompt_exact: ?[]const u8,
+    prompt_pattern: ?[]const u8,
     compiled_prompt_pattern: ?*pcre2.pcre2_code_8,
-    prompt_excludes: std.ArrayList([]const u8),
+    prompt_excludes: ?[]const []const u8,
+    accessible_modes: std.StringHashMap([]Operation),
 
-    accessible_modes: std.StringHashMap(Operation),
+    pub fn init(allocator: std.mem.Allocator, options: Options) !*Mode {
+        const m = try allocator.create(Mode);
 
-    pub fn deinit(self: *Mode) void {
-        if (self.compiled_prompt_pattern != null) {
-            re.pcre2Free(self.compiled_prompt_pattern.?);
+        m.* = Mode{
+            .allocator = allocator,
+            .prompt_exact = options.prompt_exact,
+            .prompt_pattern = options.prompt_pattern,
+            .compiled_prompt_pattern = null,
+            .prompt_excludes = null,
+            .accessible_modes = std.StringHashMap([]Operation).init(allocator),
+        };
+
+        if (m.prompt_pattern) |pattern| {
+            const compiled = re.pcre2Compile(pattern);
+
+            if (compiled == null) {
+                return error.RegexError;
+            }
+
+            m.compiled_prompt_pattern = compiled;
         }
 
-        self.prompt_excludes.deinit();
+        if (options.prompt_excludes) |prompt_excludes| {
+            var _prompt_excludes = try allocator.alloc([]u8, prompt_excludes.len);
+
+            for (0.., prompt_excludes) |idx, exclusion| {
+                _prompt_excludes[idx] = try allocator.dupe(u8, exclusion);
+            }
+
+            m.prompt_excludes = _prompt_excludes;
+        }
+
+        if (options.accessible_modes) |accessible_modes| {
+            for (accessible_modes) |am| {
+                const instructions = try allocator.alloc(
+                    Operation,
+                    am.instructions.len,
+                );
+
+                for (0.., am.instructions) |idx, instr| {
+                    switch (instr) {
+                        .send_input => {
+                            instructions[idx] = Operation{
+                                .send_input = .{
+                                    .send_input = .{
+                                        .input = try allocator.dupe(
+                                            u8,
+                                            instr.send_input.send_input.input,
+                                        ),
+                                    },
+                                },
+                            };
+                        },
+                        .send_prompted_input => {
+                            var o = Operation{
+                                .send_prompted_input = .{
+                                    .send_prompted_input = .{
+                                        .input = try allocator.dupe(
+                                            u8,
+                                            instr.send_prompted_input.send_prompted_input.input,
+                                        ),
+                                        .response = try allocator.dupe(
+                                            u8,
+                                            instr.send_prompted_input.send_prompted_input.response,
+                                        ),
+                                    },
+                                },
+                            };
+
+                            if (instr.send_prompted_input.send_prompted_input.prompt) |prompt| {
+                                o.send_prompted_input.send_prompted_input.prompt = try allocator.dupe(
+                                    u8,
+                                    prompt,
+                                );
+                            }
+
+                            if (instr.send_prompted_input.send_prompted_input.prompt_pattern) |prompt_pattern| {
+                                o.send_prompted_input.send_prompted_input.prompt_pattern = try allocator.dupe(
+                                    u8,
+                                    prompt_pattern,
+                                );
+                            }
+
+                            instructions[idx] = o;
+                        },
+                    }
+                }
+
+                try m.accessible_modes.put(
+                    try allocator.dupe(u8, am.name),
+                    instructions,
+                );
+            }
+        }
+
+        return m;
+    }
+
+    pub fn deinit(self: *Mode) void {
+        if (self.compiled_prompt_pattern) |pattern| {
+            re.pcre2Free(pattern);
+        }
+
+        if (self.prompt_excludes) |excludes| {
+            for (excludes) |e| {
+                self.allocator.free(e);
+            }
+
+            self.allocator.free(excludes);
+        }
+
+        var accessible_mode_iter = self.accessible_modes.iterator();
+
+        while (accessible_mode_iter.next()) |m| {
+            for (m.value_ptr.*) |instr| {
+                switch (instr) {
+                    .send_input => |op| {
+                        self.allocator.free(op.send_input.input);
+                    },
+                    .send_prompted_input => |op| {
+                        self.allocator.free(op.send_prompted_input.input);
+
+                        if (op.send_prompted_input.prompt) |prompt| {
+                            self.allocator.free(prompt);
+                        }
+
+                        if (op.send_prompted_input.prompt_pattern) |prompt_pattern| {
+                            self.allocator.free(prompt_pattern);
+                        }
+
+                        self.allocator.free(op.send_prompted_input.response);
+                    },
+                }
+            }
+            self.allocator.free(m.value_ptr.*);
+            self.allocator.free(m.key_ptr.*);
+        }
+
         self.accessible_modes.deinit();
+        self.allocator.destroy(self);
     }
 };
 
 pub fn determineMode(
-    modes: std.StringHashMap(Mode),
+    modes: std.StringHashMap(*Mode),
     current_prompt: []const u8,
 ) ![]const u8 {
     var modes_iterator = modes.iterator();
 
     while (modes_iterator.next()) |mode_def| {
-        if (mode_def.value_ptr.prompt_exact.len > 0) {
-            if (std.mem.eql(u8, current_prompt, mode_def.value_ptr.prompt_exact)) {
-                for (mode_def.value_ptr.prompt_excludes.items) |exclusion| {
-                    if (std.mem.indexOf(u8, current_prompt, exclusion) != 0) {
-                        continue;
+        if (mode_def.value_ptr.*.prompt_exact) |prompt_exact| {
+            if (std.mem.eql(u8, current_prompt, prompt_exact)) {
+                if (mode_def.value_ptr.*.prompt_excludes) |prompt_excludes| {
+                    for (prompt_excludes) |exclusion| {
+                        if (std.mem.indexOf(u8, current_prompt, exclusion) != 0) {
+                            continue;
+                        }
                     }
                 }
 
@@ -112,25 +211,29 @@ pub fn determineMode(
             }
         }
 
-        const match = try re.pcre2Find(
-            mode_def.value_ptr.compiled_prompt_pattern.?,
-            current_prompt,
-        );
-        if (match.len > 0) {
-            var is_excluded = false;
+        if (mode_def.value_ptr.*.compiled_prompt_pattern) |compiled_prompt_pattern| {
+            const match = try re.pcre2Find(
+                compiled_prompt_pattern,
+                current_prompt,
+            );
+            if (match.len > 0) {
+                var is_excluded = false;
 
-            for (mode_def.value_ptr.prompt_excludes.items) |exclusion| {
-                if (std.mem.indexOf(u8, current_prompt, exclusion) != null) {
-                    is_excluded = true;
-                    break;
+                if (mode_def.value_ptr.*.prompt_excludes) |prompt_excludes| {
+                    for (prompt_excludes) |exclusion| {
+                        if (std.mem.indexOf(u8, current_prompt, exclusion) != null) {
+                            is_excluded = true;
+                            break;
+                        }
+                    }
                 }
-            }
 
-            if (is_excluded) {
-                continue;
-            }
+                if (is_excluded) {
+                    continue;
+                }
 
-            return mode_def.key_ptr.*;
+                return mode_def.key_ptr.*;
+            }
         }
     }
 
@@ -140,7 +243,7 @@ pub fn determineMode(
 test "determineMode" {
     const cases = [_]struct {
         name: []const u8,
-        modes: std.StringHashMap(Mode),
+        modes: std.StringHashMap(*Mode),
         current_prompt: []const u8,
         expected: []const u8,
         expect_fail: bool,
@@ -149,33 +252,33 @@ test "determineMode" {
             .name = "simple-pattern",
             .modes = try hashmaps.inlineInitStringHashMap(
                 std.testing.allocator,
-                Mode,
+                *Mode,
                 &[_][]const u8{
                     "exec",
                     "privileged_exec",
                     "configuration",
                 },
-                &[_]Mode{
-                    try NewMode(
+                &[_]*Mode{
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*>",
-                        null,
-                        null,
+                        .{
+                            .name = "exec",
+                            .prompt_pattern = "^.*>",
+                        },
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*#",
-                        null,
-                        null,
+                        .{
+                            .name = "privileged_exec",
+                            .prompt_pattern = "^.*#",
+                        },
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*(config)#",
-                        null,
-                        null,
+                        .{
+                            .name = "configuration",
+                            .prompt_pattern = "^.*(config)#",
+                        },
                     ),
                 },
             ),
@@ -187,33 +290,33 @@ test "determineMode" {
             .name = "simple-exact",
             .modes = try hashmaps.inlineInitStringHashMap(
                 std.testing.allocator,
-                Mode,
+                *Mode,
                 &[_][]const u8{
                     "exec",
                     "privileged_exec",
                     "configuration",
                 },
-                &[_]Mode{
-                    try NewMode(
+                &[_]*Mode{
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*>",
-                        null,
-                        null,
+                        .{
+                            .name = "exec",
+                            .prompt_pattern = "^.*>",
+                        },
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        "router#",
-                        null,
-                        null,
-                        null,
+                        .{
+                            .name = "privileged_exec",
+                            .prompt_exact = "router#",
+                        },
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*(config)#",
-                        null,
-                        null,
+                        .{
+                            .name = "configuration",
+                            .prompt_pattern = "^.*(config)#",
+                        },
                     ),
                 },
             ),
@@ -225,47 +328,44 @@ test "determineMode" {
             .name = "check-exclusion",
             .modes = try hashmaps.inlineInitStringHashMap(
                 std.testing.allocator,
-                Mode,
+                *Mode,
                 &[_][]const u8{
                     "exec",
                     "privileged_exec",
                     "configuration",
                     "tclsh",
                 },
-                &[_]Mode{
-                    try NewMode(
+                &[_]*Mode{
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*>",
-                        null,
-                        null,
+                        .{
+                            .name = "exec",
+                            .prompt_pattern = "^.*>",
+                        },
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*#",
-                        try arrays.inlineInitArrayList(
-                            std.testing.allocator,
-                            []const u8,
-                            &[_][]const u8{
+                        .{
+                            .name = "privileged_exec",
+                            .prompt_pattern = "^.*#",
+                            .prompt_excludes = &[_][]const u8{
                                 "tcl)",
                             },
-                        ),
-                        null,
+                        },
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*(config)#",
-                        null,
-                        null,
+                        .{
+                            .name = "configuration",
+                            .prompt_pattern = "^.*(config)#",
+                        },
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*\\(tcl\\)#",
-                        null,
-                        null,
+                        .{
+                            .name = "tclsh",
+                            .prompt_pattern = "^.*\\(tcl\\)#",
+                        },
                     ),
                 },
             ),
@@ -281,8 +381,8 @@ test "determineMode" {
 
             var modes_iterator = modes.valueIterator();
 
-            while (modes_iterator.next()) |mode| {
-                mode.deinit();
+            while (modes_iterator.next()) |m| {
+                m.*.deinit();
             }
 
             modes.deinit();
@@ -306,7 +406,7 @@ test "determineMode" {
 
 pub fn getPathToMode(
     allocator: std.mem.Allocator,
-    modes: std.StringHashMap(Mode),
+    modes: std.StringHashMap(*Mode),
     current_mode_name: []const u8,
     requested_mode_name: []const u8,
     visited: *std.StringHashMap(bool),
@@ -352,445 +452,282 @@ pub fn getPathToMode(
 }
 
 test "getPathToMode" {
+    const exec_mode_options = Options{
+        .name = "exec",
+        .prompt_pattern = "^.*>",
+        .accessible_modes = &[_]AccessibleMode{
+            .{
+                .name = "privileged_exec",
+                .instructions = &[_]Operation{
+                    Operation{
+                        .send_prompted_input = .{
+                            .send_prompted_input = .{
+                                .input = "enable",
+                                .prompt = "Password:",
+                                .response = "password",
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    };
+
+    const privileged_exec_mode_options = Options{
+        .name = "privileged_exec",
+        .prompt_pattern = "^.*#",
+        .accessible_modes = &[_]AccessibleMode{
+            .{
+                .name = "exec",
+                .instructions = &[_]Operation{
+                    .{
+                        .send_input = .{
+                            .send_input = .{
+                                .input = "disable",
+                            },
+                        },
+                    },
+                },
+            },
+            .{
+                .name = "configuration",
+                .instructions = &[_]Operation{
+                    .{
+                        .send_input = .{
+                            .send_input = .{
+                                .input = "configure terminal",
+                            },
+                        },
+                    },
+                },
+            },
+            .{
+                .name = "tclsh",
+                .instructions = &[_]Operation{
+                    .{
+                        .send_input = .{
+                            .send_input = .{
+                                .input = "tclsh",
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    };
+
+    const config_mode_options = Options{
+        .name = "configuration",
+        .prompt_pattern = "^.*(config)#",
+        .accessible_modes = &[_]AccessibleMode{
+            .{
+                .name = "privileged_exec",
+                .instructions = &[_]Operation{
+                    .{
+                        .send_input = .{
+                            .send_input = .{
+                                .input = "end",
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    };
+
     const cases = [_]struct {
         name: []const u8,
-        modes: std.StringHashMap(Mode),
+        modes: std.StringHashMap(*Mode),
         current_mode_name: []const u8,
         requested_mode_name: []const u8,
-        expected: std.ArrayList([]const u8),
+        expected: []const []const u8,
         expect_fail: bool,
     }{
         .{
             .name = "simple",
             .modes = try hashmaps.inlineInitStringHashMap(
                 std.testing.allocator,
-                Mode,
+                *Mode,
                 &[_][]const u8{
                     "exec",
                     "privileged_exec",
                     "configuration",
                 },
-                &[_]Mode{
-                    try NewMode(
+                &[_]*Mode{
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*>",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "privileged_exec",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendPromptedInput = SendPromptedInput{
-                                        .input = "enable",
-                                        .prompt = "Password:",
-                                        .response = "password",
-                                    },
-                                },
-                            },
-                        ),
+                        exec_mode_options,
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "exec",
-                                "configuration",
-                                "tclsh",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "disable",
-                                    },
-                                },
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "configure terminal",
-                                    },
-                                },
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "tclsh",
-                                    },
-                                },
-                            },
-                        ),
+                        privileged_exec_mode_options,
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*(config)#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "privileged_exec",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "end",
-                                    },
-                                },
-                            },
-                        ),
+                        config_mode_options,
                     ),
                 },
             ),
             .current_mode_name = "exec",
             .requested_mode_name = "configuration",
-            .expected = try arrays.inlineInitArrayList(
-                std.testing.allocator,
-                []const u8,
-                &[_][]const u8{
-                    "exec",
-                    "privileged_exec",
-                    "configuration",
-                },
-            ),
+            .expected = &[_][]const u8{
+                "exec",
+                "privileged_exec",
+                "configuration",
+            },
             .expect_fail = false,
         },
         .{
             .name = "simple-backwards",
             .modes = try hashmaps.inlineInitStringHashMap(
                 std.testing.allocator,
-                Mode,
+                *Mode,
                 &[_][]const u8{
                     "exec",
                     "privileged_exec",
                     "configuration",
                 },
-                &[_]Mode{
-                    try NewMode(
+                &[_]*Mode{
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*>",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "privileged_exec",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendPromptedInput = SendPromptedInput{
-                                        .input = "enable",
-                                        .prompt = "Password:",
-                                        .response = "password",
-                                    },
-                                },
-                            },
-                        ),
+                        exec_mode_options,
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "exec",
-                                "configuration",
-                                "tclsh",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "disable",
-                                    },
-                                },
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "configure terminal",
-                                    },
-                                },
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "tclsh",
-                                    },
-                                },
-                            },
-                        ),
+                        privileged_exec_mode_options,
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*(config)#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "privileged_exec",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "end",
-                                    },
-                                },
-                            },
-                        ),
+                        config_mode_options,
                     ),
                 },
             ),
             .current_mode_name = "configuration",
             .requested_mode_name = "exec",
-            .expected = try arrays.inlineInitArrayList(
-                std.testing.allocator,
-                []const u8,
-                &[_][]const u8{
-                    "configuration",
-                    "privileged_exec",
-                    "exec",
-                },
-            ),
+            .expected = &[_][]const u8{
+                "configuration",
+                "privileged_exec",
+                "exec",
+            },
             .expect_fail = false,
         },
         .{
             .name = "simple-short",
             .modes = try hashmaps.inlineInitStringHashMap(
                 std.testing.allocator,
-                Mode,
+                *Mode,
                 &[_][]const u8{
                     "exec",
                     "privileged_exec",
                     "configuration",
                 },
-                &[_]Mode{
-                    try NewMode(
+                &[_]*Mode{
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*>",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "privileged_exec",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendPromptedInput = SendPromptedInput{
-                                        .input = "enable",
-                                        .prompt = "Password:",
-                                        .response = "password",
-                                    },
-                                },
-                            },
-                        ),
+                        exec_mode_options,
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "exec",
-                                "configuration",
-                                "tclsh",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "disable",
-                                    },
-                                },
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "configure terminal",
-                                    },
-                                },
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "tclsh",
-                                    },
-                                },
-                            },
-                        ),
+                        privileged_exec_mode_options,
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*(config)#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "privileged_exec",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "end",
-                                    },
-                                },
-                            },
-                        ),
+                        config_mode_options,
                     ),
                 },
             ),
             .current_mode_name = "exec",
             .requested_mode_name = "privileged_exec",
-            .expected = try arrays.inlineInitArrayList(
-                std.testing.allocator,
-                []const u8,
-                &[_][]const u8{
-                    "exec",
-                    "privileged_exec",
-                },
-            ),
+            .expected = &[_][]const u8{
+                "exec",
+                "privileged_exec",
+            },
             .expect_fail = false,
         },
         .{
             .name = "more steps",
             .modes = try hashmaps.inlineInitStringHashMap(
                 std.testing.allocator,
-                Mode,
+                *Mode,
                 &[_][]const u8{
                     "privileged_exec",
                     "configuration",
                     "shell",
                     "sudo",
                 },
-                &[_]Mode{
-                    try NewMode(
+                &[_]*Mode{
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "exec",
-                                "configuration",
-                                "tclsh",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "disable",
-                                    },
-                                },
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "configure terminal",
-                                    },
-                                },
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "tclsh",
-                                    },
-                                },
-                            },
-                        ),
+                        privileged_exec_mode_options,
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^.*(config)#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "privileged_exec",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "end",
-                                    },
-                                },
-                            },
-                        ),
+                        config_mode_options,
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^shell#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "privileged_exec",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "quit",
+                        .{
+                            .name = "shell",
+                            .prompt_pattern = "^shell#",
+                            .accessible_modes = &[_]AccessibleMode{
+                                .{
+                                    .name = "privileged_exec",
+                                    .instructions = &[_]Operation{
+                                        .{
+                                            .send_input = .{
+                                                .send_input = .{
+                                                    .input = "quit",
+                                                },
+                                            },
+                                        },
                                     },
                                 },
                             },
-                        ),
+                        },
                     ),
-                    try NewMode(
+                    try Mode.init(
                         std.testing.allocator,
-                        null,
-                        "^shell(root)#",
-                        null,
-                        try hashmaps.inlineInitStringHashMap(
-                            std.testing.allocator,
-                            Operation,
-                            &[_][]const u8{
-                                "shell",
-                            },
-                            &[_]Operation{
-                                Operation{
-                                    .SendInput = SendInput{
-                                        .input = "quit",
+                        .{
+                            .name = "sudo",
+                            .prompt_pattern = "^shell(root)#",
+                            .accessible_modes = &[_]AccessibleMode{
+                                .{
+                                    .name = "shell",
+                                    .instructions = &[_]Operation{
+                                        .{
+                                            .send_input = .{
+                                                .send_input = .{
+                                                    .input = "quit",
+                                                },
+                                            },
+                                        },
                                     },
                                 },
                             },
-                        ),
+                        },
                     ),
                 },
             ),
             .current_mode_name = "sudo",
             .requested_mode_name = "configuration",
-            .expected = try arrays.inlineInitArrayList(
-                std.testing.allocator,
-                []const u8,
-                &[_][]const u8{
-                    "sudo",
-                    "shell",
-                    "privileged_exec",
-                    "configuration",
-                },
-            ),
+            .expected = &[_][]const u8{
+                "sudo",
+                "shell",
+                "privileged_exec",
+                "configuration",
+            },
             .expect_fail = false,
         },
     };
 
     defer {
         for (cases) |case| {
-            case.expected.deinit();
-
             var modes = case.modes;
 
             var modes_iterator = modes.valueIterator();
 
-            while (modes_iterator.next()) |mode| {
-                mode.deinit();
+            while (modes_iterator.next()) |m| {
+                m.*.deinit();
             }
 
             modes.deinit();
@@ -810,6 +747,8 @@ test "getPathToMode" {
         );
         defer actual.deinit();
 
-        try std.testing.expectEqualSlices([]const u8, case.expected.items, actual.items);
+        for (0.., case.expected) |idx, expected| {
+            try std.testing.expectEqualStrings(expected, actual.items[idx]);
+        }
     }
 }

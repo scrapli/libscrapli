@@ -1,55 +1,63 @@
 const std = @import("std");
 
 const driver = @import("../../driver-netconf.zig");
-const operation = @import("../../operation-netconf.zig");
 const ascii = @import("../../ascii.zig");
-const test_transport = @import("../../transport-test.zig");
 const flags = @import("../../flags.zig");
 const file = @import("../../file.zig");
 const helper = @import("../../test-helper.zig");
 
 fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
-    var opts = driver.NewOptions();
-
-    opts.session.recorder = recorder;
-
-    opts.auth.username = "admin";
-    opts.auth.password = "admin";
-    opts.port = 22830;
-
-    return driver.NewDriver(
+    return driver.Driver.init(
         std.testing.allocator,
         "localhost",
-        opts,
+        .{
+            .port = 22830,
+            .auth = .{
+                .username = "admin",
+                .password = "admin",
+            },
+            .session = .{
+                .recorder = recorder,
+            },
+        },
     );
 }
 
 fn GetTestDriver(f: []const u8) !*driver.Driver {
-    var opts = driver.NewOptions();
-
-    // with read size 1 we end up donig a ZILLION regexs which is slow af,
-    // by turning all the timeouts off and having the default netconf search
-    // depth be low we speed up the tests quite a bit
-    opts.session.read_size = 1;
-    opts.session.read_delay_backoff_factor = 0;
-    opts.session.read_delay_min_ns = 0;
-    opts.session.read_delay_max_ns = 0;
-    opts.session.operation_timeout_ns = std.time.ns_per_min * 1;
+    const d = try driver.Driver.init(
+        std.testing.allocator,
+        "dummy",
+        .{
+            .port = 22830,
+            .auth = .{
+                .username = "admin",
+                .password = "admin",
+            },
+            .session = .{
+                // with read size 1 we end up donig a ZILLION regexs which is slow af,
+                // by turning all the timeouts off and having the default netconf search
+                // depth be low we speed up the tests quite a bit
+                .read_size = 1,
+                .read_delay_backoff_factor = 0,
+                .read_delay_min_ns = 0,
+                .read_delay_max_ns = 0,
+                .operation_timeout_ns = std.time.ns_per_min * 1,
+            },
+            .transport = .{
+                .test_ = .{
+                    .f = f,
+                },
+            },
+        },
+    );
 
     // the default initial search depth of 256 will be too deep and consume some of the
     // server hello. this is just an issue due to how the test transport reads the file
-    opts.session.operation_max_search_depth = 32;
+    // we have to set it *after* init since the NewDriver defaults the size (for now its not
+    // configurable) to sane things that break the tests
+    d.options.session.operation_max_search_depth = 32;
 
-    opts.auth.username = "admin";
-    opts.auth.password = "admin";
-    opts.transport = test_transport.NewOptions();
-    opts.transport.Test.f = f;
-
-    return driver.NewDriver(
-        std.testing.allocator,
-        "dummy",
-        opts,
-    );
+    return d;
 }
 
 test "driver-netconf open" {
@@ -106,15 +114,13 @@ test "driver-netconf open" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        try d.init();
         defer d.deinit();
 
-        const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 
@@ -186,18 +192,16 @@ test "driver-netconf get-config" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        const actual_res = try d.getConfig(std.testing.allocator, operation.NewGetConfigOptions());
+        const actual_res = try d.getConfig(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 
@@ -275,21 +279,16 @@ test "driver-netconf lock" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        var lock_unlock_options = operation.NewLockUnlockOptions();
-        lock_unlock_options.target = operation.DatastoreType.Candidate;
-
-        const actual_res = try d.lock(std.testing.allocator, lock_unlock_options);
+        const actual_res = try d.lock(std.testing.allocator, .{ .target = .candidate });
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 
@@ -361,24 +360,19 @@ test "driver-netconf unlock" {
         } else {
             d = try GetTestDriver(fixture_filename);
         }
-
-        try d.init();
         defer d.deinit();
 
-        const open_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        var lock_unlock_options = operation.NewLockUnlockOptions();
-        lock_unlock_options.target = operation.DatastoreType.Candidate;
-
-        const lock_res = try d.lock(std.testing.allocator, lock_unlock_options);
+        const lock_res = try d.lock(std.testing.allocator, .{ .target = .candidate });
         defer lock_res.deinit();
 
-        const actual_res = try d.unlock(std.testing.allocator, lock_unlock_options);
+        const actual_res = try d.unlock(std.testing.allocator, .{ .target = .candidate });
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 

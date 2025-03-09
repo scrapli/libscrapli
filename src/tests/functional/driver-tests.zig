@@ -17,23 +17,6 @@ const helper = @import("../../test-helper.zig");
 const nokia_srlinux_platform_path_from_project_root = "src/tests/fixtures/platform_nokia_srlinux_no_open_close_callbacks.yaml";
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
-fn lookup_fn(_: []const u8, port: u16, k: []const u8) ?[]const u8 {
-    // testing is assuming containerlab on the host, so we just differentiate based on port
-    // since this can work on nix and darwin
-    if (port == 21022) {
-        return "NokiaSrl1!";
-    } else if (port == 22022) {
-        if (std.mem.startsWith(u8, k, "login")) {
-            return "admin";
-        }
-
-        // eos has no enable password set in testing
-        return "libscrapli";
-    }
-
-    return "";
-}
-
 fn GetDriver(
     transportKind: transport.Kind,
     platform: []const u8,
@@ -42,14 +25,26 @@ fn GetDriver(
     passphrase: ?[]const u8,
 ) !*driver.Driver {
     var platform_definition_path: []const u8 = undefined;
-    var port: u16 = undefined;
+
+    var config = driver.Config{
+        .definition = .{
+            .file = "",
+        },
+    };
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         platform_definition_path = nokia_srlinux_platform_path_from_project_root;
-        port = 21022;
+        config.port = 21022;
+        config.auth.lookup_map = &.{
+            .{ .key = "login", .value = "NokiaSrl1!" },
+        };
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
         platform_definition_path = arista_eos_platform_path_from_project_root;
-        port = 22022;
+        config.port = 22022;
+        config.auth.lookup_map = &.{
+            .{ .key = "login", .value = "admin" },
+            .{ .key = "enable", .value = "libscrapli" },
+        };
     } else {
         return error.UnknownPlatform;
     }
@@ -72,41 +67,40 @@ fn GetDriver(
     );
     platform_path_len += platform_definition_path.len;
 
-    const platform_path = platform_path_buf[0..platform_path_len];
+    config.definition.file = platform_path_buf[0..platform_path_len];
 
-    var opts = driver.NewOptions();
-
-    opts.port = port;
-    opts.auth.lookup_fn = lookup_fn;
-    opts.auth.username = username;
+    config.auth.username = username;
 
     if (key != null) {
-        opts.auth.private_key_path = key;
-        opts.auth.private_key_passphrase = passphrase;
+        config.auth.private_key_path = key;
+        config.auth.private_key_passphrase = passphrase;
     } else {
-        opts.auth.password = "__lookup::login";
+        config.auth.password = "__lookup::login";
     }
 
     switch (transportKind) {
-        .Bin,
+        .bin,
         => {},
-        .SSH2 => {
-            opts.transport = ssh2_transport.NewOptions();
+        .ssh2 => {
+            config.transport = transport.OptionsInputs{
+                .ssh2 = .{},
+            };
         },
-        .Telnet => {
-            opts.transport = telnet_transport.NewOptions();
-            opts.port = port - 1;
+        .telnet => {
+            config.transport = transport.OptionsInputs{
+                .telnet = .{},
+            };
+            config.port = config.port.? - 1;
         },
         else => {
             unreachable;
         },
     }
 
-    return driver.NewDriverFromYaml(
+    return driver.Driver.init(
         std.testing.allocator,
-        platform_path,
         "localhost",
-        opts,
+        config,
     );
 }
 
@@ -128,7 +122,7 @@ test "driver open" {
     }{
         .{
             .name = "simple",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "nokia-srlinux",
             .on_open_callback = null,
             .username = "admin",
@@ -137,7 +131,7 @@ test "driver open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "nokia-srlinux",
             .on_open_callback = null,
             .username = "admin",
@@ -146,7 +140,7 @@ test "driver open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin",
@@ -155,7 +149,7 @@ test "driver open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin",
@@ -164,7 +158,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin-sshkey",
@@ -173,7 +167,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin-sshkey",
@@ -182,7 +176,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin-sshkey-passphrase",
@@ -191,7 +185,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .on_open_callback = null,
             .username = "admin-sshkey-passphrase",
@@ -214,14 +208,13 @@ test "driver open" {
         var d = try GetDriver(case.transportKind, case.platform, case.username, case.key, case.passphrase);
         d.definition.on_open_callback = case.on_open_callback;
 
-        try d.init();
         defer d.deinit();
 
-        const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
             close_res.deinit();
         }
 

@@ -14,19 +14,6 @@ const flags = @import("../../flags.zig");
 const file = @import("../../file.zig");
 const helper = @import("../../test-helper.zig");
 
-fn lookup_fn(_: []const u8, port: u16, k: []const u8) ?[]const u8 {
-    _ = k;
-    // testing is assuming containerlab on the host, so we just differentiate based on port
-    // since this can work on nix and darwin
-    if (port == 21830) {
-        return "NokiaSrl1!";
-    } else if (port == 22830) {
-        return "admin";
-    }
-
-    return "";
-}
-
 fn GetDriver(
     transportKind: transport.Kind,
     platform: []const u8,
@@ -34,43 +21,47 @@ fn GetDriver(
     key: ?[]const u8,
     passphrase: ?[]const u8,
 ) !*driver.Driver {
-    var port: u16 = undefined;
+    var config = driver.Config{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
-        port = 21830;
+        config.port = 21830;
+        config.auth.lookup_map = &.{
+            .{ .key = "login", .value = "NokiaSrl1!" },
+        };
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
-        port = 22830;
+        config.port = 22830;
+        config.auth.lookup_map = &.{
+            .{ .key = "login", .value = "admin" },
+        };
     } else {
         return error.UnknownPlatform;
     }
 
-    var opts = driver.NewOptions();
-
-    opts.port = port;
-    opts.auth.lookup_fn = lookup_fn;
-    opts.auth.username = username;
+    config.auth.username = username;
 
     if (key != null) {
-        opts.auth.private_key_path = key;
-        opts.auth.private_key_passphrase = passphrase;
+        config.auth.private_key_path = key;
+        config.auth.private_key_passphrase = passphrase;
     } else {
-        opts.auth.password = "__lookup::login";
+        config.auth.password = "__lookup::login";
     }
 
     switch (transportKind) {
-        .Bin => {},
-        .SSH2 => {
-            opts.transport = ssh2_transport.NewOptions();
+        .bin => {},
+        .ssh2 => {
+            config.transport = transport.OptionsInputs{
+                .ssh2 = .{},
+            };
         },
         else => {
             unreachable;
         },
     }
 
-    return driver.NewDriver(
+    return driver.Driver.init(
         std.testing.allocator,
         "localhost",
-        opts,
+        config,
     );
 }
 
@@ -139,7 +130,7 @@ test "driver-netconf open" {
     }{
         .{
             .name = "simple",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "nokia-srlinux",
             .username = "admin",
             .key = null,
@@ -147,7 +138,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "nokia-srlinux",
             .username = "admin",
             .key = null,
@@ -155,7 +146,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin",
             .key = null,
@@ -163,7 +154,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin",
             .key = null,
@@ -171,7 +162,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
@@ -179,7 +170,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
@@ -187,7 +178,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.Bin,
+            .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
@@ -195,7 +186,7 @@ test "driver-netconf open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.SSH2,
+            .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
@@ -220,15 +211,13 @@ test "driver-netconf open" {
             case.key,
             case.passphrase,
         );
-
-        try d.init();
         defer d.deinit();
 
-        const actual_res = try d.open(std.testing.allocator, operation.NewOpenOptions());
+        const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_ret = d.close(std.testing.allocator, operation.NewCloseOptions()) catch unreachable;
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
             close_ret.deinit();
         }
 

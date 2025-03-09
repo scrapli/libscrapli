@@ -16,5 +16,5 @@ pub const result_netconf = @import("result-netconf.zig");
 
 pub const platform = @import("platform.zig");
 
-pub const logger = @import("logger.zig");
+pub const logging = @import("logging.zig");
 pub const strings = @import("strings.zig");

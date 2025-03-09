@@ -13,8 +13,8 @@ pub const OperationResult = struct {
 };
 
 pub const OperationKind = enum {
-    Open,
-    GetConfig,
+    open,
+    get_config,
 };
 
 pub const OpenOperation = struct {
@@ -28,45 +28,9 @@ pub const GetConfigOperation = struct {
 };
 
 pub const OperationOptions = union(OperationKind) {
-    Open: OpenOperation,
-    GetConfig: GetConfigOperation,
+    open: OpenOperation,
+    get_config: GetConfigOperation,
 };
-
-pub fn NewFfiDriver(
-    allocator: std.mem.Allocator,
-    host: []const u8,
-    options: driver.Options,
-) !*FfiDriver {
-    const real_driver = try driver.NewDriver(
-        allocator,
-        host,
-        options,
-    );
-
-    const ffi_driver = try allocator.create(FfiDriver);
-
-    ffi_driver.* = FfiDriver{
-        .allocator = allocator,
-        .real_driver = real_driver,
-        .operation_id_counter = 0,
-        .operation_thread = null,
-        .operation_ready = std.atomic.Value(bool).init(false),
-        .operation_stop = std.atomic.Value(bool).init(false),
-        .operation_lock = std.Thread.Mutex{},
-        .operation_condition = std.Thread.Condition{},
-        .operation_predicate = 0,
-        .operation_queue = std.fifo.LinearFifo(
-            OperationOptions,
-            std.fifo.LinearFifoBufferType.Dynamic,
-        ).init(allocator),
-        .operation_results = std.AutoHashMap(
-            u32,
-            OperationResult,
-        ).init(allocator),
-    };
-
-    return ffi_driver;
-}
 
 pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
@@ -89,8 +53,38 @@ pub const FfiDriver = struct {
         OperationResult,
     ),
 
-    pub fn init(self: *FfiDriver) !void {
-        return self.real_driver.init();
+    pub fn init(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        config: driver.Config,
+    ) !*FfiDriver {
+        const ffi_driver = try allocator.create(FfiDriver);
+
+        ffi_driver.* = FfiDriver{
+            .allocator = allocator,
+            .real_driver = try driver.Driver.init(
+                allocator,
+                host,
+                config,
+            ),
+            .operation_id_counter = 0,
+            .operation_thread = null,
+            .operation_ready = std.atomic.Value(bool).init(false),
+            .operation_stop = std.atomic.Value(bool).init(false),
+            .operation_lock = std.Thread.Mutex{},
+            .operation_condition = std.Thread.Condition{},
+            .operation_predicate = 0,
+            .operation_queue = std.fifo.LinearFifo(
+                OperationOptions,
+                std.fifo.LinearFifoBufferType.Dynamic,
+            ).init(allocator),
+            .operation_results = std.AutoHashMap(
+                u32,
+                OperationResult,
+            ).init(allocator),
+        };
+
+        return ffi_driver;
     }
 
     pub fn deinit(self: *FfiDriver) void {
@@ -129,10 +123,10 @@ pub const FfiDriver = struct {
             self.operation_thread.?.join();
         }
 
-        var opts = operation.NewCloseOptions();
-        opts.cancel = cancel;
-
-        const close_res = try self.real_driver.close(self.allocator, opts);
+        const close_res = try self.real_driver.close(
+            self.allocator,
+            .{ .cancel = cancel },
+        );
         close_res.deinit();
     }
 
@@ -159,23 +153,23 @@ pub const FfiDriver = struct {
             var ret_err: ?anyerror = null;
 
             switch (op.?) {
-                OperationKind.Open => {
-                    operation_id = op.?.Open.id;
+                OperationKind.open => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.open(
                         self.allocator,
-                        op.?.Open.options,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
-                OperationKind.GetConfig => {
-                    operation_id = op.?.GetConfig.id;
+                OperationKind.get_config => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.getConfig(
                         self.allocator,
-                        op.?.GetConfig.options,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
@@ -283,11 +277,11 @@ pub const FfiDriver = struct {
         });
 
         switch (options) {
-            OperationKind.Open => {
-                mut_options.Open.id = operation_id;
+            OperationKind.open => {
+                mut_options.open.id = operation_id;
             },
-            OperationKind.GetConfig => {
-                mut_options.GetConfig.id = operation_id;
+            OperationKind.get_config => {
+                mut_options.get_config.id = operation_id;
             },
         }
 

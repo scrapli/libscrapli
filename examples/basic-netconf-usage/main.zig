@@ -3,8 +3,6 @@ const std = @import("std");
 const scrapli = @import("scrapli");
 
 const driver = scrapli.driver_netconf;
-const ssh2 = scrapli.transport_ssh2;
-const operation = scrapli.operation_netconf;
 const strings = scrapli.strings;
 
 const banner = "********************";
@@ -28,7 +26,7 @@ pub const std_options = std.Options{
             .level = .err,
         },
         .{
-            .scope = .parse,
+            .scope = .parser,
             .level = .err,
         },
     },
@@ -85,39 +83,41 @@ pub fn main() !void {
 
     var password = try get_env_var_or_default(password_env_var_name, default_password);
     defer password.deinit();
-    var opts = driver.NewOptions();
 
-    opts.auth.username = "admin";
-    opts.auth.password = password.string;
-    opts.port = try get_port();
-
-    // ssh2; if commented out you'll default to using bin transport (/bin/ssh wrapper)
-    opts.transport = ssh2.NewOptions();
-
-    // for logging to stdout, or comment/remove for no logging and add the following import/alias:
-    // const logger = scrapli.logger;
-    // opts.logger = logger.Logger{ .allocator = allocator, .f = logger.stdLogf };
-
-    // for logging to a file
+    // for logging to a file:
     // const f = try std.fs.cwd().createFile(
     //     "out.txt",
     //     .{},
     // );
     // defer f.close();
-    // opts.session.recorder = f.writer();
+    // then uncomment recorder in OptionsInputs below
 
-    const d = try driver.NewDriver(
+    const d = try driver.Driver.init(
         allocator,
         host.string,
-        opts,
+        .{
+            // uncomment and import the logger package like: `const logger = scrapli.logger;`
+            // for a simple logger setup
+            // .logger = logger.Logger{ .allocator = allocator, .f = logger.stdLogf, },
+            .port = try get_port(),
+            .auth = .{
+                .username = "admin",
+                .password = password.string,
+            },
+            .session = .{
+                // .recorder = f,
+            },
+            .transport = .{
+                // comment out to use bin transport if desired
+                .ssh2 = .{},
+            },
+        },
     );
-
-    try d.init();
     defer d.deinit();
 
     const open_result = try d.open(
         allocator,
-        operation.NewOpenOptions(),
+        .{},
     );
     defer open_result.deinit();
 
@@ -131,7 +131,7 @@ pub fn main() !void {
         },
     );
 
-    const get_result = try d.getConfig(allocator, operation.NewGetConfigOptions());
+    const get_result = try d.getConfig(allocator, .{});
     defer get_result.deinit();
 
     std.debug.print(
@@ -144,10 +144,9 @@ pub fn main() !void {
         },
     );
 
-    var get_options = operation.NewGetOptions();
-    get_options.filter = "<system><aaa><authentication></authentication></aaa></system>";
-
-    const get_config_result = try d.get(allocator, get_options);
+    const get_config_result = try d.get(allocator, .{
+        .filter = "<system><aaa><authentication></authentication></aaa></system>",
+    });
     defer get_config_result.deinit();
 
     std.debug.print(
@@ -160,6 +159,6 @@ pub fn main() !void {
         },
     );
 
-    const close_result = try d.close(allocator, operation.NewCloseOptions());
+    const close_result = try d.close(allocator, .{});
     defer close_result.deinit();
 }

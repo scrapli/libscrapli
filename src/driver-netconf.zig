@@ -1,9 +1,8 @@
 const std = @import("std");
 const auth = @import("auth.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
-const transport_bin = @import("transport-bin.zig");
 const operation = @import("operation-netconf.zig");
 const result = @import("result-netconf.zig");
 const ascii = @import("ascii.zig");
@@ -11,14 +10,14 @@ const xml = @import("xml");
 const test_helper = @import("test-helper.zig");
 
 const ProcessThreadState = enum(u8) {
-    Uninitialized,
-    Run,
-    Stop,
+    uninitialized,
+    run,
+    stop,
 };
 
 pub const Version = enum {
-    Version_1_0,
-    Version_1_1,
+    version_1_0,
+    version_1_1,
 };
 
 pub const Capability = struct {
@@ -70,129 +69,73 @@ const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 
-pub fn NewOptions() Options {
-    var opts = Options{
-        .logger = null,
-        .port = null,
-        .auth = auth.NewOptions(),
-        .session = session.NewOptions(),
-        .transport = transport_bin.NewOptions(),
-        .error_tag = default_rpc_error_tag,
-        .preferred_version = null,
-        .message_poll_interval_ns = default_message_poll_interval_ns,
-    };
-
-    opts.session.operation_max_search_depth = default_initial_operation_max_search_depth;
-
-    return opts;
-}
+pub const Config = struct {
+    logger: ?logging.Logger = null,
+    port: ?u16 = null,
+    auth: auth.OptionsInputs = .{},
+    session: session.OptionsInputs = .{},
+    transport: transport.OptionsInputs = .{ .bin = .{} },
+    error_tag: []const u8 = default_rpc_error_tag,
+    preferred_version: ?Version = null,
+    message_poll_interval_ns: u64 = default_message_poll_interval_ns,
+};
 
 pub const Options = struct {
-    logger: ?logger.Logger,
+    allocator: std.mem.Allocator,
+    logger: ?logging.Logger,
     port: ?u16,
-    auth: auth.Options,
-    session: session.Options,
-    transport: transport.Options,
+    auth: *auth.Options,
+    session: *session.Options,
+    transport: *transport.Options,
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
-};
 
-pub fn NewDriver(
-    allocator: std.mem.Allocator,
-    host: []const u8,
-    options: Options,
-) !*Driver {
-    const log = options.logger orelse logger.Logger{ .allocator = allocator, .f = logger.noopLogf };
+    pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
 
-    var mut_options = options;
+        o.* = Options{
+            .allocator = allocator,
+            .logger = config.logger,
+            .port = config.port,
+            .auth = try auth.Options.init(allocator, config.auth),
+            .session = try session.Options.init(allocator, config.session),
+            .transport = try transport.Options.init(allocator, config.transport),
+            .error_tag = config.error_tag,
+            .preferred_version = config.preferred_version,
+            .message_poll_interval_ns = config.message_poll_interval_ns,
+        };
 
-    switch (options.transport) {
-        .Bin => {
-            mut_options.transport.Bin.netconf = true;
-        },
-        .SSH2 => {
-            mut_options.transport.SSH2.netconf = true;
-        },
-        .Test => {
-            // nothing to do for test transport, but its "allowed" so dont return an error
-        },
-        else => {
-            return error.UnsupportedTransport;
-        },
-    }
+        o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
 
-    const sess = try session.NewSession(
-        allocator,
-        log,
-        delimiter_Version_1_0,
-        mut_options.session,
-        mut_options.auth,
-        mut_options.transport,
-    );
-
-    const d = try allocator.create(Driver);
-
-    d.* = Driver{
-        .allocator = allocator,
-        .log = log,
-
-        .host = host,
-        .port = 0,
-
-        .options = options,
-
-        .session = sess,
-
-        .server_capabilities = std.ArrayList(Capability).init(allocator),
-        .negotiated_version = Version.Version_1_0,
-
-        .process_thread = null,
-        .process_stop = std.atomic.Value(ProcessThreadState).init(ProcessThreadState.Uninitialized),
-
-        .message_id = 101,
-
-        .messages = std.HashMap(
-            u64,
-            []const u8,
-            std.hash_map.AutoContext(u64),
-            std.hash_map.default_max_load_percentage,
-        ).init(allocator),
-        .messages_lock = std.Thread.Mutex{},
-
-        .subscriptions = std.HashMap(
-            u64,
-            []const u8,
-            std.hash_map.AutoContext(u64),
-            std.hash_map.default_max_load_percentage,
-        ).init(allocator),
-        .subscriptions_lock = std.Thread.Mutex{},
-    };
-
-    if (options.port == null) {
-        switch (options.transport) {
-            transport.Kind.Bin, transport.Kind.SSH2, transport.Kind.Test => {
-                d.port = default_netconf_port;
-            },
-            else => {
-                return error.UnsupportedTransport;
-            },
+        if (&o.error_tag[0] != &default_rpc_error_tag[0]) {
+            o.error_tag = try o.allocator.dupe(u8, o.error_tag);
         }
-    } else {
-        d.port = options.port.?;
+
+        return o;
     }
 
-    return d;
-}
+    pub fn deinit(self: *Options) void {
+        if (&self.error_tag[0] != &default_rpc_error_tag[0]) {
+            self.allocator.free(self.error_tag);
+        }
+
+        self.auth.deinit();
+        self.session.deinit();
+        self.transport.deinit();
+
+        self.allocator.destroy(self);
+    }
+};
 
 pub const Driver = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
 
     host: []const u8,
-    port: u16,
 
-    options: Options,
+    options: *Options,
 
     session: *session.Session,
 
@@ -220,8 +163,84 @@ pub const Driver = struct {
     ),
     subscriptions_lock: std.Thread.Mutex,
 
-    pub fn init(self: *Driver) !void {
-        return self.session.init();
+    pub fn init(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        config: Config,
+    ) !*Driver {
+        const opts = try Options.init(allocator, config);
+
+        const log = opts.logger orelse logging.Logger{
+            .allocator = allocator,
+            .f = logging.noopLogf,
+        };
+
+        switch (opts.transport.*) {
+            .bin => {
+                opts.transport.bin.netconf = true;
+            },
+            .ssh2 => {
+                opts.transport.ssh2.netconf = true;
+            },
+            .test_ => {
+                // nothing to do for test transport, but its "allowed" so dont return an error
+            },
+            else => {
+                return error.UnsupportedTransport;
+            },
+        }
+
+        if (opts.port == null) {
+            opts.port = default_netconf_port;
+        }
+
+        const sess = try session.Session.init(
+            allocator,
+            log,
+            delimiter_Version_1_0,
+            opts.session,
+            opts.auth,
+            opts.transport,
+        );
+
+        const d = try allocator.create(Driver);
+
+        d.* = Driver{
+            .allocator = allocator,
+            .log = log,
+
+            .host = host,
+
+            .options = opts,
+
+            .session = sess,
+
+            .server_capabilities = std.ArrayList(Capability).init(allocator),
+            .negotiated_version = Version.version_1_0,
+
+            .process_thread = null,
+            .process_stop = std.atomic.Value(ProcessThreadState).init(ProcessThreadState.uninitialized),
+
+            .message_id = 101,
+
+            .messages = std.HashMap(
+                u64,
+                []const u8,
+                std.hash_map.AutoContext(u64),
+                std.hash_map.default_max_load_percentage,
+            ).init(allocator),
+            .messages_lock = std.Thread.Mutex{},
+
+            .subscriptions = std.HashMap(
+                u64,
+                []const u8,
+                std.hash_map.AutoContext(u64),
+                std.hash_map.default_max_load_percentage,
+            ).init(allocator),
+            .subscriptions_lock = std.Thread.Mutex{},
+        };
+
+        return d;
     }
 
     pub fn deinit(self: *Driver) void {
@@ -239,6 +258,8 @@ pub const Driver = struct {
         self.messages.deinit();
         self.subscriptions.deinit();
 
+        self.options.deinit();
+
         self.allocator.destroy(self);
     }
 
@@ -250,7 +271,7 @@ pub const Driver = struct {
         return result.NewResult(
             allocator,
             self.host,
-            self.port,
+            self.options.port.?,
             self.negotiated_version,
             self.options.error_tag,
             operation_kind,
@@ -264,13 +285,16 @@ pub const Driver = struct {
     ) !*result.Result {
         var timer = try std.time.Timer.start();
 
-        var res = try self.NewResult(allocator, operation.Kind.Open);
+        var res = try self.NewResult(
+            allocator,
+            operation.Kind.open,
+        );
         errdefer res.deinit();
 
         const rets = try self.session.open(
             allocator,
             self.host,
-            self.port,
+            self.options.port.?,
             options,
         );
         allocator.free(rets[0]);
@@ -282,7 +306,7 @@ pub const Driver = struct {
         var cap_buf: []u8 = undefined;
 
         switch (self.session.transport.implementation) {
-            .Bin, .Test => {
+            .bin, .test_ => {
                 // bin will have already consumed the caps, anything else we will need
                 // to read the caps off the channel! (and by anything else == ssh2)
                 // bin will need to clean up the open buf though so we only send a valid
@@ -314,7 +338,11 @@ pub const Driver = struct {
                 );
             },
             else => {
-                cap_buf = try self.receiveServerCapabilities(allocator, options, &timer);
+                cap_buf = try self.receiveServerCapabilities(
+                    allocator,
+                    options,
+                    &timer,
+                );
                 try res.results.append(try allocator.dupe(u8, cap_buf));
             },
         }
@@ -333,7 +361,10 @@ pub const Driver = struct {
         try self.determineVersion();
         try self.sendClientCapabilities(allocator, options, &timer);
 
-        self.process_stop.store(ProcessThreadState.Run, std.builtin.AtomicOrder.unordered);
+        self.process_stop.store(
+            ProcessThreadState.run,
+            std.builtin.AtomicOrder.unordered,
+        );
 
         self.process_thread = std.Thread.spawn(
             .{},
@@ -356,7 +387,7 @@ pub const Driver = struct {
         // TODO send CloseSession rpc and then we will care about options for cancel
         _ = options;
 
-        self.process_stop.store(ProcessThreadState.Stop, std.builtin.AtomicOrder.unordered);
+        self.process_stop.store(ProcessThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         if (self.process_thread != null) {
             self.process_thread.?.join();
@@ -364,7 +395,7 @@ pub const Driver = struct {
 
         self.session.close();
 
-        return self.NewResult(allocator, operation.Kind.CloseSession);
+        return self.NewResult(allocator, operation.Kind.close_session);
     }
 
     fn receiveServerCapabilities(
@@ -566,9 +597,9 @@ pub const Driver = struct {
 
         if (hasVersion_1_1) {
             // we default to preferring 1.1
-            self.negotiated_version = Version.Version_1_1;
+            self.negotiated_version = Version.version_1_1;
         } else if (hasVersion_1_0) {
-            self.negotiated_version = Version.Version_1_0;
+            self.negotiated_version = Version.version_1_0;
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
@@ -581,16 +612,16 @@ pub const Driver = struct {
         }
 
         switch (self.options.preferred_version.?) {
-            Version.Version_1_0 => {
+            Version.version_1_0 => {
                 if (hasVersion_1_0) {
-                    self.negotiated_version = Version.Version_1_0;
+                    self.negotiated_version = Version.version_1_0;
                 }
 
                 return error.PreferredCapabilityUnavailable;
             },
-            Version.Version_1_1 => {
+            Version.version_1_1 => {
                 if (hasVersion_1_1) {
-                    self.negotiated_version = Version.Version_1_1;
+                    self.negotiated_version = Version.version_1_1;
                 }
 
                 return error.PreferredCapabilityUnavailable;
@@ -608,7 +639,7 @@ pub const Driver = struct {
 
         var caps: []const u8 = version_1_0_capability;
 
-        if (self.negotiated_version == Version.Version_1_1) {
+        if (self.negotiated_version == Version.version_1_1) {
             caps = version_1_1_capability;
         }
 
@@ -698,15 +729,15 @@ pub const Driver = struct {
         // SAFETY: will always be set in switch
         var message_complete_delim: []const u8 = undefined;
         switch (self.negotiated_version) {
-            Version.Version_1_0 => {
+            Version.version_1_0 => {
                 message_complete_delim = delimiter_Version_1_0;
             },
-            Version.Version_1_1 => {
+            Version.version_1_1 => {
                 message_complete_delim = delimiter_Version_1_1;
             },
         }
 
-        while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.Stop) {
+        while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
             defer std.time.sleep(cur_read_delay_ns);
 
             var n = self.session.read(buf);
@@ -918,7 +949,7 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         elem_conent: []const u8,
     ) ![]const u8 {
-        if (self.negotiated_version == Version.Version_1_0) {
+        if (self.negotiated_version == Version.version_1_0) {
             return std.fmt.allocPrint(
                 allocator,
                 "{s}\n{s}",
@@ -997,7 +1028,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .GetConfig = options,
+                .get_config = options,
             },
         );
     }
@@ -1050,7 +1081,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .EditConfig = options,
+                .edit_config = options,
             },
         );
     }
@@ -1201,7 +1232,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Lock = options,
+                .lock = options,
             },
         );
     }
@@ -1251,7 +1282,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Unlock = options,
+                .unlock = options,
             },
         );
     }
@@ -1317,7 +1348,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Get = options,
+                .get = options,
             },
         );
     }
@@ -1421,7 +1452,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CloseSession = options,
+                .close_session = options,
             },
         );
     }
@@ -1470,7 +1501,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Commit = options,
+                .commit = options,
             },
         );
     }
@@ -1519,7 +1550,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Discard = options,
+                .discard = options,
             },
         );
     }
@@ -1568,7 +1599,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CancelCommit = options,
+                .cancel_commit = options,
             },
         );
     }
@@ -1618,7 +1649,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Validate = options,
+                .validate = options,
             },
         );
     }
@@ -2280,97 +2311,97 @@ pub const Driver = struct {
         var cancel: ?*bool = null;
 
         switch (options) {
-            .GetConfig => {
-                cancel = options.GetConfig.cancel;
-                res.input = try self.buildGetConfigElem(allocator, options.GetConfig);
+            .get_config => {
+                cancel = options.get_config.cancel;
+                res.input = try self.buildGetConfigElem(allocator, options.get_config);
             },
-            .EditConfig => {
-                cancel = options.EditConfig.cancel;
-                res.input = try self.buildEditConfigElem(allocator, options.EditConfig);
+            .edit_config => {
+                cancel = options.edit_config.cancel;
+                res.input = try self.buildEditConfigElem(allocator, options.edit_config);
             },
-            .CopyConfig => {
-                cancel = options.CopyConfig.cancel;
-                res.input = try self.buildCopyConfigElem(allocator, options.CopyConfig);
+            .copy_config => {
+                cancel = options.copy_config.cancel;
+                res.input = try self.buildCopyConfigElem(allocator, options.copy_config);
             },
-            .DeleteConfig => {
-                cancel = options.DeleteConfig.cancel;
-                res.input = try self.buildDeleteConfigElem(allocator, options.DeleteConfig);
+            .delete_config => {
+                cancel = options.delete_config.cancel;
+                res.input = try self.buildDeleteConfigElem(allocator, options.delete_config);
             },
-            .Lock => {
-                cancel = options.Lock.cancel;
-                res.input = try self.buildLockElem(allocator, options.Lock);
+            .lock => {
+                cancel = options.lock.cancel;
+                res.input = try self.buildLockElem(allocator, options.lock);
             },
-            .Unlock => {
-                cancel = options.Unlock.cancel;
-                res.input = try self.buildUnlockElem(allocator, options.Unlock);
+            .unlock => {
+                cancel = options.unlock.cancel;
+                res.input = try self.buildUnlockElem(allocator, options.unlock);
             },
-            .Get => {
-                cancel = options.Get.cancel;
-                res.input = try self.buildGetElem(allocator, options.Get);
+            .get => {
+                cancel = options.get.cancel;
+                res.input = try self.buildGetElem(allocator, options.get);
             },
-            .CloseSession => {
-                cancel = options.CloseSession.cancel;
-                res.input = try self.buildCloseSessionElem(allocator, options.CloseSession);
+            .close_session => {
+                cancel = options.close_session.cancel;
+                res.input = try self.buildCloseSessionElem(allocator, options.close_session);
             },
-            .KillSession => {
-                cancel = options.KillSession.cancel;
-                res.input = try self.buildKillSessionElem(allocator, options.KillSession);
+            .kill_session => {
+                cancel = options.kill_session.cancel;
+                res.input = try self.buildKillSessionElem(allocator, options.kill_session);
             },
-            .Commit => {
-                cancel = options.Commit.cancel;
-                res.input = try self.buildCommitElem(allocator, options.Commit);
+            .commit => {
+                cancel = options.commit.cancel;
+                res.input = try self.buildCommitElem(allocator, options.commit);
             },
-            .Discard => {
-                cancel = options.Discard.cancel;
-                res.input = try self.buildDiscardElem(allocator, options.Discard);
+            .discard => {
+                cancel = options.discard.cancel;
+                res.input = try self.buildDiscardElem(allocator, options.discard);
             },
-            .CancelCommit => {
-                cancel = options.CancelCommit.cancel;
-                res.input = try self.buildCancelCommitElem(allocator, options.CancelCommit);
+            .cancel_commit => {
+                cancel = options.cancel_commit.cancel;
+                res.input = try self.buildCancelCommitElem(allocator, options.cancel_commit);
             },
-            .Validate => {
-                cancel = options.Validate.cancel;
-                res.input = try self.buildValidateElem(allocator, options.Validate);
+            .validate => {
+                cancel = options.validate.cancel;
+                res.input = try self.buildValidateElem(allocator, options.validate);
             },
-            .CreateSubscription => {
-                cancel = options.CreateSubscription.cancel;
-                res.input = try self.buildCreateSubscriptionElem(allocator, options.CreateSubscription);
+            .create_subscription => {
+                cancel = options.create_subscription.cancel;
+                res.input = try self.buildCreateSubscriptionElem(allocator, options.create_subscription);
             },
-            .EstablishSubscription => {
-                cancel = options.EstablishSubscription.cancel;
-                res.input = try self.buildEstablishSubscriptionElem(allocator, options.EstablishSubscription);
+            .establish_subscription => {
+                cancel = options.establish_subscription.cancel;
+                res.input = try self.buildEstablishSubscriptionElem(allocator, options.establish_subscription);
             },
-            .ModifySubscription => {
-                cancel = options.ModifySubscription.cancel;
-                res.input = try self.buildModifySubscriptionElem(allocator, options.ModifySubscription);
+            .modify_subscription => {
+                cancel = options.modify_subscription.cancel;
+                res.input = try self.buildModifySubscriptionElem(allocator, options.modify_subscription);
             },
-            .DeleteSubscription => {
-                cancel = options.DeleteSubscription.cancel;
-                res.input = try self.buildDeleteSubscriptionElem(allocator, options.DeleteSubscription);
+            .delete_subscription => {
+                cancel = options.delete_subscription.cancel;
+                res.input = try self.buildDeleteSubscriptionElem(allocator, options.delete_subscription);
             },
-            .ResyncSubscription => {
-                cancel = options.ResyncSubscription.cancel;
-                res.input = try self.buildResyncSubscriptionElem(allocator, options.ResyncSubscription);
+            .resync_subscription => {
+                cancel = options.resync_subscription.cancel;
+                res.input = try self.buildResyncSubscriptionElem(allocator, options.resync_subscription);
             },
-            .KillSubscription => {
-                cancel = options.KillSubscription.cancel;
-                res.input = try self.buildKillSubscriptionElem(allocator, options.KillSubscription);
+            .kill_subscription => {
+                cancel = options.kill_subscription.cancel;
+                res.input = try self.buildKillSubscriptionElem(allocator, options.kill_subscription);
             },
-            .GetSchema => {
-                cancel = options.GetSchema.cancel;
-                res.input = try self.buildGetSchemaElem(allocator, options.GetSchema);
+            .get_schema => {
+                cancel = options.get_schema.cancel;
+                res.input = try self.buildGetSchemaElem(allocator, options.get_schema);
             },
-            .GetData => {
-                cancel = options.GetData.cancel;
-                res.input = try self.buildGetDataElem(allocator, options.GetData);
+            .get_data => {
+                cancel = options.get_data.cancel;
+                res.input = try self.buildGetDataElem(allocator, options.get_data);
             },
-            .EditData => {
-                cancel = options.EditData.cancel;
-                res.input = try self.buildEditDataElem(allocator, options.EditData);
+            .edit_data => {
+                cancel = options.edit_data.cancel;
+                res.input = try self.buildEditDataElem(allocator, options.edit_data);
             },
-            .Action => {
-                cancel = options.Action.cancel;
-                res.input = try self.buildActionElem(allocator, options.Action);
+            .action => {
+                cancel = options.action.cancel;
+                res.input = try self.buildActionElem(allocator, options.action);
             },
             else => return error.UnsupportedOperation,
         }
@@ -2395,7 +2426,7 @@ pub const Driver = struct {
     ) ![]const u8 {
         try self.session.writeAndReturn(input, false);
 
-        if (self.negotiated_version == Version.Version_1_1) {
+        if (self.negotiated_version == Version.version_1_1) {
             try self.session.writeReturn();
         }
 
@@ -2429,8 +2460,8 @@ test "buildGetConfigElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewGetConfigOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
             \\]]>]]>
@@ -2438,8 +2469,8 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewGetConfigOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#175
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
@@ -2449,12 +2480,12 @@ test "buildGetConfigElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2477,11 +2508,11 @@ test "builEditConfigElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
-                .target = operation.DatastoreType.Running,
+                .target = operation.DatastoreType.running,
             },
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></config></edit-config></rpc>
@@ -2490,11 +2521,11 @@ test "builEditConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
-                .target = operation.DatastoreType.Running,
+                .target = operation.DatastoreType.running,
             },
             .expected =
             \\#297
@@ -2505,12 +2536,12 @@ test "builEditConfigElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2533,8 +2564,8 @@ test "builCopyConfigElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewCopyConfigOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><copy-config><source><running></running></source><target><startup></startup></target></copy-config></rpc>
             \\]]>]]>
@@ -2542,8 +2573,8 @@ test "builCopyConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewCopyConfigOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#213
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><copy-config><source><running></running></source><target><startup></startup></target></copy-config></rpc>
@@ -2553,12 +2584,12 @@ test "builCopyConfigElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2581,8 +2612,8 @@ test "builDeleteConfigElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewDeleteConfigOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-config><target><running></running></target></delete-config></rpc>
             \\]]>]]>
@@ -2590,8 +2621,8 @@ test "builDeleteConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewDeleteConfigOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#181
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-config><target><running></running></target></delete-config></rpc>
@@ -2601,12 +2632,12 @@ test "builDeleteConfigElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2629,8 +2660,8 @@ test "buildLockElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewLockUnlockOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><lock><target><running></running></target></lock></rpc>
             \\]]>]]>
@@ -2638,8 +2669,8 @@ test "buildLockElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewLockUnlockOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#163
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><lock><target><running></running></target></lock></rpc>
@@ -2649,12 +2680,12 @@ test "buildLockElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2677,8 +2708,8 @@ test "buildUnlockElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewLockUnlockOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><unlock><target><running></running></target></unlock></rpc>
             \\]]>]]>
@@ -2686,8 +2717,8 @@ test "buildUnlockElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewLockUnlockOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#167
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><unlock><target><running></running></target></unlock></rpc>
@@ -2697,12 +2728,12 @@ test "buildUnlockElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2725,8 +2756,8 @@ test "buildGetElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewGetOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get></get></rpc>
             \\]]>]]>
@@ -2734,8 +2765,8 @@ test "buildGetElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewGetOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#125
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get></get></rpc>
@@ -2745,12 +2776,12 @@ test "buildGetElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2773,8 +2804,8 @@ test "buildCloseSessionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewCloseSessionOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><close-session></close-session></rpc>
             \\]]>]]>
@@ -2782,8 +2813,8 @@ test "buildCloseSessionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewCloseSessionOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#145
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><close-session></close-session></rpc>
@@ -2793,12 +2824,12 @@ test "buildCloseSessionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2821,7 +2852,7 @@ test "buildKillSessionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
+            .version = Version.version_1_0,
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -2833,7 +2864,7 @@ test "buildKillSessionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
+            .version = Version.version_1_1,
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -2847,12 +2878,12 @@ test "buildKillSessionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2875,8 +2906,8 @@ test "buildCommitElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewCommitOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><commit></commit></rpc>
             \\]]>]]>
@@ -2884,8 +2915,8 @@ test "buildCommitElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewCommitOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#131
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><commit></commit></rpc>
@@ -2895,12 +2926,12 @@ test "buildCommitElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2923,8 +2954,8 @@ test "buildDiscardElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewDiscardOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><discard-changes></discard-changes></rpc>
             \\]]>]]>
@@ -2932,8 +2963,8 @@ test "buildDiscardElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewDiscardOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#149
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><discard-changes></discard-changes></rpc>
@@ -2943,12 +2974,12 @@ test "buildDiscardElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -2971,8 +3002,8 @@ test "buildCancelCommitElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewCancelCommitOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><cancel-commit></cancel-commit></rpc>
             \\]]>]]>
@@ -2980,8 +3011,8 @@ test "buildCancelCommitElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewCancelCommitOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#145
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><cancel-commit></cancel-commit></rpc>
@@ -2991,12 +3022,12 @@ test "buildCancelCommitElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3019,8 +3050,8 @@ test "buildValidateElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewValidateOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate><source><running></running></source></validate></rpc>
             \\]]>]]>
@@ -3028,8 +3059,8 @@ test "buildValidateElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewValidateOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#171
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate><source><running></running></source></validate></rpc>
@@ -3039,12 +3070,12 @@ test "buildValidateElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3067,8 +3098,8 @@ test "buildCreateSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewCreateSubscriptionOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></create-subscription></rpc>
             \\]]>]]>
@@ -3076,8 +3107,8 @@ test "buildCreateSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewCreateSubscriptionOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#213
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></create-subscription></rpc>
@@ -3087,12 +3118,12 @@ test "buildCreateSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3115,8 +3146,8 @@ test "buildEstablishSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewEstablishSubscriptionOptions(),
+            .version = Version.version_1_0,
+            .options = .{ .stream = "NETCONF" },
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"></establish-subscription></rpc>
             \\]]>]]>
@@ -3124,8 +3155,8 @@ test "buildEstablishSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewEstablishSubscriptionOptions(),
+            .version = Version.version_1_1,
+            .options = .{ .stream = "NETCONF" },
             .expected =
             \\#283
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"></establish-subscription></rpc>
@@ -3135,12 +3166,12 @@ test "buildEstablishSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3163,8 +3194,8 @@ test "buildModifySubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewModifySubscriptionOptions(),
+            .version = Version.version_1_0,
+            .options = .{ .id = 0, .stream = "NETCONF'" },
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><modify-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></modify-subscription></rpc>
             \\]]>]]>
@@ -3172,8 +3203,8 @@ test "buildModifySubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewModifySubscriptionOptions(),
+            .version = Version.version_1_1,
+            .options = .{ .id = 0, .stream = "NETCONF'" },
             .expected =
             \\#287
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><modify-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></modify-subscription></rpc>
@@ -3183,12 +3214,12 @@ test "buildModifySubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3211,8 +3242,8 @@ test "buildDeleteSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewDeleteSubscriptionOptions(),
+            .version = Version.version_1_0,
+            .options = .{ .id = 0 },
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></delete-subscription></rpc>
             \\]]>]]>
@@ -3220,8 +3251,8 @@ test "buildDeleteSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewDeleteSubscriptionOptions(),
+            .version = Version.version_1_1,
+            .options = .{ .id = 0 },
             .expected =
             \\#287
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></delete-subscription></rpc>
@@ -3231,12 +3262,12 @@ test "buildDeleteSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3259,8 +3290,8 @@ test "buildResyncSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewResyncSubscriptionOptions(),
+            .version = Version.version_1_0,
+            .options = .{ .id = 0 },
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><resync-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></resync-subscription></rpc>
             \\]]>]]>
@@ -3268,8 +3299,8 @@ test "buildResyncSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewResyncSubscriptionOptions(),
+            .version = Version.version_1_1,
+            .options = .{ .id = 0 },
             .expected =
             \\#287
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><resync-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></resync-subscription></rpc>
@@ -3279,12 +3310,12 @@ test "buildResyncSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3307,8 +3338,8 @@ test "buildKillSubscriptionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewKillSubscriptionOptions(),
+            .version = Version.version_1_0,
+            .options = .{ .id = 0 },
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><kill-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></kill-subscription></rpc>
             \\]]>]]>
@@ -3316,8 +3347,8 @@ test "buildKillSubscriptionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewKillSubscriptionOptions(),
+            .version = Version.version_1_1,
+            .options = .{ .id = 0 },
             .expected =
             \\#283
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><kill-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></kill-subscription></rpc>
@@ -3327,12 +3358,12 @@ test "buildKillSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3355,32 +3386,36 @@ test "buildGetSchemaElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewGetSchemaOptions(),
+            .version = Version.version_1_0,
+            .options = .{
+                .identifier = "foo",
+            },
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier></identifier><format>yang</format></get-schema></rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier>foo</identifier><format>yang</format></get-schema></rpc>
             \\]]>]]>
             ,
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewGetSchemaOptions(),
+            .version = Version.version_1_1,
+            .options = .{
+                .identifier = "foo",
+            },
             .expected =
-            \\#245
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier></identifier><format>yang</format></get-schema></rpc>
+            \\#248
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier>foo</identifier><format>yang</format></get-schema></rpc>
             \\##
             ,
         },
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3403,8 +3438,8 @@ test "buildGetDataElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewGetDataOptions(),
+            .version = Version.version_1_0,
+            .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore><config-filter>true</config-filter></get-data></rpc>
             \\]]>]]>
@@ -3412,8 +3447,8 @@ test "buildGetDataElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewGetDataOptions(),
+            .version = Version.version_1_1,
+            .options = .{},
             .expected =
             \\#363
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore><config-filter>true</config-filter></get-data></rpc>
@@ -3423,12 +3458,12 @@ test "buildGetDataElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3451,32 +3486,32 @@ test "builEditDataElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewEditDataOptions(),
+            .version = Version.version_1_0,
+            .options = .{ .edit_content = "foo" },
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore></edit-data></rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore>foo</edit-data></rpc>
             \\]]>]]>
             ,
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewEditDataOptions(),
+            .version = Version.version_1_1,
+            .options = .{ .edit_content = "foo" },
             .expected =
-            \\#279
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore></edit-data></rpc>
+            \\#282
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore>foo</edit-data></rpc>
             \\##
             ,
         },
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;
@@ -3499,32 +3534,32 @@ test "builActionElem" {
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.Version_1_0,
-            .options = operation.NewActionOptions(),
+            .version = Version.version_1_0,
+            .options = .{ .action = "foo" },
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1"></action></rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></rpc>
             \\]]>]]>
             ,
         },
         .{
             .name = "simple-1.1",
-            .version = Version.Version_1_1,
-            .options = operation.NewActionOptions(),
+            .version = Version.version_1_1,
+            .options = .{ .action = "foo" },
             .expected =
-            \\#169
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1"></action></rpc>
+            \\#172
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></rpc>
             \\##
             ,
         },
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            NewOptions(),
+            .{},
         );
-        try d.init();
+
         defer d.deinit();
 
         d.negotiated_version = case.version;

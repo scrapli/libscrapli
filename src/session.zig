@@ -3,9 +3,8 @@ const transport = @import("transport.zig");
 const re = @import("re.zig");
 const bytes = @import("bytes.zig");
 const operation = @import("operation.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
-const lookup = @import("lookup.zig");
 const time = @import("time.zig");
 const auth = @import("auth.zig");
 
@@ -23,35 +22,27 @@ const default_operation_timeout_ns: u64 = 10_000_000_000;
 const default_operation_max_search_depth: u64 = 512;
 
 const ReadThreadState = enum(u8) {
-    Uninitialized,
-    Run,
-    Stop,
+    uninitialized,
+    run,
+    stop,
 };
-
-fn NewReadArgs() ReadArgs {
-    return ReadArgs{
-        .pattern = null,
-        .patterns = null,
-        .actual = null,
-    };
-}
 
 const ReadArgs = struct {
-    pattern: ?*pcre2.pcre2_code_8,
-    patterns: ?[]?*pcre2.pcre2_code_8,
-    actual: ?[]const u8,
+    pattern: ?*pcre2.pcre2_code_8 = null,
+    patterns: ?[]const ?*pcre2.pcre2_code_8 = null,
+    actual: ?[]const u8 = null,
 };
-
-fn NewReadBufs(allocator: std.mem.Allocator) ReadBufs {
-    return ReadBufs{
-        .raw = std.ArrayList(u8).init(allocator),
-        .processed = std.ArrayList(u8).init(allocator),
-    };
-}
 
 const ReadBufs = struct {
     raw: std.ArrayList(u8),
     processed: std.ArrayList(u8),
+
+    fn init(allocator: std.mem.Allocator) ReadBufs {
+        return ReadBufs{
+            .raw = std.ArrayList(u8).init(allocator),
+            .processed = std.ArrayList(u8).init(allocator),
+        };
+    }
 
     fn deinit(self: *ReadBufs) void {
         self.raw.deinit();
@@ -89,79 +80,65 @@ const MatchPositions = struct {
     }
 };
 
-pub fn NewOptions() Options {
-    return Options{
-        .read_size = default_read_size,
-        .read_delay_min_ns = default_read_delay_min_ns,
-        .read_delay_max_ns = default_read_delay_max_ns,
-        .read_delay_backoff_factor = default_read_delay_backoff_factor,
-        .return_char = default_return_char,
-        .operation_timeout_ns = default_operation_timeout_ns,
-        .operation_max_search_depth = default_operation_max_search_depth,
-        .recorder = null,
-    };
-}
+pub const OptionsInputs = struct {
+    read_size: u64 = default_read_size,
+    read_delay_min_ns: u64 = default_read_delay_min_ns,
+    read_delay_max_ns: u64 = default_read_delay_max_ns,
+    read_delay_backoff_factor: u8 = default_read_delay_backoff_factor,
+    return_char: []const u8 = default_return_char,
+    operation_timeout_ns: u64 = default_operation_timeout_ns,
+    operation_max_search_depth: u64 = default_operation_max_search_depth,
+    recorder: ?std.fs.File.Writer = null,
+};
 
 pub const Options = struct {
+    allocator: std.mem.Allocator,
     read_size: u64,
-
     read_delay_min_ns: u64,
     read_delay_max_ns: u64,
     read_delay_backoff_factor: u8,
-
     return_char: []const u8,
-
     operation_timeout_ns: u64,
     operation_max_search_depth: u64,
-
     recorder: ?std.fs.File.Writer,
+
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
+
+        o.* = Options{
+            .allocator = allocator,
+            .read_size = opts.read_size,
+            .read_delay_min_ns = opts.read_delay_min_ns,
+            .read_delay_max_ns = opts.read_delay_max_ns,
+            .read_delay_backoff_factor = opts.read_delay_backoff_factor,
+            .return_char = opts.return_char,
+            .operation_timeout_ns = opts.operation_timeout_ns,
+            .operation_max_search_depth = opts.operation_max_search_depth,
+            .recorder = opts.recorder,
+        };
+
+        if (&o.return_char[0] != &default_return_char[0]) {
+            o.return_char = try o.allocator.dupe(u8, o.return_char);
+        }
+
+        return o;
+    }
+
+    pub fn deinit(self: *Options) void {
+        if (&self.return_char[0] != &default_return_char[0]) {
+            self.allocator.free(self.return_char);
+        }
+
+        self.allocator.destroy(self);
+    }
 };
-
-pub fn NewSession(
-    allocator: std.mem.Allocator,
-    log: logger.Logger,
-    prompt_pattern: []const u8,
-    options: Options,
-    auth_options: auth.Options,
-    transport_options: transport.Options,
-) !*Session {
-    const t = try transport.Factory(
-        allocator,
-        log,
-        transport_options,
-    );
-
-    const s = try allocator.create(Session);
-
-    s.* = Session{
-        .allocator = allocator,
-        .log = log,
-        .options = options,
-        .auth_options = auth_options,
-        .transport = t,
-        .read_thread = null,
-        .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.Uninitialized),
-        .read_lock = std.Thread.Mutex{},
-        .read_queue = std.fifo.LinearFifo(
-            u8,
-            std.fifo.LinearFifoBufferType.Dynamic,
-        ).init(allocator),
-        .compiled_username_pattern = null,
-        .compiled_password_pattern = null,
-        .compiled_passphrase_pattern = null,
-        .prompt_pattern = prompt_pattern,
-        .compiled_prompt_pattern = null,
-        .last_consumed_prompt = std.ArrayList(u8).init(allocator),
-    };
-
-    return s;
-}
 
 pub const Session = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
-    options: Options,
-    auth_options: auth.Options,
+    log: logging.Logger,
+    options: *Options,
+    auth_options: *auth.Options,
     transport: *transport.Transport,
 
     read_thread: ?std.Thread,
@@ -181,51 +158,89 @@ pub const Session = struct {
 
     last_consumed_prompt: std.ArrayList(u8),
 
-    pub fn init(self: *Session) !void {
-        self.compiled_username_pattern = re.pcre2Compile(self.auth_options.username_pattern);
-        if (self.compiled_username_pattern == null) {
-            self.log.critical(
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logging.Logger,
+        prompt_pattern: []const u8,
+        options: *Options,
+        auth_options: *auth.Options,
+        transport_options: *transport.Options,
+    ) !*Session {
+        const t = try transport.Transport.init(
+            allocator,
+            log,
+            transport_options,
+        );
+        errdefer t.deinit();
+
+        const s = try allocator.create(Session);
+
+        s.* = Session{
+            .allocator = allocator,
+            .log = log,
+            .options = options,
+            .auth_options = auth_options,
+            .transport = t,
+            .read_thread = null,
+            .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.uninitialized),
+            .read_lock = std.Thread.Mutex{},
+            .read_queue = std.fifo.LinearFifo(
+                u8,
+                std.fifo.LinearFifoBufferType.Dynamic,
+            ).init(allocator),
+            .compiled_username_pattern = null,
+            .compiled_password_pattern = null,
+            .compiled_passphrase_pattern = null,
+            .prompt_pattern = prompt_pattern,
+            .compiled_prompt_pattern = null,
+            .last_consumed_prompt = std.ArrayList(u8).init(allocator),
+        };
+        errdefer s.deinit();
+
+        s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern);
+        if (s.compiled_username_pattern == null) {
+            s.log.critical(
                 "failed compling username pattern {s}",
-                .{self.auth_options.username_pattern},
+                .{s.auth_options.username_pattern},
             );
 
             return error.InitFailed;
         }
 
-        self.compiled_password_pattern = re.pcre2Compile(self.auth_options.password_pattern);
-        if (self.compiled_password_pattern == null) {
-            self.log.critical(
+        s.compiled_password_pattern = re.pcre2Compile(s.auth_options.password_pattern);
+        if (s.compiled_password_pattern == null) {
+            s.log.critical(
                 "failed compling password pattern {s}",
-                .{self.auth_options.password_pattern},
+                .{s.auth_options.password_pattern},
             );
 
             return error.InitFailed;
         }
 
-        self.compiled_passphrase_pattern = re.pcre2Compile(self.auth_options.passphrase_pattern);
-        if (self.compiled_passphrase_pattern == null) {
-            self.log.critical(
+        s.compiled_passphrase_pattern = re.pcre2Compile(s.auth_options.passphrase_pattern);
+        if (s.compiled_passphrase_pattern == null) {
+            s.log.critical(
                 "failed compling passphrase pattern {s}",
-                .{self.auth_options.passphrase_pattern},
+                .{s.auth_options.passphrase_pattern},
             );
 
             return error.InitFailed;
         }
 
-        self.compiled_prompt_pattern = re.pcre2Compile(self.prompt_pattern);
-        if (self.compiled_prompt_pattern == null) {
-            self.log.critical("failed compling prompt pattern {s}", .{self.prompt_pattern});
+        s.compiled_prompt_pattern = re.pcre2Compile(s.prompt_pattern);
+        if (s.compiled_prompt_pattern == null) {
+            s.log.critical("failed compling prompt pattern {s}", .{s.prompt_pattern});
 
             return error.InitFailed;
         }
 
-        try self.transport.init();
+        return s;
     }
 
     pub fn deinit(self: *Session) void {
         self.last_consumed_prompt.deinit();
 
-        if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.Run) {
+        if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.run) {
             // if for whatever reason (likely because a call to driver.open failed causing a defer
             // close to *not* trigger) the session didnt get "closed", ensure we do that...
             self.close();
@@ -249,6 +264,7 @@ pub const Session = struct {
 
         self.transport.deinit();
         self.read_queue.deinit();
+
         self.allocator.destroy(self);
     }
 
@@ -274,7 +290,7 @@ pub const Session = struct {
             self.auth_options,
         );
 
-        self.read_stop.store(ReadThreadState.Run, std.builtin.AtomicOrder.unordered);
+        self.read_stop.store(ReadThreadState.run, std.builtin.AtomicOrder.unordered);
 
         // start read thread
         self.read_thread = std.Thread.spawn(
@@ -299,13 +315,11 @@ pub const Session = struct {
             allocator,
             &timer,
             options.cancel,
-            host,
-            port,
         );
     }
 
     pub fn close(self: *Session) void {
-        self.read_stop.store(ReadThreadState.Stop, std.builtin.AtomicOrder.unordered);
+        self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         if (self.read_thread != null) {
             self.read_thread.?.join();
@@ -322,7 +336,7 @@ pub const Session = struct {
 
         var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
 
-        while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.Stop) {
+        while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
             defer std.time.sleep(cur_read_delay_ns);
 
             const n = try self.transport.read(buf);
@@ -360,7 +374,7 @@ pub const Session = struct {
 
     pub fn write(self: *Session, buf: []const u8, redacted: bool) !void {
         if (!redacted) {
-            self.log.debug("channel write: '{s}'", .{buf});
+            self.log.debug("write: '{s}'", .{std.fmt.fmtSliceEscapeLower(buf)});
         }
 
         try self.transport.write(buf);
@@ -379,38 +393,24 @@ pub const Session = struct {
         try self.writeReturn();
     }
 
-    fn getBufSearchView(
-        self: *Session,
-        buf: []u8,
-    ) []u8 {
-        // TODO use this in the readTimeout func!
-        const depth = self.options.operation_max_search_depth;
-
-        if (buf.len < depth) {
-            return buf[0..];
-        }
-
-        return buf[buf.len - depth ..];
-    }
-
     fn authenticate(
         self: *Session,
         allocator: std.mem.Allocator,
         timer: *std.time.Timer,
         cancel: ?*bool,
-        host: []const u8,
-        port: u16,
     ) ![2][]const u8 {
-        self.log.info("in channel authentication starting...", .{});
+        self.log.info("in session authentication starting...", .{});
 
         var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
 
-        var bufs = NewReadBufs(allocator);
+        var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
         var cur_check_start_idx: usize = 0;
 
-        var auth_prompt_seen_count: u8 = 0;
+        var auth_username_prompt_seen_count: u8 = 0;
+        var auth_password_prompt_seen_count: u8 = 0;
+        var auth_passphrase_prompt_seen_count: u8 = 0;
 
         var buf = try allocator.alloc(u8, self.options.read_size);
         defer allocator.free(buf);
@@ -462,9 +462,13 @@ pub const Session = struct {
                 try openMessageHandler(allocator, bufs.processed.items);
             }
 
-            const searchable_buf = self.getBufSearchView(bufs.processed.items[cur_check_start_idx..]);
+            const searchable_buf = bytes.getBufSearchView(
+                bufs.processed.items[cur_check_start_idx..],
+                self.options.operation_max_search_depth,
+            );
 
             const state = try auth.processSearchableAuthBuf(
+                self.allocator,
                 searchable_buf,
                 self.compiled_prompt_pattern,
                 self.compiled_username_pattern,
@@ -486,9 +490,9 @@ pub const Session = struct {
                         return error.AuthenicationFailed;
                     }
 
-                    auth_prompt_seen_count += 1;
+                    auth_username_prompt_seen_count += 1;
 
-                    if (auth_prompt_seen_count > 3) {
+                    if (auth_username_prompt_seen_count > 2) {
                         self.log.critical(
                             "username prompt seen multiple times, assuming authentication failed",
                             .{},
@@ -500,8 +504,6 @@ pub const Session = struct {
                     try self.writeAndReturn(self.auth_options.username.?, true);
 
                     cur_check_start_idx = bufs.processed.items.len;
-
-                    auth_prompt_seen_count = 0;
 
                     continue;
                 },
@@ -515,9 +517,9 @@ pub const Session = struct {
                         return error.AuthenicationFailed;
                     }
 
-                    auth_prompt_seen_count += 1;
+                    auth_password_prompt_seen_count += 1;
 
-                    if (auth_prompt_seen_count > 3) {
+                    if (auth_password_prompt_seen_count > 2) {
                         self.log.critical(
                             "password prompt seen multiple times, assuming authentication failed",
                             .{},
@@ -527,18 +529,13 @@ pub const Session = struct {
                     }
 
                     try self.writeAndReturn(
-                        try lookup.resolveValue(
-                            host,
-                            port,
+                        try self.auth_options.resolveAuthValue(
                             self.auth_options.password.?,
-                            self.auth_options.lookup_fn,
                         ),
                         true,
                     );
 
                     cur_check_start_idx = bufs.processed.items.len;
-
-                    auth_prompt_seen_count = 0;
 
                     continue;
                 },
@@ -552,9 +549,9 @@ pub const Session = struct {
                         return error.AuthenicationFailed;
                     }
 
-                    auth_prompt_seen_count += 1;
+                    auth_passphrase_prompt_seen_count += 1;
 
-                    if (auth_prompt_seen_count > 3) {
+                    if (auth_passphrase_prompt_seen_count > 2) {
                         self.log.critical(
                             "private key passphrase prompt seen multiple times, assuming authentication failed",
                             .{},
@@ -564,18 +561,13 @@ pub const Session = struct {
                     }
 
                     try self.writeAndReturn(
-                        try lookup.resolveValue(
-                            host,
-                            port,
+                        try self.auth_options.resolveAuthValue(
                             self.auth_options.private_key_passphrase.?,
-                            self.auth_options.lookup_fn,
                         ),
                         true,
                     );
 
                     cur_check_start_idx = bufs.processed.items.len;
-
-                    auth_prompt_seen_count = 0;
                 },
                 .Continue => {},
             }
@@ -635,6 +627,11 @@ pub const Session = struct {
             } else {
                 cur_read_delay_ns = self.options.read_delay_min_ns;
             }
+            // TODO -- could experiment w/ *not* doing the processing/check on every single read
+            //  -- basically an inverse backoff where we check less times in the start of an op
+            //  then more, maybe up till every time after some duration/amount of checks? the idea
+            //  would be that every time we search we do a re and that is expensive/slow, so if we
+            //  can save on that that would be a win
 
             try bufs.appendSliceBoth(buf[0..n]);
 
@@ -651,20 +648,19 @@ pub const Session = struct {
                 try bufs.processed.resize(new_size);
             }
 
-            var search_depth: u64 = self.options.operation_max_search_depth;
-
-            if (bufs.processed.items[op_processed_buf_starting_len..].len < search_depth) {
-                search_depth = bufs.processed.items[op_processed_buf_starting_len..].len;
-            }
+            const searchable_buf = bytes.getBufSearchView(
+                bufs.processed.items[op_processed_buf_starting_len..],
+                self.options.operation_max_search_depth,
+            );
 
             var match_indexes = try check_read_operation_done(
-                bufs.processed.items[bufs.processed.items.len - search_depth ..],
+                searchable_buf,
                 args,
             );
 
             if (!(match_indexes.start == 0 and match_indexes.end == 0)) {
-                match_indexes.start += (bufs.processed.items.len - search_depth);
-                match_indexes.end += (bufs.processed.items.len - search_depth);
+                match_indexes.start += (bufs.processed.items.len - searchable_buf.len);
+                match_indexes.end += (bufs.processed.items.len - searchable_buf.len);
                 return match_indexes;
             }
         }
@@ -677,13 +673,9 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("get prompt requested", .{});
 
-        var args = NewReadArgs();
-
-        args.pattern = self.compiled_prompt_pattern;
-
         try self.writeReturn();
 
-        var bufs = NewReadBufs(allocator);
+        var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
         var timer = try std.time.Timer.start();
@@ -692,7 +684,9 @@ pub const Session = struct {
             &timer,
             options.cancel,
             readUntilPatternCheckDone,
-            args,
+            .{
+                .pattern = self.compiled_prompt_pattern,
+            },
             &bufs,
         );
 
@@ -724,18 +718,19 @@ pub const Session = struct {
         input_handling: operation.InputHandling,
         bufs: *ReadBufs,
     ) !MatchPositions {
-        var args = NewReadArgs();
-
-        args.pattern = self.compiled_prompt_pattern;
-        args.actual = input;
+        const args = ReadArgs{
+            .pattern = self.compiled_prompt_pattern,
+            .actual = input,
+        };
 
         try self.write(input, false);
 
+        // TODO this saftey is/was a lie lol, ingore case does *not*
         // SAFETY: will always be set or we'll error
         var match_indexes: MatchPositions = undefined;
 
         switch (input_handling) {
-            operation.InputHandling.Exact => {
+            operation.InputHandling.exact => {
                 match_indexes = try self.readTimeout(
                     timer,
                     cancel,
@@ -744,7 +739,7 @@ pub const Session = struct {
                     bufs,
                 );
             },
-            operation.InputHandling.Fuzzy => {
+            operation.InputHandling.fuzzy => {
                 match_indexes = try self.readTimeout(
                     timer,
                     cancel,
@@ -753,7 +748,7 @@ pub const Session = struct {
                     bufs,
                 );
             },
-            operation.InputHandling.Ignore => {
+            operation.InputHandling.ignore => {
                 // ignore, not reading input
             },
         }
@@ -773,7 +768,7 @@ pub const Session = struct {
 
         var timer = try std.time.Timer.start();
 
-        var bufs = NewReadBufs(allocator);
+        var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
         if (self.last_consumed_prompt.items.len != 0) {
@@ -796,16 +791,14 @@ pub const Session = struct {
             try bufs.processed.resize(0);
         }
 
-        var args = NewReadArgs();
-
-        args.pattern = self.compiled_prompt_pattern;
-        args.actual = input;
-
         var prompt_indexes = try self.readTimeout(
             &timer,
             options.cancel,
             readUntilPatternCheckDone,
-            args,
+            .{
+                .pattern = self.compiled_prompt_pattern,
+                .actual = input,
+            },
             &bufs,
         );
 
@@ -816,7 +809,11 @@ pub const Session = struct {
         if (!options.retain_trailing_prompt) {
             // using the prompt indexes, replace that range holding the trailing prompt out
             // of the processed buf
-            try bufs.processed.replaceRange(prompt_indexes.start, prompt_indexes.len(), "");
+            try bufs.processed.replaceRange(
+                prompt_indexes.start,
+                prompt_indexes.len(),
+                "",
+            );
         }
 
         return bufs.toOwnedSlices(allocator);
@@ -826,7 +823,8 @@ pub const Session = struct {
         self: *Session,
         allocator: std.mem.Allocator,
         input: []const u8,
-        prompt: []const u8,
+        prompt: ?[]const u8,
+        prompt_pattern: ?[]const u8,
         response: []const u8,
         options: operation.SendPromptedInputOptions,
     ) ![2][]const u8 {
@@ -834,9 +832,26 @@ pub const Session = struct {
 
         var timer = try std.time.Timer.start();
 
-        if (options.abort_input.len != 0) {
+        var compiled_pattern: ?*pcre2.pcre2_code_8 = null;
+
+        if (prompt_pattern) |pattern| {
+            if (pattern.len > 0) {
+                compiled_pattern = re.pcre2Compile(pattern);
+                if (compiled_pattern == null) {
+                    return error.CompilePromptPatternFailed;
+                }
+            }
+        }
+
+        defer {
+            if (compiled_pattern) |p| {
+                re.pcre2Free(p);
+            }
+        }
+
+        if (options.abort_input) |abort_input| {
             errdefer {
-                self.writeAndReturn(options.abort_input, false) catch |err| {
+                self.writeAndReturn(abort_input, false) catch |err| {
                     self.log.critical(
                         "failed sending abort sequence after error in prompted input, err: {}",
                         .{err},
@@ -845,7 +860,7 @@ pub const Session = struct {
             }
         }
 
-        var bufs = NewReadBufs(allocator);
+        var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
         if (self.last_consumed_prompt.items.len != 0) {
@@ -863,10 +878,18 @@ pub const Session = struct {
             &bufs,
         );
 
-        var args = NewReadArgs();
+        var args = ReadArgs{
+            .actual = prompt,
+        };
 
-        args.pattern = self.compiled_prompt_pattern;
-        args.actual = prompt;
+        if (compiled_pattern) |cp| {
+            args.patterns = &[_]?*pcre2.pcre2_code_8{
+                self.compiled_prompt_pattern,
+                cp,
+            };
+        } else {
+            args.pattern = self.compiled_prompt_pattern;
+        }
 
         _ = try self.readTimeout(
             &timer,
@@ -903,7 +926,11 @@ pub const Session = struct {
         if (!options.retain_trailing_prompt) {
             // using the prompt indexes, replace that range holding the trailing prompt out
             // of the processed buf
-            try bufs.processed.replaceRange(prompt_indexes.start, prompt_indexes.len(), "");
+            try bufs.processed.replaceRange(
+                prompt_indexes.start,
+                prompt_indexes.len(),
+                "",
+            );
         }
 
         return bufs.toOwnedSlices(allocator);

@@ -13,11 +13,11 @@ pub const OperationResult = struct {
 };
 
 pub const OperationKind = enum {
-    Open,
-    EnterMode,
-    GetPrompt,
-    SendInput,
-    SendPromptedInput,
+    open,
+    enter_mode,
+    get_prompt,
+    send_input,
+    send_prompted_input,
 };
 
 pub const OpenOperation = struct {
@@ -45,41 +45,19 @@ pub const SendInputOperation = struct {
 pub const SendPromptedInputOperation = struct {
     id: u32,
     input: []const u8,
-    prompt: []const u8,
+    prompt: ?[]const u8,
+    prompt_pattern: ?[]const u8,
     response: []const u8,
     options: operation.SendPromptedInputOptions,
 };
 
-pub const OperationOptions = union(OperationKind) { Open: OpenOperation, EnterMode: EnterModeOperation, GetPrompt: GetPromptOperation, SendInput: SendInputOperation, SendPromptedInput: SendPromptedInputOperation };
-
-pub fn NewFfiDriver(
-    allocator: std.mem.Allocator,
-    real_driver: *driver.Driver,
-) !*FfiDriver {
-    const ffi_driver = try allocator.create(FfiDriver);
-
-    ffi_driver.* = FfiDriver{
-        .allocator = allocator,
-        .real_driver = real_driver,
-        .operation_id_counter = 0,
-        .operation_thread = null,
-        .operation_ready = std.atomic.Value(bool).init(false),
-        .operation_stop = std.atomic.Value(bool).init(false),
-        .operation_lock = std.Thread.Mutex{},
-        .operation_condition = std.Thread.Condition{},
-        .operation_predicate = 0,
-        .operation_queue = std.fifo.LinearFifo(
-            OperationOptions,
-            std.fifo.LinearFifoBufferType.Dynamic,
-        ).init(allocator),
-        .operation_results = std.AutoHashMap(
-            u32,
-            OperationResult,
-        ).init(allocator),
-    };
-
-    return ffi_driver;
-}
+pub const OperationOptions = union(OperationKind) {
+    open: OpenOperation,
+    enter_mode: EnterModeOperation,
+    get_prompt: GetPromptOperation,
+    send_input: SendInputOperation,
+    send_prompted_input: SendPromptedInputOperation,
+};
 
 pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
@@ -102,8 +80,38 @@ pub const FfiDriver = struct {
         OperationResult,
     ),
 
-    pub fn init(self: *FfiDriver) !void {
-        return self.real_driver.init();
+    pub fn init(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        config: driver.Config,
+    ) !*FfiDriver {
+        const ffi_driver = try allocator.create(FfiDriver);
+
+        ffi_driver.* = FfiDriver{
+            .allocator = allocator,
+            .real_driver = try driver.Driver.init(
+                allocator,
+                host,
+                config,
+            ),
+            .operation_id_counter = 0,
+            .operation_thread = null,
+            .operation_ready = std.atomic.Value(bool).init(false),
+            .operation_stop = std.atomic.Value(bool).init(false),
+            .operation_lock = std.Thread.Mutex{},
+            .operation_condition = std.Thread.Condition{},
+            .operation_predicate = 0,
+            .operation_queue = std.fifo.LinearFifo(
+                OperationOptions,
+                std.fifo.LinearFifoBufferType.Dynamic,
+            ).init(allocator),
+            .operation_results = std.AutoHashMap(
+                u32,
+                OperationResult,
+            ).init(allocator),
+        };
+
+        return ffi_driver;
     }
 
     pub fn deinit(self: *FfiDriver) void {
@@ -147,10 +155,10 @@ pub const FfiDriver = struct {
         // in ffi land the wrapper (py/go/whatever) deals with on open/close so in the case of close
         // there is no point sending any string content back because there will be none (this is
         // in contrast to open where there may be login/auth content!)
-        var opts = operation.NewCloseOptions();
-        opts.cancel = cancel;
-
-        const close_res = try self.real_driver.close(self.allocator, opts);
+        const close_res = try self.real_driver.close(
+            self.allocator,
+            .{ .cancel = cancel },
+        );
         close_res.deinit();
     }
 
@@ -186,61 +194,62 @@ pub const FfiDriver = struct {
             var ret_err: ?anyerror = null;
 
             switch (op.?) {
-                OperationKind.Open => {
-                    operation_id = op.?.Open.id;
+                OperationKind.open => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.open(
                         self.allocator,
-                        op.?.Open.options,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
-                OperationKind.EnterMode => {
-                    operation_id = op.?.EnterMode.id;
+                OperationKind.enter_mode => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.enterMode(
                         self.allocator,
-                        op.?.EnterMode.requested_mode,
-                        op.?.EnterMode.options,
+                        o.requested_mode,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
-                OperationKind.GetPrompt => {
-                    operation_id = op.?.GetPrompt.id;
+                OperationKind.get_prompt => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.getPrompt(
                         self.allocator,
-                        op.?.GetPrompt.options,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
-                OperationKind.SendInput => {
-                    operation_id = op.?.SendInput.id;
+                OperationKind.send_input => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.sendInput(
                         self.allocator,
-                        op.?.SendInput.input,
-                        op.?.SendInput.options,
+                        o.input,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
-                OperationKind.SendPromptedInput => {
-                    operation_id = op.?.SendPromptedInput.id;
+                OperationKind.send_prompted_input => |o| {
+                    operation_id = o.id;
 
                     ret_ok = self.real_driver.sendPromptedInput(
                         self.allocator,
-                        op.?.SendPromptedInput.input,
-                        op.?.SendPromptedInput.prompt,
-                        op.?.SendPromptedInput.response,
-                        op.?.SendPromptedInput.options,
+                        o.input,
+                        o.prompt,
+                        o.prompt_pattern,
+                        o.response,
+                        o.options,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
@@ -343,27 +352,30 @@ pub const FfiDriver = struct {
 
         const operation_id = self.operation_id_counter;
 
-        try self.operation_results.put(operation_id, OperationResult{
-            .done = false,
-            .result = null,
-            .err = null,
-        });
+        try self.operation_results.put(
+            operation_id,
+            OperationResult{
+                .done = false,
+                .result = null,
+                .err = null,
+            },
+        );
 
         switch (options) {
-            OperationKind.Open => {
-                mut_options.Open.id = operation_id;
+            OperationKind.open => {
+                mut_options.open.id = operation_id;
             },
-            OperationKind.EnterMode => {
-                mut_options.EnterMode.id = operation_id;
+            OperationKind.enter_mode => {
+                mut_options.enter_mode.id = operation_id;
             },
-            OperationKind.GetPrompt => {
-                mut_options.GetPrompt.id = operation_id;
+            OperationKind.get_prompt => {
+                mut_options.get_prompt.id = operation_id;
             },
-            OperationKind.SendInput => {
-                mut_options.SendInput.id = operation_id;
+            OperationKind.send_input => {
+                mut_options.send_input.id = operation_id;
             },
-            OperationKind.SendPromptedInput => {
-                mut_options.SendPromptedInput.id = operation_id;
+            OperationKind.send_prompted_input => {
+                mut_options.send_prompted_input.id = operation_id;
             },
         }
 

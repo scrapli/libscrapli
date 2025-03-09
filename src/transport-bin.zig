@@ -1,8 +1,7 @@
 const std = @import("std");
 const auth = @import("auth.zig");
-const transport = @import("transport.zig");
 const file = @import("file.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 const strings = @import("strings.zig");
 
 const c = @cImport({
@@ -19,77 +18,131 @@ const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
 
-pub fn NewOptions() transport.Options {
-    return transport.Options{
-        .Bin = Options{
-            .bin = default_ssh_bin,
-            .extra_open_args = null,
-            .override_open_args = null,
-            .ssh_config_path = null,
-            .known_hosts_path = null,
-            .enable_strict_key = false,
-            .term_height = default_term_height,
-            .term_width = default_term_width,
-            .netconf = false,
-        },
-    };
-}
-
-pub const Options = struct {
-    bin: []const u8,
+pub const OptionsInputs = struct {
+    bin: []const u8 = default_ssh_bin,
 
     // extra means append to "standard" args, override overides everything except for the bin,
     // if you want to override the bin you can do that, just set .bin field. both of these options
     // should be space delimited values like you would pass on the cli -- i.e.
     // "-o ProxyCommand='foo' -P 1234" etc.
-    extra_open_args: ?[]const u8,
-    override_open_args: ?[]const u8,
+    extra_open_args: ?[]const u8 = null,
+    override_open_args: ?[]const u8 = null,
 
-    ssh_config_path: ?[]const u8,
-    known_hosts_path: ?[]const u8,
+    ssh_config_path: ?[]const u8 = null,
+    known_hosts_path: ?[]const u8 = null,
 
-    enable_strict_key: bool,
+    enable_strict_key: bool = false,
 
-    term_height: u16,
-    term_width: u16,
+    term_height: u16 = default_term_height,
+    term_width: u16 = default_term_width,
 
-    netconf: bool,
+    netconf: bool = false,
 };
 
-pub fn NewTransport(
+pub const Options = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
-    options: Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
+    bin: []const u8,
+    extra_open_args: ?[]const u8,
+    override_open_args: ?[]const u8,
+    ssh_config_path: ?[]const u8,
+    known_hosts_path: ?[]const u8,
+    enable_strict_key: bool,
+    term_height: u16,
+    term_width: u16,
+    netconf: bool,
 
-    t.* = Transport{
-        .allocator = allocator,
-        .log = log,
-        .options = options,
-        .f = null,
-        .reader = null,
-        .writer = null,
-        .open_args = std.ArrayList(strings.MaybeHeapString).init(allocator),
-    };
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
 
-    return t;
-}
+        o.* = Options{
+            .allocator = allocator,
+            .bin = opts.bin,
+            .extra_open_args = opts.extra_open_args,
+            .override_open_args = opts.override_open_args,
+            .ssh_config_path = opts.ssh_config_path,
+            .known_hosts_path = opts.known_hosts_path,
+            .enable_strict_key = opts.enable_strict_key,
+            .term_height = opts.term_height,
+            .term_width = opts.term_width,
+            .netconf = opts.netconf,
+        };
+
+        if (&o.bin[0] != &default_ssh_bin[0]) {
+            o.bin = try o.allocator.dupe(u8, o.bin);
+        }
+
+        if (o.extra_open_args != null) {
+            o.extra_open_args = try o.allocator.dupe(u8, o.extra_open_args.?);
+        }
+
+        if (o.override_open_args != null) {
+            o.override_open_args = try o.allocator.dupe(u8, o.override_open_args.?);
+        }
+
+        if (o.ssh_config_path != null) {
+            o.ssh_config_path = try o.allocator.dupe(u8, o.ssh_config_path.?);
+        }
+
+        if (o.known_hosts_path != null) {
+            o.known_hosts_path = try o.allocator.dupe(u8, o.known_hosts_path.?);
+        }
+
+        return o;
+    }
+
+    pub fn deinit(self: *Options) void {
+        if (&self.bin[0] != &default_ssh_bin[0]) {
+            self.allocator.free(self.bin);
+        }
+
+        if (self.extra_open_args != null) {
+            self.allocator.free(self.extra_open_args.?);
+        }
+
+        if (self.override_open_args != null) {
+            self.allocator.free(self.override_open_args.?);
+        }
+
+        if (self.ssh_config_path != null) {
+            self.allocator.free(self.ssh_config_path.?);
+        }
+
+        if (self.known_hosts_path != null) {
+            self.allocator.free(self.known_hosts_path.?);
+        }
+
+        self.allocator.destroy(self);
+    }
+};
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
 
-    options: Options,
+    options: *Options,
 
-    f: ?std.fs.File,
-    reader: ?std.fs.File.Reader,
-    writer: ?std.fs.File.Writer,
+    f: ?std.fs.File = null,
+    reader: ?std.fs.File.Reader = null,
+    writer: ?std.fs.File.Writer = null,
 
     open_args: std.ArrayList(strings.MaybeHeapString),
 
-    pub fn init(self: *Transport) !void {
-        _ = self;
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logging.Logger,
+        options: *Options,
+    ) !*Transport {
+        const t = try allocator.create(Transport);
+
+        t.* = Transport{
+            .allocator = allocator,
+            .log = log,
+            .options = options,
+            .open_args = std.ArrayList(strings.MaybeHeapString).init(allocator),
+        };
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {
@@ -105,7 +158,7 @@ pub const Transport = struct {
         self: *Transport,
         host: []const u8,
         port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
         operation_timeout_ns: u64,
     ) !void {
         if (self.options.override_open_args != null) {
@@ -159,14 +212,14 @@ pub const Transport = struct {
             },
         );
 
-        try self.open_args.append(
-            strings.MaybeHeapString{
-                .allocator = null,
-                .string = "-o",
-            },
-        );
-
         if (operation_timeout_ns != 0) {
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = null,
+                    .string = "-o",
+                },
+            );
+
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
@@ -320,7 +373,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: auth.Options,
+        auth_options: *auth.Options,
     ) !void {
         self.buildArgs(host, port, auth_options, operation_timeout_ns) catch |err| {
             self.log.critical("failed generating open command, err: {}", .{err});
@@ -526,7 +579,6 @@ fn openPtyChild(
 
     std.posix.close(slave_fd.handle);
 
-    const err = std.posix.execvpeZ(args.ptr[0].?, args.ptr, envs.ptr);
     // zlint-disable suppressed-errors
-    _ = err catch {};
+    std.posix.execvpeZ(args.ptr[0].?, args.ptr, envs.ptr) catch {};
 }

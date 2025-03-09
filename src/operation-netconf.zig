@@ -4,80 +4,80 @@ const operation = @import("operation.zig");
 
 pub const Kind = enum {
     // not "standard" netconf operations, but operations for us!
-    Open,
-    Close,
+    open,
+    close,
 
     // rfc 4741 rpcs
-    GetConfig,
-    EditConfig,
-    CopyConfig,
-    DeleteConfig,
-    Lock,
-    Unlock,
-    Get,
-    CloseSession,
-    KillSession,
+    get_config,
+    edit_config,
+    copy_config,
+    delete_config,
+    lock,
+    unlock,
+    get,
+    close_session,
+    kill_session,
 
     // rfc 6241 rpcs
-    Commit,
-    Discard,
-    CancelCommit,
-    Validate,
+    commit,
+    discard,
+    cancel_commit,
+    validate,
 
     // rfc 5277 rpcs
-    CreateSubscription,
+    create_subscription,
 
     // rfc 8640/8641
-    EstablishSubscription,
-    ModifySubscription,
-    DeleteSubscription,
-    ResyncSubscription,
-    KillSubscription,
+    establish_subscription,
+    modify_subscription,
+    delete_subscription,
+    resync_subscription,
+    kill_subscription,
 
     // rfc 6022 rpcs
-    GetSchema,
+    get_schema,
 
     // rfc 8525/8526 rpcs
-    GetData,
-    EditData,
+    get_data,
+    edit_data,
 
     // rfc 7950 rps
-    Action,
+    action,
 };
 
 pub const RpcOptions = union(Kind) {
-    Open: OpenOptions,
-    Close: CloseOptions,
+    open: OpenOptions,
+    close: CloseOptions,
 
-    GetConfig: GetConfigOptions,
-    EditConfig: EditConfigOptions,
-    CopyConfig: CopyConfigOptions,
-    DeleteConfig: DeleteConfigOptions,
-    Lock: LockUnlockOptions,
-    Unlock: LockUnlockOptions,
-    Get: GetOptions,
-    CloseSession: CloseSessionOptions,
-    KillSession: KillSessionOptions,
+    get_config: GetConfigOptions,
+    edit_config: EditConfigOptions,
+    copy_config: CopyConfigOptions,
+    delete_config: DeleteConfigOptions,
+    lock: LockUnlockOptions,
+    unlock: LockUnlockOptions,
+    get: GetOptions,
+    close_session: CloseSessionOptions,
+    kill_session: KillSessionOptions,
 
-    Commit: CommitOptions,
-    Discard: DiscardOptions,
-    CancelCommit: CancelCommitOptions,
-    Validate: ValidateOptions,
+    commit: CommitOptions,
+    discard: DiscardOptions,
+    cancel_commit: CancelCommitOptions,
+    validate: ValidateOptions,
 
-    CreateSubscription: CreateSubscriptionOptions,
+    create_subscription: CreateSubscriptionOptions,
 
-    EstablishSubscription: EstablishSubscriptionOptions,
-    ModifySubscription: ModifySubscriptionOptions,
-    DeleteSubscription: DeleteSubscriptionOptions,
-    ResyncSubscription: ResyncSubscriptionOptions,
-    KillSubscription: KillSubscriptionOptions,
+    establish_subscription: EstablishSubscriptionOptions,
+    modify_subscription: ModifySubscriptionOptions,
+    delete_subscription: DeleteSubscriptionOptions,
+    resync_subscription: ResyncSubscriptionOptions,
+    kill_subscription: KillSubscriptionOptions,
 
-    GetSchema: GetSchemaOptions,
+    get_schema: GetSchemaOptions,
 
-    GetData: GetDataOptions,
-    EditData: EditDataOptions,
+    get_data: GetDataOptions,
+    edit_data: EditDataOptions,
 
-    Action: ActionOptions,
+    action: ActionOptions,
 
     pub fn getKind(self: RpcOptions) Kind {
         return @as(Kind, self);
@@ -86,35 +86,35 @@ pub const RpcOptions = union(Kind) {
 
 pub const DatastoreType = enum {
     // https://datatracker.ietf.org/doc/html/rfc8342
-    Conventional,
-    Running,
-    Candidate,
-    Startup,
-    Intended,
-    Dynamic,
-    Operational,
+    conventional,
+    running,
+    candidate,
+    startup,
+    intended,
+    dynamic,
+    operational,
 
     pub fn toString(self: DatastoreType) []const u8 {
         switch (self) {
-            .Conventional => {
+            .conventional => {
                 return "conventional";
             },
-            .Running => {
+            .running => {
                 return "running";
             },
-            .Candidate => {
+            .candidate => {
                 return "candidate";
             },
-            .Startup => {
+            .startup => {
                 return "startup";
             },
-            .Intended => {
+            .intended => {
                 return "intended";
             },
-            .Dynamic => {
+            .dynamic => {
                 return "dynamic";
             },
-            .Operational => {
+            .operational => {
                 return "operational";
             },
         }
@@ -122,15 +122,15 @@ pub const DatastoreType = enum {
 };
 
 pub const FilterType = enum {
-    Subtree,
-    Xpath,
+    subtree,
+    xpath,
 
     pub fn toString(self: FilterType) []const u8 {
         switch (self) {
-            .Subtree => {
+            .subtree => {
                 return "subtree";
             },
-            .Xpath => {
+            .xpath => {
                 return "xpath";
             },
         }
@@ -139,23 +139,23 @@ pub const FilterType = enum {
 
 /// with-defaults supported on get, get-config, copy-config operations. see rfc-6243.
 pub const DefaultsType = enum {
-    ReportAll,
-    ReportAllTagged,
-    Trim,
-    Explicit,
+    report_all,
+    report_all_tagged,
+    trim,
+    explicit,
 
     pub fn toString(self: DefaultsType) []const u8 {
         switch (self) {
-            .ReportAll => {
+            .report_all => {
                 return "report-all";
             },
-            .ReportAllTagged => {
+            .report_all_tagged => {
                 return "report-all-tagged";
             },
-            .Trim => {
+            .trim => {
                 return "trim";
             },
-            .Explicit => {
+            .explicit => {
                 return "explicit";
             },
         }
@@ -164,27 +164,27 @@ pub const DefaultsType = enum {
 
 pub const SchemaFormat = enum {
     // https://datatracker.ietf.org/doc/html/rfc6022#section-2.1.3
-    Xsd,
-    Yang,
-    Yin,
-    Rng,
-    Rnc,
+    xsd,
+    yang,
+    yin,
+    rng,
+    rnc,
 
     pub fn toString(self: SchemaFormat) []const u8 {
         switch (self) {
-            .Xsd => {
+            .xsd => {
                 return "xsd";
             },
-            .Yang => {
+            .yang => {
                 return "yang";
             },
-            .Yin => {
+            .yin => {
                 return "yin";
             },
-            .Rng => {
+            .rng => {
                 return "rng";
             },
-            .Rnc => {
+            .rnc => {
                 return "rnc";
             },
         }
@@ -196,19 +196,19 @@ pub const OpenOptions = operation.OpenOptions;
 pub const CloseOptions = operation.CloseOptions;
 
 pub const GetConfigOptions = struct {
-    cancel: ?*bool,
-    source: DatastoreType,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    defaults_type: ?DefaultsType,
+    cancel: ?*bool = null,
+    source: DatastoreType = DatastoreType.running,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    defaults_type: ?DefaultsType = null,
 };
 
 pub const EditConfigOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     config: []const u8,
-    target: DatastoreType,
+    target: DatastoreType = DatastoreType.running,
     // TODO: https://www.rfc-editor.org/rfc/rfc4741.html#section-7.2
     // defaults_operation: null,
     // test_option: null,
@@ -216,355 +216,145 @@ pub const EditConfigOptions = struct {
 };
 
 pub const CopyConfigOptions = struct {
-    cancel: ?*bool,
-    target: DatastoreType,
-    source: DatastoreType,
+    cancel: ?*bool = null,
+    target: DatastoreType = DatastoreType.startup,
+    source: DatastoreType = DatastoreType.running,
 };
 
 pub const DeleteConfigOptions = struct {
-    cancel: ?*bool,
-    target: DatastoreType,
+    cancel: ?*bool = null,
+    target: DatastoreType = DatastoreType.running,
 };
 
 pub const LockUnlockOptions = struct {
-    cancel: ?*bool,
-    target: DatastoreType,
+    cancel: ?*bool = null,
+    target: DatastoreType = DatastoreType.running,
 };
 
 pub const GetOptions = struct {
-    cancel: ?*bool,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    defaults_type: ?DefaultsType,
+    cancel: ?*bool = null,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    defaults_type: ?DefaultsType = null,
 };
 
 pub const CloseSessionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
 
 pub const KillSessionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     session_id: u64,
 };
 
 pub const CommitOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
 
 pub const DiscardOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
 };
 
 pub const CancelCommitOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     // TODO add persist-id param -> https://datatracker.ietf.org/doc/html/rfc6241#section-8.4.4.1
 };
 
 pub const ValidateOptions = struct {
-    cancel: ?*bool,
-    source: DatastoreType,
+    cancel: ?*bool = null,
+    source: DatastoreType = DatastoreType.running,
 };
 
 pub const CreateSubscriptionOptions = struct {
-    cancel: ?*bool,
-    stream: ?[]const u8,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    start_time: ?u64,
-    stop_time: ?u64,
+    cancel: ?*bool = null,
+    stream: ?[]const u8 = null,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    start_time: ?u64 = null,
+    stop_time: ?u64 = null,
 };
 
 pub const EstablishSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     stream: []const u8,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    period: ?u64,
-    stop_time: ?u64,
-    dscp: ?u8,
-    weighting: ?u8,
-    dependency: ?u32,
-    encoding: ?[]const u8,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    period: ?u64 = null,
+    stop_time: ?u64 = null,
+    dscp: ?u8 = null,
+    weighting: ?u8 = null,
+    dependency: ?u32 = null,
+    encoding: ?[]const u8 = null,
 };
 
 pub const ModifySubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     id: u64,
     stream: []const u8,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    period: ?u64,
-    stop_time: ?u64,
-    dscp: ?u8,
-    weighting: ?u8,
-    dependency: ?u32,
-    encoding: ?[]const u8,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    period: ?u64 = null,
+    stop_time: ?u64 = null,
+    dscp: ?u8 = null,
+    weighting: ?u8 = null,
+    dependency: ?u32 = null,
+    encoding: ?[]const u8 = null,
 };
 
 pub const DeleteSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     id: u64,
 };
 
 pub const ResyncSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     id: u64,
 };
 
 pub const KillSubscriptionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     id: u64,
 };
 
 pub const GetSchemaOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     identifier: []const u8,
-    version: ?[]const u8,
-    format: SchemaFormat,
+    version: ?[]const u8 = null,
+    format: SchemaFormat = SchemaFormat.yang,
 };
 
 pub const GetDataOptions = struct {
     // https://datatracker.ietf.org/doc/rfc8526/ section 3.1.1
-    cancel: ?*bool,
-    datastore: DatastoreType,
-    filter: ?[]const u8,
-    filter_type: FilterType,
-    filter_namespace_prefix: ?[]const u8,
-    filter_namespace: ?[]const u8,
-    config_filter: bool,
+    cancel: ?*bool = null,
+    datastore: DatastoreType = DatastoreType.running,
+    filter: ?[]const u8 = null,
+    filter_type: FilterType = FilterType.subtree,
+    filter_namespace_prefix: ?[]const u8 = null,
+    filter_namespace: ?[]const u8 = null,
+    config_filter: bool = true,
     // TODO check if this should/could be typed or if it makes more sense to leave as a str
-    origin_filters: ?[]const u8,
-    max_depth: ?u32,
-    with_origin: ?bool,
-    defaults_type: ?DefaultsType,
+    origin_filters: ?[]const u8 = null,
+    max_depth: ?u32 = null,
+    with_origin: ?bool = null,
+    defaults_type: ?DefaultsType = null,
 };
 
 pub const EditDataOptions = struct {
-    cancel: ?*bool,
-    datastore: DatastoreType,
+    cancel: ?*bool = null,
+    datastore: DatastoreType = DatastoreType.running,
     // TODO -- same as edit-config rpc -> defaults_operation: null,
     edit_content: []const u8,
 };
 
 pub const ActionOptions = struct {
-    cancel: ?*bool,
+    cancel: ?*bool = null,
     action: []const u8,
 };
-
-pub fn NewOpenOptions() operation.OpenOptions {
-    return operation.NewOpenOptions();
-}
-
-pub fn NewCloseOptions() CloseOptions {
-    return operation.NewCloseOptions();
-}
-
-pub fn NewGetConfigOptions() GetConfigOptions {
-    return GetConfigOptions{
-        .cancel = null,
-        .source = DatastoreType.Running,
-        .filter = null,
-        .filter_type = FilterType.Subtree,
-        .filter_namespace_prefix = null,
-        .filter_namespace = null,
-        .defaults_type = null,
-    };
-}
-
-pub fn NewEditConfigOptions() EditConfigOptions {
-    return EditConfigOptions{
-        .cancel = null,
-        .config = "",
-        .target = DatastoreType.Running,
-    };
-}
-
-pub fn NewCopyConfigOptions() CopyConfigOptions {
-    return CopyConfigOptions{
-        .cancel = null,
-        .source = DatastoreType.Running,
-        .target = DatastoreType.Startup,
-    };
-}
-
-pub fn NewDeleteConfigOptions() DeleteConfigOptions {
-    return DeleteConfigOptions{
-        .cancel = null,
-        .target = DatastoreType.Running,
-    };
-}
-
-pub fn NewGetOptions() GetOptions {
-    return GetOptions{
-        .cancel = null,
-        .filter = null,
-        .filter_type = FilterType.Subtree,
-        .filter_namespace_prefix = null,
-        .filter_namespace = null,
-        .defaults_type = null,
-    };
-}
-
-pub fn NewLockUnlockOptions() LockUnlockOptions {
-    return LockUnlockOptions{
-        .cancel = null,
-        .target = DatastoreType.Running,
-    };
-}
-
-pub fn NewCloseSessionOptions() CloseSessionOptions {
-    return CloseSessionOptions{
-        .cancel = null,
-    };
-}
-
-pub fn NewKillSessionOptions() KillSessionOptions {
-    return KillSessionOptions{
-        .cancel = null,
-        .session_id = 0,
-    };
-}
-
-pub fn NewCommitOptions() CommitOptions {
-    return CommitOptions{
-        .cancel = null,
-    };
-}
-
-pub fn NewDiscardOptions() DiscardOptions {
-    return DiscardOptions{
-        .cancel = null,
-    };
-}
-
-pub fn NewCancelCommitOptions() CancelCommitOptions {
-    return CancelCommitOptions{
-        .cancel = null,
-    };
-}
-
-pub fn NewValidateOptions() ValidateOptions {
-    return ValidateOptions{
-        .cancel = null,
-        .source = DatastoreType.Running,
-    };
-}
-
-pub fn NewCreateSubscriptionOptions() CreateSubscriptionOptions {
-    return CreateSubscriptionOptions{
-        .cancel = null,
-        .stream = null,
-        .filter = null,
-        .filter_type = FilterType.Subtree,
-        .filter_namespace_prefix = null,
-        .filter_namespace = null,
-        .start_time = null,
-        .stop_time = null,
-    };
-}
-
-pub fn NewEstablishSubscriptionOptions() EstablishSubscriptionOptions {
-    return EstablishSubscriptionOptions{
-        .cancel = null,
-        .stream = "",
-        .filter = null,
-        .filter_type = FilterType.Subtree,
-        .filter_namespace_prefix = null,
-        .filter_namespace = null,
-        .period = null,
-        .stop_time = null,
-        .dscp = null,
-        .weighting = null,
-        .dependency = null,
-        .encoding = null,
-    };
-}
-
-pub fn NewModifySubscriptionOptions() ModifySubscriptionOptions {
-    return ModifySubscriptionOptions{
-        .cancel = null,
-        .id = 0,
-        .stream = "",
-        .filter = null,
-        .filter_type = FilterType.Subtree,
-        .filter_namespace_prefix = null,
-        .filter_namespace = null,
-        .period = null,
-        .stop_time = null,
-        .dscp = null,
-        .weighting = null,
-        .dependency = null,
-        .encoding = null,
-    };
-}
-
-pub fn NewDeleteSubscriptionOptions() DeleteSubscriptionOptions {
-    return DeleteSubscriptionOptions{
-        .cancel = null,
-        .id = 0,
-    };
-}
-
-pub fn NewResyncSubscriptionOptions() ResyncSubscriptionOptions {
-    return ResyncSubscriptionOptions{
-        .cancel = null,
-        .id = 0,
-    };
-}
-
-pub fn NewKillSubscriptionOptions() KillSubscriptionOptions {
-    return KillSubscriptionOptions{
-        .cancel = null,
-        .id = 0,
-    };
-}
-
-pub fn NewGetSchemaOptions() GetSchemaOptions {
-    return GetSchemaOptions{
-        .cancel = null,
-        .identifier = "",
-        .version = null,
-        .format = SchemaFormat.Yang,
-    };
-}
-
-pub fn NewGetDataOptions() GetDataOptions {
-    return GetDataOptions{
-        .cancel = null,
-        .datastore = DatastoreType.Running,
-        .filter = null,
-        .filter_type = FilterType.Subtree,
-        .filter_namespace_prefix = null,
-        .filter_namespace = null,
-        .config_filter = true,
-        .origin_filters = null,
-        .max_depth = null,
-        .with_origin = null,
-        .defaults_type = null,
-    };
-}
-
-pub fn NewEditDataOptions() EditDataOptions {
-    return EditDataOptions{
-        .cancel = null,
-        .datastore = DatastoreType.Running,
-        // TODO everything that has required args like this should be params of the New funcs
-        //   just getting things in place for now though :)
-        .edit_content = "",
-    };
-}
-
-pub fn NewActionOptions() ActionOptions {
-    return ActionOptions{
-        .cancel = null,
-        .action = "",
-    };
-}

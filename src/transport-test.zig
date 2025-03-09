@@ -1,43 +1,59 @@
 const std = @import("std");
-const transport = @import("transport.zig");
 const file = @import("file.zig");
 
-pub fn NewOptions() transport.Options {
-    return transport.Options{
-        .Test = Options{
-            .f = null,
-        },
-    };
-}
-
-pub const Options = struct {
-    f: ?[]const u8,
+pub const OptionsInputs = struct {
+    f: ?[]const u8 = null,
 };
 
-pub fn NewTransport(
+pub const Options = struct {
     allocator: std.mem.Allocator,
-    options: Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
+    f: ?[]const u8,
 
-    t.* = Transport{
-        .allocator = allocator,
-        .options = options,
-        .reader = null,
-    };
+    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
 
-    return t;
-}
+        o.* = Options{
+            .allocator = allocator,
+            .f = opts.f,
+        };
+
+        if (o.f != null) {
+            o.f = try o.allocator.dupe(u8, o.f.?);
+        }
+
+        return o;
+    }
+
+    pub fn deinit(self: *Options) void {
+        if (self.f != null) {
+            self.allocator.free(self.f.?);
+        }
+
+        self.allocator.destroy(self);
+    }
+};
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
 
-    options: Options,
+    options: *Options,
 
     reader: ?std.fs.File.Reader,
 
-    pub fn init(self: *Transport) !void {
-        _ = self;
+    pub fn init(
+        allocator: std.mem.Allocator,
+        options: *Options,
+    ) !*Transport {
+        const t = try allocator.create(Transport);
+
+        t.* = Transport{
+            .allocator = allocator,
+            .options = options,
+            .reader = null,
+        };
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {

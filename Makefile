@@ -28,14 +28,17 @@ open-coverage: ## Open the generated coverage report
 build: fmt ## Build the shared objects.
 	zig build -freference-trace --summary all
 
-build-release: fmt ## Build the shared objects w/ release optimization.
+build-release: fmt ## Build the shared objects w/ release optimization
 	zig build -freference-trace --summary all -- --release
 
 build-examples: fmt ## Build the example binaries
 	zig build -freference-trace --summary all -- --examples --skip-lib --skip-ffi-lib
 
-build-main: fmt ## Build the example binaries
+build-main: fmt ## Build the "main" binary in repo root
 	zig build -freference-trace --summary all -- --main --skip-lib --skip-ffi-lib
+
+run-main: fmt build-main ## Build and run the "main" binary in repo root
+	./zig-out/bin/scrapli
 
 build-clab-launcher: ## Builds the clab launcher image
 	docker build \

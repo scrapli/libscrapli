@@ -235,10 +235,10 @@ pub const Result = struct {
         }
 
         switch (self.version) {
-            .Version_1_0 => {
+            .version_1_0 => {
                 try self.recordVersion1_0(ret);
             },
-            .Version_1_1 => {
+            .version_1_1 => {
                 try self.recordVersion1_1(ret);
             },
         }
@@ -485,9 +485,9 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.Version_1_0,
+                driver.Version.version_1_0,
                 driver.default_rpc_error_tag,
-                operation.Kind.Get,
+                operation.Kind.get,
             ),
             .input =
             \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
@@ -507,9 +507,9 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.Version_1_0,
+                driver.Version.version_1_0,
                 driver.default_rpc_error_tag,
-                operation.Kind.Get,
+                operation.Kind.get,
             ),
             .input =
             \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
@@ -543,9 +543,9 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.Version_1_0,
+                driver.Version.version_1_0,
                 driver.default_rpc_error_tag,
-                operation.Kind.Get,
+                operation.Kind.get,
             ),
             .input =
             \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
@@ -604,9 +604,9 @@ test "recordVersion1_0" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.Version_1_0,
+                driver.Version.version_1_0,
                 driver.default_rpc_error_tag,
-                operation.Kind.Get,
+                operation.Kind.get,
             ),
             .input =
             \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
@@ -633,9 +633,9 @@ test "recordVersion1_0" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.Version_1_0,
+                driver.Version.version_1_0,
                 driver.default_rpc_error_tag,
-                operation.Kind.Get,
+                operation.Kind.get,
             ),
             .input =
             \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
@@ -662,9 +662,9 @@ test "recordVersion1_0" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.Version_1_0,
+                driver.Version.version_1_0,
                 driver.default_rpc_error_tag,
-                operation.Kind.Get,
+                operation.Kind.get,
             ),
             .input =
             \\<?xml version="1.0" encoding="UTF-8"?>
@@ -693,9 +693,9 @@ test "recordVersion1_0" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.Version_1_0,
+                driver.Version.version_1_0,
                 driver.default_rpc_error_tag,
-                operation.Kind.Get,
+                operation.Kind.get,
             ),
             .input =
             \\<?xml version="1.0" encoding="UTF-8"?>
@@ -742,9 +742,9 @@ test "recordVersion1_1" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.Version_1_1,
+                driver.Version.version_1_1,
                 driver.default_rpc_error_tag,
-                operation.Kind.Get,
+                operation.Kind.get,
             ),
             .input =
             \\#293

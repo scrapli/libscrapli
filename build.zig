@@ -44,6 +44,8 @@ pub fn build(b: *std.Build) !void {
     if (main) {
         try buildMainExe(b, optimize, default_target);
     }
+
+    buildCheck(b, optimize, default_target);
 }
 
 fn getPcre2Dep(
@@ -112,15 +114,15 @@ fn buildFfiLib(
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
 
-    // TODO figure out how to emit header file too
-    // see also: https://github.com/ziglang/zig/issues/9698
-    const lib = b.addSharedLibrary(.{
-        .name = "scrapli",
-        .root_source_file = b.path("src/ffi.zig"),
-        .target = b.resolveTargetQuery(target),
-        .optimize = optimize,
-        .version = libscrapli_version,
-    });
+    const lib = b.addSharedLibrary(
+        .{
+            .name = "scrapli",
+            .root_source_file = b.path("src/ffi.zig"),
+            .target = b.resolveTargetQuery(target),
+            .optimize = optimize,
+            .version = libscrapli_version,
+        },
+    );
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
@@ -319,8 +321,8 @@ fn buildMainExe(
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
-    lib.root_module.addImport("zig-yaml", yaml.module("yaml"));
-    lib.root_module.addImport("zig-xml", xml.module("xml"));
+    lib.root_module.addImport("yaml", yaml.module("yaml"));
+    lib.root_module.addImport("xml", xml.module("xml"));
 
     const exe = b.addExecutable(.{
         .name = "scrapli",
@@ -334,4 +336,31 @@ fn buildMainExe(
     const exe_target_output = b.addInstallArtifact(exe, .{});
 
     b.getInstallStep().dependOn(&exe_target_output.step);
+}
+
+fn buildCheck(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    target: std.Build.ResolvedTarget,
+) void {
+    const pcre2 = getPcre2Dep(b, target.query, optimize);
+    const libssh2 = getLibssh2Dep(b, target.query, optimize);
+    const yaml = getZigYamlDep(b, target.query, optimize);
+    const xml = getZigXmlDep(b, target.query, optimize);
+
+    const lib = b.addStaticLibrary(.{
+        .name = "scrapli",
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .version = libscrapli_version,
+    });
+
+    lib.linkLibrary(pcre2.artifact("pcre2-8"));
+    lib.linkLibrary(libssh2.artifact("ssh2"));
+    lib.root_module.addImport("yaml", yaml.module("yaml"));
+    lib.root_module.addImport("xml", xml.module("xml"));
+
+    const check = b.step("check", "complitaion check step for zls");
+    check.dependOn(&lib.step);
 }

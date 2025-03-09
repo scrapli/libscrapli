@@ -1,8 +1,7 @@
 const std = @import("std");
-const transport = @import("transport.zig");
 const file = @import("file.zig");
 const bytes = @import("bytes.zig");
-const logger = @import("logger.zig");
+const logging = @import("logging.zig");
 
 const control_char_iac: u8 = 255;
 const control_char_do: u8 = 253;
@@ -23,43 +22,52 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
-pub fn NewOptions() transport.Options {
-    return transport.Options{
-        .Telnet = Options{},
-    };
-}
+pub const OptionsInputs = struct {};
 
-pub const Options = struct {};
-
-pub fn NewTransport(
+pub const Options = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
-    options: Options,
-) !*Transport {
-    const t = try allocator.create(Transport);
 
-    t.* = Transport{
-        .allocator = allocator,
-        .log = log,
-        .options = options,
-        .stream = null,
-        .initial_buf = std.ArrayList(u8).init(allocator),
-    };
+    pub fn init(allocator: std.mem.Allocator, _: OptionsInputs) !*Options {
+        const o = try allocator.create(Options);
+        errdefer allocator.destroy(o);
 
-    return t;
-}
+        o.* = Options{
+            .allocator = allocator,
+        };
+
+        return o;
+    }
+
+    pub fn deinit(self: *Options) void {
+        self.allocator.destroy(self);
+    }
+};
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
-    log: logger.Logger,
+    log: logging.Logger,
 
-    options: Options,
+    options: *Options,
 
     stream: ?std.net.Stream,
     initial_buf: std.ArrayList(u8),
 
-    pub fn init(self: *Transport) !void {
-        _ = self;
+    pub fn init(
+        allocator: std.mem.Allocator,
+        log: logging.Logger,
+        options: *Options,
+    ) !*Transport {
+        const t = try allocator.create(Transport);
+
+        t.* = Transport{
+            .allocator = allocator,
+            .log = log,
+            .options = options,
+            .stream = null,
+            .initial_buf = std.ArrayList(u8).init(allocator),
+        };
+
+        return t;
     }
 
     pub fn deinit(self: *Transport) void {

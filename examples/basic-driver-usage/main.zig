@@ -3,51 +3,47 @@ const std = @import("std");
 const scrapli = @import("scrapli");
 
 const driver = scrapli.driver;
-const ssh2 = scrapli.transport_ssh2;
-const operation = scrapli.operation;
 const strings = scrapli.strings;
 
 const banner = "********************";
 
 const definition =
     \\---
-    \\kind: 'nokia_srlinux'
-    \\default:
-    \\  # https://regex101.com/r/U5mgK9/1
-    \\  prompt_pattern: '^--.*--\s*\n[abcd]:\S+#\s*$'
-    \\  default_mode: 'exec'
-    \\  modes:
-    \\    - name: 'exec'
-    \\      # https://regex101.com/r/PGLSJJ/1
-    \\      prompt_pattern: '^--{(\s\[[\w\s]+\]){0,5}[\+\*\s]{1,}running\s}--\[.+?\]--\s*\n[abcd]:\S+#\s*$'
-    \\      accessible_modes:
-    \\        - name: 'configuration'
-    \\          send_input:
-    \\            input: 'enter candidate private'
-    \\    - name: 'configuration'
-    \\      # https://regex101.com/r/JsaUZy/1
-    \\      prompt_pattern: '^--{(\s\[[\w\s]+\]){0,5}[\+\*\!\s]{1,}candidate[\-\w\s]+}--\[.+?\]--\s*\n[\\abcd]:\S+#\s*$'
-    \\      accessible_modes:
-    \\        - name: 'exec'
-    \\          send_input:
-    \\            input: 'discard now'
-    \\  input_failed_when_contains:
-    \\    - "Error:"
-    \\    - "error:" # wildcard catch for errors like `Validation error:`, `Parsing error:`
-    \\  on_open_instructions:
-    \\    - enter_mode:
-    \\        requested_mode: 'exec'
-    \\    - send_input:
-    \\        input: 'environment cli-engine type basic'
-    \\    - send_input:
-    \\        input: 'environment complete-on-space false'
-    \\  on_close_instructions:
-    \\    - enter_mode:
-    \\        requested_mode: 'exec'
-    \\    - write:
-    \\        input: 'quit'
-    \\variants: []
-    \\
+    \\# https://regex101.com/r/U5mgK9/1
+    \\prompt_pattern: '^--.*--\s*\n[abcd]:\S+#\s*$'
+    \\default_mode: 'exec'
+    \\modes:
+    \\  - name: 'exec'
+    \\    # https://regex101.com/r/PGLSJJ/1
+    \\    prompt_pattern: '^--{(\s\[[\w\s]+\]){0,5}[\+\*\s]{1,}running\s}--\[.+?\]--\s*\n[abcd]:\S+#\s*$'
+    \\    accessible_modes:
+    \\      - name: 'configuration'
+    \\        instructions:
+    \\          - send_input:
+    \\              input: 'enter candidate private'
+    \\  - name: 'configuration'
+    \\    # https://regex101.com/r/JsaUZy/1
+    \\    prompt_pattern: '^--{(\s\[[\w\s]+\]){0,5}[\+\*\!\s]{1,}candidate[\-\w\s]+}--\[.+?\]--\s*\n[\\abcd]:\S+#\s*$'
+    \\    accessible_modes:
+    \\      - name: 'exec'
+    \\        instructions:
+    \\          - send_input:
+    \\              input: 'discard now'
+    \\failure_indicators:
+    \\  - "Error:"
+    \\  - "error:" # wildcard catch for errors like `Validation error:`, `Parsing error:`
+    \\on_open_instructions:
+    \\  - enter_mode:
+    \\      requested_mode: 'exec'
+    \\  - send_input:
+    \\      input: 'environment cli-engine type basic'
+    \\  - send_input:
+    \\      input: 'environment complete-on-space false'
+    \\on_close_instructions:
+    \\  - enter_mode:
+    \\      requested_mode: 'exec'
+    \\  - write:
+    \\      input: 'quit'
 ;
 
 const host_env_var_name = "SCRAPLI_HOST";
@@ -69,7 +65,7 @@ pub const std_options = std.Options{
             .level = .err,
         },
         .{
-            .scope = .parse,
+            .scope = .parser,
             .level = .err,
         },
     },
@@ -127,40 +123,43 @@ pub fn main() !void {
     var password = try get_env_var_or_default(password_env_var_name, default_password);
     defer password.deinit();
 
-    var opts = driver.NewOptions();
-
-    opts.auth.username = "admin";
-    opts.auth.password = password.string;
-    opts.port = try get_port();
-
-    // ssh2; if commented out you'll default to using bin transport (/bin/ssh wrapper)
-    opts.transport = ssh2.NewOptions();
-
-    // for logging to stdout, or comment/remove for no logging and add the following import/alias:
-    // const logger = scrapli.logger;
-    // opts.logger = logger.Logger{ .allocator = allocator, .f = logger.stdLogf };
-
-    // for logging to a file
+    // for logging to a file:
     // const f = try std.fs.cwd().createFile(
     //     "out.txt",
     //     .{},
     // );
     // defer f.close();
-    // opts.session.recorder = f.writer();
+    // then uncomment recorder in OptionsInputs below
 
-    const d = try driver.NewDriverFromYamlString(
+    const d = try driver.Driver.init(
         allocator,
-        definition,
         host.string,
-        opts,
+        .{
+            .definition = .{
+                .string = definition,
+            },
+            // uncomment and import the logger package like: `const logger = scrapli.logger;`
+            // for a simple logger setup
+            // .logger = logger.Logger{ .allocator = allocator, .f = logger.stdLogf, },
+            .port = try get_port(),
+            .auth = .{
+                .username = "admin",
+                .password = password.string,
+            },
+            .session = .{
+                // .recorder = f,
+            },
+            .transport = .{
+                // comment out to use bin transport if desired
+                .ssh2 = .{},
+            },
+        },
     );
-
-    try d.init();
     defer d.deinit();
 
     const open_result = try d.open(
         allocator,
-        operation.NewOpenOptions(),
+        .{},
     );
     defer open_result.deinit();
 
@@ -177,7 +176,7 @@ pub fn main() !void {
     const send_input_result = try d.sendInput(
         allocator,
         "info interface *",
-        operation.NewSendInputOptions(),
+        .{},
     );
     defer send_input_result.deinit();
 
@@ -191,6 +190,6 @@ pub fn main() !void {
         },
     );
 
-    const close_result = try d.close(allocator, operation.NewCloseOptions());
+    const close_result = try d.close(allocator, .{});
     defer close_result.deinit();
 }
