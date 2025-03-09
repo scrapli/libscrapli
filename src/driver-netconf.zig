@@ -129,20 +129,6 @@ pub const Options = struct {
     }
 };
 
-/// Creates a new netconf Driver, unnecessary as you can just Driver.init(...) but exists for
-/// consistency with telnet/ssh flavor that can be spawned from string/yaml file.
-pub fn NewDriver(
-    allocator: std.mem.Allocator,
-    host: []const u8,
-    config: Config,
-) !*Driver {
-    return Driver.init(
-        allocator,
-        host,
-        config,
-    );
-}
-
 pub const Driver = struct {
     allocator: std.mem.Allocator,
     log: logger.Logger,
@@ -2496,7 +2482,7 @@ test "buildGetConfigElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2552,7 +2538,7 @@ test "builEditConfigElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2600,7 +2586,7 @@ test "builCopyConfigElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2648,7 +2634,7 @@ test "builDeleteConfigElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2696,7 +2682,7 @@ test "buildLockElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2744,7 +2730,7 @@ test "buildUnlockElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2792,7 +2778,7 @@ test "buildGetElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2840,7 +2826,7 @@ test "buildCloseSessionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2894,7 +2880,7 @@ test "buildKillSessionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2942,7 +2928,7 @@ test "buildCommitElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -2990,7 +2976,7 @@ test "buildDiscardElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3038,7 +3024,7 @@ test "buildCancelCommitElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3086,7 +3072,7 @@ test "buildValidateElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3134,7 +3120,7 @@ test "buildCreateSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3182,7 +3168,7 @@ test "buildEstablishSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3230,7 +3216,7 @@ test "buildModifySubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3278,7 +3264,7 @@ test "buildDeleteSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3326,7 +3312,7 @@ test "buildResyncSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3374,7 +3360,7 @@ test "buildKillSubscriptionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3426,7 +3412,7 @@ test "buildGetSchemaElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3474,7 +3460,7 @@ test "buildGetDataElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3522,7 +3508,7 @@ test "builEditDataElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},
@@ -3570,7 +3556,7 @@ test "builActionElem" {
     };
 
     for (cases) |case| {
-        const d = try NewDriver(
+        const d = try Driver.init(
             std.testing.allocator,
             "localhost",
             .{},

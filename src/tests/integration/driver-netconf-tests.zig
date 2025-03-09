@@ -7,7 +7,7 @@ const file = @import("../../file.zig");
 const helper = @import("../../test-helper.zig");
 
 fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
-    return driver.NewDriver(
+    return driver.Driver.init(
         std.testing.allocator,
         "localhost",
         .{
@@ -24,7 +24,7 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
 }
 
 fn GetTestDriver(f: []const u8) !*driver.Driver {
-    const d = try driver.NewDriver(
+    const d = try driver.Driver.init(
         std.testing.allocator,
         "dummy",
         .{

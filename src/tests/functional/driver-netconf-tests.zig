@@ -58,7 +58,7 @@ fn GetDriver(
         },
     }
 
-    return driver.NewDriver(
+    return driver.Driver.init(
         std.testing.allocator,
         "localhost",
         config,

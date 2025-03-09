@@ -3,7 +3,6 @@ const std = @import("std");
 const scrapli = @import("scrapli");
 
 const driver = scrapli.driver_netconf;
-const operation = scrapli.operation_netconf;
 const strings = scrapli.strings;
 
 const banner = "********************";
