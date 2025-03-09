@@ -1,6 +1,8 @@
 const std = @import("std");
 const ffi_driver = @import("ffi-driver.zig");
 
+pub export fn noop() void {}
+
 //
 // session options
 //
@@ -241,8 +243,8 @@ export fn setDriverOptionBinTransportBin(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .Bin => {
-            d.real_driver.options.transport.Bin.bin = d.real_driver.options.transport.Bin.allocator.dupe(
+        .bin => {
+            d.real_driver.options.transport.bin.bin = d.real_driver.options.transport.bin.allocator.dupe(
                 u8,
                 std.mem.span(value),
             ) catch {
@@ -264,8 +266,8 @@ export fn setDriverOptionBinTransportExtraOpenArgs(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .Bin => {
-            d.real_driver.options.transport.Bin.extra_open_args = d.real_driver.options.transport.Bin.allocator.dupe(
+        .bin => {
+            d.real_driver.options.transport.bin.extra_open_args = d.real_driver.options.transport.bin.allocator.dupe(
                 u8,
                 std.mem.span(value),
             ) catch {
@@ -287,8 +289,8 @@ export fn setDriverOptionBinTransportOverrideOpenArgs(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .Bin => {
-            d.real_driver.options.transport.Bin.override_open_args = d.real_driver.options.transport.Bin.allocator.dupe(
+        .bin => {
+            d.real_driver.options.transport.bin.override_open_args = d.real_driver.options.transport.bin.allocator.dupe(
                 u8,
                 std.mem.span(value),
             ) catch {
@@ -310,8 +312,8 @@ export fn setDriverOptionBinTransportSSHConfigPath(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .Bin => {
-            d.real_driver.options.transport.Bin.ssh_config_path = d.real_driver.options.transport.Bin.allocator.dupe(
+        .bin => {
+            d.real_driver.options.transport.bin.ssh_config_path = d.real_driver.options.transport.bin.allocator.dupe(
                 u8,
                 std.mem.span(value),
             ) catch {
@@ -333,8 +335,8 @@ export fn setDriverOptionBinTransportKnownHostsPath(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .Bin => {
-            d.real_driver.options.transport.Bin.known_hosts_path = d.real_driver.options.transport.Bin.allocator.dupe(
+        .bin => {
+            d.real_driver.options.transport.bin.known_hosts_path = d.real_driver.options.transport.bin.allocator.dupe(
                 u8,
                 std.mem.span(value),
             ) catch {
@@ -355,8 +357,8 @@ export fn setDriverOptionBinTransportEnableStrictKey(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .Bin => {
-            d.real_driver.options.transport.Bin.enable_strict_key = true;
+        .bin => {
+            d.real_driver.options.transport.bin.enable_strict_key = true;
         },
         else => {
             return 1;
@@ -373,8 +375,8 @@ export fn setDriverOptionBinTransportTermHeight(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .Bin => {
-            d.real_driver.options.transport.Bin.term_height = value;
+        .bin => {
+            d.real_driver.options.transport.bin.term_height = value;
         },
         else => {
             return 1;
@@ -391,8 +393,8 @@ export fn setDriverOptionBinTransportTermWidth(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .Bin => {
-            d.real_driver.options.transport.Bin.term_width = value;
+        .bin => {
+            d.real_driver.options.transport.bin.term_width = value;
         },
         else => {
             return 1;
@@ -412,8 +414,8 @@ export fn setDriverOptionSSH2TransportSSH2Trace(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver.session.transport.implementation) {
-        .SSH2 => {
-            d.real_driver.options.transport.SSH2.libssh2_trace = true;
+        .ssh2 => {
+            d.real_driver.options.transport.ssh2.libssh2_trace = true;
         },
         else => {
             return 1;

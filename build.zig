@@ -114,13 +114,15 @@ fn buildFfiLib(
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
 
-    const lib = b.addSharedLibrary(.{
-        .name = "scrapli",
-        .root_source_file = b.path("src/ffi.zig"),
-        .target = b.resolveTargetQuery(target),
-        .optimize = optimize,
-        .version = libscrapli_version,
-    });
+    const lib = b.addSharedLibrary(
+        .{
+            .name = "scrapli",
+            .root_source_file = b.path("src/ffi.zig"),
+            .target = b.resolveTargetQuery(target),
+            .optimize = optimize,
+            .version = libscrapli_version,
+        },
+    );
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));

@@ -9,6 +9,10 @@ const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
 const transport = @import("transport.zig");
 
+const ffi_options = @import("ffi-options.zig");
+
+pub export const _force_include = &ffi_options.noop;
+
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
         .{
@@ -26,6 +30,7 @@ pub const std_options = std.Options{
     },
 };
 
+// TODO should ensure that we use std page alloc for release/gpa for test
 // std page allocator
 // const allocator = std.heap.page_allocator;
 
@@ -126,7 +131,7 @@ export fn getNtcTemplatePlatform(
     return 0;
 }
 
-/// writes the ntc template platform from the driver's definition into the character slice at
+/// writes the genie platform from the driver's definition into the character slice at
 /// `genie_platform` -- this slice should be pre populated w/ sufficient size (lets say
 /// 256?). while unused in zig, genie platform/parser is useful in python land.
 export fn getGeniePlatform(
