@@ -3,7 +3,13 @@ name: test
 
 on:
   workflow_call: {}
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      debug_functional:
+        description: "start tmate before functional tests"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   unit:
@@ -18,8 +24,6 @@ jobs:
         run: |
           source .github/vars.env
           echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
-          echo "ZLINT_VERSION=$ZLINT_VERSION" >> "$GITHUB_ENV"
-          echo "KCOV_VERSION=$KCOV_VERSION" >> "$GITHUB_ENV"
 
       - name: setup zig
         uses: mlugg/setup-zig@v1
@@ -42,8 +46,6 @@ jobs:
         run: |
           source .github/vars.env
           echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
-          echo "ZLINT_VERSION=$ZLINT_VERSION" >> "$GITHUB_ENV"
-          echo "KCOV_VERSION=$KCOV_VERSION" >> "$GITHUB_ENV"
 
       - name: setup zig
         uses: mlugg/setup-zig@v1
@@ -54,4 +56,49 @@ jobs:
         run: |
           make test-integration
 
-  # TODO: clab-build/clab-run/wait for clab/make test-functional
+  functional:
+    runs-on: ubuntu-latest
+
+# TODO uncomment when unfucked :P
+    # run e2e on main or prs pointing to main
+#    if: (github.ref_name == 'main' || github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && inputs.debug_functional)
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: load env vars for workflow run
+        run: |
+          source .github/vars.env
+          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
+          echo "CONTAINERLAB_VERSION=$CONTAINERLAB_VERSION" >> "$GITHUB_ENV"
+
+      - name: install containerlab
+        run: |
+          bash -c "$(curl -sL https://get.containerlab.dev)" -- -v ${{ env.CONTAINERLAB_VERSION }}
+
+      - name: run containerlab topology
+        run: |
+          sudo clab deploy -t topo.ci.amd64.yaml
+        working-directory: src/tests/functional/clab
+
+      - name: setup zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_functional }}
+
+      - name: wait for srl node to be available
+        run: |
+          ./wait.sh
+        working-directory: src/tests/functional/clab
+
+      - name: run the integration tests
+        run: |
+          make test-functional-ci
+

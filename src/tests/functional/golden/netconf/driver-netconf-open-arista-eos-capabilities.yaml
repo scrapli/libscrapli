@@ -398,13 +398,13 @@
   name: http://openconfig.net/yang/bgp?module=openconfig-bgp
   revision: 2024-09-06
 - namespace: urn:ietf:params:xml:ns:netconf:base:1.0
-  name: http://openconfig.net/yang/bgp?module=openconfig-bgp-common
-  revision: 2024-09-06
-- namespace: urn:ietf:params:xml:ns:netconf:base:1.0
   name: http://openconfig.net/yang/bgp?module=openconfig-bgp-common-multiprotocol
   revision: 2024-09-06
 - namespace: urn:ietf:params:xml:ns:netconf:base:1.0
   name: http://openconfig.net/yang/bgp?module=openconfig-bgp-common-structure
+  revision: 2024-09-06
+- namespace: urn:ietf:params:xml:ns:netconf:base:1.0
+  name: http://openconfig.net/yang/bgp?module=openconfig-bgp-common
   revision: 2024-09-06
 - namespace: urn:ietf:params:xml:ns:netconf:base:1.0
   name: http://openconfig.net/yang/bgp?module=openconfig-bgp-global
@@ -587,10 +587,10 @@
   name: http://openconfig.net/yang/ospfv2?module=openconfig-ospfv2
   revision: 2024-06-17
 - namespace: urn:ietf:params:xml:ns:netconf:base:1.0
-  name: http://openconfig.net/yang/ospfv2?module=openconfig-ospfv2-area
+  name: http://openconfig.net/yang/ospfv2?module=openconfig-ospfv2-area-interface
   revision: 2024-06-17
 - namespace: urn:ietf:params:xml:ns:netconf:base:1.0
-  name: http://openconfig.net/yang/ospfv2?module=openconfig-ospfv2-area-interface
+  name: http://openconfig.net/yang/ospfv2?module=openconfig-ospfv2-area
   revision: 2024-06-17
 - namespace: urn:ietf:params:xml:ns:netconf:base:1.0
   name: http://openconfig.net/yang/ospfv2?module=openconfig-ospfv2-common

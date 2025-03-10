@@ -52,6 +52,8 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
         return transport.Kind.telnet;
     } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.ssh2))) {
         return transport.Kind.ssh2;
+    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.test_))) {
+        return transport.Kind.test_;
     } else {
         @panic("unsupported transport");
     }

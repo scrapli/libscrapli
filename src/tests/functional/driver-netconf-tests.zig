@@ -1,5 +1,6 @@
 // zlint-disable suppressed-errors, no-undefined, unsafe-undefined, unused-decls
 const std = @import("std");
+const os = @import("builtin").os.tag;
 
 const xml = @import("xml");
 const yaml = @import("yaml");
@@ -21,18 +22,35 @@ fn GetDriver(
     key: ?[]const u8,
     passphrase: ?[]const u8,
 ) !*driver.Driver {
+    // on darwin we'll be targetting localhost, on linux we'll target the ips exposed via clab/docker
+    var host: []const u8 = undefined;
+
     var config = driver.Config{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
-        config.port = 21830;
         config.auth.lookup_map = &.{
             .{ .key = "login", .value = "NokiaSrl1!" },
         };
+
+        if (os == .macos) {
+            host = "localhost";
+            config.port = 21830;
+        } else {
+            host = "172.20.20.16";
+            config.port = 830;
+        }
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
-        config.port = 22830;
         config.auth.lookup_map = &.{
             .{ .key = "login", .value = "admin" },
         };
+
+        if (os == .macos) {
+            host = "localhost";
+            config.port = 22830;
+        } else {
+            host = "172.20.20.17";
+            config.port = 830;
+        }
     } else {
         return error.UnknownPlatform;
     }
@@ -60,7 +78,7 @@ fn GetDriver(
 
     return driver.Driver.init(
         std.testing.allocator,
-        "localhost",
+        host,
         config,
     );
 }
@@ -194,7 +212,13 @@ test "driver-netconf open" {
         },
     };
 
+    const is_ci = flags.parseCustomFlag("--ci", false);
+
     for (cases) |case| {
+        if (is_ci and std.mem.eql(u8, case.platform, "arista-eos")) {
+            continue;
+        }
+
         // open has its own golden files since this will include in channel auth for some transports
         // but not others
         const golden_filename = try std.fmt.allocPrint(

@@ -18,6 +18,9 @@ test-integration: fmt ## Run integration tests
 test-functional: fmt ## Run functional tests
 	zig build test --summary all -- --functional
 
+test-functional-ci: fmt ## Run functional tests (w/ limited ci platforms)
+	zig build test --summary all -- --functional --ci
+
 test-coverage: fmt ## Run integration tests plus coverage (goes to zig-out/cover)
 	rm -rf zig-out/cover || true
 	zig build test --summary all -- --integration --coverage
@@ -46,7 +49,7 @@ build-clab-launcher: ## Builds the clab launcher image
 		-t clab-launcher:latest \
 		src/tests/functional/clab/launcher
 
-run-clab: ## Runs the clab functional testing topo
+run-clab: ## Runs the clab functional testing topo; uses the clab launcher to run nicely on darwin
 	docker network rm clab || true
 	docker network create \
 		--driver bridge \

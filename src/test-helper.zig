@@ -3,15 +3,19 @@ const flags = @import("flags.zig");
 const file = @import("file.zig");
 const re = @import("re.zig");
 
+const user_at_host_pattern = "\\w+@[\\w\\d\\.]+";
+const known_hosts_pattern = "^Warning: Permanently added .* to the list of known hosts.\\s*\n";
 const timestamp_pattern = "((mon)|(tue)|(wed)|(thu)|(fri)|(sat)|(sun))\\s+((jan)|(feb)|(mar)|(apr)|(may)|(jun)|(jul)|(aug)|(sep)|(oct)|(nov)|(dec))\\s+\\d+\\s+\\d+:\\d+:\\d+ \\d+";
 const last_login_pattern = "^last login.*$";
 const netconf_timestamp_pattern = "\\d{4}-\\d{2}-\\d{2}T\\d+:\\d+:\\d+.\\d+Z";
 const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
 
-const normalize_funcs = [3]*const fn (
+const normalize_funcs = [5]*const fn (
     allocator: std.mem.Allocator,
     haystack: []const u8,
 ) anyerror![]const u8{
+    normalizeUserAtHost,
+    normalizeBinTransportOutput,
     normalizeTimestamps,
     normalizeLastLogin,
     normalizeNetconfSessionId,
@@ -46,7 +50,10 @@ pub fn processFixutreTestStrResult(
         return;
     }
 
-    const expected = try file.readFromPath(std.testing.allocator, golden_filename);
+    const expected = try file.readFromPath(
+        std.testing.allocator,
+        golden_filename,
+    );
     defer std.testing.allocator.free(expected);
 
     var _expected = try std.testing.allocator.alloc(u8, expected.len);
@@ -64,7 +71,12 @@ pub fn processFixutreTestStrResult(
         @memcpy(_expected, ret);
     }
 
-    try testStrResult(test_name, case_name, _actual, _expected);
+    try testStrResult(
+        test_name,
+        case_name,
+        _actual,
+        _expected,
+    );
 }
 
 pub fn testStrResult(
@@ -117,6 +129,94 @@ pub fn testStrResult(
     return error.AssertionFailed;
 }
 
+fn normalizeUserAtHost(
+    allocator: std.mem.Allocator,
+    haystack: []const u8,
+) anyerror![]const u8 {
+    if (haystack.len != 0) {
+        const compiled_user_at_host_pattern = re.pcre2Compile(
+            user_at_host_pattern,
+        );
+        defer re.pcre2Free(compiled_user_at_host_pattern.?);
+
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_user_at_host_pattern.?,
+            haystack,
+        );
+        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
+            const replace = "user@host";
+
+            const replace_size = std.mem.replacementSize(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                replace,
+            );
+
+            const out = try allocator.alloc(u8, replace_size);
+
+            _ = std.mem.replace(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                replace,
+                out,
+            );
+
+            return out;
+        }
+    }
+
+    const out = try allocator.alloc(u8, haystack.len);
+    @memcpy(out, haystack);
+
+    return out;
+}
+
+fn normalizeBinTransportOutput(
+    allocator: std.mem.Allocator,
+    haystack: []const u8,
+) anyerror![]const u8 {
+    if (haystack.len != 0) {
+        const compiled_known_hosts_pattern = re.pcre2Compile(
+            known_hosts_pattern,
+        );
+        defer re.pcre2Free(compiled_known_hosts_pattern.?);
+
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_known_hosts_pattern.?,
+            haystack,
+        );
+        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
+            const replace = "";
+
+            const replace_size = std.mem.replacementSize(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                replace,
+            );
+
+            const out = try allocator.alloc(u8, replace_size);
+
+            _ = std.mem.replace(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                replace,
+                out,
+            );
+
+            return out;
+        }
+    }
+
+    const out = try allocator.alloc(u8, haystack.len);
+    @memcpy(out, haystack);
+
+    return out;
+}
+
 fn normalizeTimestamps(
     allocator: std.mem.Allocator,
     haystack: []const u8,
@@ -134,7 +234,10 @@ fn normalizeTimestamps(
         const compiled_timestamp_pattern = re.pcre2Compile(pattern);
         defer re.pcre2Free(compiled_timestamp_pattern.?);
 
-        const match_indexes = try re.pcre2FindIndex(compiled_timestamp_pattern.?, haystack);
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_timestamp_pattern.?,
+            haystack,
+        );
         if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
             const replace = "Mon Jan 1 00:00:00 2025";
 
@@ -170,10 +273,15 @@ fn normalizeLastLogin(
     haystack: []const u8,
 ) anyerror![]const u8 {
     if (haystack.len != 0) {
-        const compiled_last_login_pattern = re.pcre2Compile(last_login_pattern);
+        const compiled_last_login_pattern = re.pcre2Compile(
+            last_login_pattern,
+        );
         defer re.pcre2Free(compiled_last_login_pattern.?);
 
-        const match_indexes = try re.pcre2FindIndex(compiled_last_login_pattern.?, haystack);
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_last_login_pattern.?,
+            haystack,
+        );
         if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
             const replace_size = std.mem.replacementSize(
                 u8,
@@ -207,10 +315,15 @@ fn normalizeNetconfSessionId(
     haystack: []const u8,
 ) anyerror![]const u8 {
     if (haystack.len != 0 and std.mem.indexOf(u8, haystack, "<session-id>") != null) {
-        const compiled_netconf_session_id_pattern = re.pcre2Compile(netconf_session_id_pattern);
+        const compiled_netconf_session_id_pattern = re.pcre2Compile(
+            netconf_session_id_pattern,
+        );
         defer re.pcre2Free(compiled_netconf_session_id_pattern.?);
 
-        const match_indexes = try re.pcre2FindIndex(compiled_netconf_session_id_pattern.?, haystack);
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_netconf_session_id_pattern.?,
+            haystack,
+        );
         if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
             const replace_size = std.mem.replacementSize(
                 u8,

@@ -230,6 +230,7 @@ fn buildTests(
     const record_flag = flags.parseCustomFlag("--record", false);
     const update_flag = flags.parseCustomFlag("--update", false);
     const coverage_flag = flags.parseCustomFlag("--coverage", false);
+    const is_ci_flag = flags.parseCustomFlag("--ci", false);
 
     if (coverage_flag) {
         const home = std.process.getEnvVarOwned(b.allocator, "HOME") catch "";
@@ -275,6 +276,10 @@ fn buildTests(
             run_coverage.addArg("--update");
         }
 
+        if (is_ci_flag) {
+            run_coverage.addArg("--ci");
+        }
+
         step.dependOn(&run_coverage.step);
     } else {
         if (!unit_test_flag) {
@@ -295,6 +300,10 @@ fn buildTests(
 
         if (update_flag) {
             run_tests.addArg("--update");
+        }
+
+        if (is_ci_flag) {
+            run_tests.addArg("--ci");
         }
 
         step.dependOn(&run_tests.step);
