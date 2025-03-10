@@ -14,8 +14,8 @@ const pcre2 = @cImport({
 });
 
 const default_read_size: u64 = 4_096;
-const default_read_delay_min_ns: u64 = 1_000;
-const default_read_delay_max_ns: u64 = 1_000_000;
+const default_read_delay_min_ns: u64 = 2_500;
+const default_read_delay_max_ns: u64 = 2_500_000;
 const default_read_delay_backoff_factor: u8 = 2;
 const default_return_char: []const u8 = "\n";
 const default_operation_timeout_ns: u64 = 10_000_000_000;
