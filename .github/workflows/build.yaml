@@ -26,6 +26,13 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      # never got around to figuring out how to ensure the openssl generate step runs *once* even
+      # when being built against all the targets, so this is a quick/easy hack to ensure that :)
+      - name: ensure openssl generate step cached
+        run: |
+          zig build
+        working-directory: lib/openssl
+
       - name: build the examples
         run: |
           make build-examples
