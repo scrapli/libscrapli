@@ -323,8 +323,14 @@ export fn fetchOperation(
     } else {
         const _ret = ret.result.?;
 
-        operation_start_time.* = @intCast(_ret.start_time_ns);
-        operation_end_time.* = @intCast(_ret.splits_ns.items[_ret.splits_ns.items.len - 1]);
+        if (_ret.splits_ns.items.len > 0) {
+            operation_start_time.* = @intCast(_ret.start_time_ns);
+            operation_end_time.* = @intCast(_ret.splits_ns.items[_ret.splits_ns.items.len - 1]);
+        } else {
+            // was a noop -- like enterMode but where mode didn't change
+            operation_start_time.* = @intCast(_ret.start_time_ns);
+            operation_end_time.* = @intCast(_ret.start_time_ns);
+        }
 
         // to avoid a pointless allocation since we are already copying from the result into the
         // given string pointers, we'll do basically the same thing the result does in normal (zig)
