@@ -138,6 +138,7 @@ test "driver open" {
             allocator: std.mem.Allocator,
             cancel: ?*bool,
         ) anyerror!*result.Result,
+        prompt: []const u8,
     }{
         .{
             .name = "simple",
@@ -147,6 +148,7 @@ test "driver open" {
             .username = "admin",
             .key = null,
             .passphrase = null,
+            .prompt = "A:srl#"
         },
         .{
             .name = "simple",
@@ -156,6 +158,7 @@ test "driver open" {
             .username = "admin",
             .key = null,
             .passphrase = null,
+            .prompt = "A:srl#"
         },
         .{
             .name = "simple",
@@ -165,6 +168,7 @@ test "driver open" {
             .username = "admin",
             .key = null,
             .passphrase = null,
+            .prompt = "eos1>",
         },
         .{
             .name = "simple",
@@ -174,6 +178,7 @@ test "driver open" {
             .username = "admin",
             .key = null,
             .passphrase = null,
+            .prompt = "eos1>",
         },
         .{
             .name = "simple-with-key",
@@ -183,6 +188,7 @@ test "driver open" {
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
             .passphrase = null,
+            .prompt = "eos1>",
         },
         .{
             .name = "simple-with-key",
@@ -192,6 +198,7 @@ test "driver open" {
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
             .passphrase = null,
+            .prompt = "eos1>",
         },
         .{
             .name = "simple-with-key-with-passphrase",
@@ -201,6 +208,7 @@ test "driver open" {
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
             .passphrase = "libscrapli",
+            .prompt = "eos1>",
         },
         .{
             .name = "simple-with-key-with-passphrase",
@@ -210,6 +218,7 @@ test "driver open" {
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
             .passphrase = "libscrapli",
+            .prompt = "eos1>",
         },
         // TODO with callbacks and bound callbacks too
     };
@@ -226,31 +235,48 @@ test "driver open" {
         const golden_filename = try std.fmt.allocPrint(
             std.testing.allocator,
             "src/tests/functional/golden/driver/{s}-{s}-{s}-{s}.txt",
-            .{ test_name, case.name, case.platform, case.transportKind.toString() },
+            .{ test_name, case.name, case.platform, case.transportKind.toString()},
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d = try GetDriver(case.transportKind, case.platform, case.username, case.key, case.passphrase);
+        var d = try GetDriver(
+            case.transportKind,
+            case.platform,
+            case.username,
+            case.key,
+            case.passphrase,
+        );
         d.definition.on_open_callback = case.on_open_callback;
 
         defer d.deinit();
 
+        // rather than dealing w/ capturing exact banner/login/etc. (which is a PITA, esp w/ diff
+        // hosts -- darwin vs linux, clab w/ port forward vs docker bridge etc etc), just ignore
+        // the first part, slicing the buf at the prompt we know to expect
         const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
+            const close_res = d.close(
+                std.testing.allocator,
+                .{},
+            ) catch unreachable;
             close_res.deinit();
         }
 
         const actual = try actual_res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
+        const prompt_index = std.mem.indexOf(u8, actual, case.prompt);
+        if (prompt_index == null) {
+            return error.NoPromptFound;
+        }
+
         try helper.processFixutreTestStrResult(
             test_name,
             case.name,
             golden_filename,
-            actual,
+            actual[prompt_index.?..],
         );
     }
 }

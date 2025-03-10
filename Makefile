@@ -19,7 +19,7 @@ test-functional: fmt ## Run functional tests
 	zig build test --summary all -- --functional
 
 test-functional-ci: fmt ## Run functional tests (w/ limited ci platforms)
-	zig build test --summary all -- --functional --ci
+	TERM=screen-256color zig build test --summary all -- --functional --ci
 
 test-coverage: fmt ## Run integration tests plus coverage (goes to zig-out/cover)
 	rm -rf zig-out/cover || true

@@ -3,19 +3,15 @@ const flags = @import("flags.zig");
 const file = @import("file.zig");
 const re = @import("re.zig");
 
-const user_at_host_pattern = "\\w+@[\\w\\d\\.]+";
-const known_hosts_pattern = "^Warning: Permanently added .* to the list of known hosts.\\s*\n";
 const timestamp_pattern = "((mon)|(tue)|(wed)|(thu)|(fri)|(sat)|(sun))\\s+((jan)|(feb)|(mar)|(apr)|(may)|(jun)|(jul)|(aug)|(sep)|(oct)|(nov)|(dec))\\s+\\d+\\s+\\d+:\\d+:\\d+ \\d+";
 const last_login_pattern = "^last login.*$";
 const netconf_timestamp_pattern = "\\d{4}-\\d{2}-\\d{2}T\\d+:\\d+:\\d+.\\d+Z";
 const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
 
-const normalize_funcs = [5]*const fn (
+const normalize_funcs = [3]*const fn (
     allocator: std.mem.Allocator,
     haystack: []const u8,
 ) anyerror![]const u8{
-    normalizeUserAtHost,
-    normalizeBinTransportOutput,
     normalizeTimestamps,
     normalizeLastLogin,
     normalizeNetconfSessionId,
@@ -33,7 +29,6 @@ pub fn processFixutreTestStrResult(
     defer std.testing.allocator.free(_actual);
     @memcpy(_actual, actual);
 
-    // normalize actual
     for (normalize_funcs) |f| {
         const ret = try f(std.testing.allocator, _actual);
         defer std.testing.allocator.free(ret);
@@ -116,7 +111,7 @@ pub fn testStrResult(
     for (expected[0..diff_index.?]) |value| {
         if (value == '\n') diff_line_number += 1;
     }
-    std.debug.print("First difference occurs on line {d}:\n", .{diff_line_number});
+    std.debug.print("\nFirst difference occurs on line {d}:\n", .{diff_line_number});
 
     std.debug.print("expected:\n", .{});
     printIndicatorLine(expected, diff_index.?);
@@ -127,94 +122,6 @@ pub fn testStrResult(
     std.debug.print("===========================\n", .{});
 
     return error.AssertionFailed;
-}
-
-fn normalizeUserAtHost(
-    allocator: std.mem.Allocator,
-    haystack: []const u8,
-) anyerror![]const u8 {
-    if (haystack.len != 0) {
-        const compiled_user_at_host_pattern = re.pcre2Compile(
-            user_at_host_pattern,
-        );
-        defer re.pcre2Free(compiled_user_at_host_pattern.?);
-
-        const match_indexes = try re.pcre2FindIndex(
-            compiled_user_at_host_pattern.?,
-            haystack,
-        );
-        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
-            const replace = "user@host";
-
-            const replace_size = std.mem.replacementSize(
-                u8,
-                haystack,
-                haystack[match_indexes[0]..match_indexes[1]],
-                replace,
-            );
-
-            const out = try allocator.alloc(u8, replace_size);
-
-            _ = std.mem.replace(
-                u8,
-                haystack,
-                haystack[match_indexes[0]..match_indexes[1]],
-                replace,
-                out,
-            );
-
-            return out;
-        }
-    }
-
-    const out = try allocator.alloc(u8, haystack.len);
-    @memcpy(out, haystack);
-
-    return out;
-}
-
-fn normalizeBinTransportOutput(
-    allocator: std.mem.Allocator,
-    haystack: []const u8,
-) anyerror![]const u8 {
-    if (haystack.len != 0) {
-        const compiled_known_hosts_pattern = re.pcre2Compile(
-            known_hosts_pattern,
-        );
-        defer re.pcre2Free(compiled_known_hosts_pattern.?);
-
-        const match_indexes = try re.pcre2FindIndex(
-            compiled_known_hosts_pattern.?,
-            haystack,
-        );
-        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
-            const replace = "";
-
-            const replace_size = std.mem.replacementSize(
-                u8,
-                haystack,
-                haystack[match_indexes[0]..match_indexes[1]],
-                replace,
-            );
-
-            const out = try allocator.alloc(u8, replace_size);
-
-            _ = std.mem.replace(
-                u8,
-                haystack,
-                haystack[match_indexes[0]..match_indexes[1]],
-                replace,
-                out,
-            );
-
-            return out;
-        }
-    }
-
-    const out = try allocator.alloc(u8, haystack.len);
-    @memcpy(out, haystack);
-
-    return out;
 }
 
 fn normalizeTimestamps(
