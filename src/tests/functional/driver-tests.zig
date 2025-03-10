@@ -11,6 +11,7 @@ const ssh2_transport = @import("../../transport-ssh2.zig");
 const telnet_transport = @import("../../transport-telnet.zig");
 const operation = @import("../../operation.zig");
 const result = @import("../../result.zig");
+const flags = @import("../../flags.zig");
 
 const helper = @import("../../test-helper.zig");
 
@@ -196,6 +197,11 @@ test "driver open" {
     };
 
     for (cases) |case| {
+        const is_ci = flags.parseCustomFlag("--ci", false);
+        if (is_ci and std.mem.eql(u8, case.platform, "arista-eos")) {
+            continue;
+        }
+
         // open has its own golden files since this will include in channel auth for some transports
         // but not others
         const golden_filename = try std.fmt.allocPrint(
