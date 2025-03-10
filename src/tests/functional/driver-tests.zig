@@ -4,6 +4,7 @@
 // note: disabling unused-dcls because it thinks result is unused, will look at zlint later to try
 //       to fix and pr!
 const std = @import("std");
+const os = @import("builtin").os.tag;
 
 const driver = @import("../../driver.zig");
 const transport = @import("../../transport.zig");
@@ -11,6 +12,7 @@ const ssh2_transport = @import("../../transport-ssh2.zig");
 const telnet_transport = @import("../../transport-telnet.zig");
 const operation = @import("../../operation.zig");
 const result = @import("../../result.zig");
+const flags = @import("../../flags.zig");
 
 const helper = @import("../../test-helper.zig");
 
@@ -24,6 +26,9 @@ fn GetDriver(
     key: ?[]const u8,
     passphrase: ?[]const u8,
 ) !*driver.Driver {
+    // on darwin we'll be targetting localhost, on linux we'll target the ips exposed via clab/docker
+    var host: []const u8 = undefined;
+
     var platform_definition_path: []const u8 = undefined;
 
     var config = driver.Config{
@@ -34,17 +39,31 @@ fn GetDriver(
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         platform_definition_path = nokia_srlinux_platform_path_from_project_root;
-        config.port = 21022;
         config.auth.lookup_map = &.{
             .{ .key = "login", .value = "NokiaSrl1!" },
         };
+
+        if (os == .macos) {
+            host = "localhost";
+            config.port = 21022;
+        } else {
+            host = "172.20.20.16";
+            config.port = 22;
+        }
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
         platform_definition_path = arista_eos_platform_path_from_project_root;
-        config.port = 22022;
         config.auth.lookup_map = &.{
             .{ .key = "login", .value = "admin" },
             .{ .key = "enable", .value = "libscrapli" },
         };
+
+        if (os == .macos) {
+            host = "localhost";
+            config.port = 22022;
+        } else {
+            host = "172.20.20.17";
+            config.port = 22;
+        }
     } else {
         return error.UnknownPlatform;
     }
@@ -99,7 +118,7 @@ fn GetDriver(
 
     return driver.Driver.init(
         std.testing.allocator,
-        "localhost",
+        host,
         config,
     );
 }
@@ -195,7 +214,13 @@ test "driver open" {
         // TODO with callbacks and bound callbacks too
     };
 
+    const is_ci = flags.parseCustomFlag("--ci", false);
+
     for (cases) |case| {
+        if (is_ci and std.mem.eql(u8, case.platform, "arista-eos")) {
+            continue;
+        }
+
         // open has its own golden files since this will include in channel auth for some transports
         // but not others
         const golden_filename = try std.fmt.allocPrint(

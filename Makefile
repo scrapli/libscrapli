@@ -46,7 +46,7 @@ build-clab-launcher: ## Builds the clab launcher image
 		-t clab-launcher:latest \
 		src/tests/functional/clab/launcher
 
-run-clab: ## Runs the clab functional testing topo
+run-clab: ## Runs the clab functional testing topo; uses the clab launcher to run nicely on darwin
 	docker network rm clab || true
 	docker network create \
 		--driver bridge \
