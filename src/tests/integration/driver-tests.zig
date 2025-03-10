@@ -248,11 +248,21 @@ test "driver open" {
             if (record) {
                 f.close();
 
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
+                var content = file.readFromPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                ) catch unreachable;
                 defer std.testing.allocator.free(content);
 
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
+                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                    content,
+                    0,
+                );
+                file.writeToPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                    content[0..new_size],
+                ) catch unreachable;
             }
         }
 
@@ -277,7 +287,10 @@ test "driver open" {
         defer actual_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
+            const close_res = d.close(
+                std.testing.allocator,
+                .{},
+            ) catch unreachable;
             close_res.deinit();
         }
 
@@ -405,11 +418,21 @@ test "driver get-prompt" {
             if (record) {
                 f.close();
 
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
+                var content = file.readFromPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                ) catch unreachable;
                 defer std.testing.allocator.free(content);
 
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
+                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                    content,
+                    0,
+                );
+                file.writeToPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                    content[0..new_size],
+                ) catch unreachable;
             }
         }
 
@@ -432,7 +455,10 @@ test "driver get-prompt" {
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
+            const close_res = d.close(
+                std.testing.allocator,
+                .{},
+            ) catch unreachable;
             close_res.deinit();
         }
 
@@ -479,7 +505,10 @@ test "driver get-prompt-timeout" {
     defer open_res.deinit();
 
     defer {
-        const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
+        const close_res = d.close(
+            std.testing.allocator,
+            .{},
+        ) catch unreachable;
         close_res.deinit();
     }
 
@@ -600,11 +629,21 @@ test "driver enter-mode" {
             if (record) {
                 f.close();
 
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
+                var content = file.readFromPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                ) catch unreachable;
                 defer std.testing.allocator.free(content);
 
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
+                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                    content,
+                    0,
+                );
+                file.writeToPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                    content[0..new_size],
+                ) catch unreachable;
             }
         }
 
@@ -627,7 +666,10 @@ test "driver enter-mode" {
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
+            const close_res = d.close(
+                std.testing.allocator,
+                .{},
+            ) catch unreachable;
             close_res.deinit();
         }
 
@@ -672,7 +714,11 @@ test "driver enter-mode-timeout" {
 
     try std.testing.expectError(
         error.Timeout,
-        d.enterMode(std.testing.allocator, "configuration", .{}),
+        d.enterMode(
+            std.testing.allocator,
+            "configuration",
+            .{},
+        ),
     );
 }
 
@@ -809,11 +855,21 @@ test "driver send-input" {
             if (record) {
                 f.close();
 
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
+                var content = file.readFromPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                ) catch unreachable;
                 defer std.testing.allocator.free(content);
 
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
+                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                    content,
+                    0,
+                );
+                file.writeToPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                    content[0..new_size],
+                ) catch unreachable;
             }
         }
 
@@ -836,7 +892,10 @@ test "driver send-input" {
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
+            const close_res = d.close(
+                std.testing.allocator,
+                .{},
+            ) catch unreachable;
             close_res.deinit();
         }
 
@@ -1052,11 +1111,21 @@ test "driver send-inputs" {
             if (record) {
                 f.close();
 
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
+                var content = file.readFromPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                ) catch unreachable;
                 defer std.testing.allocator.free(content);
 
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
+                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                    content,
+                    0,
+                );
+                file.writeToPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                    content[0..new_size],
+                ) catch unreachable;
             }
         }
 
@@ -1079,7 +1148,10 @@ test "driver send-inputs" {
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
+            const close_res = d.close(
+                std.testing.allocator,
+                .{},
+            ) catch unreachable;
             close_res.deinit();
         }
 
@@ -1288,11 +1360,21 @@ test "driver send-prompted-input" {
             if (record) {
                 f.close();
 
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
+                var content = file.readFromPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                ) catch unreachable;
                 defer std.testing.allocator.free(content);
 
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
+                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                    content,
+                    0,
+                );
+                file.writeToPath(
+                    std.testing.allocator,
+                    fixture_filename,
+                    content[0..new_size],
+                ) catch unreachable;
             }
         }
 
@@ -1315,7 +1397,10 @@ test "driver send-prompted-input" {
         defer open_res.deinit();
 
         defer {
-            const close_res = d.close(std.testing.allocator, .{}) catch unreachable;
+            const close_res = d.close(
+                std.testing.allocator,
+                .{},
+            ) catch unreachable;
             close_res.deinit();
         }
 

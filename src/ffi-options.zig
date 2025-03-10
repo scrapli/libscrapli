@@ -89,6 +89,25 @@ export fn setDriverOptionSessionOperationMaxSearchDepth(
     return 0;
 }
 
+// this is unsafe/will leak, and should only be used in testing
+export fn setDriverOptionSessionRecorderPath(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    var f = std.fs.cwd().createFile(
+        std.mem.span(value),
+        .{},
+    ) catch {
+        return 1;
+    };
+
+    d.real_driver.session.options.recorder = f.writer();
+
+    return 0;
+}
+
 //
 // auth options
 //
@@ -416,6 +435,33 @@ export fn setDriverOptionSSH2TransportSSH2Trace(
     switch (d.real_driver.session.transport.implementation) {
         .ssh2 => {
             d.real_driver.options.transport.ssh2.libssh2_trace = true;
+        },
+        else => {
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
+//
+// test transport options
+//
+
+export fn setDriverOptionTestTransportF(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver.session.transport.implementation) {
+        .test_ => {
+            d.real_driver.options.transport.test_.f = d.real_driver.options.transport.test_.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                return 1;
+            };
         },
         else => {
             return 1;

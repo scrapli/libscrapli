@@ -91,9 +91,7 @@ export fn allocDriver(
                 transport.Kind.bin => .{ .bin = .{} },
                 transport.Kind.telnet => .{ .telnet = .{} },
                 transport.Kind.ssh2 => .{ .ssh2 = .{} },
-                else => {
-                    unreachable;
-                },
+                transport.Kind.test_ => .{ .test_ = .{} },
             },
         },
     ) catch |err| {

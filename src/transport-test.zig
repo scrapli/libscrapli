@@ -94,7 +94,6 @@ pub const Transport = struct {
 
         // we'll just read 0 bytes when eof, would be probably bad to not report eof upstream in
         // a "normal" transport, but doesnt matter for the test one
-
         return n;
     }
 };
