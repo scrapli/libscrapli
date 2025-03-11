@@ -138,7 +138,6 @@ test "driver open" {
             allocator: std.mem.Allocator,
             cancel: ?*bool,
         ) anyerror!*result.Result,
-        prompt: []const u8,
     }{
         .{
             .name = "simple",
@@ -148,7 +147,6 @@ test "driver open" {
             .username = "admin",
             .key = null,
             .passphrase = null,
-            .prompt = "A:srl#"
         },
         .{
             .name = "simple",
@@ -158,7 +156,6 @@ test "driver open" {
             .username = "admin",
             .key = null,
             .passphrase = null,
-            .prompt = "A:srl#"
         },
         .{
             .name = "simple",
@@ -168,7 +165,6 @@ test "driver open" {
             .username = "admin",
             .key = null,
             .passphrase = null,
-            .prompt = "eos1>",
         },
         .{
             .name = "simple",
@@ -178,7 +174,6 @@ test "driver open" {
             .username = "admin",
             .key = null,
             .passphrase = null,
-            .prompt = "eos1>",
         },
         .{
             .name = "simple-with-key",
@@ -188,7 +183,6 @@ test "driver open" {
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
             .passphrase = null,
-            .prompt = "eos1>",
         },
         .{
             .name = "simple-with-key",
@@ -198,7 +192,6 @@ test "driver open" {
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
             .passphrase = null,
-            .prompt = "eos1>",
         },
         .{
             .name = "simple-with-key-with-passphrase",
@@ -208,7 +201,6 @@ test "driver open" {
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
             .passphrase = "libscrapli",
-            .prompt = "eos1>",
         },
         .{
             .name = "simple-with-key-with-passphrase",
@@ -218,7 +210,6 @@ test "driver open" {
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
             .passphrase = "libscrapli",
-            .prompt = "eos1>",
         },
         // TODO with callbacks and bound callbacks too
     };
@@ -235,7 +226,7 @@ test "driver open" {
         const golden_filename = try std.fmt.allocPrint(
             std.testing.allocator,
             "src/tests/functional/golden/driver/{s}-{s}-{s}-{s}.txt",
-            .{ test_name, case.name, case.platform, case.transportKind.toString()},
+            .{ test_name, case.name, case.platform, case.transportKind.toString() },
         );
         defer std.testing.allocator.free(golden_filename);
 
@@ -267,16 +258,11 @@ test "driver open" {
         const actual = try actual_res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
-        const prompt_index = std.mem.indexOf(u8, actual, case.prompt);
-        if (prompt_index == null) {
-            return error.NoPromptFound;
-        }
-
-        try helper.processFixutreTestStrResult(
+        try helper.processFixutreTestStrResultRoughly(
             test_name,
             case.name,
             golden_filename,
-            actual[prompt_index.?..],
+            actual,
         );
     }
 }

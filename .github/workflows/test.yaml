@@ -97,8 +97,9 @@ jobs:
         run: |
           ./wait.sh
         working-directory: src/tests/functional/clab
+        # wait.sh should timeout but seems like it sometimes gets hung in actions
         timeout-minutes: 5
 
-      - name: run the integration tests
+      - name: run the functional tests
         run: |
           make test-functional-ci

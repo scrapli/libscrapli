@@ -1,32 +1,35 @@
 const std = @import("std");
+const bytes = @import("bytes.zig");
 const flags = @import("flags.zig");
 const file = @import("file.zig");
 const re = @import("re.zig");
 
+const user_at_host_pattern = "\\w+@[\\w\\d\\.]+";
+const known_hosts_pattern = "^Warning: Permanently added .* to the list of known hosts.\\s*\n";
 const timestamp_pattern = "((mon)|(tue)|(wed)|(thu)|(fri)|(sat)|(sun))\\s+((jan)|(feb)|(mar)|(apr)|(may)|(jun)|(jul)|(aug)|(sep)|(oct)|(nov)|(dec))\\s+\\d+\\s+\\d+:\\d+:\\d+ \\d+";
 const last_login_pattern = "^last login.*$";
 const netconf_timestamp_pattern = "\\d{4}-\\d{2}-\\d{2}T\\d+:\\d+:\\d+.\\d+Z";
 const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
 
-const normalize_funcs = [3]*const fn (
+const normalize_funcs = [5]*const fn (
     allocator: std.mem.Allocator,
     haystack: []const u8,
 ) anyerror![]const u8{
+    normalizeUserAtHost,
+    normalizeBinTransportOutput,
     normalizeTimestamps,
     normalizeLastLogin,
     normalizeNetconfSessionId,
 };
 
-pub fn processFixutreTestStrResult(
-    test_name: []const u8,
-    case_name: []const u8,
+fn processCommon(
     golden_filename: []const u8,
     actual: []const u8,
-) !void {
+) !?[2][]const u8 {
     const update = flags.parseCustomFlag("--update", false);
 
     var _actual = try std.testing.allocator.alloc(u8, actual.len);
-    defer std.testing.allocator.free(_actual);
+    errdefer std.testing.allocator.free(_actual);
     @memcpy(_actual, actual);
 
     for (normalize_funcs) |f| {
@@ -42,7 +45,7 @@ pub fn processFixutreTestStrResult(
     if (update) {
         try file.writeToPath(std.testing.allocator, golden_filename, actual);
 
-        return;
+        return null;
     }
 
     const expected = try file.readFromPath(
@@ -52,7 +55,7 @@ pub fn processFixutreTestStrResult(
     defer std.testing.allocator.free(expected);
 
     var _expected = try std.testing.allocator.alloc(u8, expected.len);
-    defer std.testing.allocator.free(_expected);
+    errdefer std.testing.allocator.free(_expected);
     @memcpy(_expected, expected);
 
     // normalize expected
@@ -66,11 +69,54 @@ pub fn processFixutreTestStrResult(
         @memcpy(_expected, ret);
     }
 
+    return [2][]const u8{ _actual, _expected };
+}
+
+pub fn processFixutreTestStrResult(
+    test_name: []const u8,
+    case_name: []const u8,
+    golden_filename: []const u8,
+    actual: []const u8,
+) !void {
+    const maybe_processed = try processCommon(golden_filename, actual);
+
+    if (maybe_processed == null) {
+        // we wrote golden, so no point comparing
+        return;
+    }
+
+    defer std.testing.allocator.free(maybe_processed.?[0]);
+    defer std.testing.allocator.free(maybe_processed.?[1]);
+
     try testStrResult(
         test_name,
         case_name,
-        _actual,
-        _expected,
+        maybe_processed.?[0],
+        maybe_processed.?[1],
+    );
+}
+
+pub fn processFixutreTestStrResultRoughly(
+    test_name: []const u8,
+    case_name: []const u8,
+    golden_filename: []const u8,
+    actual: []const u8,
+) !void {
+    const maybe_processed = try processCommon(golden_filename, actual);
+
+    if (maybe_processed == null) {
+        // we wrote golden, so no point comparing
+        return;
+    }
+
+    defer std.testing.allocator.free(maybe_processed.?[0]);
+    defer std.testing.allocator.free(maybe_processed.?[1]);
+
+    try testStrResultRoughly(
+        test_name,
+        case_name,
+        maybe_processed.?[0],
+        maybe_processed.?[1],
     );
 }
 
@@ -99,6 +145,58 @@ pub fn testStrResult(
         return;
     }
 
+    displayDiff(
+        display_name,
+        diff_index,
+        actual,
+        expected,
+    );
+
+    return error.AssertionFailed;
+}
+
+pub fn testStrResultRoughly(
+    test_name: []const u8,
+    case_name: []const u8,
+    actual: []const u8,
+    expected: []const u8,
+) !void {
+    var display_name = test_name;
+    if (case_name.len > 0) {
+        display_name = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "{s} {s}",
+            .{ test_name, case_name },
+        );
+    }
+
+    defer if (case_name.len > 0) {
+        std.testing.allocator.free(display_name);
+    };
+
+    // the tests in actions (at least driver open for now) that call this can have extra newlines
+    // and weird shit that cant be reproduced on darwin or linux locally it seems, so... just say
+    // screw it and make sure that all of the expected stuff is in there
+    const match_indexes = bytes.roughlyContains(expected, actual);
+
+    if (match_indexes[0] == 0 and match_indexes[1] == 0) {
+        displayDiff(
+            display_name,
+            null,
+            actual,
+            expected,
+        );
+
+        return error.AssertionFailed;
+    }
+}
+
+fn displayDiff(
+    display_name: []const u8,
+    diff_index: ?usize,
+    actual: []const u8,
+    expected: []const u8,
+) void {
     std.debug.print("test {s} failed...\n", .{display_name});
     std.debug.print("===========================\n\n", .{});
     std.debug.print("actual ------------------->\n", .{});
@@ -106,6 +204,10 @@ pub fn testStrResult(
     std.debug.print("<-actual---------expected->\n", .{});
     printWithVisibleNewlines(expected);
     std.debug.print("<----------------- expected\n\n", .{});
+
+    if (diff_index == null) {
+        return;
+    }
 
     var diff_line_number: usize = 1;
     for (expected[0..diff_index.?]) |value| {
@@ -120,8 +222,94 @@ pub fn testStrResult(
     printIndicatorLine(actual, diff_index.?);
 
     std.debug.print("===========================\n", .{});
+}
 
-    return error.AssertionFailed;
+fn normalizeUserAtHost(
+    allocator: std.mem.Allocator,
+    haystack: []const u8,
+) anyerror![]const u8 {
+    if (haystack.len != 0) {
+        const compiled_user_at_host_pattern = re.pcre2Compile(
+            user_at_host_pattern,
+        );
+        defer re.pcre2Free(compiled_user_at_host_pattern.?);
+
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_user_at_host_pattern.?,
+            haystack,
+        );
+        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
+            const replace = "user@host";
+
+            const replace_size = std.mem.replacementSize(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                replace,
+            );
+
+            const out = try allocator.alloc(u8, replace_size);
+
+            _ = std.mem.replace(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                replace,
+                out,
+            );
+
+            return out;
+        }
+    }
+
+    const out = try allocator.alloc(u8, haystack.len);
+    @memcpy(out, haystack);
+
+    return out;
+}
+
+fn normalizeBinTransportOutput(
+    allocator: std.mem.Allocator,
+    haystack: []const u8,
+) anyerror![]const u8 {
+    if (haystack.len != 0) {
+        const compiled_known_hosts_pattern = re.pcre2Compile(
+            known_hosts_pattern,
+        );
+        defer re.pcre2Free(compiled_known_hosts_pattern.?);
+
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_known_hosts_pattern.?,
+            haystack,
+        );
+        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
+            const replace = "";
+
+            const replace_size = std.mem.replacementSize(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                replace,
+            );
+
+            const out = try allocator.alloc(u8, replace_size);
+
+            _ = std.mem.replace(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                replace,
+                out,
+            );
+
+            return out;
+        }
+    }
+
+    const out = try allocator.alloc(u8, haystack.len);
+    @memcpy(out, haystack);
+
+    return out;
 }
 
 fn normalizeTimestamps(

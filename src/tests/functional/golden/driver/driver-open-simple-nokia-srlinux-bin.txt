@@ -1,3 +1,26 @@
+Warning: Permanently added '[localhost]:21022' (ED25519) to the list of known hosts.
+................................................................
+:                  Welcome to Nokia SR Linux!                  :
+:              Open Network OS for the NetOps era.             :
+:                                                              :
+:    This is a freely distributed official container image.    :
+:                      Use it - Share it                       :
+:                                                              :
+: Get started: https://learn.srlinux.dev                       :
+: Container:   https://go.srlinux.dev/container-image          :
+: Docs:        https://doc.srlinux.dev/22-11                   :
+: Rel. notes:  https://doc.srlinux.dev/rn22-11-1               :
+: YANG:        https://yang.srlinux.dev/v22.11.1               :
+: Discord:     https://go.srlinux.dev/discord                  :
+: Contact:     https://go.srlinux.dev/contact-sales            :
+................................................................
+
+(admin@localhost) Password:
+Last login: Tue Mar 11 02:40:38 2025 from 192.168.65.1
+Using configuration file(s): []
+Welcome to the srlinux CLI.
+Type 'help' (and press <ENTER>) if you need any help using this.
+--{ + running }--[  ]--
 A:srl#
 --{ + running }--[  ]--
 A:srl#

@@ -18,7 +18,7 @@ test-integration: fmt ## Run integration tests
 test-functional: fmt ## Run functional tests
 	zig build test --summary all -- --functional
 
-test-functional-ci: fmt ## Run functional tests (w/ limited ci platforms)
+test-functional-ci: fmt ## Run functional tests (w/ limited ci platforms); ensures TERM set, since this is normally unset in GH actions
 	TERM=screen-256color zig build test --summary all -- --functional --ci
 
 test-coverage: fmt ## Run integration tests plus coverage (goes to zig-out/cover)
