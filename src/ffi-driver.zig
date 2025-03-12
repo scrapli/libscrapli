@@ -115,31 +115,6 @@ pub const FfiDriver = struct {
     }
 
     pub fn deinit(self: *FfiDriver) void {
-        self.operation_queue.deinit();
-        self.operation_results.deinit();
-        self.real_driver.deinit();
-        self.allocator.destroy(self);
-    }
-
-    pub fn open(self: *FfiDriver) !void {
-        self.operation_thread = std.Thread.spawn(
-            .{},
-            FfiDriver.operationLoop,
-            .{self},
-        ) catch |err| {
-            self.real_driver.log.critical("failed spawning operation thread, err: {}", .{err});
-
-            return error.OpenFailed;
-        };
-
-        while (!self.operation_ready.load(std.builtin.AtomicOrder.acquire)) {
-            // this blocks us until the operation thread is ready and processing, otherwise the
-            // submit open will never get picked up
-            std.time.sleep(operation_thread_ready_sleep);
-        }
-    }
-
-    pub fn close(self: *FfiDriver, cancel: *bool) !void {
         // signal to the operation thread to stop, cant defer unlock because it obviously needs
         // to be unlocked for us to join on the thread or the thread would block waiting to acquire
         self.operation_lock.lock();
@@ -152,6 +127,34 @@ pub const FfiDriver = struct {
             self.operation_thread.?.join();
         }
 
+        self.operation_queue.deinit();
+        self.operation_results.deinit();
+        self.real_driver.deinit();
+        self.allocator.destroy(self);
+    }
+
+    pub fn open(self: *FfiDriver) !void {
+        self.operation_thread = std.Thread.spawn(
+            .{},
+            FfiDriver.operationLoop,
+            .{self},
+        ) catch |err| {
+            self.real_driver.log.critical(
+                "failed spawning operation thread, err: {}",
+                .{err},
+            );
+
+            return error.OpenFailed;
+        };
+
+        while (!self.operation_ready.load(std.builtin.AtomicOrder.acquire)) {
+            // this blocks us until the operation thread is ready and processing, otherwise the
+            // submit open will never get picked up
+            std.time.sleep(operation_thread_ready_sleep);
+        }
+    }
+
+    pub fn close(self: *FfiDriver, cancel: *bool) !void {
         // in ffi land the wrapper (py/go/whatever) deals with on open/close so in the case of close
         // there is no point sending any string content back because there will be none (this is
         // in contrast to open where there may be login/auth content!)
@@ -328,7 +331,10 @@ pub const FfiDriver = struct {
         }
 
         while (true) {
-            const ret = try self.pollOperation(operation_id, false);
+            const ret = try self.pollOperation(
+                operation_id,
+                false,
+            );
 
             if (!ret.done) {
                 std.time.sleep(sleep_interval);
