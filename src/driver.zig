@@ -312,6 +312,7 @@ pub const Driver = struct {
                 },
             ),
         );
+
         self.current_mode = try mode.determineMode(
             self.definition.modes,
             res.results.items[0],
@@ -417,6 +418,8 @@ pub const Driver = struct {
                 }
             }
         }
+
+        self.current_mode = self.definition.modes.getKey(requested_mode_name).?;
 
         return res;
     }
