@@ -45,6 +45,8 @@ fn processCommon(
     if (update) {
         try file.writeToPath(std.testing.allocator, golden_filename, actual);
 
+        std.testing.allocator.free(_actual);
+
         return null;
     }
 
