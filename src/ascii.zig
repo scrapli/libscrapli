@@ -102,8 +102,10 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
                 read_idx += 1;
                 continue;
             },
-            control_chars.tab, control_chars.lf, control_chars.vt, control_chars.cr => {
+            control_chars.tab, control_chars.lf, control_chars.vt => {
                 // Keep non-display chars we want to preserve.
+                // NOTE: we used to *include*, control_chars.cr in this but that caused alllllllll
+                // sorts of problems w/ eos which included cr in bash prompts for example
                 haystack[write_idx] = char;
                 write_idx += 1;
                 read_idx += 1;
@@ -278,14 +280,14 @@ test "stripAsciiAndAnsiControlCharsInPlace" {
             .expectedNewSize = 8,
             .expected = "foo  bar",
         },
-        // we are *not* stripping carriage returns
-        .{
-            .name = "CR",
-            .haystack = "foo \x0D bar",
-            .startIdx = 0,
-            .expectedNewSize = 9,
-            .expected = "foo \x0D bar",
-        },
+        // we *used to not* strip carriage returns (see other comments in here)
+        // .{
+        //     .name = "CR",
+        //     .haystack = "foo \x0D bar",
+        //     .startIdx = 0,
+        //     .expectedNewSize = 9,
+        //     .expected = "foo \x0D bar",
+        // },
         .{
             .name = "DEL",
             .haystack = "foo \x7F bar",
@@ -447,7 +449,12 @@ test "stripAsciiAndAnsiControlCharsInPlace" {
         );
 
         try std.testing.expectEqual(case.expectedNewSize, actualNewSize);
-        try thelper.testStrResult("stripAsciiAndAnsiControlCharsInPlace", case.name, haystack[0..actualNewSize], case.expected);
+        try thelper.testStrResult(
+            "stripAsciiAndAnsiControlCharsInPlace",
+            case.name,
+            haystack[0..actualNewSize],
+            case.expected,
+        );
     }
 }
 
@@ -478,8 +485,9 @@ pub fn stripAsciiControlCharsInPlace(
         }
 
         switch (char) {
-            control_chars.tab, control_chars.lf, control_chars.vt, control_chars.cr => {
+            control_chars.tab, control_chars.lf, control_chars.vt => {
                 // Keep non-display chars we want to preserve.
+                // NOTE: see other note about "non-display chars we want to preserve"
                 haystack.items[write_idx] = char;
                 write_idx += 1;
                 continue;
