@@ -11,7 +11,7 @@ const transport = @import("transport.zig");
 
 const ffi_options = @import("ffi-options.zig");
 
-pub export const _force_include = &ffi_options.noop;
+pub export const _force_include_ffi_options = &ffi_options.noop;
 
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
@@ -30,19 +30,34 @@ pub const std_options = std.Options{
     },
 };
 
-// TODO should ensure that we use std page alloc for release/gpa for test
+// TODO should ensure that we use std page alloc for release/debug for test
 // std page allocator
 // const allocator = std.heap.page_allocator;
 
 // gpa for testing allocs
-var gpa_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa_allocator.allocator();
+var debug_allocator = std.heap.DebugAllocator(.{}){};
+const allocator = debug_allocator.allocator();
 
 export fn assertNoLeaks() bool {
-    switch (gpa_allocator.deinit()) {
+    switch (debug_allocator.deinit()) {
         .leak => return false,
         .ok => return true,
     }
+}
+
+pub const ExportedDriver = union(enum) {
+    driver: ffi_driver.FfiDriver,
+    netconf: ffi_driver_netconf.FfiDriver,
+};
+
+export fn stripAsciiAndAnsiControlCharsInPlace(
+    haystack: *[]u8,
+    start_idx: usize,
+) usize {
+    return ascii.stripAsciiAndAnsiControlCharsInPlace(
+        haystack.*,
+        start_idx,
+    );
 }
 
 fn getTransport(transport_kind: []const u8) transport.Kind {

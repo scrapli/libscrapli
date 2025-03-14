@@ -87,6 +87,7 @@ pub const Options = struct {
     auth: *auth.Options,
     session: *session.Options,
     transport: *transport.Options,
+    // TODO custom/extra client caps?
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,

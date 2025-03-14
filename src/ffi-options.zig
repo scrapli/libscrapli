@@ -1,6 +1,7 @@
 const std = @import("std");
 const ffi_driver = @import("ffi-driver.zig");
 
+// for forcing inclusion in the ffi.zig entrypoint we use for the ffi layer
 pub export fn noop() void {}
 
 //
