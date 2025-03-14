@@ -1,5 +1,5 @@
 const std = @import("std");
-const operation = @import("operation.zig");
+const operation = @import("../operation.zig");
 
 pub fn SendInputOptionsFromArgs(
     cancel: *bool,

@@ -1,68 +1,23 @@
 const std = @import("std");
-const operation = @import("operation.zig");
-const driver = @import("driver.zig");
-const result = @import("result.zig");
+
+const driver = @import("../driver.zig");
+const driver_netconf = @import("../driver-netconf.zig");
+const logging = @import("../logging.zig");
+
+const operations = @import("operations.zig");
 
 const operation_thread_ready_sleep: u64 = 250;
 const poll_operation_sleep: u64 = 250_000;
 
-pub const OperationResult = struct {
-    done: bool,
-    result: ?*result.Result,
-    err: ?anyerror,
-};
-
-pub const OperationKind = enum {
-    open,
-    enter_mode,
-    get_prompt,
-    send_input,
-    send_prompted_input,
-};
-
-pub const OpenOperation = struct {
-    id: u32,
-    options: operation.OpenOptions,
-};
-
-pub const EnterModeOperation = struct {
-    id: u32,
-    requested_mode: []const u8,
-    options: operation.EnterModeOptions,
-};
-
-pub const GetPromptOperation = struct {
-    id: u32,
-    options: operation.GetPromptOptions,
-};
-
-pub const SendInputOperation = struct {
-    id: u32,
-    input: []const u8,
-    options: operation.SendInputOptions,
-};
-
-pub const SendPromptedInputOperation = struct {
-    id: u32,
-    input: []const u8,
-    prompt: ?[]const u8,
-    prompt_pattern: ?[]const u8,
-    response: []const u8,
-    options: operation.SendPromptedInputOptions,
-};
-
-pub const OperationOptions = union(OperationKind) {
-    open: OpenOperation,
-    enter_mode: EnterModeOperation,
-    get_prompt: GetPromptOperation,
-    send_input: SendInputOperation,
-    send_prompted_input: SendPromptedInputOperation,
+pub const RealDriver = union(enum) {
+    driver: *driver.Driver,
+    netconf: *driver_netconf.Driver,
 };
 
 pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
 
-    real_driver: *driver.Driver,
+    real_driver: RealDriver,
 
     operation_id_counter: u32,
     operation_thread: ?std.Thread,
@@ -72,12 +27,12 @@ pub const FfiDriver = struct {
     operation_condition: std.Thread.Condition,
     operation_predicate: u32,
     operation_queue: std.fifo.LinearFifo(
-        OperationOptions,
+        operations.OperationOptions,
         std.fifo.LinearFifoBufferType.Dynamic,
     ),
     operation_results: std.AutoHashMap(
         u32,
-        OperationResult,
+        operations.OperationResult,
     ),
 
     pub fn init(
@@ -89,11 +44,13 @@ pub const FfiDriver = struct {
 
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
-            .real_driver = try driver.Driver.init(
-                allocator,
-                host,
-                config,
-            ),
+            .real_driver = RealDriver{
+                .driver = try driver.Driver.init(
+                    allocator,
+                    host,
+                    config,
+                ),
+            },
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -102,12 +59,48 @@ pub const FfiDriver = struct {
             .operation_condition = std.Thread.Condition{},
             .operation_predicate = 0,
             .operation_queue = std.fifo.LinearFifo(
-                OperationOptions,
+                operations.OperationOptions,
                 std.fifo.LinearFifoBufferType.Dynamic,
             ).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
-                OperationResult,
+                operations.OperationResult,
+            ).init(allocator),
+        };
+
+        return ffi_driver;
+    }
+
+    pub fn init_netconf(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        config: driver_netconf.Config,
+    ) !*FfiDriver {
+        const ffi_driver = try allocator.create(FfiDriver);
+
+        ffi_driver.* = FfiDriver{
+            .allocator = allocator,
+            .real_driver = RealDriver{
+                .netconf = try driver_netconf.Driver.init(
+                    allocator,
+                    host,
+                    config,
+                ),
+            },
+            .operation_id_counter = 0,
+            .operation_thread = null,
+            .operation_ready = std.atomic.Value(bool).init(false),
+            .operation_stop = std.atomic.Value(bool).init(false),
+            .operation_lock = std.Thread.Mutex{},
+            .operation_condition = std.Thread.Condition{},
+            .operation_predicate = 0,
+            .operation_queue = std.fifo.LinearFifo(
+                operations.OperationOptions,
+                std.fifo.LinearFifoBufferType.Dynamic,
+            ).init(allocator),
+            .operation_results = std.AutoHashMap(
+                u32,
+                operations.OperationResult,
             ).init(allocator),
         };
 
@@ -129,8 +122,47 @@ pub const FfiDriver = struct {
 
         self.operation_queue.deinit();
         self.operation_results.deinit();
-        self.real_driver.deinit();
+
+        switch (self.real_driver) {
+            .driver => |d| {
+                d.deinit();
+            },
+            .netconf => |d| {
+                d.deinit();
+            },
+        }
+
         self.allocator.destroy(self);
+    }
+
+    pub fn log(
+        self: *FfiDriver,
+        level: logging.LogLevel,
+        comptime format: []const u8,
+        args: anytype,
+    ) void {
+        const logger = switch (self.real_driver) {
+            .driver => |d| d.log,
+            .netconf => |d| d.log,
+        };
+
+        switch (level) {
+            .debug => {
+                logger.debug(format, args);
+            },
+            .info => {
+                logger.info(format, args);
+            },
+            .warn => {
+                logger.warn(format, args);
+            },
+            .critical => {
+                logger.critical(format, args);
+            },
+            .fatal => {
+                logger.fatal(format, args);
+            },
+        }
     }
 
     pub fn open(self: *FfiDriver) !void {
@@ -139,7 +171,8 @@ pub const FfiDriver = struct {
             FfiDriver.operationLoop,
             .{self},
         ) catch |err| {
-            self.real_driver.log.critical(
+            self.log(
+                logging.LogLevel.critical,
                 "failed spawning operation thread, err: {}",
                 .{err},
             );
@@ -155,14 +188,27 @@ pub const FfiDriver = struct {
     }
 
     pub fn close(self: *FfiDriver, cancel: *bool) !void {
+        // TODO this is no longer the case i think, we *should* be returning the result data from
+        //   a close operation.
         // in ffi land the wrapper (py/go/whatever) deals with on open/close so in the case of close
         // there is no point sending any string content back because there will be none (this is
         // in contrast to open where there may be login/auth content!)
-        const close_res = try self.real_driver.close(
-            self.allocator,
-            .{ .cancel = cancel },
-        );
-        close_res.deinit();
+        switch (self.real_driver) {
+            .driver => |d| {
+                const close_res = try d.close(
+                    self.allocator,
+                    .{ .cancel = cancel },
+                );
+                close_res.deinit();
+            },
+            .netconf => |d| {
+                const close_res = try d.close(
+                    self.allocator,
+                    .{ .cancel = cancel },
+                );
+                close_res.deinit();
+            },
+        }
     }
 
     /// The operation loop is the "thing" that actually invokes user requested functions by popping
@@ -175,7 +221,7 @@ pub const FfiDriver = struct {
     /// writing what we can when we can. So, while this is extra overhead, it seems like a good
     /// way to address that problem.
     fn operationLoop(self: *FfiDriver) void {
-        self.real_driver.log.info("operation thread started", .{});
+        self.log(logging.LogLevel.info, "operation thread started", .{});
 
         self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
 
@@ -193,11 +239,11 @@ pub const FfiDriver = struct {
             }
 
             var operation_id: u32 = 0;
-            var ret_ok: ?*result.Result = null;
+            var ret_ok: operations.OperationResult = null;
             var ret_err: ?anyerror = null;
 
             switch (op.?) {
-                OperationKind.open => |o| {
+                operations.OperationKind.open => |o| {
                     operation_id = o.id;
 
                     ret_ok = self.real_driver.open(
@@ -208,7 +254,7 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                OperationKind.enter_mode => |o| {
+                operations.OperationKind.enter_mode => |o| {
                     operation_id = o.id;
 
                     ret_ok = self.real_driver.enterMode(
@@ -220,7 +266,7 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                OperationKind.get_prompt => |o| {
+                operations.OperationKind.get_prompt => |o| {
                     operation_id = o.id;
 
                     ret_ok = self.real_driver.getPrompt(
@@ -231,7 +277,7 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                OperationKind.send_input => |o| {
+                operations.OperationKind.send_input => |o| {
                     operation_id = o.id;
 
                     ret_ok = self.real_driver.sendInput(
@@ -243,7 +289,7 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                OperationKind.send_prompted_input => |o| {
+                operations.OperationKind.send_prompted_input => |o| {
                     operation_id = o.id;
 
                     ret_ok = self.real_driver.sendPromptedInput(
@@ -265,21 +311,23 @@ pub const FfiDriver = struct {
             if (ret_err != null) {
                 self.operation_results.put(
                     operation_id,
-                    OperationResult{
+                    operations.OperationResult{ .driver = .{
                         .done = true,
                         .result = null,
                         .err = ret_err,
-                    },
+                    } },
                 ) catch {
                     @panic("failed storing operation result, this should not happen");
                 };
             } else {
                 self.operation_results.put(
                     operation_id,
-                    OperationResult{
-                        .done = true,
-                        .result = ret_ok,
-                        .err = null,
+                    operations.OperationResult{
+                        .driver = .{
+                            .done = true,
+                            .result = ret_ok,
+                            .err = null,
+                        },
                     },
                 ) catch {
                     @panic("failed storing operation result, this should not happen");
@@ -289,7 +337,7 @@ pub const FfiDriver = struct {
             self.operation_lock.unlock();
         }
 
-        self.real_driver.log.info("operation thread stopped", .{});
+        self.log(logging.LogLevel.info, "operation thread stopped", .{});
     }
 
     /// Poll the result hash for the presence of a "done" result for the given operation id.
@@ -297,7 +345,7 @@ pub const FfiDriver = struct {
         self: *FfiDriver,
         operation_id: u32,
         remove: bool,
-    ) !OperationResult {
+    ) !operations.OperationResult {
         self.operation_lock.lock();
         defer self.operation_lock.unlock();
 
@@ -347,7 +395,7 @@ pub const FfiDriver = struct {
 
     pub fn queueOperation(
         self: *FfiDriver,
-        options: OperationOptions,
+        options: operations.OperationOptions,
     ) !u32 {
         var mut_options = options;
 
@@ -360,7 +408,7 @@ pub const FfiDriver = struct {
 
         try self.operation_results.put(
             operation_id,
-            OperationResult{
+            operations.OperationResult{
                 .done = false,
                 .result = null,
                 .err = null,
@@ -368,19 +416,19 @@ pub const FfiDriver = struct {
         );
 
         switch (options) {
-            OperationKind.open => {
+            operations.OperationKind.open => {
                 mut_options.open.id = operation_id;
             },
-            OperationKind.enter_mode => {
+            operations.OperationKind.enter_mode => {
                 mut_options.enter_mode.id = operation_id;
             },
-            OperationKind.get_prompt => {
+            operations.OperationKind.get_prompt => {
                 mut_options.get_prompt.id = operation_id;
             },
-            OperationKind.send_input => {
+            operations.OperationKind.send_input => {
                 mut_options.send_input.id = operation_id;
             },
-            OperationKind.send_prompted_input => {
+            operations.OperationKind.send_prompted_input => {
                 mut_options.send_prompted_input.id = operation_id;
             },
         }
