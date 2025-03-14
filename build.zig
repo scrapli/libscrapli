@@ -117,7 +117,7 @@ fn buildFfiLib(
     const lib = b.addSharedLibrary(
         .{
             .name = "scrapli",
-            .root_source_file = b.path("src/ffi.zig"),
+            .root_source_file = b.path("src/ffi-extern.zig"),
             .target = b.resolveTargetQuery(target),
             .optimize = optimize,
             .version = libscrapli_version,
