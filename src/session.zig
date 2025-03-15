@@ -761,7 +761,6 @@ pub const Session = struct {
     pub fn sendInput(
         self: *Session,
         allocator: std.mem.Allocator,
-        input: []const u8,
         options: operation.SendInputOptions,
     ) ![2][]const u8 {
         self.log.info("send input requested", .{});
@@ -781,7 +780,7 @@ pub const Session = struct {
         _ = try self._sendInput(
             &timer,
             options.cancel,
-            input,
+            options.input,
             options.input_handling,
             &bufs,
         );
@@ -797,7 +796,7 @@ pub const Session = struct {
             readUntilPatternCheckDone,
             .{
                 .pattern = self.compiled_prompt_pattern,
-                .actual = input,
+                .actual = options.input,
             },
             &bufs,
         );
@@ -822,10 +821,6 @@ pub const Session = struct {
     pub fn sendPromptedInput(
         self: *Session,
         allocator: std.mem.Allocator,
-        input: []const u8,
-        prompt: ?[]const u8,
-        prompt_pattern: ?[]const u8,
-        response: []const u8,
         options: operation.SendPromptedInputOptions,
     ) ![2][]const u8 {
         self.log.info("send prompted input requested", .{});
@@ -834,7 +829,7 @@ pub const Session = struct {
 
         var compiled_pattern: ?*pcre2.pcre2_code_8 = null;
 
-        if (prompt_pattern) |pattern| {
+        if (options.prompt_pattern) |pattern| {
             if (pattern.len > 0) {
                 compiled_pattern = re.pcre2Compile(pattern);
                 if (compiled_pattern == null) {
@@ -873,13 +868,13 @@ pub const Session = struct {
         _ = try self._sendInput(
             &timer,
             options.cancel,
-            input,
+            options.input,
             options.input_handling,
             &bufs,
         );
 
         var args = ReadArgs{
-            .actual = prompt,
+            .actual = options.prompt,
         };
 
         if (compiled_pattern) |cp| {
@@ -900,12 +895,12 @@ pub const Session = struct {
         );
 
         if (!options.hidden_response) {
-            try self.writeAndReturn(response, true);
+            try self.writeAndReturn(options.response, true);
         } else {
             _ = try self._sendInput(
                 &timer,
                 options.cancel,
-                input,
+                options.input,
                 options.input_handling,
                 &bufs,
             );

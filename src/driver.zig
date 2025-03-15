@@ -286,12 +286,11 @@ pub const Driver = struct {
     pub fn enterMode(
         self: *Driver,
         allocator: std.mem.Allocator,
-        requested_mode_name: []const u8,
         options: operation.EnterModeOptions,
     ) anyerror!*result.Result {
         self.log.info(
             "requested enterMode to mode '{s}', current mode '{s}'",
-            .{ requested_mode_name, self.current_mode },
+            .{ options.requested_mode, self.current_mode },
         );
 
         var res = try self.NewResult(
@@ -300,7 +299,7 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        if (std.mem.eql(u8, self.current_mode, requested_mode_name)) {
+        if (std.mem.eql(u8, self.current_mode, options.requested_mode)) {
             return res;
         }
 
@@ -318,7 +317,7 @@ pub const Driver = struct {
             res.results.items[0],
         );
 
-        if (std.mem.eql(u8, self.current_mode, requested_mode_name)) {
+        if (std.mem.eql(u8, self.current_mode, options.requested_mode)) {
             return res;
         }
 
@@ -329,7 +328,7 @@ pub const Driver = struct {
             self.allocator,
             self.definition.modes,
             self.current_mode,
-            requested_mode_name,
+            options.requested_mode,
             &visited,
         );
         defer steps.deinit();
@@ -357,9 +356,9 @@ pub const Driver = struct {
                         try res.recordExtend(
                             try self.sendInput(
                                 allocator,
-                                op.send_input.send_input.input,
                                 .{
                                     .cancel = options.cancel,
+                                    .input = op.send_input.send_input.input,
                                     .requested_mode = self.current_mode,
                                     .retain_input = true,
                                     .retain_trailing_prompt = true,
@@ -383,15 +382,15 @@ pub const Driver = struct {
                             // log it and just try a send input rather than "prompted" input
                             self.log.warn(
                                 "prompted input requested to change to mode '{s}', but no response found, trying standard send input",
-                                .{requested_mode_name},
+                                .{options.requested_mode},
                             );
 
                             try res.recordExtend(
                                 try self.sendInput(
                                     allocator,
-                                    op.send_prompted_input.send_prompted_input.input,
                                     .{
                                         .cancel = options.cancel,
+                                        .input = op.send_prompted_input.send_prompted_input.input,
                                         .requested_mode = self.current_mode,
                                         .retain_input = true,
                                         .retain_trailing_prompt = true,
@@ -402,12 +401,12 @@ pub const Driver = struct {
                             try res.recordExtend(
                                 try self.sendPromptedInput(
                                     allocator,
-                                    op.send_prompted_input.send_prompted_input.input,
-                                    op.send_prompted_input.send_prompted_input.prompt,
-                                    op.send_prompted_input.send_prompted_input.prompt_pattern,
-                                    response,
                                     .{
                                         .cancel = options.cancel,
+                                        .input = op.send_prompted_input.send_prompted_input.input,
+                                        .prompt = op.send_prompted_input.send_prompted_input.prompt,
+                                        .prompt_pattern = op.send_prompted_input.send_prompted_input.prompt_pattern,
+                                        .response = response,
                                         .requested_mode = self.current_mode,
                                         .retain_trailing_prompt = true,
                                     },
@@ -419,7 +418,7 @@ pub const Driver = struct {
             }
         }
 
-        self.current_mode = self.definition.modes.getKey(requested_mode_name).?;
+        self.current_mode = self.definition.modes.getKey(options.requested_mode).?;
 
         return res;
     }
@@ -427,10 +426,12 @@ pub const Driver = struct {
     pub fn sendInput(
         self: *Driver,
         allocator: std.mem.Allocator,
-        input: []const u8,
         options: operation.SendInputOptions,
     ) !*result.Result {
-        var res = try self.NewResult(allocator, result.OperationKind.send_input);
+        var res = try self.NewResult(
+            allocator,
+            result.OperationKind.send_input,
+        );
         errdefer res.deinit();
 
         var target_mode = options.requested_mode;
@@ -442,15 +443,14 @@ pub const Driver = struct {
         if (!std.mem.eql(u8, target_mode, self.current_mode)) {
             const ret = try self.enterMode(
                 allocator,
-                target_mode,
-                .{ .cancel = options.cancel },
+                .{ .cancel = options.cancel, .requested_mode = target_mode },
             );
             ret.deinit();
         }
 
         try res.record(
-            input,
-            try self.session.sendInput(allocator, input, options),
+            options.input,
+            try self.session.sendInput(allocator, options),
         );
 
         return res;
@@ -459,8 +459,7 @@ pub const Driver = struct {
     pub fn sendInputs(
         self: *Driver,
         allocator: std.mem.Allocator,
-        inputs: []const []const u8,
-        options: operation.SendInputOptions,
+        options: operation.SendInputsOptions,
     ) !*result.Result {
         var target_mode = options.requested_mode;
 
@@ -471,8 +470,10 @@ pub const Driver = struct {
         if (!std.mem.eql(u8, target_mode, self.current_mode)) {
             const ret = try self.enterMode(
                 allocator,
-                target_mode,
-                .{ .cancel = options.cancel },
+                .{
+                    .cancel = options.cancel,
+                    .requested_mode = target_mode,
+                },
             );
             ret.deinit();
         }
@@ -483,10 +484,20 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        for (inputs) |input| {
+        for (options.inputs) |input| {
             try res.record(
                 input,
-                try self.session.sendInput(allocator, input, options),
+                try self.session.sendInput(
+                    allocator,
+                    .{
+                        .cancel = options.cancel,
+                        .input = input,
+                        .requested_mode = options.requested_mode,
+                        .input_handling = options.input_handling,
+                        .retain_input = options.retain_input,
+                        .retain_trailing_prompt = options.retain_trailing_prompt,
+                    },
+                ),
             );
 
             if (options.stop_on_indicated_failure and res.result_failure_indicated) {
@@ -500,10 +511,6 @@ pub const Driver = struct {
     pub fn sendPromptedInput(
         self: *Driver,
         allocator: std.mem.Allocator,
-        input: []const u8,
-        prompt: ?[]const u8,
-        prompt_pattern: ?[]const u8,
-        response: []const u8,
         options: operation.SendPromptedInputOptions,
     ) !*result.Result {
         var res = try self.NewResult(
@@ -521,20 +528,18 @@ pub const Driver = struct {
         if (!std.mem.eql(u8, target_mode, self.current_mode)) {
             const ret = try self.enterMode(
                 allocator,
-                target_mode,
-                .{ .cancel = options.cancel },
+                .{
+                    .cancel = options.cancel,
+                    .requested_mode = target_mode,
+                },
             );
             ret.deinit();
         }
 
         try res.record(
-            input,
+            options.input,
             try self.session.sendPromptedInput(
                 allocator,
-                input,
-                prompt,
-                prompt_pattern,
-                response,
                 options,
             ),
         );

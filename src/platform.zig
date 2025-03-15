@@ -186,8 +186,10 @@ pub const BoundOnXCallback = struct {
                     try res.recordExtend(
                         try d.enterMode(
                             allocator,
-                            instr.enter_mode.enter_mode.requested_mode,
-                            .{ .cancel = cancel },
+                            .{
+                                .cancel = cancel,
+                                .requested_mode = instr.enter_mode.enter_mode.requested_mode,
+                            },
                         ),
                     );
                 },
@@ -195,9 +197,9 @@ pub const BoundOnXCallback = struct {
                     try res.recordExtend(
                         try d.sendInput(
                             allocator,
-                            instr.send_input.send_input.input,
                             .{
                                 .cancel = cancel,
+                                .input = instr.send_input.send_input.input,
                                 .retain_input = true,
                                 .retain_trailing_prompt = true,
                             },
@@ -208,11 +210,13 @@ pub const BoundOnXCallback = struct {
                     try res.recordExtend(
                         try d.sendPromptedInput(
                             allocator,
-                            instr.send_prompted_input.send_prompted_input.input,
-                            instr.send_prompted_input.send_prompted_input.prompt,
-                            instr.send_prompted_input.send_prompted_input.prompt_pattern,
-                            instr.send_prompted_input.send_prompted_input.response,
-                            .{ .cancel = cancel },
+                            .{
+                                .cancel = cancel,
+                                .input = instr.send_prompted_input.send_prompted_input.input,
+                                .prompt = instr.send_prompted_input.send_prompted_input.prompt,
+                                .prompt_pattern = instr.send_prompted_input.send_prompted_input.prompt_pattern,
+                                .response = instr.send_prompted_input.send_prompted_input.response,
+                            },
                         ),
                     );
                 },

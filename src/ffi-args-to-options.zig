@@ -17,6 +17,7 @@ fn getInputHandling(input_handling: [*c]const u8) operation.InputHandling {
 
 pub fn SendInputOptionsFromArgs(
     cancel: *bool,
+    input: [*c]const u8,
     requested_mode: [*c]const u8,
     input_handling: [*c]const u8,
     retain_input: bool,
@@ -24,6 +25,7 @@ pub fn SendInputOptionsFromArgs(
 ) operation.SendInputOptions {
     var options = operation.SendInputOptions{
         .cancel = cancel,
+        .input = std.mem.span(input),
         .input_handling = getInputHandling(input_handling),
         .retain_input = retain_input,
         .retain_trailing_prompt = retain_trailing_prompt,
@@ -39,6 +41,10 @@ pub fn SendInputOptionsFromArgs(
 
 pub fn SendPromptedInputOptionsFromArgs(
     cancel: *bool,
+    input: [*c]const u8,
+    prompt: [*c]const u8,
+    prompt_pattern: [*c]const u8,
+    response: [*c]const u8,
     hidden_response: bool,
     abort_input: [*c]const u8,
     requested_mode: [*c]const u8,
@@ -47,6 +53,10 @@ pub fn SendPromptedInputOptionsFromArgs(
 ) operation.SendPromptedInputOptions {
     var options = operation.SendPromptedInputOptions{
         .cancel = cancel,
+        .input = std.mem.span(input),
+        .prompt = std.mem.span(prompt),
+        .prompt_pattern = std.mem.span(prompt_pattern),
+        .response = std.mem.span(response),
         .input_handling = getInputHandling(input_handling),
         .hidden_response = hidden_response,
         .retain_trailing_prompt = retain_trailing_prompt,

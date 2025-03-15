@@ -283,9 +283,9 @@ export fn enterMode(
             .driver = .{
                 .enter_mode = .{
                     .id = 0,
-                    .requested_mode = std.mem.span(requested_mode),
                     .options = operation.EnterModeOptions{
                         .cancel = cancel,
+                        .requested_mode = std.mem.span(requested_mode),
                     },
                 },
             },
@@ -352,6 +352,7 @@ export fn sendInput(
 
     const options = ffi_args_to_options.SendInputOptionsFromArgs(
         cancel,
+        input,
         requested_mode,
         input_handling,
         retain_input,
@@ -363,7 +364,6 @@ export fn sendInput(
             .driver = .{
                 .send_input = .{
                     .id = 0,
-                    .input = std.mem.span(input),
                     .options = options,
                 },
             },
@@ -401,6 +401,10 @@ export fn sendPromptedInput(
 
     const options = ffi_args_to_options.SendPromptedInputOptionsFromArgs(
         cancel,
+        input,
+        prompt,
+        prompt_pattern,
+        response,
         hidden_response,
         abort_input,
         requested_mode,
@@ -413,10 +417,6 @@ export fn sendPromptedInput(
             .driver = .{
                 .send_prompted_input = .{
                     .id = 0,
-                    .input = std.mem.span(input),
-                    .prompt = std.mem.span(prompt),
-                    .prompt_pattern = std.mem.span(prompt_pattern),
-                    .response = std.mem.span(response),
                     .options = options,
                 },
             },

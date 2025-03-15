@@ -287,7 +287,6 @@ pub const FfiDriver = struct {
 
                     ret_ok = rd.enterMode(
                         self.allocator,
-                        o.requested_mode,
                         o.options,
                     ) catch |err| blk: {
                         ret_err = err;
@@ -310,7 +309,6 @@ pub const FfiDriver = struct {
 
                     ret_ok = rd.sendInput(
                         self.allocator,
-                        o.input,
                         o.options,
                     ) catch |err| blk: {
                         ret_err = err;
@@ -322,10 +320,6 @@ pub const FfiDriver = struct {
 
                     ret_ok = rd.sendPromptedInput(
                         self.allocator,
-                        o.input,
-                        o.prompt,
-                        o.prompt_pattern,
-                        o.response,
                         o.options,
                     ) catch |err| blk: {
                         ret_err = err;

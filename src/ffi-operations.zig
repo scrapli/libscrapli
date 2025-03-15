@@ -22,7 +22,6 @@ pub const OpenOperation = struct {
 
 pub const EnterModeOperation = struct {
     id: u32,
-    requested_mode: []const u8,
     options: operation.EnterModeOptions,
 };
 
@@ -33,16 +32,11 @@ pub const GetPromptOperation = struct {
 
 pub const SendInputOperation = struct {
     id: u32,
-    input: []const u8,
     options: operation.SendInputOptions,
 };
 
 pub const SendPromptedInputOperation = struct {
     id: u32,
-    input: []const u8,
-    prompt: ?[]const u8,
-    prompt_pattern: ?[]const u8,
-    response: []const u8,
     options: operation.SendPromptedInputOptions,
 };
 
