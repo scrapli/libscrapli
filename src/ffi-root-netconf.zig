@@ -1,5 +1,6 @@
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
+const ffi_args_to_options = @import("ffi-args-to-options-netconf.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
@@ -140,17 +141,29 @@ export fn netconfGetConfig(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
+    filter: [*c]const u8,
+    filter_type: [*c]const u8,
+    filter_namespace_prefix: [*c]const u8,
+    filter_namespace: [*c]const u8,
+    defaults_type: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.GetConfigOptionsFromArgs(
+        cancel,
+        filter,
+        filter_type,
+        filter_namespace_prefix,
+        filter_namespace,
+        defaults_type,
+    );
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .netconf = .{
                 .get_config = .{
                     .id = 0,
-                    .options = .{
-                        .cancel = cancel,
-                    },
+                    .options = options,
                 },
             },
         },

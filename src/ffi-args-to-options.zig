@@ -1,6 +1,20 @@
 const std = @import("std");
 const operation = @import("operation.zig");
 
+fn getInputHandling(input_handling: [*c]const u8) operation.InputHandling {
+    const _input_handling = std.mem.span(input_handling);
+
+    if (std.mem.eql(u8, @tagName(operation.InputHandling.exact), _input_handling)) {
+        return operation.InputHandling.exact;
+    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.fuzzy), _input_handling)) {
+        return operation.InputHandling.fuzzy;
+    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.ignore), _input_handling)) {
+        return operation.InputHandling.ignore;
+    } else {
+        return operation.InputHandling.fuzzy;
+    }
+}
+
 pub fn SendInputOptionsFromArgs(
     cancel: *bool,
     requested_mode: [*c]const u8,
@@ -10,25 +24,15 @@ pub fn SendInputOptionsFromArgs(
 ) operation.SendInputOptions {
     var options = operation.SendInputOptions{
         .cancel = cancel,
+        .input_handling = getInputHandling(input_handling),
+        .retain_input = retain_input,
+        .retain_trailing_prompt = retain_trailing_prompt,
     };
 
     const _requested_mode = std.mem.span(requested_mode);
     if (_requested_mode.len > 0) {
         options.requested_mode = _requested_mode;
     }
-
-    const _input_handling = std.mem.span(input_handling);
-
-    if (std.mem.eql(u8, @tagName(operation.InputHandling.exact), _input_handling)) {
-        options.input_handling = operation.InputHandling.exact;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.fuzzy), _input_handling)) {
-        options.input_handling = operation.InputHandling.fuzzy;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.ignore), _input_handling)) {
-        options.input_handling = operation.InputHandling.ignore;
-    }
-
-    options.retain_input = retain_input;
-    options.retain_trailing_prompt = retain_trailing_prompt;
 
     return options;
 }
@@ -43,26 +47,16 @@ pub fn SendPromptedInputOptionsFromArgs(
 ) operation.SendPromptedInputOptions {
     var options = operation.SendPromptedInputOptions{
         .cancel = cancel,
+        .input_handling = getInputHandling(input_handling),
+        .hidden_response = hidden_response,
+        .retain_trailing_prompt = retain_trailing_prompt,
+        .abort_input = std.mem.span(abort_input),
     };
 
     const _requested_mode = std.mem.span(requested_mode);
     if (_requested_mode.len > 0) {
         options.requested_mode = _requested_mode;
     }
-
-    const _input_handling = std.mem.span(input_handling);
-
-    if (std.mem.eql(u8, @tagName(operation.InputHandling.exact), _input_handling)) {
-        options.input_handling = operation.InputHandling.exact;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.fuzzy), _input_handling)) {
-        options.input_handling = operation.InputHandling.fuzzy;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.ignore), _input_handling)) {
-        options.input_handling = operation.InputHandling.ignore;
-    }
-
-    options.hidden_response = hidden_response;
-    options.retain_trailing_prompt = retain_trailing_prompt;
-    options.abort_input = std.mem.span(abort_input);
 
     return options;
 }
