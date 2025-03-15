@@ -433,6 +433,83 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
+                .copy_config => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.copyConfig(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .delete_config => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.deleteConfig(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .lock => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.lock(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .unlock => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.unlock(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .get => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.get(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .close_session => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.closeSession(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .kill_session => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.killSession(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
             }
 
             self.operation_lock.lock();
@@ -587,6 +664,27 @@ pub const FfiDriver = struct {
                     },
                     .edit_config => {
                         mut_options.netconf.edit_config.id = operation_id;
+                    },
+                    .copy_config => {
+                        mut_options.netconf.copy_config.id = operation_id;
+                    },
+                    .delete_config => {
+                        mut_options.netconf.delete_config.id = operation_id;
+                    },
+                    .lock => {
+                        mut_options.netconf.lock.id = operation_id;
+                    },
+                    .unlock => {
+                        mut_options.netconf.unlock.id = operation_id;
+                    },
+                    .get => {
+                        mut_options.netconf.get.id = operation_id;
+                    },
+                    .close_session => {
+                        mut_options.netconf.close_session.id = operation_id;
+                    },
+                    .kill_session => {
+                        mut_options.netconf.kill_session.id = operation_id;
                     },
                 }
 

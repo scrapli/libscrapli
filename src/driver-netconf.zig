@@ -1133,7 +1133,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CopyConfig = options,
+                .copy_config = options,
             },
         );
     }
@@ -1183,7 +1183,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CopyConfig = options,
+                .delete_config = options,
             },
         );
     }
@@ -1398,7 +1398,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CloseSession = options,
+                .close_session = options,
             },
         );
     }
@@ -1448,12 +1448,12 @@ pub const Driver = struct {
     pub fn killSession(
         self: *Driver,
         allocator: std.mem.Allocator,
-        options: operation.CloseSessionOptions,
+        options: operation.KillSessionOptions,
     ) !*result.Result {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .close_session = options,
+                .kill_session = options,
             },
         );
     }

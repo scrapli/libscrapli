@@ -64,10 +64,52 @@ pub const NetconfEditConfigOperationOptions = struct {
     options: operation_netconf.EditConfigOptions,
 };
 
+pub const NetconfCopyConfigOperationOptions = struct {
+    id: u32,
+    options: operation_netconf.CopyConfigOptions,
+};
+
+pub const NetconfDeleteConfigOperationOptions = struct {
+    id: u32,
+    options: operation_netconf.DeleteConfigOptions,
+};
+
+pub const NetconfLockOperationOptions = struct {
+    id: u32,
+    options: operation_netconf.LockUnlockOptions,
+};
+
+pub const NetconfUnlockOperationOptions = struct {
+    id: u32,
+    options: operation_netconf.LockUnlockOptions,
+};
+
+pub const NetconfGetOperationOptions = struct {
+    id: u32,
+    options: operation_netconf.GetOptions,
+};
+
+pub const NetconfCloseSessionOperationOptions = struct {
+    id: u32,
+    options: operation_netconf.CloseSessionOptions,
+};
+
+pub const NetconfKillSessionOperationOptions = struct {
+    id: u32,
+    options: operation_netconf.KillSessionOptions,
+};
+
 pub const NetconfOperationOptions = union(enum) {
     open: OpenOperation,
     get_config: NetconfGetConfigOperationOptions,
     edit_config: NetconfEditConfigOperationOptions,
+    copy_config: NetconfCopyConfigOperationOptions,
+    delete_config: NetconfDeleteConfigOperationOptions,
+    lock: NetconfLockOperationOptions,
+    unlock: NetconfLockOperationOptions,
+    get: NetconfGetOperationOptions,
+    close_session: NetconfCloseSessionOperationOptions,
+    kill_session: NetconfKillSessionOperationOptions,
 };
 
 pub const OperationOptions = union(enum) {

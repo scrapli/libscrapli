@@ -193,7 +193,7 @@ export fn netconfEditConfig(
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.GetEditConfigOptionsFromArgs(
+    const options = ffi_args_to_options.EditConfigOptionsFromArgs(
         cancel,
         config,
         target,
@@ -212,6 +212,267 @@ export fn netconfEditConfig(
         d.log(
             logging.LogLevel.critical,
             "error during queue editConfig {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn netconfCopyConfig(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    target: [*c]const u8,
+    source: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.CopyConfigOptionsFromArgs(
+        cancel,
+        source,
+        target,
+    );
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .netconf = .{
+                .copy_config = .{
+                    .id = 0,
+                    .options = options,
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue copyConfig {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn netconfDeleteConfig(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    target: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.DeleteConfigOptionsFromArgs(
+        cancel,
+        target,
+    );
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .netconf = .{
+                .delete_config = .{
+                    .id = 0,
+                    .options = options,
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue deleteConfig {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn netconfLock(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    target: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.LockUnlockOptionsFromArgs(
+        cancel,
+        target,
+    );
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .netconf = .{
+                .lock = .{
+                    .id = 0,
+                    .options = options,
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue lock {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn netconfUnlock(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    target: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.LockUnlockOptionsFromArgs(
+        cancel,
+        target,
+    );
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .netconf = .{
+                .unlock = .{
+                    .id = 0,
+                    .options = options,
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue unlock {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn netconfGet(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    filter: [*c]const u8,
+    filter_type: [*c]const u8,
+    filter_namespace_prefix: [*c]const u8,
+    filter_namespace: [*c]const u8,
+    defaults_type: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.GetOptionsFromArgs(
+        cancel,
+        filter,
+        filter_type,
+        filter_namespace_prefix,
+        filter_namespace,
+        defaults_type,
+    );
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .netconf = .{
+                .get = .{
+                    .id = 0,
+                    .options = options,
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue unlock {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn netconfCloseSession(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .netconf = .{
+                .close_session = .{
+                    .id = 0,
+                    .options = .{ .cancel = cancel },
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue unlock {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn netconfKillSession(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    session_id: u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .netconf = .{
+                .kill_session = .{
+                    .id = 0,
+                    .options = .{
+                        .cancel = cancel,
+                        .session_id = session_id,
+                    },
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue unlock {any}",
             .{err},
         );
 

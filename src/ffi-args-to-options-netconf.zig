@@ -91,7 +91,7 @@ pub fn GetConfigOptionsFromArgs(
     return options;
 }
 
-pub fn GetEditConfigOptionsFromArgs(
+pub fn EditConfigOptionsFromArgs(
     cancel: *bool,
     config: [*c]const u8,
     target: [*c]const u8,
@@ -104,4 +104,80 @@ pub fn GetEditConfigOptionsFromArgs(
             operation.DatastoreType.running,
         ),
     };
+}
+
+pub fn CopyConfigOptionsFromArgs(
+    cancel: *bool,
+    target: [*c]const u8,
+    source: [*c]const u8,
+) operation.CopyConfigOptions {
+    return operation.CopyConfigOptions{
+        .cancel = cancel,
+        .target = getDatastoreType(
+            target,
+            operation.DatastoreType.startup,
+        ),
+        .source = getDatastoreType(
+            source,
+            operation.DatastoreType.running,
+        ),
+    };
+}
+
+pub fn DeleteConfigOptionsFromArgs(
+    cancel: *bool,
+    target: [*c]const u8,
+) operation.DeleteConfigOptions {
+    return operation.DeleteConfigOptions{
+        .cancel = cancel,
+        .target = getDatastoreType(
+            target,
+            operation.DatastoreType.running,
+        ),
+    };
+}
+
+pub fn LockUnlockOptionsFromArgs(
+    cancel: *bool,
+    target: [*c]const u8,
+) operation.LockUnlockOptions {
+    return operation.LockUnlockOptions{
+        .cancel = cancel,
+        .target = getDatastoreType(
+            target,
+            operation.DatastoreType.running,
+        ),
+    };
+}
+
+pub fn GetOptionsFromArgs(
+    cancel: *bool,
+    filter: [*c]const u8,
+    filter_type: [*c]const u8,
+    filter_namespace_prefix: [*c]const u8,
+    filter_namespace: [*c]const u8,
+    defaults_type: [*c]const u8,
+) operation.GetOptions {
+    var options = operation.GetOptions{
+        .cancel = cancel,
+        .filter_type = getFilterType(filter_type),
+        .defaults_type = getDefaultsType(defaults_type),
+    };
+
+    const _filter = std.mem.span(filter);
+    if (_filter.len > 0) {
+        options.filter = _filter;
+    }
+
+    const _filter_namespace_prefix = std.mem.span(filter_namespace_prefix);
+    if (_filter_namespace_prefix.len > 0) {
+        options.filter_namespace_prefix = _filter_namespace_prefix;
+    }
+
+    const _filter_namespace = std.mem.span(filter_namespace);
+    if (_filter_namespace.len > 0) {
+        options.filter_namespace = _filter_namespace;
+    }
+
+    return options;
 }
