@@ -10,8 +10,9 @@ const timestamp_pattern = "((mon)|(tue)|(wed)|(thu)|(fri)|(sat)|(sun))\\s+((jan)
 const last_login_pattern = "^last login.*$";
 const netconf_timestamp_pattern = "\\d{4}-\\d{2}-\\d{2}T\\d+:\\d+:\\d+.\\d+Z";
 const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
+const netconf_password_pattern = "<password>.*</password>";
 
-const normalize_funcs = [5]*const fn (
+const normalize_funcs = [6]*const fn (
     allocator: std.mem.Allocator,
     haystack: []const u8,
 ) anyerror![]const u8{
@@ -20,6 +21,7 @@ const normalize_funcs = [5]*const fn (
     normalizeTimestamps,
     normalizeLastLogin,
     normalizeNetconfSessionId,
+    normalizeNetconfPassword,
 };
 
 fn processCommon(
@@ -419,6 +421,48 @@ fn normalizeNetconfSessionId(
 
         const match_indexes = try re.pcre2FindIndex(
             compiled_netconf_session_id_pattern.?,
+            haystack,
+        );
+        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
+            const replace_size = std.mem.replacementSize(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                "",
+            );
+
+            const out = try allocator.alloc(u8, replace_size);
+
+            _ = std.mem.replace(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                "",
+                out,
+            );
+
+            return out;
+        }
+    }
+
+    const out = try allocator.alloc(u8, haystack.len);
+    @memcpy(out, haystack);
+
+    return out;
+}
+
+fn normalizeNetconfPassword(
+    allocator: std.mem.Allocator,
+    haystack: []const u8,
+) anyerror![]const u8 {
+    if (haystack.len != 0 and std.mem.indexOf(u8, haystack, "<password>") != null) {
+        const compiled_netconf_password_pattern = re.pcre2Compile(
+            netconf_password_pattern,
+        );
+        defer re.pcre2Free(compiled_netconf_password_pattern.?);
+
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_netconf_password_pattern.?,
             haystack,
         );
         if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
