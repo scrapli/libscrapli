@@ -217,7 +217,6 @@ pub fn processSearchableAuthBuf(
     compiled_passphrase_pattern: ?*pcre2.pcre2_code_8,
 ) !State {
     try openMessageHandler(allocator, searchable_buf);
-
     const prompt_match = try re.pcre2Find(
         compiled_prompt_pattern.?,
         searchable_buf,

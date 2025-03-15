@@ -83,7 +83,10 @@ pub const Transport = struct {
         if (control_buf.items.len == 0) {
             if (maybe_control_char != control_char_iac) {
                 self.initial_buf.append(maybe_control_char) catch |err| {
-                    self.log.critical("failed to append maybe control char to control initial buf array list, err: {}", .{err});
+                    self.log.critical(
+                        "failed to append maybe control char to control initial buf array list, err: {}",
+                        .{err},
+                    );
 
                     return error.OpenFailed;
                 };
@@ -91,14 +94,22 @@ pub const Transport = struct {
                 return true;
             } else {
                 control_buf.append(maybe_control_char) catch |err| {
-                    self.log.critical("failed to append control char to control char array list, err: {}", .{err});
+                    self.log.critical(
+                        "failed to append control char to control char array list, err: {}",
+                        .{err},
+                    );
 
                     return error.OpenFailed;
                 };
             }
-        } else if (control_buf.items.len == 1 and bytes.charIn(&control_chars_actionable, maybe_control_char)) {
+        } else if (control_buf.items.len == 1 and
+            bytes.charIn(&control_chars_actionable, maybe_control_char))
+        {
             control_buf.append(maybe_control_char) catch |err| {
-                self.log.critical("failed to append control char to control char array list, err: {}", .{err});
+                self.log.critical(
+                    "failed to append control char to control char array list, err: {}",
+                    .{err},
+                );
 
                 return error.OpenFailed;
             };
@@ -106,7 +117,10 @@ pub const Transport = struct {
             const cmd = control_buf.items[1..2][0];
 
             control_buf.resize(0) catch |err| {
-                self.log.critical("failed to zeroize control char array list, err: {}", .{err});
+                self.log.critical(
+                    "failed to zeroize control char array list, err: {}",
+                    .{err},
+                );
 
                 return error.OpenFailed;
             };
@@ -164,7 +178,7 @@ pub const Transport = struct {
 
             const elapsed_time = timer.read();
 
-            if (elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
                 return error.OpenTimeoutExceeded;
@@ -174,12 +188,21 @@ pub const Transport = struct {
 
             const n = try self.read(&control_char_buf);
 
-            if (n != 1) {
+            if (n == 0) {
+                // we may get 0 bytes while the server is figuring its life out
+                continue;
+            } else if (n != 1) {
                 // this would be bad obv
-                self.log.critical("expected to read one control char but read {d}", .{n});
+                self.log.critical(
+                    "expected to read one control char but read {d}",
+                    .{n},
+                );
             }
 
-            const done = try self.handleControlCharResponse(&control_buf, control_char_buf[0]);
+            const done = try self.handleControlCharResponse(
+                &control_buf,
+                control_char_buf[0],
+            );
 
             if (done) {
                 return;
@@ -200,7 +223,10 @@ pub const Transport = struct {
             host,
             port,
         ) catch |err| {
-            self.log.critical("failed connecting to host '{s}', err: {}", .{ host, err });
+            self.log.critical(
+                "failed connecting to host '{s}', err: {}",
+                .{ host, err },
+            );
 
             return error.OpenFailed;
         };
@@ -211,7 +237,11 @@ pub const Transport = struct {
             return error.OpenFailed;
         };
 
-        try self.handleControlChars(timer, cancel, operation_timeout_ns);
+        try self.handleControlChars(
+            timer,
+            cancel,
+            operation_timeout_ns,
+        );
     }
 
     pub fn close(self: *Transport) void {
@@ -236,6 +266,17 @@ pub const Transport = struct {
     pub fn read(self: *Transport, buf: []u8) !usize {
         if (self.stream == null) {
             return error.NotOpened;
+        }
+
+        if (self.initial_buf.items.len > 0) {
+            // drain the initial buf if it exists -- this would be any leftover chars we over-read
+            // from the control char handling
+            const n = @min(self.initial_buf.items.len, buf.len);
+
+            @memcpy(buf[0..n], self.initial_buf.items[0..n]);
+            _ = self.initial_buf.orderedRemove(n - 1);
+
+            return n;
         }
 
         const n = self.stream.?.read(buf) catch |err| {

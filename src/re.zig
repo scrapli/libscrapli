@@ -115,6 +115,38 @@ pub fn pcre2Find(
     return match;
 }
 
+test "pcre2Find" {
+    const cases = [_]struct {
+        name: []const u8,
+        pattern: []const u8,
+        haystack: []const u8,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple match",
+            .pattern = "bar",
+            .haystack = "foo bar baz",
+            .expected = "bar",
+        },
+    };
+
+    for (cases) |case| {
+        const compiled_pattern = pcre2Compile(case.pattern);
+        if (compiled_pattern == null) {
+            return error.CompilePromptPatternFailed;
+        }
+
+        defer pcre2Free(compiled_pattern.?);
+
+        const actual = try pcre2Find(
+            compiled_pattern.?,
+            case.haystack,
+        );
+
+        try std.testing.expectEqualStrings(case.expected, actual);
+    }
+}
+
 pub fn pcre2FindIndex(
     regexp: *pcre2.pcre2_code_8,
     haystack: []const u8,
