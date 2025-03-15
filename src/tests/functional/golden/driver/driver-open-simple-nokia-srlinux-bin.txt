@@ -1,4 +1,3 @@
-Warning: Permanently added '[localhost]:21022' (ED25519) to the list of known hosts.
 ................................................................
 :                  Welcome to Nokia SR Linux!                  :
 :              Open Network OS for the NetOps era.             :
@@ -15,12 +14,12 @@ Warning: Permanently added '[localhost]:21022' (ED25519) to the list of known ho
 : Contact:     https://go.srlinux.dev/contact-sales            :
 ................................................................
 
-(admin@localhost) Password:
-Last login: Sat Mar 15 18:48:05 2025 from 192.168.65.1
+(user@host) Password:
+
 Using configuration file(s): []
 Welcome to the srlinux CLI.
 Type 'help' (and press <ENTER>) if you need any help using this.
---{ + running }--[  ]--
+--{ + running }--[  ]--
 A:srl#
---{ + running }--[  ]--
-A:srl#
+--{ + running }--[  ]--
+A:srl#

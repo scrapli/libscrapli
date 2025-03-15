@@ -349,7 +349,7 @@ test "driver-netconf get-config" {
         const actual_res = try d.getConfig(std.testing.allocator, .{});
         defer actual_res.deinit();
 
-        const actual_ret = try actual_res.getResultRaw(std.testing.allocator);
+        const actual_ret = try actual_res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual_ret);
 
         try helper.processFixutreTestStrResult(

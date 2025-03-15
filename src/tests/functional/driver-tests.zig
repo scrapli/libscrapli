@@ -22,7 +22,7 @@ const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_
 fn GetDriver(
     transportKind: transport.Kind,
     platform: []const u8,
-    username: []const u8,
+    username: ?[]const u8,
     key: ?[]const u8,
     passphrase: ?[]const u8,
 ) !*driver.Driver {
@@ -88,7 +88,11 @@ fn GetDriver(
 
     config.definition.file = platform_path_buf[0..platform_path_len];
 
-    config.auth.username = username;
+    if (username == null) {
+        config.auth.username = "admin";
+    } else {
+        config.auth.username = username.?;
+    }
 
     if (key != null) {
         config.auth.private_key_path = key;
@@ -126,78 +130,53 @@ fn GetDriver(
 test "driver open" {
     const test_name = "driver-open";
 
-    const cases = [_]struct {
-        name: []const u8,
-        transportKind: transport.Kind,
-        platform: []const u8,
-        username: []const u8,
-        key: ?[]const u8,
-        passphrase: ?[]const u8,
-        on_open_callback: ?*const fn (
-            d: *driver.Driver,
-            allocator: std.mem.Allocator,
-            cancel: ?*bool,
-        ) anyerror!*result.Result,
-    }{
+    const cases = [_]struct { name: []const u8, transportKind: transport.Kind, platform: []const u8, username: []const u8, key: ?[]const u8 = null, passphrase: ?[]const u8 = null, on_open_callback: ?*const fn (
+        d: *driver.Driver,
+        allocator: std.mem.Allocator,
+        cancel: ?*bool,
+    ) anyerror!*result.Result = null }{
         .{
             .name = "simple",
             .transportKind = transport.Kind.bin,
             .platform = "nokia-srlinux",
-            .on_open_callback = null,
             .username = "admin",
-            .key = null,
-            .passphrase = null,
         },
         .{
             .name = "simple",
             .transportKind = transport.Kind.ssh2,
             .platform = "nokia-srlinux",
-            .on_open_callback = null,
             .username = "admin",
-            .key = null,
-            .passphrase = null,
         },
         .{
             .name = "simple",
             .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
-            .on_open_callback = null,
             .username = "admin",
-            .key = null,
-            .passphrase = null,
         },
         .{
             .name = "simple",
             .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
-            .on_open_callback = null,
             .username = "admin",
-            .key = null,
-            .passphrase = null,
         },
         .{
             .name = "simple-with-key",
             .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
-            .on_open_callback = null,
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
-            .passphrase = null,
         },
         .{
             .name = "simple-with-key",
             .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
-            .on_open_callback = null,
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
-            .passphrase = null,
         },
         .{
             .name = "simple-with-key-with-passphrase",
             .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
-            .on_open_callback = null,
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
             .passphrase = "libscrapli",
@@ -206,7 +185,6 @@ test "driver open" {
             .name = "simple-with-key-with-passphrase",
             .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
-            .on_open_callback = null,
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
             .passphrase = "libscrapli",
@@ -241,9 +219,6 @@ test "driver open" {
 
         defer d.deinit();
 
-        // rather than dealing w/ capturing exact banner/login/etc. (which is a PITA, esp w/ diff
-        // hosts -- darwin vs linux, clab w/ port forward vs docker bridge etc etc), just ignore
-        // the first part, slicing the buf at the prompt we know to expect
         const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
@@ -258,6 +233,9 @@ test "driver open" {
         const actual = try actual_res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
+        // rather than dealing w/ capturing exact banner/login/etc. (which is a PITA, esp w/ diff
+        // hosts -- darwin vs linux, clab w/ port forward vs docker bridge etc etc), just ignore
+        // it and do the roughly contains check rather than explicit
         try helper.processFixutreTestStrResultRoughly(
             test_name,
             case.name,
