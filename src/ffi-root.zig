@@ -1,16 +1,20 @@
 const std = @import("std");
 
-const driver = @import("driver.zig");
-const operations = @import("operations.zig");
-const args_to_options = @import("args-to-options.zig");
-const apply_options = @import("apply-options.zig");
+const ffi_driver = @import("ffi-driver.zig");
+const ffi_operations = @import("ffi-operations.zig");
+const ffi_apply_options = @import("ffi-apply-options.zig");
+const ffi_root_driver = @import("ffi-root-driver.zig");
+const ffi_root_netconf = @import("ffi-root-netconf.zig");
 
-const operation = @import("../operation.zig");
-const logging = @import("../logging.zig");
-const ascii = @import("../ascii.zig");
-const transport = @import("../transport.zig");
+const operation = @import("operation.zig");
+const logging = @import("logging.zig");
+const ascii = @import("ascii.zig");
+const transport = @import("transport.zig");
 
-pub export const _force_include_apply_options = &apply_options.noop;
+// TODO dont do this shit, just figure out including more shit in build.zig
+pub export const _force_include_apply_options = &ffi_apply_options.noop;
+pub export const _force_include_root_driver = &ffi_root_driver.noop;
+pub export const _force_include_root_driver_netconf = &ffi_root_netconf.noop;
 
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
@@ -87,7 +91,7 @@ export fn allocDriver(
         };
     }
 
-    const d = driver.FfiDriver.init(
+    const d = ffi_driver.FfiDriver.init(
         allocator,
         std.mem.span(host),
         .{
@@ -130,7 +134,7 @@ export fn netconfAllocDriver(
         };
     }
 
-    const d = driver.FfiDriver.init_netconf(
+    const d = ffi_driver.FfiDriver.init_netconf(
         allocator,
         std.mem.span(host),
         .{
@@ -156,65 +160,9 @@ export fn netconfAllocDriver(
 export fn freeDriver(
     d_ptr: usize,
 ) void {
-    const d: *driver.FfiDriver = @ptrFromInt(d_ptr);
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.deinit();
-}
-
-/// writes the ntc template platform from the driver's definition into the character slice at
-/// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
-/// 256?). while unused in zig, ntc templates platform is useful in python land.
-export fn getNtcTemplatePlatform(
-    d_ptr: usize,
-    ntc_template_platform: *[]u8,
-) u8 {
-    const d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    switch (d.real_driver) {
-        .driver => |rd| {
-            if (rd.definition.ntc_templates_platform == null) {
-                return 0;
-            }
-
-            for (0.., rd.definition.ntc_templates_platform.?) |idx, char| {
-                ntc_template_platform.*[idx] = char;
-            }
-
-            return 0;
-        },
-        else => {
-            return 1;
-        },
-    }
-}
-
-/// writes the genie platform from the driver's definition into the character slice at
-/// `genie_platform` -- this slice should be pre populated w/ sufficient size (lets say
-/// 256?). while unused in zig, genie platform/parser is useful in python land.
-export fn getGeniePlatform(
-    d_ptr: usize,
-    genie_platform: *[]u8,
-) u8 {
-    const d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    switch (d.real_driver) {
-        .driver => |rd| {
-            if (rd.definition.genie_platform == null) {
-                return 0;
-            }
-
-            for (0.., rd.definition.genie_platform.?) |idx, char| {
-                genie_platform.*[idx] = char;
-            }
-
-            return 0;
-        },
-        else => {
-            return 1;
-        },
-    }
-
-    return 0;
 }
 
 export fn openDriver(
@@ -222,7 +170,7 @@ export fn openDriver(
     operation_id: *u32,
     cancel: *bool,
 ) u8 {
-    var d: *driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
         d.log(
@@ -234,24 +182,52 @@ export fn openDriver(
         return 1;
     };
 
-    const _operation_id = d.queueOperation(operations.OperationOptions{
-        .open = operations.OpenOperation{
-            .id = 0,
-            .options = operation.OpenOptions{
-                .cancel = cancel,
-            },
+    switch (d.real_driver) {
+        .driver => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .driver = .{
+                        .open = ffi_operations.OpenOperation{
+                            .id = 0,
+                            .options = operation.OpenOptions{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue open {any}",
+                    .{err},
+                );
+
+                return 1;
+            };
         },
-    }) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue open {any}",
-            .{err},
-        );
+        .netconf => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .netconf = .{
+                        .open = ffi_operations.OpenOperation{
+                            .id = 0,
+                            .options = operation.OpenOptions{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue open {any}",
+                    .{err},
+                );
 
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
+                return 1;
+            };
+        },
+    }
 
     return 0;
 }
@@ -261,7 +237,7 @@ export fn closeDriver(
     d_ptr: usize,
     cancel: *bool,
 ) u8 {
-    var d: *driver.FfiDriver = @ptrFromInt(d_ptr);
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.close(cancel) catch |err| {
         d.log(
@@ -275,361 +251,3 @@ export fn closeDriver(
 
     return 0;
 }
-
-/// Poll a given operation id, if the operation is completed fill a result and error u64 pointer
-/// so the caller can subsequenty call fetch with appropriately sized buffers.
-export fn pollOperation(
-    d_ptr: usize,
-    operation_id: u32,
-    operation_done: *bool,
-    operation_result_raw_size: *u64,
-    operation_result_size: *u64,
-    operation_failure_indicator_size: *u64,
-    operation_error_size: *u64,
-) u8 {
-    var d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const ret = d.pollOperation(operation_id, false) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during poll operation {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    if (!ret.done) {
-        operation_done.* = false;
-
-        return 0;
-    }
-
-    operation_done.* = true;
-
-    if (ret.err != null) {
-        const err_name = @errorName(ret.err.?);
-
-        operation_result_size.* = 0;
-        operation_error_size.* = err_name.len;
-    } else {
-        operation_result_raw_size.* = ret.result.?.getResultRawLen();
-        operation_result_size.* = ret.result.?.getResultLen();
-        operation_failure_indicator_size.* = 0;
-        operation_error_size.* = 0;
-
-        if (ret.result.?.result_failure_indicated) {
-            operation_failure_indicator_size.* = ret.result.?.failed_indicators.?.items[@intCast(ret.result.?.result_failure_indicator)].len;
-        }
-    }
-
-    return 0;
-}
-
-/// Similar to `pollOperation`, but blocks until the specified operation is complete and obviously
-/// does not require the bool pointer for done.
-export fn waitOperation(
-    d_ptr: usize,
-    operation_id: u32,
-    operation_result_raw_size: *u64,
-    operation_result_size: *u64,
-    operation_failure_indicator_size: *u64,
-    operation_error_size: *u64,
-) u8 {
-    var d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    while (true) {
-        const ret = d.pollOperation(operation_id, false) catch |err| {
-            d.log(logging.LogLevel.critical, "error during poll operation {any}", .{err});
-
-            return 1;
-        };
-
-        if (!ret.done) {
-            continue;
-        }
-
-        if (ret.err != null) {
-            const err_name = @errorName(ret.err.?);
-
-            operation_result_size.* = 0;
-            operation_error_size.* = err_name.len;
-        } else {
-            operation_result_raw_size.* = ret.result.?.getResultRawLen();
-            operation_result_size.* = ret.result.?.getResultLen();
-            operation_failure_indicator_size.* = 0;
-            operation_error_size.* = 0;
-
-            if (ret.result.?.result_failure_indicated) {
-                operation_failure_indicator_size.* = ret.result.?.failed_indicators.?.items[@intCast(ret.result.?.result_failure_indicator)].len;
-            }
-        }
-
-        break;
-    }
-
-    return 0;
-}
-
-/// Fetches the result of the given operation id -- writing the result and error into the given
-/// buffers. Must be preceeded by a `pollOperation` or `waitOperation` in order to get the sizes
-/// of the result and error buffers.
-export fn fetchOperation(
-    d_ptr: usize,
-    operation_id: u32,
-    operation_start_time: *u64,
-    operation_end_time: *u64,
-    operation_result_raw: *[]u8,
-    operation_result: *[]u8,
-    operation_result_failed_indicator: *[]u8,
-    operation_error: *[]u8,
-) u8 {
-    var d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const ret = d.pollOperation(operation_id, true) catch |err| {
-        d.log(logging.LogLevel.critical, "error during fetch operation {any}", .{err});
-
-        return 1;
-    };
-
-    defer {
-        if (ret.result != null) {
-            ret.result.?.deinit();
-        }
-    }
-
-    if (ret.err != null) {
-        const err_name = @errorName(ret.err.?);
-
-        @memcpy(operation_error.*.ptr, err_name);
-    } else {
-        const _ret = ret.result.?;
-
-        if (_ret.splits_ns.items.len > 0) {
-            operation_start_time.* = @intCast(_ret.start_time_ns);
-            operation_end_time.* = @intCast(_ret.splits_ns.items[_ret.splits_ns.items.len - 1]);
-        } else {
-            // was a noop -- like enterMode but where mode didn't change
-            operation_start_time.* = @intCast(_ret.start_time_ns);
-            operation_end_time.* = @intCast(_ret.start_time_ns);
-        }
-
-        // to avoid a pointless allocation since we are already copying from the result into the
-        // given string pointers, we'll do basically the same thing the result does in normal (zig)
-        // operations in getResult/getResultRaw by iterating over the underlying array list and
-        // copying from there, inserting newlines between results, into the given pointer(s)
-        var cur: usize = 0;
-        for (0.., _ret.results_raw.items) |idx, result_raw| {
-            @memcpy(operation_result_raw.*[cur .. cur + result_raw.len], result_raw);
-            cur += result_raw.len;
-
-            if (idx != _ret.results_raw.items.len - 1) {
-                operation_result_raw.*[cur] = ascii.control_chars.lf;
-                cur += 1;
-            }
-        }
-
-        cur = 0;
-
-        for (0.., _ret.results.items) |idx, result| {
-            @memcpy(operation_result.*[cur .. cur + result.len], result);
-            cur += result.len;
-
-            if (idx != _ret.results.items.len - 1) {
-                operation_result.*[cur] = ascii.control_chars.lf;
-                cur += 1;
-            }
-        }
-
-        if (_ret.result_failure_indicated) {
-            @memcpy(
-                operation_result_failed_indicator.*,
-                _ret.failed_indicators.?.items[@intCast(_ret.result_failure_indicator)],
-            );
-        }
-
-        operation_error.* = "";
-    }
-
-    return 0;
-}
-
-export fn enterMode(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    requested_mode: [*c]const u8,
-) u8 {
-    const d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const _operation_id = d.queueOperation(driver.OperationOptions{
-        .enter_mode = driver.EnterModeOperation{
-            .id = 0,
-            .requested_mode = std.mem.span(requested_mode),
-            .options = operation.EnterModeOptions{
-                .cancel = cancel,
-            },
-        },
-    }) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue enterMode {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-export fn getPrompt(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-) u8 {
-    const d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const _operation_id = d.queueOperation(driver.OperationOptions{
-        .get_prompt = driver.GetPromptOperation{
-            .id = 0,
-            .options = operation.GetPromptOptions{
-                .cancel = cancel,
-            },
-        },
-    }) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue getPrompt {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-export fn sendInput(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    input: [*c]const u8,
-    requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
-    retain_input: bool,
-    retain_trailing_prompt: bool,
-) u8 {
-    const d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const options = args_to_options.SendInputOptionsFromArgs(
-        cancel,
-        requested_mode,
-        input_handling,
-        retain_input,
-        retain_trailing_prompt,
-    );
-
-    const _operation_id = d.queueOperation(driver.OperationOptions{
-        .send_input = driver.SendInputOperation{
-            .id = 0,
-            .input = std.mem.span(input),
-            .options = options,
-        },
-    }) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue sendInput {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-export fn sendPromptedInput(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    input: [*c]const u8,
-    prompt: [*c]const u8,
-    prompt_pattern: [*c]const u8,
-    response: [*c]const u8,
-    hidden_response: bool,
-    abort_input: [*c]const u8,
-    requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
-    retain_trailing_prompt: bool,
-) u8 {
-    const d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const options = args_to_options.SendPromptedInputOptionsFromArgs(
-        cancel,
-        hidden_response,
-        abort_input,
-        requested_mode,
-        input_handling,
-        retain_trailing_prompt,
-    );
-
-    const _operation_id = d.queueOperation(driver.OperationOptions{
-        .send_prompted_input = driver.SendPromptedInputOperation{
-            .id = 0,
-            .input = std.mem.span(input),
-            .prompt = std.mem.span(prompt),
-            .prompt_pattern = std.mem.span(prompt_pattern),
-            .response = std.mem.span(response),
-            .options = options,
-        },
-    }) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue sendPromptedInput {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-// TODO obv uncomment once i figure out where i wanna put the oepration stuff
-// export fn netconfGetConfig(
-//     d_ptr: usize,
-//     operation_id: *u32,
-//     cancel: *bool,
-// ) u8 {
-//     const d: *driver.FfiDriver = @ptrFromInt(d_ptr);
-//
-//     const _operation_id = d.queueOperation(driver.OperationOptions{
-//         .get_config = driver.GetConfigOperation{
-//             .id = 0,
-//             .options = .{
-//                 .cancel = cancel,
-//             },
-//         },
-//     }) catch |err| {
-//         d.log(
-//             logging.LogLevel.critical,
-//             "error during queue getConfig {any}",
-//             .{err},
-//         );
-//
-//         return 1;
-//     };
-//
-//     operation_id.* = _operation_id;
-//
-//     return 0;
-// }

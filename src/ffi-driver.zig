@@ -1,10 +1,12 @@
 const std = @import("std");
 
-const driver = @import("../driver.zig");
-const driver_netconf = @import("../driver-netconf.zig");
-const logging = @import("../logging.zig");
+const driver = @import("driver.zig");
+const driver_netconf = @import("driver-netconf.zig");
+const result = @import("result.zig");
+const result_netconf = @import("result-netconf.zig");
+const logging = @import("logging.zig");
 
-const operations = @import("operations.zig");
+const ffi_operations = @import("ffi-operations.zig");
 
 const operation_thread_ready_sleep: u64 = 250;
 const poll_operation_sleep: u64 = 250_000;
@@ -27,12 +29,12 @@ pub const FfiDriver = struct {
     operation_condition: std.Thread.Condition,
     operation_predicate: u32,
     operation_queue: std.fifo.LinearFifo(
-        operations.OperationOptions,
+        ffi_operations.OperationOptions,
         std.fifo.LinearFifoBufferType.Dynamic,
     ),
     operation_results: std.AutoHashMap(
         u32,
-        operations.OperationResult,
+        ffi_operations.OperationResult,
     ),
 
     pub fn init(
@@ -59,12 +61,12 @@ pub const FfiDriver = struct {
             .operation_condition = std.Thread.Condition{},
             .operation_predicate = 0,
             .operation_queue = std.fifo.LinearFifo(
-                operations.OperationOptions,
+                ffi_operations.OperationOptions,
                 std.fifo.LinearFifoBufferType.Dynamic,
             ).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
-                operations.OperationResult,
+                ffi_operations.OperationResult,
             ).init(allocator),
         };
 
@@ -95,12 +97,12 @@ pub const FfiDriver = struct {
             .operation_condition = std.Thread.Condition{},
             .operation_predicate = 0,
             .operation_queue = std.fifo.LinearFifo(
-                operations.OperationOptions,
+                ffi_operations.OperationOptions,
                 std.fifo.LinearFifoBufferType.Dynamic,
             ).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
-                operations.OperationResult,
+                ffi_operations.OperationResult,
             ).init(allocator),
         };
 
@@ -166,19 +168,38 @@ pub const FfiDriver = struct {
     }
 
     pub fn open(self: *FfiDriver) !void {
-        self.operation_thread = std.Thread.spawn(
-            .{},
-            FfiDriver.operationLoop,
-            .{self},
-        ) catch |err| {
-            self.log(
-                logging.LogLevel.critical,
-                "failed spawning operation thread, err: {}",
-                .{err},
-            );
+        switch (self.real_driver) {
+            .driver => {
+                self.operation_thread = std.Thread.spawn(
+                    .{},
+                    FfiDriver.operationLoop,
+                    .{self},
+                ) catch |err| {
+                    self.log(
+                        logging.LogLevel.critical,
+                        "failed spawning operation thread, err: {}",
+                        .{err},
+                    );
 
-            return error.OpenFailed;
-        };
+                    return error.OpenFailed;
+                };
+            },
+            .netconf => {
+                self.operation_thread = std.Thread.spawn(
+                    .{},
+                    FfiDriver.operationLoopNetconf,
+                    .{self},
+                ) catch |err| {
+                    self.log(
+                        logging.LogLevel.critical,
+                        "failed spawning operation thread, err: {}",
+                        .{err},
+                    );
+
+                    return error.OpenFailed;
+                };
+            },
+        }
 
         while (!self.operation_ready.load(std.builtin.AtomicOrder.acquire)) {
             // this blocks us until the operation thread is ready and processing, otherwise the
@@ -239,14 +260,21 @@ pub const FfiDriver = struct {
             }
 
             var operation_id: u32 = 0;
-            var ret_ok: operations.OperationResult = null;
+            var ret_ok: ?*result.Result = null;
             var ret_err: ?anyerror = null;
 
-            switch (op.?) {
-                operations.OperationKind.open => |o| {
+            const rd = switch (self.real_driver) {
+                .driver => |d| d,
+                else => {
+                    @panic("netconf operation loop executed, but driver is not netconf");
+                },
+            };
+
+            switch (op.?.driver) {
+                .open => |o| {
                     operation_id = o.id;
 
-                    ret_ok = self.real_driver.open(
+                    ret_ok = rd.open(
                         self.allocator,
                         o.options,
                     ) catch |err| blk: {
@@ -254,10 +282,10 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                operations.OperationKind.enter_mode => |o| {
+                .enter_mode => |o| {
                     operation_id = o.id;
 
-                    ret_ok = self.real_driver.enterMode(
+                    ret_ok = rd.enterMode(
                         self.allocator,
                         o.requested_mode,
                         o.options,
@@ -266,10 +294,10 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                operations.OperationKind.get_prompt => |o| {
+                .get_prompt => |o| {
                     operation_id = o.id;
 
-                    ret_ok = self.real_driver.getPrompt(
+                    ret_ok = rd.getPrompt(
                         self.allocator,
                         o.options,
                     ) catch |err| blk: {
@@ -277,10 +305,10 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                operations.OperationKind.send_input => |o| {
+                .send_input => |o| {
                     operation_id = o.id;
 
-                    ret_ok = self.real_driver.sendInput(
+                    ret_ok = rd.sendInput(
                         self.allocator,
                         o.input,
                         o.options,
@@ -289,10 +317,10 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                operations.OperationKind.send_prompted_input => |o| {
+                .send_prompted_input => |o| {
                     operation_id = o.id;
 
-                    ret_ok = self.real_driver.sendPromptedInput(
+                    ret_ok = rd.sendPromptedInput(
                         self.allocator,
                         o.input,
                         o.prompt,
@@ -311,23 +339,115 @@ pub const FfiDriver = struct {
             if (ret_err != null) {
                 self.operation_results.put(
                     operation_id,
-                    operations.OperationResult{ .driver = .{
+                    ffi_operations.OperationResult{
                         .done = true,
-                        .result = null,
+                        .result = .{
+                            .driver = null,
+                        },
                         .err = ret_err,
-                    } },
+                    },
                 ) catch {
                     @panic("failed storing operation result, this should not happen");
                 };
             } else {
                 self.operation_results.put(
                     operation_id,
-                    operations.OperationResult{
-                        .driver = .{
-                            .done = true,
-                            .result = ret_ok,
-                            .err = null,
+                    ffi_operations.OperationResult{
+                        .done = true,
+                        .result = .{
+                            .driver = ret_ok,
                         },
+                        .err = null,
+                    },
+                ) catch {
+                    @panic("failed storing operation result, this should not happen");
+                };
+            }
+
+            self.operation_lock.unlock();
+        }
+
+        self.log(logging.LogLevel.info, "operation thread stopped", .{});
+    }
+
+    fn operationLoopNetconf(self: *FfiDriver) void {
+        self.log(logging.LogLevel.info, "operation thread started", .{});
+
+        self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
+
+        while (!self.operation_stop.load(std.builtin.AtomicOrder.acquire)) {
+            self.operation_lock.lock();
+
+            self.operation_condition.wait(&self.operation_lock);
+
+            const op = self.operation_queue.readItem();
+
+            self.operation_lock.unlock();
+
+            if (op == null) {
+                continue;
+            }
+
+            var operation_id: u32 = 0;
+            var ret_ok: ?*result_netconf.Result = null;
+            var ret_err: ?anyerror = null;
+
+            const rd = switch (self.real_driver) {
+                .netconf => |d| d,
+                else => {
+                    @panic("netconf operation loop executed, but driver is not netconf");
+                },
+            };
+
+            switch (op.?.netconf) {
+                .open => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.open(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .get_config => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.getConfig(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+            }
+
+            self.operation_lock.lock();
+
+            if (ret_err != null) {
+                self.operation_results.put(
+                    operation_id,
+                    ffi_operations.OperationResult{
+                        .done = true,
+                        .result = .{
+                            .netconf = null,
+                        },
+                        .err = ret_err,
+                    },
+                ) catch {
+                    @panic("failed storing operation result, this should not happen");
+                };
+            } else {
+                self.operation_results.put(
+                    operation_id,
+                    ffi_operations.OperationResult{
+                        .done = true,
+                        .result = .{
+                            .netconf = ret_ok,
+                        },
+                        .err = null,
                     },
                 ) catch {
                     @panic("failed storing operation result, this should not happen");
@@ -345,7 +465,7 @@ pub const FfiDriver = struct {
         self: *FfiDriver,
         operation_id: u32,
         remove: bool,
-    ) !operations.OperationResult {
+    ) !ffi_operations.OperationResult {
         self.operation_lock.lock();
         defer self.operation_lock.unlock();
 
@@ -395,7 +515,7 @@ pub const FfiDriver = struct {
 
     pub fn queueOperation(
         self: *FfiDriver,
-        options: operations.OperationOptions,
+        options: ffi_operations.OperationOptions,
     ) !u32 {
         var mut_options = options;
 
@@ -406,34 +526,59 @@ pub const FfiDriver = struct {
 
         const operation_id = self.operation_id_counter;
 
-        try self.operation_results.put(
-            operation_id,
-            operations.OperationResult{
-                .done = false,
-                .result = null,
-                .err = null,
-            },
-        );
-
         switch (options) {
-            operations.OperationKind.open => {
-                mut_options.open.id = operation_id;
+            .driver => |doptions| {
+                try self.operation_results.put(
+                    operation_id,
+                    ffi_operations.OperationResult{
+                        .done = false,
+                        .result = .{ .driver = null },
+                        .err = null,
+                    },
+                );
+
+                switch (doptions) {
+                    .open => {
+                        mut_options.driver.open.id = operation_id;
+                    },
+                    .enter_mode => {
+                        mut_options.driver.enter_mode.id = operation_id;
+                    },
+                    .get_prompt => {
+                        mut_options.driver.get_prompt.id = operation_id;
+                    },
+                    .send_input => {
+                        mut_options.driver.send_input.id = operation_id;
+                    },
+                    .send_prompted_input => {
+                        mut_options.driver.send_prompted_input.id = operation_id;
+                    },
+                }
+
+                try self.operation_queue.writeItem(mut_options);
             },
-            operations.OperationKind.enter_mode => {
-                mut_options.enter_mode.id = operation_id;
-            },
-            operations.OperationKind.get_prompt => {
-                mut_options.get_prompt.id = operation_id;
-            },
-            operations.OperationKind.send_input => {
-                mut_options.send_input.id = operation_id;
-            },
-            operations.OperationKind.send_prompted_input => {
-                mut_options.send_prompted_input.id = operation_id;
+            .netconf => |noptions| {
+                try self.operation_results.put(
+                    operation_id,
+                    ffi_operations.OperationResult{
+                        .done = false,
+                        .result = .{ .netconf = null },
+                        .err = null,
+                    },
+                );
+
+                switch (noptions) {
+                    .open => {
+                        mut_options.netconf.open.id = operation_id;
+                    },
+                    .get_config => {
+                        mut_options.netconf.get_config.id = operation_id;
+                    },
+                }
+
+                try self.operation_queue.writeItem(mut_options);
             },
         }
-
-        try self.operation_queue.writeItem(mut_options);
 
         // signal to unblock the operation loop (we do this so we dont have to do some sleep in the
         // loop between checking for operations)
