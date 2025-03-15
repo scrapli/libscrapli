@@ -18,11 +18,11 @@ const helper = @import("../../test-helper.zig");
 fn GetDriver(
     transportKind: transport.Kind,
     platform: []const u8,
-    username: []const u8,
+    username: ?[]const u8,
     key: ?[]const u8,
     passphrase: ?[]const u8,
 ) !*driver.Driver {
-    // on darwin we'll be targetting localhost, on linux we'll target the ips exposed via clab/docker
+    // on darwin we'll be targetting localhost, on linux we'll target the ip exposed via clab/docker
     var host: []const u8 = undefined;
 
     var config = driver.Config{};
@@ -55,7 +55,11 @@ fn GetDriver(
         return error.UnknownPlatform;
     }
 
-    config.auth.username = username;
+    if (username == null) {
+        config.auth.username = "admin";
+    } else {
+        config.auth.username = username.?;
+    }
 
     if (key != null) {
         config.auth.private_key_path = key;
@@ -142,41 +146,29 @@ test "driver-netconf open" {
         name: []const u8,
         transportKind: transport.Kind,
         platform: []const u8,
-        username: []const u8,
-        key: ?[]const u8,
-        passphrase: ?[]const u8,
+        username: ?[]const u8 = null,
+        key: ?[]const u8 = null,
+        passphrase: ?[]const u8 = null,
     }{
         .{
             .name = "simple",
             .transportKind = transport.Kind.bin,
             .platform = "nokia-srlinux",
-            .username = "admin",
-            .key = null,
-            .passphrase = null,
         },
         .{
             .name = "simple",
             .transportKind = transport.Kind.ssh2,
             .platform = "nokia-srlinux",
-            .username = "admin",
-            .key = null,
-            .passphrase = null,
         },
         .{
             .name = "simple",
             .transportKind = transport.Kind.bin,
             .platform = "arista-eos",
-            .username = "admin",
-            .key = null,
-            .passphrase = null,
         },
         .{
             .name = "simple",
             .transportKind = transport.Kind.ssh2,
             .platform = "arista-eos",
-            .username = "admin",
-            .key = null,
-            .passphrase = null,
         },
         .{
             .name = "simple-with-key",
@@ -184,7 +176,6 @@ test "driver-netconf open" {
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
-            .passphrase = null,
         },
         .{
             .name = "simple-with-key",
@@ -192,7 +183,6 @@ test "driver-netconf open" {
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
-            .passphrase = null,
         },
         .{
             .name = "simple-with-key-with-passphrase",
@@ -295,7 +285,81 @@ test "driver-netconf open" {
     }
 }
 
-// get config
+test "driver-netconf get-config" {
+    const test_name = "driver-netconf-get-config";
+
+    const cases = [_]struct {
+        name: []const u8,
+        transportKind: transport.Kind,
+        platform: []const u8,
+    }{
+        .{
+            .name = "simple",
+            .transportKind = transport.Kind.bin,
+            .platform = "nokia-srlinux",
+        },
+        .{
+            .name = "simple",
+            .transportKind = transport.Kind.ssh2,
+            .platform = "nokia-srlinux",
+        },
+        .{
+            .name = "simple",
+            .transportKind = transport.Kind.bin,
+            .platform = "arista-eos",
+        },
+        .{
+            .name = "simple",
+            .transportKind = transport.Kind.ssh2,
+            .platform = "arista-eos",
+        },
+    };
+
+    const is_ci = flags.parseCustomFlag("--ci", false);
+
+    for (cases) |case| {
+        if (is_ci and std.mem.eql(u8, case.platform, "arista-eos")) {
+            continue;
+        }
+
+        const golden_filename = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "src/tests/functional/golden/netconf/{s}-{s}-{s}",
+            .{ test_name, case.platform, case.transportKind.toString() },
+        );
+        defer std.testing.allocator.free(golden_filename);
+
+        var d = try GetDriver(
+            case.transportKind,
+            case.platform,
+            null,
+            null,
+            null,
+        );
+        defer d.deinit();
+
+        const open_res = try d.open(std.testing.allocator, .{});
+        defer open_res.deinit();
+
+        defer {
+            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
+            close_ret.deinit();
+        }
+
+        const actual_res = try d.getConfig(std.testing.allocator, .{});
+        defer actual_res.deinit();
+
+        const actual_ret = try actual_res.getResultRaw(std.testing.allocator);
+        defer std.testing.allocator.free(actual_ret);
+
+        try helper.processFixutreTestStrResult(
+            test_name,
+            case.name,
+            golden_filename,
+            actual_ret,
+        );
+    }
+}
 
 // edit config
 

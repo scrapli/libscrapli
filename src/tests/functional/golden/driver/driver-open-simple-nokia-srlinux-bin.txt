@@ -16,7 +16,7 @@ Warning: Permanently added '[localhost]:21022' (ED25519) to the list of known ho
 ................................................................
 
 (admin@localhost) Password:
-Last login: Tue Mar 11 02:40:38 2025 from 192.168.65.1
+Last login: Sat Mar 15 18:48:05 2025 from 192.168.65.1
 Using configuration file(s): []
 Welcome to the srlinux CLI.
 Type 'help' (and press <ENTER>) if you need any help using this.

@@ -1,4 +1,3 @@
 Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.
-Last login: Tue Mar 11 02:40:43 2025 from 127.0.0.1
 eos1>
 eos1>
