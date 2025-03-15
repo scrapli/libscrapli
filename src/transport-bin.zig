@@ -531,6 +531,9 @@ fn openPty(
     // parent process, close the slave and return the master (pty) to read/write to
     std.posix.close(slave_fd.handle);
 
+    // disable onlcr to make outputs nicer
+    try setonlcr(master_fd.handle);
+
     return master_fd;
 }
 
@@ -581,4 +584,14 @@ fn openPtyChild(
 
     // zlint-disable suppressed-errors
     std.posix.execvpeZ(args.ptr[0].?, args.ptr, envs.ptr) catch {};
+}
+
+fn setonlcr(fd: std.posix.fd_t) !void {
+    // onlcr  (-onlcr)
+    //     [Option Start] Map (do not map) NL to CR-NL on output.
+    var term = try std.posix.tcgetattr(fd);
+
+    term.oflag.ONLCR = false;
+
+    try std.posix.tcsetattr(fd, std.posix.TCSA.NOW, term);
 }
