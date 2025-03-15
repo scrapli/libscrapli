@@ -59,9 +59,15 @@ pub const NetconfGetConfigOperationOptions = struct {
     options: operation_netconf.GetConfigOptions,
 };
 
+pub const NetconfEditConfigOperationOptions = struct {
+    id: u32,
+    options: operation_netconf.EditConfigOptions,
+};
+
 pub const NetconfOperationOptions = union(enum) {
     open: OpenOperation,
     get_config: NetconfGetConfigOperationOptions,
+    edit_config: NetconfEditConfigOperationOptions,
 };
 
 pub const OperationOptions = union(enum) {

@@ -422,6 +422,17 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
+                .edit_config => |o| {
+                    operation_id = o.id;
+
+                    ret_ok = rd.editConfig(
+                        self.allocator,
+                        o.options,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
             }
 
             self.operation_lock.lock();
@@ -573,6 +584,9 @@ pub const FfiDriver = struct {
                     },
                     .get_config => {
                         mut_options.netconf.get_config.id = operation_id;
+                    },
+                    .edit_config => {
+                        mut_options.netconf.edit_config.id = operation_id;
                     },
                 }
 

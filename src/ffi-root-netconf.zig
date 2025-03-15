@@ -141,6 +141,7 @@ export fn netconfGetConfig(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
+    source: [*c]const u8,
     filter: [*c]const u8,
     filter_type: [*c]const u8,
     filter_namespace_prefix: [*c]const u8,
@@ -151,6 +152,7 @@ export fn netconfGetConfig(
 
     const options = ffi_args_to_options.GetConfigOptionsFromArgs(
         cancel,
+        source,
         filter,
         filter_type,
         filter_namespace_prefix,
@@ -171,6 +173,45 @@ export fn netconfGetConfig(
         d.log(
             logging.LogLevel.critical,
             "error during queue getConfig {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn netconfEditConfig(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    config: [*c]const u8,
+    target: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.GetEditConfigOptionsFromArgs(
+        cancel,
+        config,
+        target,
+    );
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .netconf = .{
+                .edit_config = .{
+                    .id = 0,
+                    .options = options,
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue editConfig {any}",
             .{err},
         );
 

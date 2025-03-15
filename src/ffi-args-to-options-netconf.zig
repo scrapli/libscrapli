@@ -1,6 +1,31 @@
 const std = @import("std");
 const operation = @import("operation-netconf.zig");
 
+fn getDatastoreType(
+    datastore_type: [*c]const u8,
+    default: operation.DatastoreType,
+) operation.DatastoreType {
+    const _datastore_type = std.mem.span(datastore_type);
+
+    if (std.mem.eql(u8, @tagName(operation.DatastoreType.conventional), _datastore_type)) {
+        return operation.DatastoreType.conventional;
+    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.running), _datastore_type)) {
+        return operation.DatastoreType.running;
+    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.candidate), _datastore_type)) {
+        return operation.DatastoreType.candidate;
+    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.startup), _datastore_type)) {
+        return operation.DatastoreType.startup;
+    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.intended), _datastore_type)) {
+        return operation.DatastoreType.intended;
+    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.dynamic), _datastore_type)) {
+        return operation.DatastoreType.dynamic;
+    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.operational), _datastore_type)) {
+        return operation.DatastoreType.operational;
+    } else {
+        return default;
+    }
+}
+
 fn getFilterType(filter_type: [*c]const u8) operation.FilterType {
     const _filter_type = std.mem.span(filter_type);
 
@@ -31,6 +56,7 @@ fn getDefaultsType(defaults_type: [*c]const u8) ?operation.DefaultsType {
 
 pub fn GetConfigOptionsFromArgs(
     cancel: *bool,
+    source: [*c]const u8,
     filter: [*c]const u8,
     filter_type: [*c]const u8,
     filter_namespace_prefix: [*c]const u8,
@@ -39,6 +65,10 @@ pub fn GetConfigOptionsFromArgs(
 ) operation.GetConfigOptions {
     var options = operation.GetConfigOptions{
         .cancel = cancel,
+        .source = getDatastoreType(
+            source,
+            operation.DatastoreType.running,
+        ),
         .filter_type = getFilterType(filter_type),
         .defaults_type = getDefaultsType(defaults_type),
     };
@@ -59,4 +89,19 @@ pub fn GetConfigOptionsFromArgs(
     }
 
     return options;
+}
+
+pub fn GetEditConfigOptionsFromArgs(
+    cancel: *bool,
+    config: [*c]const u8,
+    target: [*c]const u8,
+) operation.EditConfigOptions {
+    return operation.EditConfigOptions{
+        .cancel = cancel,
+        .config = std.mem.span(config),
+        .target = getDatastoreType(
+            target,
+            operation.DatastoreType.running,
+        ),
+    };
 }
