@@ -143,7 +143,9 @@ export fn netconfAllocDriver(
             .transport = switch (getTransport(std.mem.span(transport_kind))) {
                 transport.Kind.bin => .{ .bin = .{} },
                 transport.Kind.ssh2 => .{ .ssh2 = .{} },
+                transport.Kind.test_ => .{ .test_ = .{} },
                 else => {
+                    // only for telnet in the case of netconf (obvs)
                     unreachable;
                 },
             },
