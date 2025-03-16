@@ -6,9 +6,7 @@ const ffi_apply_options = @import("ffi-apply-options.zig");
 const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
 
-const operation = @import("cli-operation.zig");
 const logging = @import("logging.zig");
-const ascii = @import("ascii.zig");
 const transport = @import("transport.zig");
 
 // TODO dont do this shit, just figure out including more shit in build.zig
@@ -48,31 +46,37 @@ export fn assertNoLeaks() bool {
     }
 }
 
-export fn stripAsciiAndAnsiControlCharsInPlace(
-    haystack: *[]u8,
-    start_idx: usize,
-) usize {
-    return ascii.stripAsciiAndAnsiControlCharsInPlace(
-        haystack.*,
-        start_idx,
-    );
-}
-
 fn getTransport(transport_kind: []const u8) transport.Kind {
-    if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.bin))) {
+    if (std.mem.eql(
+        u8,
+        transport_kind,
+        @tagName(transport.Kind.bin),
+    )) {
         return transport.Kind.bin;
-    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.telnet))) {
+    } else if (std.mem.eql(
+        u8,
+        transport_kind,
+        @tagName(transport.Kind.telnet),
+    )) {
         return transport.Kind.telnet;
-    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.ssh2))) {
+    } else if (std.mem.eql(
+        u8,
+        transport_kind,
+        @tagName(transport.Kind.ssh2),
+    )) {
         return transport.Kind.ssh2;
-    } else if (std.mem.eql(u8, transport_kind, @tagName(transport.Kind.test_))) {
+    } else if (std.mem.eql(
+        u8,
+        transport_kind,
+        @tagName(transport.Kind.test_),
+    )) {
         return transport.Kind.test_;
     } else {
         @panic("unsupported transport");
     }
 }
 
-export fn allocDriver(
+export fn allocCliDriver(
     definition_string: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
@@ -116,7 +120,7 @@ export fn allocDriver(
     return @intFromPtr(d);
 }
 
-export fn netconfAllocDriver(
+export fn allocNetconfDriver(
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
     port: u16,
