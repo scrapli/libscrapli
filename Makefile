@@ -29,13 +29,14 @@ open-coverage: ## Open the generated coverage report
 	open zig-out/cover/index.html
 
 clean-zig-cache: ## Nukes the local zig cache dir if its > 16gb
-	bash -c "[ $$(du -s .zig-cache | awk '{print $1}') -gt $$((16 * 1024 * 1024)) ] && rm -rf .zig-cache || true"
+	bash -c "[ $$(du -s .zig-cache | awk '{print $$1}') -gt $$((16 * 1024 * 1024)) ] && rm -rf .zig-cache" || true
 
 build: fmt clean-zig-cache ## Build the shared objects.
 	zig build -freference-trace --summary all
 
 build-release: fmt clean-zig-cache ## Build the shared objects w/ release optimization
-	zig build -freference-trace --summary all -- --release
+	rm -rf zig-out && zig build -freference-trace --summary all -- --release
+	find zig-out -type f \( -name 'libscrapli.*.dylib' -o -name 'libscrapli.so.*' \) -exec sha256sum {} + > "zig-out/checksums.txt"
 
 build-examples: fmt clean-zig-cache ## Build the example binaries
 	zig build -freference-trace --summary all -- --examples --skip-lib --skip-ffi-lib

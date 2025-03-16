@@ -1,0 +1,53 @@
+---
+name: release
+
+on:
+  release:
+    types:
+      - created
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yaml
+
+  test:
+    uses: ./.github/workflows/test.yaml
+
+  release:
+    needs:
+      - lint
+      - test
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: load env vars for workflow run
+        run: |
+          source .github/vars.env
+          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
+
+      - name: setup zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: build release shared objects
+        run: |
+          make build-release
+
+      - name: upload built shared objects to release
+        run: |
+          cd .dist
+          gh release upload ${{ github.ref_name }} zig-out/checksums.txt #checksums
+          gh release upload ${{ github.ref_name }} "zig-out/aarch64-linux/libscrapli.so.0.0.1" #libscrapli-aarch64-linux-0.0.1
+          gh release upload ${{ github.ref_name }} "zig-out/aarch64-macos/libscrapli.0.0.1.dylib" #libscrapli-aarch64-macos-0.0.1
+          gh release upload ${{ github.ref_name }} "zig-out/x86_64_linux-gnu/libscrapli.so.0.0.1" #libscrapli-x86-linux-gnu-0.0.1
+          gh release upload ${{ github.ref_name }} "zig-out/x86_64_linux-musl/libscrapli.so.0.0.1" #libscrapli-x86-linux-musl-0.0.1
+          gh release upload ${{ github.ref_name }} "zig-out/x86_64-macos/libscrapli.0.0.1.dylib" #libscrapli-x86-macos-0.0.1
+        env:
+          GITHUB_TOKEN: ${{ github.TOKEN }}
