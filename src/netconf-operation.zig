@@ -1,6 +1,6 @@
 // open/close things are aliased to "normal" operation so they are the same, but users can simply
 // import all operation things from the netconf operation package when doing netconf bits.
-const operation = @import("operation.zig");
+const operation = @import("cli-operation.zig");
 
 pub const Kind = enum {
     // not "standard" netconf operations, but operations for us!

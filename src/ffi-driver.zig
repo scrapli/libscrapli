@@ -2,7 +2,7 @@ const std = @import("std");
 
 const cli = @import("cli.zig");
 const netconf = @import("netconf.zig");
-const result = @import("result.zig");
+const result = @import("cli-result.zig");
 const result_netconf = @import("netconf-result.zig");
 const logging = @import("logging.zig");
 
@@ -259,7 +259,6 @@ pub const FfiDriver = struct {
                 continue;
             }
 
-            var operation_id: u32 = 0;
             var ret_ok: ?*result.Result = null;
             var ret_err: ?anyerror = null;
 
@@ -270,57 +269,47 @@ pub const FfiDriver = struct {
                 },
             };
 
-            switch (op.?.cli) {
+            switch (op.?.operation.cli) {
                 .open => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.open(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .enter_mode => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.enterMode(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .get_prompt => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.getPrompt(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .send_input => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.sendInput(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .send_prompted_input => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.sendPromptedInput(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
@@ -332,7 +321,7 @@ pub const FfiDriver = struct {
 
             if (ret_err != null) {
                 self.operation_results.put(
-                    operation_id,
+                    op.?.id,
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
@@ -345,7 +334,7 @@ pub const FfiDriver = struct {
                 };
             } else {
                 self.operation_results.put(
-                    operation_id,
+                    op.?.id,
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
@@ -382,7 +371,6 @@ pub const FfiDriver = struct {
                 continue;
             }
 
-            var operation_id: u32 = 0;
             var ret_ok: ?*result_netconf.Result = null;
             var ret_err: ?anyerror = null;
 
@@ -393,112 +381,92 @@ pub const FfiDriver = struct {
                 },
             };
 
-            switch (op.?.netconf) {
+            switch (op.?.operation.netconf) {
                 .open => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.open(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .get_config => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.getConfig(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .edit_config => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.editConfig(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .copy_config => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.copyConfig(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .delete_config => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.deleteConfig(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .lock => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.lock(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .unlock => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.unlock(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .get => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.get(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .close_session => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.closeSession(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
                     };
                 },
                 .kill_session => |o| {
-                    operation_id = o.id;
-
                     ret_ok = rd.killSession(
                         self.allocator,
-                        o.options,
+                        o,
                     ) catch |err| blk: {
                         ret_err = err;
                         break :blk null;
@@ -510,7 +478,7 @@ pub const FfiDriver = struct {
 
             if (ret_err != null) {
                 self.operation_results.put(
-                    operation_id,
+                    op.?.id,
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
@@ -523,7 +491,7 @@ pub const FfiDriver = struct {
                 };
             } else {
                 self.operation_results.put(
-                    operation_id,
+                    op.?.id,
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
@@ -607,9 +575,10 @@ pub const FfiDriver = struct {
         self.operation_id_counter += 1;
 
         const operation_id = self.operation_id_counter;
+        mut_options.id = operation_id;
 
-        switch (options) {
-            .cli => |doptions| {
+        switch (options.operation) {
+            .cli => {
                 try self.operation_results.put(
                     operation_id,
                     ffi_operations.OperationResult{
@@ -619,27 +588,9 @@ pub const FfiDriver = struct {
                     },
                 );
 
-                switch (doptions) {
-                    .open => {
-                        mut_options.cli.open.id = operation_id;
-                    },
-                    .enter_mode => {
-                        mut_options.cli.enter_mode.id = operation_id;
-                    },
-                    .get_prompt => {
-                        mut_options.cli.get_prompt.id = operation_id;
-                    },
-                    .send_input => {
-                        mut_options.cli.send_input.id = operation_id;
-                    },
-                    .send_prompted_input => {
-                        mut_options.cli.send_prompted_input.id = operation_id;
-                    },
-                }
-
                 try self.operation_queue.writeItem(mut_options);
             },
-            .netconf => |noptions| {
+            .netconf => {
                 try self.operation_results.put(
                     operation_id,
                     ffi_operations.OperationResult{
@@ -648,39 +599,6 @@ pub const FfiDriver = struct {
                         .err = null,
                     },
                 );
-
-                switch (noptions) {
-                    .open => {
-                        mut_options.netconf.open.id = operation_id;
-                    },
-                    .get_config => {
-                        mut_options.netconf.get_config.id = operation_id;
-                    },
-                    .edit_config => {
-                        mut_options.netconf.edit_config.id = operation_id;
-                    },
-                    .copy_config => {
-                        mut_options.netconf.copy_config.id = operation_id;
-                    },
-                    .delete_config => {
-                        mut_options.netconf.delete_config.id = operation_id;
-                    },
-                    .lock => {
-                        mut_options.netconf.lock.id = operation_id;
-                    },
-                    .unlock => {
-                        mut_options.netconf.unlock.id = operation_id;
-                    },
-                    .get => {
-                        mut_options.netconf.get.id = operation_id;
-                    },
-                    .close_session => {
-                        mut_options.netconf.close_session.id = operation_id;
-                    },
-                    .kill_session => {
-                        mut_options.netconf.kill_session.id = operation_id;
-                    },
-                }
 
                 try self.operation_queue.writeItem(mut_options);
             },

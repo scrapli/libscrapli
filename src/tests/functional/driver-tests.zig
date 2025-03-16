@@ -10,8 +10,8 @@ const cli = @import("../../cli.zig");
 const transport = @import("../../transport.zig");
 const ssh2_transport = @import("../../transport-ssh2.zig");
 const telnet_transport = @import("../../transport-telnet.zig");
-const operation = @import("../../operation.zig");
-const result = @import("../../result.zig");
+const operation = @import("../../cli-operation.zig");
+const result = @import("../../cli-result.zig");
 const flags = @import("../../flags.zig");
 
 const helper = @import("../../test-helper.zig");

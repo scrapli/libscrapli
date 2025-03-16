@@ -3,7 +3,7 @@ const cli = @import("cli.zig");
 const mode = @import("mode.zig");
 const yaml = @import("yaml");
 const strings = @import("strings.zig");
-const result = @import("result.zig");
+const result = @import("cli-result.zig");
 const file = @import("file.zig");
 
 pub const OnXCallback = *const fn (

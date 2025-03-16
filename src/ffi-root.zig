@@ -6,7 +6,7 @@ const ffi_apply_options = @import("ffi-apply-options.zig");
 const ffi_root_driver = @import("ffi-root-driver.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
 
-const operation = @import("operation.zig");
+const operation = @import("cli-operation.zig");
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
 const transport = @import("transport.zig");
@@ -188,10 +188,10 @@ export fn openDriver(
         .cli => {
             operation_id.* = d.queueOperation(
                 ffi_operations.OperationOptions{
-                    .cli = .{
-                        .open = ffi_operations.OpenOperation{
-                            .id = 0,
-                            .options = operation.OpenOptions{
+                    .id = 0,
+                    .operation = .{
+                        .cli = .{
+                            .open = .{
                                 .cancel = cancel,
                             },
                         },
@@ -210,10 +210,10 @@ export fn openDriver(
         .netconf => {
             operation_id.* = d.queueOperation(
                 ffi_operations.OperationOptions{
-                    .netconf = .{
-                        .open = ffi_operations.OpenOperation{
-                            .id = 0,
-                            .options = operation.OpenOptions{
+                    .id = 0,
+                    .operation = .{
+                        .netconf = .{
+                            .open = .{
                                 .cancel = cancel,
                             },
                         },

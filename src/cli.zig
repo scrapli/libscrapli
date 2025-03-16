@@ -4,9 +4,9 @@ const session = @import("session.zig");
 const auth = @import("auth.zig");
 const transport = @import("transport.zig");
 const platform = @import("platform.zig");
-const operation = @import("operation.zig");
+const operation = @import("cli-operation.zig");
 const mode = @import("mode.zig");
-const result = @import("result.zig");
+const result = @import("cli-result.zig");
 
 const default_ssh_port: u16 = 22;
 const default_telnet_port: u16 = 23;

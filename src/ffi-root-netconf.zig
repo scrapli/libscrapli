@@ -162,10 +162,10 @@ export fn netconfGetConfig(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .get_config = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .get_config = options,
                 },
             },
         },
@@ -201,10 +201,10 @@ export fn netconfEditConfig(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .edit_config = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .edit_config = options,
                 },
             },
         },
@@ -240,10 +240,10 @@ export fn netconfCopyConfig(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .copy_config = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .copy_config = options,
                 },
             },
         },
@@ -277,10 +277,10 @@ export fn netconfDeleteConfig(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .delete_config = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .delete_config = options,
                 },
             },
         },
@@ -314,10 +314,10 @@ export fn netconfLock(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .lock = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .lock = options,
                 },
             },
         },
@@ -351,10 +351,10 @@ export fn netconfUnlock(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .unlock = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .unlock = options,
                 },
             },
         },
@@ -396,10 +396,10 @@ export fn netconfGet(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .get = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .get = options,
                 },
             },
         },
@@ -427,10 +427,12 @@ export fn netconfCloseSession(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .close_session = .{
-                    .id = 0,
-                    .options = .{ .cancel = cancel },
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .close_session = .{
+                        .cancel = cancel,
+                    },
                 },
             },
         },
@@ -459,10 +461,10 @@ export fn netconfKillSession(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .netconf = .{
-                .kill_session = .{
-                    .id = 0,
-                    .options = .{
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .kill_session = .{
                         .cancel = cancel,
                         .session_id = session_id,
                     },

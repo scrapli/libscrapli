@@ -1,5 +1,5 @@
 const std = @import("std");
-const operation = @import("operation.zig");
+const operation = @import("cli-operation.zig");
 
 fn getInputHandling(input_handling: [*c]const u8) operation.InputHandling {
     const _input_handling = std.mem.span(input_handling);

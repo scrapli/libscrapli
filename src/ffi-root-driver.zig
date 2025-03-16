@@ -4,7 +4,7 @@ const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const ffi_args_to_options = @import("ffi-args-to-options.zig");
 
-const operation = @import("operation.zig");
+const operation = @import("cli-operation.zig");
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
 
@@ -280,10 +280,10 @@ export fn enterMode(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .cli = .{
-                .enter_mode = .{
-                    .id = 0,
-                    .options = operation.EnterModeOptions{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .enter_mode = .{
                         .cancel = cancel,
                         .requested_mode = std.mem.span(requested_mode),
                     },
@@ -314,10 +314,10 @@ export fn getPrompt(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .cli = .{
-                .get_prompt = .{
-                    .id = 0,
-                    .options = .{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .get_prompt = .{
                         .cancel = cancel,
                     },
                 },
@@ -361,10 +361,10 @@ export fn sendInput(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .cli = .{
-                .send_input = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .send_input = options,
                 },
             },
         },
@@ -414,10 +414,10 @@ export fn sendPromptedInput(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .cli = .{
-                .send_prompted_input = .{
-                    .id = 0,
-                    .options = options,
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .send_prompted_input = options,
                 },
             },
         },

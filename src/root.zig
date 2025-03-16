@@ -4,8 +4,8 @@ pub const strings = @import("strings.zig");
 pub const platform = @import("platform.zig");
 
 pub const cli = @import("cli.zig");
-pub const operation = @import("operation.zig");
-pub const result = @import("result.zig");
+pub const cli_operation = @import("cli-operation.zig");
+pub const cli_result = @import("cli-result.zig");
 
 pub const netconf = @import("netconf.zig");
 pub const netconf_operation = @import("netconf-operation.zig");

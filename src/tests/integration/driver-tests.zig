@@ -4,12 +4,12 @@
 const std = @import("std");
 
 const cli = @import("../../cli.zig");
-const operation = @import("../../operation.zig");
+const operation = @import("../../cli-operation.zig");
 const mode = @import("../../mode.zig");
 const flags = @import("../../flags.zig");
 const ascii = @import("../../ascii.zig");
 const file = @import("../../file.zig");
-const result = @import("../../result.zig");
+const result = @import("../../cli-result.zig");
 
 const helper = @import("../../test-helper.zig");
 
