@@ -3,8 +3,8 @@ const auth = @import("auth.zig");
 const logging = @import("logging.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
-const operation = @import("operation-netconf.zig");
-const result = @import("result-netconf.zig");
+const operation = @import("netconf-operation.zig");
+const result = @import("netconf-result.zig");
 const ascii = @import("ascii.zig");
 const xml = @import("xml");
 const test_helper = @import("test-helper.zig");
@@ -87,6 +87,7 @@ pub const Options = struct {
     auth: *auth.Options,
     session: *session.Options,
     transport: *transport.Options,
+    // TODO custom/extra client caps?
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
@@ -101,7 +102,10 @@ pub const Options = struct {
             .port = config.port,
             .auth = try auth.Options.init(allocator, config.auth),
             .session = try session.Options.init(allocator, config.session),
-            .transport = try transport.Options.init(allocator, config.transport),
+            .transport = try transport.Options.init(
+                allocator,
+                config.transport,
+            ),
             .error_tag = config.error_tag,
             .preferred_version = config.preferred_version,
             .message_poll_interval_ns = config.message_poll_interval_ns,
@@ -219,7 +223,9 @@ pub const Driver = struct {
             .negotiated_version = Version.version_1_0,
 
             .process_thread = null,
-            .process_stop = std.atomic.Value(ProcessThreadState).init(ProcessThreadState.uninitialized),
+            .process_stop = std.atomic.Value(ProcessThreadState).init(
+                ProcessThreadState.uninitialized,
+            ),
 
             .message_id = 101,
 
@@ -371,7 +377,10 @@ pub const Driver = struct {
             Driver.processLoop,
             .{self},
         ) catch |err| {
-            self.log.critical("failed spawning message processing thread, err: {}", .{err});
+            self.log.critical(
+                "failed spawning message processing thread, err: {}",
+                .{err},
+            );
 
             return error.OpenFailed;
         };
@@ -387,7 +396,10 @@ pub const Driver = struct {
         // TODO send CloseSession rpc and then we will care about options for cancel
         _ = options;
 
-        self.process_stop.store(ProcessThreadState.stop, std.builtin.AtomicOrder.unordered);
+        self.process_stop.store(
+            ProcessThreadState.stop,
+            std.builtin.AtomicOrder.unordered,
+        );
 
         if (self.process_thread != null) {
             self.process_thread.?.join();
@@ -502,7 +514,10 @@ pub const Driver = struct {
         var input_stream = std.io.fixedBufferStream(cap_buf);
         const input_stream_reader = input_stream.reader();
 
-        var xml_doc = xml.streamingDocument(self.allocator, input_stream_reader);
+        var xml_doc = xml.streamingDocument(
+            self.allocator,
+            input_stream_reader,
+        );
         defer xml_doc.deinit();
 
         var xml_reader = xml_doc.reader(self.allocator, .{});
@@ -532,14 +547,26 @@ pub const Driver = struct {
                             .text => {
                                 const text_content = try xml_reader.text();
 
-                                if (std.mem.startsWith(u8, text_content, "http") or
-                                    std.mem.startsWith(u8, text_content, "urn"))
+                                if (std.mem.startsWith(
+                                    u8,
+                                    text_content,
+                                    "http",
+                                ) or
+                                    std.mem.startsWith(
+                                        u8,
+                                        text_content,
+                                        "urn",
+                                    ))
                                 {
                                     found_capability.name = try self.allocator.dupe(
                                         u8,
                                         text_content,
                                     );
-                                } else if (std.mem.startsWith(u8, text_content, "revision")) {
+                                } else if (std.mem.startsWith(
+                                    u8,
+                                    text_content,
+                                    "revision",
+                                )) {
                                     found_capability.revision = try self.allocator.dupe(
                                         u8,
                                         text_content[9..],
@@ -592,8 +619,16 @@ pub const Driver = struct {
     fn determineVersion(
         self: *Driver,
     ) !void {
-        const hasVersion_1_0 = try self.hasCapability(null, version_1_0_capability_name, null);
-        const hasVersion_1_1 = try self.hasCapability(null, version_1_1_capability_name, null);
+        const hasVersion_1_0 = try self.hasCapability(
+            null,
+            version_1_0_capability_name,
+            null,
+        );
+        const hasVersion_1_1 = try self.hasCapability(
+            null,
+            version_1_1_capability_name,
+            null,
+        );
 
         if (hasVersion_1_1) {
             // we default to preferring 1.1
@@ -810,8 +845,16 @@ pub const Driver = struct {
             return;
         }
 
-        const index_of_message_id = std.mem.indexOf(u8, buf, message_id_attribute_prefix);
-        const index_of_subscription_id = std.mem.indexOf(u8, buf, subscription_id_attribute_prefix);
+        const index_of_message_id = std.mem.indexOf(
+            u8,
+            buf,
+            message_id_attribute_prefix,
+        );
+        const index_of_subscription_id = std.mem.indexOf(
+            u8,
+            buf,
+            subscription_id_attribute_prefix,
+        );
 
         if (index_of_message_id == null and
             index_of_subscription_id == null)
@@ -976,7 +1019,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1045,7 +1091,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1098,7 +1147,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1132,7 +1184,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CopyConfig = options,
+                .copy_config = options,
             },
         );
     }
@@ -1149,7 +1201,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1182,7 +1237,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CopyConfig = options,
+                .delete_config = options,
             },
         );
     }
@@ -1199,7 +1254,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1249,7 +1307,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1299,7 +1360,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1367,7 +1431,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1397,7 +1464,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CloseSession = options,
+                .close_session = options,
             },
         );
     }
@@ -1414,7 +1481,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1434,7 +1504,11 @@ pub const Driver = struct {
 
         // see also getMessageId, same situation
         var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.session_id}));
+        try writer.text(try std.fmt.bufPrint(
+            &session_id_buf,
+            "{}",
+            .{options.session_id},
+        ));
         try writer.elementEnd();
 
         try writer.elementEnd();
@@ -1447,12 +1521,12 @@ pub const Driver = struct {
     pub fn killSession(
         self: *Driver,
         allocator: std.mem.Allocator,
-        options: operation.CloseSessionOptions,
+        options: operation.KillSessionOptions,
     ) !*result.Result {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .close_session = options,
+                .kill_session = options,
             },
         );
     }
@@ -1471,7 +1545,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1520,7 +1597,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1569,7 +1649,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1616,7 +1699,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1666,7 +1752,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1733,7 +1822,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1748,7 +1840,10 @@ pub const Driver = struct {
             ),
         );
         try writer.elementStart("establish-subscription");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
+        try writer.bindNs(
+            "",
+            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
+        );
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
 
         // TODO stream and other options/settings
@@ -1799,7 +1894,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1814,7 +1912,10 @@ pub const Driver = struct {
             ),
         );
         try writer.elementStart("modify-subscription");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
+        try writer.bindNs(
+            "",
+            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
+        );
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
 
         // see also getMessageId, same situation
@@ -1871,7 +1972,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1886,7 +1990,10 @@ pub const Driver = struct {
             ),
         );
         try writer.elementStart("delete-subscription");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
+        try writer.bindNs(
+            "",
+            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
+        );
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
 
         // see also getMessageId, same situation
@@ -1927,7 +2034,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1942,7 +2052,10 @@ pub const Driver = struct {
             ),
         );
         try writer.elementStart("resync-subscription");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
+        try writer.bindNs(
+            "",
+            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
+        );
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
 
         // see also getMessageId, same situation
@@ -1983,7 +2096,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1998,7 +2114,10 @@ pub const Driver = struct {
             ),
         );
         try writer.elementStart("kill-subscription");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications");
+        try writer.bindNs(
+            "",
+            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
+        );
         try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
 
         // see also getMessageId, same situation
@@ -2039,7 +2158,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2102,7 +2224,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2125,7 +2250,11 @@ pub const Driver = struct {
         // like the message id and such, but for datastore, longest (currently) is 12, so 20
         // just for consistency and overhead
         var datastore_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&datastore_buf, "ds:{s}", .{options.datastore.toString()}));
+        try writer.text(try std.fmt.bufPrint(
+            &datastore_buf,
+            "ds:{s}",
+            .{options.datastore.toString()},
+        ));
         try writer.elementEnd();
 
         if (options.filter != null and options.filter.?.len > 0) {
@@ -2153,7 +2282,11 @@ pub const Driver = struct {
         if (options.max_depth != null) {
             try writer.elementStart("max-depth");
             var session_id_buf: [20]u8 = undefined;
-            try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.max_depth.?}));
+            try writer.text(try std.fmt.bufPrint(
+                &session_id_buf,
+                "{}",
+                .{options.max_depth.?},
+            ));
             try writer.elementEnd();
         }
 
@@ -2223,7 +2356,11 @@ pub const Driver = struct {
         // like the message id and such, but for datastore, longest (currently) is 12, so 20
         // just for consistency and overhead
         var datastore_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&datastore_buf, "ds:{s}", .{options.datastore.toString()}));
+        try writer.text(try std.fmt.bufPrint(
+            &datastore_buf,
+            "ds:{s}",
+            .{options.datastore.toString()},
+        ));
         try writer.elementEnd();
         try writer.embed(options.edit_content);
 
@@ -2259,7 +2396,10 @@ pub const Driver = struct {
 
         var out = xml.streamingOutput(sink.writer());
 
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2313,95 +2453,164 @@ pub const Driver = struct {
         switch (options) {
             .get_config => {
                 cancel = options.get_config.cancel;
-                res.input = try self.buildGetConfigElem(allocator, options.get_config);
+                res.input = try self.buildGetConfigElem(
+                    allocator,
+                    options.get_config,
+                );
             },
             .edit_config => {
                 cancel = options.edit_config.cancel;
-                res.input = try self.buildEditConfigElem(allocator, options.edit_config);
+                res.input = try self.buildEditConfigElem(
+                    allocator,
+                    options.edit_config,
+                );
             },
             .copy_config => {
                 cancel = options.copy_config.cancel;
-                res.input = try self.buildCopyConfigElem(allocator, options.copy_config);
+                res.input = try self.buildCopyConfigElem(
+                    allocator,
+                    options.copy_config,
+                );
             },
             .delete_config => {
                 cancel = options.delete_config.cancel;
-                res.input = try self.buildDeleteConfigElem(allocator, options.delete_config);
+                res.input = try self.buildDeleteConfigElem(
+                    allocator,
+                    options.delete_config,
+                );
             },
             .lock => {
                 cancel = options.lock.cancel;
-                res.input = try self.buildLockElem(allocator, options.lock);
+                res.input = try self.buildLockElem(
+                    allocator,
+                    options.lock,
+                );
             },
             .unlock => {
                 cancel = options.unlock.cancel;
-                res.input = try self.buildUnlockElem(allocator, options.unlock);
+                res.input = try self.buildUnlockElem(
+                    allocator,
+                    options.unlock,
+                );
             },
             .get => {
                 cancel = options.get.cancel;
-                res.input = try self.buildGetElem(allocator, options.get);
+                res.input = try self.buildGetElem(
+                    allocator,
+                    options.get,
+                );
             },
             .close_session => {
                 cancel = options.close_session.cancel;
-                res.input = try self.buildCloseSessionElem(allocator, options.close_session);
+                res.input = try self.buildCloseSessionElem(
+                    allocator,
+                    options.close_session,
+                );
             },
             .kill_session => {
                 cancel = options.kill_session.cancel;
-                res.input = try self.buildKillSessionElem(allocator, options.kill_session);
+                res.input = try self.buildKillSessionElem(
+                    allocator,
+                    options.kill_session,
+                );
             },
             .commit => {
                 cancel = options.commit.cancel;
-                res.input = try self.buildCommitElem(allocator, options.commit);
+                res.input = try self.buildCommitElem(
+                    allocator,
+                    options.commit,
+                );
             },
             .discard => {
                 cancel = options.discard.cancel;
-                res.input = try self.buildDiscardElem(allocator, options.discard);
+                res.input = try self.buildDiscardElem(
+                    allocator,
+                    options.discard,
+                );
             },
             .cancel_commit => {
                 cancel = options.cancel_commit.cancel;
-                res.input = try self.buildCancelCommitElem(allocator, options.cancel_commit);
+                res.input = try self.buildCancelCommitElem(
+                    allocator,
+                    options.cancel_commit,
+                );
             },
             .validate => {
                 cancel = options.validate.cancel;
-                res.input = try self.buildValidateElem(allocator, options.validate);
+                res.input = try self.buildValidateElem(
+                    allocator,
+                    options.validate,
+                );
             },
             .create_subscription => {
                 cancel = options.create_subscription.cancel;
-                res.input = try self.buildCreateSubscriptionElem(allocator, options.create_subscription);
+                res.input = try self.buildCreateSubscriptionElem(
+                    allocator,
+                    options.create_subscription,
+                );
             },
             .establish_subscription => {
                 cancel = options.establish_subscription.cancel;
-                res.input = try self.buildEstablishSubscriptionElem(allocator, options.establish_subscription);
+                res.input = try self.buildEstablishSubscriptionElem(
+                    allocator,
+                    options.establish_subscription,
+                );
             },
             .modify_subscription => {
                 cancel = options.modify_subscription.cancel;
-                res.input = try self.buildModifySubscriptionElem(allocator, options.modify_subscription);
+                res.input = try self.buildModifySubscriptionElem(
+                    allocator,
+                    options.modify_subscription,
+                );
             },
             .delete_subscription => {
                 cancel = options.delete_subscription.cancel;
-                res.input = try self.buildDeleteSubscriptionElem(allocator, options.delete_subscription);
+                res.input = try self.buildDeleteSubscriptionElem(
+                    allocator,
+                    options.delete_subscription,
+                );
             },
             .resync_subscription => {
                 cancel = options.resync_subscription.cancel;
-                res.input = try self.buildResyncSubscriptionElem(allocator, options.resync_subscription);
+                res.input = try self.buildResyncSubscriptionElem(
+                    allocator,
+                    options.resync_subscription,
+                );
             },
             .kill_subscription => {
                 cancel = options.kill_subscription.cancel;
-                res.input = try self.buildKillSubscriptionElem(allocator, options.kill_subscription);
+                res.input = try self.buildKillSubscriptionElem(
+                    allocator,
+                    options.kill_subscription,
+                );
             },
             .get_schema => {
                 cancel = options.get_schema.cancel;
-                res.input = try self.buildGetSchemaElem(allocator, options.get_schema);
+                res.input = try self.buildGetSchemaElem(
+                    allocator,
+                    options.get_schema,
+                );
             },
             .get_data => {
                 cancel = options.get_data.cancel;
-                res.input = try self.buildGetDataElem(allocator, options.get_data);
+                res.input = try self.buildGetDataElem(
+                    allocator,
+                    options.get_data,
+                );
             },
             .edit_data => {
                 cancel = options.edit_data.cancel;
-                res.input = try self.buildEditDataElem(allocator, options.edit_data);
+                res.input = try self.buildEditDataElem(
+                    allocator,
+                    options.edit_data,
+                );
             },
             .action => {
                 cancel = options.action.cancel;
-                res.input = try self.buildActionElem(allocator, options.action);
+                res.input = try self.buildActionElem(
+                    allocator,
+                    options.action,
+                );
             },
             else => return error.UnsupportedOperation,
         }
@@ -2490,10 +2699,18 @@ test "buildGetConfigElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildGetConfigElem(std.testing.allocator, case.options);
+        const actual = try d.buildGetConfigElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2546,10 +2763,18 @@ test "builEditConfigElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildEditConfigElem(std.testing.allocator, case.options);
+        const actual = try d.buildEditConfigElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2594,10 +2819,18 @@ test "builCopyConfigElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildCopyConfigElem(std.testing.allocator, case.options);
+        const actual = try d.buildCopyConfigElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2642,10 +2875,18 @@ test "builDeleteConfigElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildDeleteConfigElem(std.testing.allocator, case.options);
+        const actual = try d.buildDeleteConfigElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2690,10 +2931,18 @@ test "buildLockElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildLockElem(std.testing.allocator, case.options);
+        const actual = try d.buildLockElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2738,10 +2987,18 @@ test "buildUnlockElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildUnlockElem(std.testing.allocator, case.options);
+        const actual = try d.buildUnlockElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2786,10 +3043,18 @@ test "buildGetElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildGetElem(std.testing.allocator, case.options);
+        const actual = try d.buildGetElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2834,10 +3099,18 @@ test "buildCloseSessionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildCloseSessionElem(std.testing.allocator, case.options);
+        const actual = try d.buildCloseSessionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2888,10 +3161,18 @@ test "buildKillSessionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildKillSessionElem(std.testing.allocator, case.options);
+        const actual = try d.buildKillSessionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2936,10 +3217,18 @@ test "buildCommitElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildCommitElem(std.testing.allocator, case.options);
+        const actual = try d.buildCommitElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -2984,10 +3273,18 @@ test "buildDiscardElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildDiscardElem(std.testing.allocator, case.options);
+        const actual = try d.buildDiscardElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3032,10 +3329,18 @@ test "buildCancelCommitElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildCancelCommitElem(std.testing.allocator, case.options);
+        const actual = try d.buildCancelCommitElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3080,10 +3385,18 @@ test "buildValidateElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildValidateElem(std.testing.allocator, case.options);
+        const actual = try d.buildValidateElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3128,10 +3441,18 @@ test "buildCreateSubscriptionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildCreateSubscriptionElem(std.testing.allocator, case.options);
+        const actual = try d.buildCreateSubscriptionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3176,10 +3497,18 @@ test "buildEstablishSubscriptionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildEstablishSubscriptionElem(std.testing.allocator, case.options);
+        const actual = try d.buildEstablishSubscriptionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3224,10 +3553,18 @@ test "buildModifySubscriptionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildModifySubscriptionElem(std.testing.allocator, case.options);
+        const actual = try d.buildModifySubscriptionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3272,10 +3609,18 @@ test "buildDeleteSubscriptionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildDeleteSubscriptionElem(std.testing.allocator, case.options);
+        const actual = try d.buildDeleteSubscriptionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3320,10 +3665,18 @@ test "buildResyncSubscriptionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildResyncSubscriptionElem(std.testing.allocator, case.options);
+        const actual = try d.buildResyncSubscriptionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3368,10 +3721,18 @@ test "buildKillSubscriptionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildKillSubscriptionElem(std.testing.allocator, case.options);
+        const actual = try d.buildKillSubscriptionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3420,10 +3781,18 @@ test "buildGetSchemaElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildGetSchemaElem(std.testing.allocator, case.options);
+        const actual = try d.buildGetSchemaElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3468,10 +3837,18 @@ test "buildGetDataElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildGetDataElem(std.testing.allocator, case.options);
+        const actual = try d.buildGetDataElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3516,10 +3893,18 @@ test "builEditDataElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildEditDataElem(std.testing.allocator, case.options);
+        const actual = try d.buildEditDataElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
@@ -3564,9 +3949,17 @@ test "builActionElem" {
 
         d.negotiated_version = case.version;
 
-        const actual = try d.buildActionElem(std.testing.allocator, case.options);
+        const actual = try d.buildActionElem(
+            std.testing.allocator,
+            case.options,
+        );
         defer std.testing.allocator.free(actual);
 
-        try test_helper.testStrResult(test_name, case.name, actual, case.expected);
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }

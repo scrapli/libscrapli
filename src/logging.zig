@@ -1,11 +1,11 @@
 const std = @import("std");
 
 pub const LogLevel = enum(u8) {
-    Debug,
-    Info,
-    Warn,
-    Critical,
-    Fatal,
+    debug,
+    info,
+    warn,
+    critical,
+    fatal,
 };
 
 pub fn noopLogf(level: u8, message: *[]u8) callconv(.C) void {
@@ -15,19 +15,19 @@ pub fn noopLogf(level: u8, message: *[]u8) callconv(.C) void {
 
 pub fn stdLogf(level: u8, message: *[]u8) callconv(.C) void {
     switch (level) {
-        @intFromEnum(LogLevel.Debug) => {
+        @intFromEnum(LogLevel.debug) => {
             std.log.debug("{s}", .{message.*});
         },
-        @intFromEnum(LogLevel.Info) => {
+        @intFromEnum(LogLevel.info) => {
             std.log.info("{s}", .{message.*});
         },
-        @intFromEnum(LogLevel.Warn) => {
+        @intFromEnum(LogLevel.warn) => {
             std.log.err("{s}", .{message.*});
         },
-        @intFromEnum(LogLevel.Critical) => {
+        @intFromEnum(LogLevel.critical) => {
             std.log.err("{s}", .{message.*});
         },
-        @intFromEnum(LogLevel.Fatal) => {
+        @intFromEnum(LogLevel.fatal) => {
             std.log.err("{s}", .{message.*});
 
             std.posix.exit(1);
@@ -76,7 +76,7 @@ pub const Logger = struct {
         var formatted_message = self.sprintf(format, args);
         defer self.allocator.free(formatted_message);
 
-        self.f.?(@intFromEnum(LogLevel.Debug), &formatted_message);
+        self.f.?(@intFromEnum(LogLevel.debug), &formatted_message);
     }
 
     pub fn info(
@@ -91,7 +91,7 @@ pub const Logger = struct {
         var formatted_message = self.sprintf(format, args);
         defer self.allocator.free(formatted_message);
 
-        self.f.?(@intFromEnum(LogLevel.Info), &formatted_message);
+        self.f.?(@intFromEnum(LogLevel.info), &formatted_message);
     }
 
     pub fn warn(
@@ -106,7 +106,7 @@ pub const Logger = struct {
         var formatted_message = self.sprintf(format, args);
         defer self.allocator.free(formatted_message);
 
-        self.f.?(@intFromEnum(LogLevel.Warn), &formatted_message);
+        self.f.?(@intFromEnum(LogLevel.warn), &formatted_message);
     }
 
     pub fn critical(
@@ -121,7 +121,7 @@ pub const Logger = struct {
         var formatted_message = self.sprintf(format, args);
         defer self.allocator.free(formatted_message);
 
-        self.f.?(@intFromEnum(LogLevel.Critical), &formatted_message);
+        self.f.?(@intFromEnum(LogLevel.critical), &formatted_message);
     }
 
     pub fn fatal(
@@ -136,6 +136,6 @@ pub const Logger = struct {
         var formatted_message = self.sprintf(format, args);
         defer self.allocator.free(formatted_message);
 
-        self.f.?(@intFromEnum(LogLevel.Fatal), &formatted_message);
+        self.f.?(@intFromEnum(LogLevel.fatal), &formatted_message);
     }
 };

@@ -28,16 +28,20 @@ test-coverage: fmt ## Run integration tests plus coverage (goes to zig-out/cover
 open-coverage: ## Open the generated coverage report
 	open zig-out/cover/index.html
 
-build: fmt ## Build the shared objects.
+clean-zig-cache: ## Nukes the local zig cache dir if its > 16gb
+	bash -c "[ $$(du -s .zig-cache | awk '{print $$1}') -gt $$((16 * 1024 * 1024)) ] && rm -rf .zig-cache" || true
+
+build: fmt clean-zig-cache ## Build the shared objects.
 	zig build -freference-trace --summary all
 
-build-release: fmt ## Build the shared objects w/ release optimization
-	zig build -freference-trace --summary all -- --release
+build-release: fmt clean-zig-cache ## Build the shared objects w/ release optimization
+	rm -rf zig-out && zig build -freference-trace --summary all -- --release
+	find zig-out -type f \( -name 'libscrapli.*.dylib' -o -name 'libscrapli.so.*' \) -exec sha256sum {} + > "zig-out/checksums.txt"
 
-build-examples: fmt ## Build the example binaries
+build-examples: fmt clean-zig-cache ## Build the example binaries
 	zig build -freference-trace --summary all -- --examples --skip-lib --skip-ffi-lib
 
-build-main: fmt ## Build the "main" binary in repo root
+build-main: fmt clean-zig-cache ## Build the "main" binary in repo root
 	zig build -freference-trace --summary all -- --main --skip-lib --skip-ffi-lib
 
 run-main: fmt build-main ## Build and run the "main" binary in repo root

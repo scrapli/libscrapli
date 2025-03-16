@@ -447,7 +447,12 @@ test "stripAsciiAndAnsiControlCharsInPlace" {
         );
 
         try std.testing.expectEqual(case.expectedNewSize, actualNewSize);
-        try thelper.testStrResult("stripAsciiAndAnsiControlCharsInPlace", case.name, haystack[0..actualNewSize], case.expected);
+        try thelper.testStrResult(
+            "stripAsciiAndAnsiControlCharsInPlace",
+            case.name,
+            haystack[0..actualNewSize],
+            case.expected,
+        );
     }
 }
 

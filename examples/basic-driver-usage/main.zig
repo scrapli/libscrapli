@@ -2,7 +2,7 @@ const std = @import("std");
 
 const scrapli = @import("scrapli");
 
-const driver = scrapli.driver;
+const cli = scrapli.cli;
 const strings = scrapli.strings;
 
 const banner = "********************";
@@ -75,7 +75,10 @@ var gpa_allocator = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa_allocator.allocator();
 
 fn get_port() !u16 {
-    const port_as_str_or_null = std.process.getEnvVarOwned(allocator, host_env_var_port) catch |err| switch (err) {
+    const port_as_str_or_null = std.process.getEnvVarOwned(
+        allocator,
+        host_env_var_port,
+    ) catch |err| switch (err) {
         error.EnvironmentVariableNotFound => null,
         else => return err,
     };
@@ -93,7 +96,10 @@ fn get_env_var_or_default(
     env_var_name: []const u8,
     default_value: []const u8,
 ) !strings.MaybeHeapString {
-    const set_value = std.process.getEnvVarOwned(allocator, env_var_name) catch |err| switch (err) {
+    const set_value = std.process.getEnvVarOwned(
+        allocator,
+        env_var_name,
+    ) catch |err| switch (err) {
         error.EnvironmentVariableNotFound => default_value,
         else => return err,
     };
@@ -117,10 +123,16 @@ pub fn main() !void {
         std.log.info("leak check results >> {any}\n", .{gpa_allocator.deinit()});
     }
 
-    var host = try get_env_var_or_default(host_env_var_name, default_host);
+    var host = try get_env_var_or_default(
+        host_env_var_name,
+        default_host,
+    );
     defer host.deinit();
 
-    var password = try get_env_var_or_default(password_env_var_name, default_password);
+    var password = try get_env_var_or_default(
+        password_env_var_name,
+        default_password,
+    );
     defer password.deinit();
 
     // for logging to a file:
@@ -131,7 +143,7 @@ pub fn main() !void {
     // defer f.close();
     // then uncomment recorder in OptionsInputs below
 
-    const d = try driver.Driver.init(
+    const d = try cli.Driver.init(
         allocator,
         host.string,
         .{
@@ -175,8 +187,9 @@ pub fn main() !void {
 
     const send_input_result = try d.sendInput(
         allocator,
-        "info interface *",
-        .{},
+        .{
+            .input = "info interface *",
+        },
     );
     defer send_input_result.deinit();
 

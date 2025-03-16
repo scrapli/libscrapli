@@ -3,28 +3,28 @@
 // note: disabling because of driver/file setup in tests and its fine
 const std = @import("std");
 
-const driver = @import("../../driver.zig");
-const operation = @import("../../operation.zig");
+const cli = @import("../../cli.zig");
+const operation = @import("../../cli-operation.zig");
 const mode = @import("../../mode.zig");
 const flags = @import("../../flags.zig");
 const ascii = @import("../../ascii.zig");
 const file = @import("../../file.zig");
-const result = @import("../../result.zig");
+const result = @import("../../cli-result.zig");
 
 const helper = @import("../../test-helper.zig");
 
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
 fn eosOnOpen(
-    d: *driver.Driver,
+    d: *cli.Driver,
     allocator: std.mem.Allocator,
     cancel: ?*bool,
 ) anyerror!*result.Result {
     return d.sendInputs(
         allocator,
-        &[_][]const u8{ "term len 0", "term width 32767" },
         .{
             .cancel = cancel,
+            .inputs = &[_][]const u8{ "term len 0", "term width 32767" },
             .retain_input = true,
             .retain_trailing_prompt = true,
             .requested_mode = "privileged_exec",
@@ -53,11 +53,11 @@ fn getPlatformPath(buf: []u8) !usize {
     return platform_path_len;
 }
 
-fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
+fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*cli.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    return driver.Driver.init(
+    return cli.Driver.init(
         std.testing.allocator,
         "localhost",
         .{
@@ -76,11 +76,11 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
     );
 }
 
-fn GetTestDriver(f: []const u8) !*driver.Driver {
+fn GetTestDriver(f: []const u8) !*cli.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    return driver.Driver.init(
+    return cli.Driver.init(
         std.testing.allocator,
         "dummy",
         .{
@@ -108,7 +108,7 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
 }
 
 fn runDriverOpenInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
     options: operation.OpenOptions,
@@ -122,7 +122,7 @@ fn runDriverOpenInThread(
 }
 
 fn runDriverGetPromptInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
     options: operation.GetPromptOptions,
@@ -136,67 +136,57 @@ fn runDriverGetPromptInThread(
 }
 
 fn runDriverEnterModeInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
-    requested_mode: []const u8,
     options: operation.EnterModeOptions,
 ) !void {
     try std.testing.expectError(
         error.Cancelled,
-        d.enterMode(allocator, requested_mode, options),
+        d.enterMode(allocator, options),
     );
 
     cancelled.* = true;
 }
 
 fn runDriverSendInputInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
-    input: []const u8,
     options: operation.SendInputOptions,
 ) !void {
     try std.testing.expectError(
         error.Cancelled,
-        d.sendInput(allocator, input, options),
+        d.sendInput(allocator, options),
     );
 
     cancelled.* = true;
 }
 
 fn runDriverSendInputsInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
-    inputs: []const []const u8,
-    options: operation.SendInputOptions,
+    options: operation.SendInputsOptions,
 ) !void {
     try std.testing.expectError(
         error.Cancelled,
-        d.sendInputs(allocator, inputs, options),
+        d.sendInputs(allocator, options),
     );
 
     cancelled.* = true;
 }
 
 fn runDriverSendPromptedInputInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
-    input: []const u8,
-    prompt: []const u8,
-    response: []const u8,
     options: operation.SendPromptedInputOptions,
 ) !void {
     try std.testing.expectError(
         error.Cancelled,
         d.sendPromptedInput(
             allocator,
-            input,
-            prompt,
-            null,
-            response,
             options,
         ),
     );
@@ -210,7 +200,7 @@ test "driver open" {
     const cases = [_]struct {
         name: []const u8,
         on_open_callback: ?*const fn (
-            d: *driver.Driver,
+            d: *cli.Driver,
             allocator: std.mem.Allocator,
             cancel: ?*bool,
         ) anyerror!*result.Result,
@@ -266,7 +256,7 @@ test "driver open" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -436,7 +426,7 @@ test "driver get-prompt" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -647,7 +637,7 @@ test "driver enter-mode" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -675,8 +665,7 @@ test "driver enter-mode" {
 
         const res = try d.enterMode(
             std.testing.allocator,
-            case.requested_mode,
-            .{},
+            .{ .requested_mode = case.requested_mode },
         );
         defer res.deinit();
 
@@ -716,8 +705,7 @@ test "driver enter-mode-timeout" {
         error.Timeout,
         d.enterMode(
             std.testing.allocator,
-            "configuration",
-            .{},
+            .{ .requested_mode = "configuration" },
         ),
     );
 }
@@ -765,8 +753,10 @@ test "driver enter-mode-cancellation" {
             d,
             cancelled_ptr,
             std.testing.allocator,
-            "configuration",
-            operation.EnterModeOptions{ .cancel = cancel_ptr },
+            operation.EnterModeOptions{
+                .cancel = cancel_ptr,
+                .requested_mode = "configuration",
+            },
         },
     );
 
@@ -873,7 +863,7 @@ test "driver send-input" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -901,8 +891,8 @@ test "driver send-input" {
 
         const res = try d.sendInput(
             std.testing.allocator,
-            case.input,
             .{
+                .input = case.input,
                 .retain_input = case.retain_input,
                 .retain_trailing_prompt = case.retain_trailing_prompt,
                 .requested_mode = case.requested_mode,
@@ -961,8 +951,9 @@ test "driver send-input-timeout" {
             error.Timeout,
             d.sendInput(
                 std.testing.allocator,
-                "show run int vlan 1",
-                .{},
+                .{
+                    .input = "show run int vlan 1",
+                },
             ),
         );
     }
@@ -1017,9 +1008,9 @@ test "driver send-input-cancellation" {
                 d,
                 cancelled_ptr,
                 std.testing.allocator,
-                "show ip route",
                 operation.SendInputOptions{
                     .cancel = cancel_ptr,
+                    .input = "show ip route",
                 },
             },
         );
@@ -1129,7 +1120,7 @@ test "driver send-inputs" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -1157,8 +1148,8 @@ test "driver send-inputs" {
 
         const res = try d.sendInputs(
             std.testing.allocator,
-            case.inputs,
             .{
+                .inputs = case.inputs,
                 .retain_input = case.retain_input,
                 .retain_trailing_prompt = case.retain_trailing_prompt,
                 .requested_mode = case.requested_mode,
@@ -1217,8 +1208,12 @@ test "driver send-inputs-timeout" {
             error.Timeout,
             d.sendInputs(
                 std.testing.allocator,
-                &[_][]const u8{ "show run int vlan 1", "show run | i hostname" },
-                .{},
+                .{
+                    .inputs = &[_][]const u8{
+                        "show run int vlan 1",
+                        "show run | i hostname",
+                    },
+                },
             ),
         );
     }
@@ -1275,9 +1270,9 @@ test "driver send-inputs-cancellation" {
                 d,
                 cancelled_ptr,
                 std.testing.allocator,
-                &[_][]const u8{ "show run int vlan 1", "show run | i hostname" },
-                operation.SendInputOptions{
+                operation.SendInputsOptions{
                     .cancel = cancel_ptr,
+                    .inputs = &[_][]const u8{ "show run int vlan 1", "show run | i hostname" },
                 },
             },
         );
@@ -1378,7 +1373,7 @@ test "driver send-prompted-input" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -1406,11 +1401,10 @@ test "driver send-prompted-input" {
 
         const res = try d.sendPromptedInput(
             std.testing.allocator,
-            case.input,
-            case.prompt,
-            null,
-            case.response,
             .{
+                .input = case.input,
+                .prompt = case.prompt,
+                .response = case.response,
                 .retain_trailing_prompt = case.retain_trailing_prompt,
                 .requested_mode = case.requested_mode,
             },
@@ -1483,11 +1477,11 @@ test "driver send-prompted-input-timeout" {
                 d,
                 cancelled_ptr,
                 std.testing.allocator,
-                "write erase",
-                "Proceed with erasing startup configuration? [confirm]",
-                "",
                 operation.SendPromptedInputOptions{
                     .cancel = cancel_ptr,
+                    .input = "write erase",
+                    .prompt = "Proceed with erasing startup configuration? [confirm]",
+                    .response = "",
                 },
             },
         );
@@ -1549,11 +1543,11 @@ test "driver send-prompted-input-cancellation" {
             error.Timeout,
             d.sendPromptedInput(
                 std.testing.allocator,
-                "clear logging",
-                "Clear logging buffer [confirm]",
-                null,
-                "",
-                .{},
+                .{
+                    .input = "clear logging",
+                    .prompt = "Clear logging buffer [confirm]",
+                    .response = "",
+                },
             ),
         );
     }

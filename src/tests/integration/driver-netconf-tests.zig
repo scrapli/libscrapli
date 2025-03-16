@@ -1,13 +1,13 @@
 const std = @import("std");
 
-const driver = @import("../../driver-netconf.zig");
+const netconf = @import("../../netconf.zig");
 const ascii = @import("../../ascii.zig");
 const flags = @import("../../flags.zig");
 const file = @import("../../file.zig");
 const helper = @import("../../test-helper.zig");
 
-fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
-    return driver.Driver.init(
+fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*netconf.Driver {
+    return netconf.Driver.init(
         std.testing.allocator,
         "localhost",
         .{
@@ -23,8 +23,8 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
     );
 }
 
-fn GetTestDriver(f: []const u8) !*driver.Driver {
-    const d = try driver.Driver.init(
+fn GetTestDriver(f: []const u8) !*netconf.Driver {
+    const d = try netconf.Driver.init(
         std.testing.allocator,
         "dummy",
         .{
@@ -97,12 +97,15 @@ test "driver-netconf open" {
                 var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
                 defer std.testing.allocator.free(content);
 
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
+                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                    content,
+                    0,
+                );
                 file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *netconf.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -175,12 +178,15 @@ test "driver-netconf get-config" {
                 var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
                 defer std.testing.allocator.free(content);
 
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
+                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                    content,
+                    0,
+                );
                 file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *netconf.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -267,7 +273,7 @@ test "driver-netconf lock" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *netconf.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -284,7 +290,12 @@ test "driver-netconf lock" {
         const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        const actual_res = try d.lock(std.testing.allocator, .{ .target = .candidate });
+        const actual_res = try d.lock(
+            std.testing.allocator,
+            .{
+                .target = .candidate,
+            },
+        );
         defer actual_res.deinit();
 
         defer {
@@ -348,7 +359,7 @@ test "driver-netconf unlock" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *netconf.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -365,10 +376,20 @@ test "driver-netconf unlock" {
         const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        const lock_res = try d.lock(std.testing.allocator, .{ .target = .candidate });
+        const lock_res = try d.lock(
+            std.testing.allocator,
+            .{
+                .target = .candidate,
+            },
+        );
         defer lock_res.deinit();
 
-        const actual_res = try d.unlock(std.testing.allocator, .{ .target = .candidate });
+        const actual_res = try d.unlock(
+            std.testing.allocator,
+            .{
+                .target = .candidate,
+            },
+        );
         defer actual_res.deinit();
 
         defer {

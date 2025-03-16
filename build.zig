@@ -5,6 +5,7 @@ const libscrapli_version = std.SemanticVersion{
     .major = 0,
     .minor = 0,
     .patch = 1,
+    .pre = "alpha.1",
 };
 
 const targets: []const std.Target.Query = &.{
@@ -117,7 +118,7 @@ fn buildFfiLib(
     const lib = b.addSharedLibrary(
         .{
             .name = "scrapli",
-            .root_source_file = b.path("src/ffi.zig"),
+            .root_source_file = b.path("src/ffi-root.zig"),
             .target = b.resolveTargetQuery(target),
             .optimize = optimize,
             .version = libscrapli_version,

@@ -1,13 +1,13 @@
 const std = @import("std");
-const driver = @import("driver.zig");
+const cli = @import("cli.zig");
 const mode = @import("mode.zig");
 const yaml = @import("yaml");
 const strings = @import("strings.zig");
-const result = @import("result.zig");
+const result = @import("cli-result.zig");
 const file = @import("file.zig");
 
 pub const OnXCallback = *const fn (
-    d: *driver.Driver,
+    d: *cli.Driver,
     allocator: std.mem.Allocator,
     cancel: ?*bool,
 ) anyerror!*result.Result;
@@ -171,7 +171,7 @@ pub const BoundOnXCallback = struct {
     pub fn callback(
         self: *BoundOnXCallback,
         allocator: std.mem.Allocator,
-        d: *driver.Driver,
+        d: *cli.Driver,
         cancel: ?*bool,
     ) !*result.Result {
         const res = try d.NewResult(allocator, self.kind);
@@ -186,8 +186,10 @@ pub const BoundOnXCallback = struct {
                     try res.recordExtend(
                         try d.enterMode(
                             allocator,
-                            instr.enter_mode.enter_mode.requested_mode,
-                            .{ .cancel = cancel },
+                            .{
+                                .cancel = cancel,
+                                .requested_mode = instr.enter_mode.enter_mode.requested_mode,
+                            },
                         ),
                     );
                 },
@@ -195,9 +197,9 @@ pub const BoundOnXCallback = struct {
                     try res.recordExtend(
                         try d.sendInput(
                             allocator,
-                            instr.send_input.send_input.input,
                             .{
                                 .cancel = cancel,
+                                .input = instr.send_input.send_input.input,
                                 .retain_input = true,
                                 .retain_trailing_prompt = true,
                             },
@@ -208,11 +210,13 @@ pub const BoundOnXCallback = struct {
                     try res.recordExtend(
                         try d.sendPromptedInput(
                             allocator,
-                            instr.send_prompted_input.send_prompted_input.input,
-                            instr.send_prompted_input.send_prompted_input.prompt,
-                            instr.send_prompted_input.send_prompted_input.prompt_pattern,
-                            instr.send_prompted_input.send_prompted_input.response,
-                            .{ .cancel = cancel },
+                            .{
+                                .cancel = cancel,
+                                .input = instr.send_prompted_input.send_prompted_input.input,
+                                .prompt = instr.send_prompted_input.send_prompted_input.prompt,
+                                .prompt_pattern = instr.send_prompted_input.send_prompted_input.prompt_pattern,
+                                .response = instr.send_prompted_input.send_prompted_input.response,
+                            },
                         ),
                     );
                 },

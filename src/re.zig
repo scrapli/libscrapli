@@ -47,7 +47,10 @@ pub fn pcre2CompileMany(
     allocator: std.mem.Allocator,
     patterns: []const []const u8,
 ) ![]?*pcre2.pcre2_code_8 {
-    var compiled_patterns = try allocator.alloc(?*pcre2.pcre2_code_8, patterns.len);
+    var compiled_patterns = try allocator.alloc(
+        ?*pcre2.pcre2_code_8,
+        patterns.len,
+    );
 
     for (0.., patterns) |idx, pattern| {
         compiled_patterns[idx] = pcre2Compile(pattern);
@@ -97,7 +100,10 @@ pub fn pcre2Find(
 
         return error.UtilFailed;
     } else if (rc == 0) {
-        std.log.err("match vectors was not big enough for all captured substrings", .{});
+        std.log.err(
+            "match vectors was not big enough for all captured substrings",
+            .{},
+        );
 
         return error.UtilFailed;
     }
@@ -113,6 +119,38 @@ pub fn pcre2Find(
     const match = haystack[match_vectors[0]..match_vectors[1]];
 
     return match;
+}
+
+test "pcre2Find" {
+    const cases = [_]struct {
+        name: []const u8,
+        pattern: []const u8,
+        haystack: []const u8,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple match",
+            .pattern = "bar",
+            .haystack = "foo bar baz",
+            .expected = "bar",
+        },
+    };
+
+    for (cases) |case| {
+        const compiled_pattern = pcre2Compile(case.pattern);
+        if (compiled_pattern == null) {
+            return error.CompilePromptPatternFailed;
+        }
+
+        defer pcre2Free(compiled_pattern.?);
+
+        const actual = try pcre2Find(
+            compiled_pattern.?,
+            case.haystack,
+        );
+
+        try std.testing.expectEqualStrings(case.expected, actual);
+    }
 }
 
 pub fn pcre2FindIndex(
@@ -156,7 +194,10 @@ pub fn pcre2FindIndex(
 
         return error.UtilFailed;
     } else if (rc == 0) {
-        std.log.err("match vectors was not big enough for all captured substrings", .{});
+        std.log.err(
+            "match vectors was not big enough for all captured substrings",
+            .{},
+        );
 
         return error.UtilFailed;
     }
