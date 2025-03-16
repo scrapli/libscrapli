@@ -2,7 +2,7 @@ const std = @import("std");
 
 const scrapli = @import("scrapli");
 
-const driver = scrapli.driver_netconf;
+const netconf = scrapli.netconf;
 const strings = scrapli.strings;
 
 const banner = "********************";
@@ -78,10 +78,16 @@ pub fn main() !void {
         std.log.info("leak check results >> {any}\n", .{gpa_allocator.deinit()});
     }
 
-    var host = try get_env_var_or_default(host_env_var_name, default_host);
+    var host = try get_env_var_or_default(
+        host_env_var_name,
+        default_host,
+    );
     defer host.deinit();
 
-    var password = try get_env_var_or_default(password_env_var_name, default_password);
+    var password = try get_env_var_or_default(
+        password_env_var_name,
+        default_password,
+    );
     defer password.deinit();
 
     // for logging to a file:
@@ -92,7 +98,7 @@ pub fn main() !void {
     // defer f.close();
     // then uncomment recorder in OptionsInputs below
 
-    const d = try driver.Driver.init(
+    const d = try netconf.Driver.init(
         allocator,
         host.string,
         .{

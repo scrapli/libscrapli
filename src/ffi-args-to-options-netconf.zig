@@ -1,5 +1,5 @@
 const std = @import("std");
-const operation = @import("operation-netconf.zig");
+const operation = @import("netconf-operation.zig");
 
 fn getDatastoreType(
     datastore_type: [*c]const u8,

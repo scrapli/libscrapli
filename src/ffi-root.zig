@@ -185,10 +185,10 @@ export fn openDriver(
     };
 
     switch (d.real_driver) {
-        .driver => {
+        .cli => {
             operation_id.* = d.queueOperation(
                 ffi_operations.OperationOptions{
-                    .driver = .{
+                    .cli = .{
                         .open = ffi_operations.OpenOperation{
                             .id = 0,
                             .options = operation.OpenOptions{

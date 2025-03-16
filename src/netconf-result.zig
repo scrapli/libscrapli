@@ -1,7 +1,7 @@
 const std = @import("std");
 const ascii = @import("ascii.zig");
-const operation = @import("operation-netconf.zig");
-const driver = @import("driver-netconf.zig");
+const operation = @import("netconf-operation.zig");
+const netconf = @import("netconf.zig");
 
 // dec: 35 | hex: 0x23 | "#"
 const hashChar = 0x23;
@@ -26,7 +26,7 @@ pub fn NewResult(
     allocator: std.mem.Allocator,
     host: []const u8,
     port: u16,
-    version: driver.Version,
+    version: netconf.Version,
     error_tag: []const u8,
     operation_kind: operation.Kind,
 ) !*Result {
@@ -58,7 +58,7 @@ pub const Result = struct {
     host: []const u8,
     port: u16,
 
-    version: driver.Version,
+    version: netconf.Version,
     error_tag: []const u8,
 
     operation_kind: operation.Kind,
@@ -250,12 +250,20 @@ pub const Result = struct {
     ) !void {
         var declaration_index: usize = 0;
 
-        const _declaration_index = std.mem.indexOf(u8, ret, xmlDeclaration);
+        const _declaration_index = std.mem.indexOf(
+            u8,
+            ret,
+            xmlDeclaration,
+        );
         if (_declaration_index != null) {
             declaration_index = _declaration_index.? + xmlDeclaration.len;
         }
 
-        const delimiter_index = std.mem.indexOf(u8, ret, driver.delimiter_Version_1_0);
+        const delimiter_index = std.mem.indexOf(
+            u8,
+            ret,
+            netconf.delimiter_Version_1_0,
+        );
 
         try self.results.append(
             try self.allocator.dupe(
@@ -485,8 +493,8 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.version_1_0,
-                driver.default_rpc_error_tag,
+                netconf.Version.version_1_0,
+                netconf.default_rpc_error_tag,
                 operation.Kind.get,
             ),
             .input =
@@ -507,8 +515,8 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.version_1_0,
-                driver.default_rpc_error_tag,
+                netconf.Version.version_1_0,
+                netconf.default_rpc_error_tag,
                 operation.Kind.get,
             ),
             .input =
@@ -543,8 +551,8 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.version_1_0,
-                driver.default_rpc_error_tag,
+                netconf.Version.version_1_0,
+                netconf.default_rpc_error_tag,
                 operation.Kind.get,
             ),
             .input =
@@ -604,8 +612,8 @@ test "recordVersion1_0" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.version_1_0,
-                driver.default_rpc_error_tag,
+                netconf.Version.version_1_0,
+                netconf.default_rpc_error_tag,
                 operation.Kind.get,
             ),
             .input =
@@ -633,8 +641,8 @@ test "recordVersion1_0" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.version_1_0,
-                driver.default_rpc_error_tag,
+                netconf.Version.version_1_0,
+                netconf.default_rpc_error_tag,
                 operation.Kind.get,
             ),
             .input =
@@ -662,8 +670,8 @@ test "recordVersion1_0" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.version_1_0,
-                driver.default_rpc_error_tag,
+                netconf.Version.version_1_0,
+                netconf.default_rpc_error_tag,
                 operation.Kind.get,
             ),
             .input =
@@ -693,8 +701,8 @@ test "recordVersion1_0" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.version_1_0,
-                driver.default_rpc_error_tag,
+                netconf.Version.version_1_0,
+                netconf.default_rpc_error_tag,
                 operation.Kind.get,
             ),
             .input =
@@ -725,7 +733,10 @@ test "recordVersion1_0" {
 
         // dupe otherwise deinit of result will fail freeing the input
         try case.result.record(try std.testing.allocator.dupe(u8, case.input));
-        try std.testing.expectEqualStrings(case.expected, case.result.results.items[0]);
+        try std.testing.expectEqualStrings(
+            case.expected,
+            case.result.results.items[0],
+        );
     }
 }
 
@@ -742,8 +753,8 @@ test "recordVersion1_1" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                driver.Version.version_1_1,
-                driver.default_rpc_error_tag,
+                netconf.Version.version_1_1,
+                netconf.default_rpc_error_tag,
                 operation.Kind.get,
             ),
             .input =
@@ -786,6 +797,9 @@ test "recordVersion1_1" {
 
         // dupe otherwise deinit of result will fail freeing the input
         try case.result.record(try std.testing.allocator.dupe(u8, case.input));
-        try std.testing.expectEqualStrings(case.expected, case.result.results.items[0]);
+        try std.testing.expectEqualStrings(
+            case.expected,
+            case.result.results.items[0],
+        );
     }
 }

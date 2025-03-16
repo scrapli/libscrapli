@@ -1,5 +1,5 @@
 const std = @import("std");
-const driver = @import("driver.zig");
+const cli = @import("cli.zig");
 const mode = @import("mode.zig");
 const yaml = @import("yaml");
 const strings = @import("strings.zig");
@@ -7,7 +7,7 @@ const result = @import("result.zig");
 const file = @import("file.zig");
 
 pub const OnXCallback = *const fn (
-    d: *driver.Driver,
+    d: *cli.Driver,
     allocator: std.mem.Allocator,
     cancel: ?*bool,
 ) anyerror!*result.Result;
@@ -171,7 +171,7 @@ pub const BoundOnXCallback = struct {
     pub fn callback(
         self: *BoundOnXCallback,
         allocator: std.mem.Allocator,
-        d: *driver.Driver,
+        d: *cli.Driver,
         cancel: ?*bool,
     ) !*result.Result {
         const res = try d.NewResult(allocator, self.kind);

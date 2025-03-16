@@ -5,10 +5,10 @@ const os = @import("builtin").os.tag;
 const xml = @import("xml");
 const yaml = @import("yaml");
 
-const driver = @import("../../driver-netconf.zig");
+const netconf = @import("../../netconf.zig");
 const transport = @import("../../transport.zig");
-const result = @import("../../result-netconf.zig");
-const operation = @import("../../operation-netconf.zig");
+const result = @import("../../netconf-result.zig");
+const operation = @import("../../netconf-operation.zig");
 const ascii = @import("../../ascii.zig");
 const ssh2_transport = @import("../../transport-ssh2.zig");
 const flags = @import("../../flags.zig");
@@ -21,11 +21,11 @@ fn GetDriver(
     username: ?[]const u8,
     key: ?[]const u8,
     passphrase: ?[]const u8,
-) !*driver.Driver {
+) !*netconf.Driver {
     // on darwin we'll be targetting localhost, on linux we'll target the ip exposed via clab/docker
     var host: []const u8 = undefined;
 
-    var config = driver.Config{};
+    var config = netconf.Config{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         config.auth.lookup_map = &.{
@@ -80,7 +80,7 @@ fn GetDriver(
         },
     }
 
-    return driver.Driver.init(
+    return netconf.Driver.init(
         std.testing.allocator,
         host,
         config,

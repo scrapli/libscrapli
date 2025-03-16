@@ -3,7 +3,7 @@
 // note: disabling because of driver/file setup in tests and its fine
 const std = @import("std");
 
-const driver = @import("../../driver.zig");
+const cli = @import("../../cli.zig");
 const operation = @import("../../operation.zig");
 const mode = @import("../../mode.zig");
 const flags = @import("../../flags.zig");
@@ -16,7 +16,7 @@ const helper = @import("../../test-helper.zig");
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
 fn eosOnOpen(
-    d: *driver.Driver,
+    d: *cli.Driver,
     allocator: std.mem.Allocator,
     cancel: ?*bool,
 ) anyerror!*result.Result {
@@ -53,11 +53,11 @@ fn getPlatformPath(buf: []u8) !usize {
     return platform_path_len;
 }
 
-fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
+fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*cli.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    return driver.Driver.init(
+    return cli.Driver.init(
         std.testing.allocator,
         "localhost",
         .{
@@ -76,11 +76,11 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*driver.Driver {
     );
 }
 
-fn GetTestDriver(f: []const u8) !*driver.Driver {
+fn GetTestDriver(f: []const u8) !*cli.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
-    return driver.Driver.init(
+    return cli.Driver.init(
         std.testing.allocator,
         "dummy",
         .{
@@ -108,7 +108,7 @@ fn GetTestDriver(f: []const u8) !*driver.Driver {
 }
 
 fn runDriverOpenInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
     options: operation.OpenOptions,
@@ -122,7 +122,7 @@ fn runDriverOpenInThread(
 }
 
 fn runDriverGetPromptInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
     options: operation.GetPromptOptions,
@@ -136,7 +136,7 @@ fn runDriverGetPromptInThread(
 }
 
 fn runDriverEnterModeInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
     options: operation.EnterModeOptions,
@@ -150,7 +150,7 @@ fn runDriverEnterModeInThread(
 }
 
 fn runDriverSendInputInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
     options: operation.SendInputOptions,
@@ -164,7 +164,7 @@ fn runDriverSendInputInThread(
 }
 
 fn runDriverSendInputsInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
     options: operation.SendInputsOptions,
@@ -178,7 +178,7 @@ fn runDriverSendInputsInThread(
 }
 
 fn runDriverSendPromptedInputInThread(
-    d: *driver.Driver,
+    d: *cli.Driver,
     cancelled: *bool,
     allocator: std.mem.Allocator,
     options: operation.SendPromptedInputOptions,
@@ -200,7 +200,7 @@ test "driver open" {
     const cases = [_]struct {
         name: []const u8,
         on_open_callback: ?*const fn (
-            d: *driver.Driver,
+            d: *cli.Driver,
             allocator: std.mem.Allocator,
             cancel: ?*bool,
         ) anyerror!*result.Result,
@@ -256,7 +256,7 @@ test "driver open" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -426,7 +426,7 @@ test "driver get-prompt" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -637,7 +637,7 @@ test "driver enter-mode" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -863,7 +863,7 @@ test "driver send-input" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -1120,7 +1120,7 @@ test "driver send-inputs" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(
@@ -1373,7 +1373,7 @@ test "driver send-prompted-input" {
             }
         }
 
-        var d: *driver.Driver = undefined;
+        var d: *cli.Driver = undefined;
 
         if (record) {
             f = try std.fs.cwd().createFile(

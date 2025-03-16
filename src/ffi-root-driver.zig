@@ -21,7 +21,7 @@ export fn getNtcTemplatePlatform(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             if (rd.definition.ntc_templates_platform == null) {
                 return 0;
             }
@@ -48,7 +48,7 @@ export fn getGeniePlatform(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             if (rd.definition.genie_platform == null) {
                 return 0;
             }
@@ -105,7 +105,7 @@ export fn pollOperation(
         operation_error_size.* = err_name.len;
     } else {
         const dret = switch (ret.result) {
-            .driver => |r| r.?,
+            .cli => |r| r.?,
             else => @panic("attempting to access non driver result from driver type"),
         };
 
@@ -156,7 +156,7 @@ export fn waitOperation(
             operation_error_size.* = err_name.len;
         } else {
             const dret = switch (ret.result) {
-                .driver => |r| r.?,
+                .cli => |r| r.?,
                 else => @panic("attempting to access non driver result from driver type"),
             };
 
@@ -203,7 +203,7 @@ export fn fetchOperation(
 
     defer {
         const dret = switch (ret.result) {
-            .driver => |r| r,
+            .cli => |r| r,
             else => @panic("attempting to access non driver result from driver type"),
         };
         if (dret != null) {
@@ -217,7 +217,7 @@ export fn fetchOperation(
         @memcpy(operation_error.*.ptr, err_name);
     } else {
         const dret = switch (ret.result) {
-            .driver => |r| r.?,
+            .cli => |r| r.?,
             else => @panic("attempting to access non driver result from driver type"),
         };
 
@@ -280,7 +280,7 @@ export fn enterMode(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .driver = .{
+            .cli = .{
                 .enter_mode = .{
                     .id = 0,
                     .options = operation.EnterModeOptions{
@@ -314,7 +314,7 @@ export fn getPrompt(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .driver = .{
+            .cli = .{
                 .get_prompt = .{
                     .id = 0,
                     .options = .{
@@ -361,7 +361,7 @@ export fn sendInput(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .driver = .{
+            .cli = .{
                 .send_input = .{
                     .id = 0,
                     .options = options,
@@ -414,7 +414,7 @@ export fn sendPromptedInput(
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
-            .driver = .{
+            .cli = .{
                 .send_prompted_input = .{
                     .id = 0,
                     .options = options,

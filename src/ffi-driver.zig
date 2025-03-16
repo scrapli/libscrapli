@@ -1,9 +1,9 @@
 const std = @import("std");
 
-const driver = @import("driver.zig");
-const driver_netconf = @import("driver-netconf.zig");
+const cli = @import("cli.zig");
+const netconf = @import("netconf.zig");
 const result = @import("result.zig");
-const result_netconf = @import("result-netconf.zig");
+const result_netconf = @import("netconf-result.zig");
 const logging = @import("logging.zig");
 
 const ffi_operations = @import("ffi-operations.zig");
@@ -12,8 +12,8 @@ const operation_thread_ready_sleep: u64 = 250;
 const poll_operation_sleep: u64 = 250_000;
 
 pub const RealDriver = union(enum) {
-    driver: *driver.Driver,
-    netconf: *driver_netconf.Driver,
+    cli: *cli.Driver,
+    netconf: *netconf.Driver,
 };
 
 pub const FfiDriver = struct {
@@ -40,14 +40,14 @@ pub const FfiDriver = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         host: []const u8,
-        config: driver.Config,
+        config: cli.Config,
     ) !*FfiDriver {
         const ffi_driver = try allocator.create(FfiDriver);
 
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .real_driver = RealDriver{
-                .driver = try driver.Driver.init(
+                .cli = try cli.Driver.init(
                     allocator,
                     host,
                     config,
@@ -76,14 +76,14 @@ pub const FfiDriver = struct {
     pub fn init_netconf(
         allocator: std.mem.Allocator,
         host: []const u8,
-        config: driver_netconf.Config,
+        config: netconf.Config,
     ) !*FfiDriver {
         const ffi_driver = try allocator.create(FfiDriver);
 
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .real_driver = RealDriver{
-                .netconf = try driver_netconf.Driver.init(
+                .netconf = try netconf.Driver.init(
                     allocator,
                     host,
                     config,
@@ -126,7 +126,7 @@ pub const FfiDriver = struct {
         self.operation_results.deinit();
 
         switch (self.real_driver) {
-            .driver => |d| {
+            .cli => |d| {
                 d.deinit();
             },
             .netconf => |d| {
@@ -144,7 +144,7 @@ pub const FfiDriver = struct {
         args: anytype,
     ) void {
         const logger = switch (self.real_driver) {
-            .driver => |d| d.log,
+            .cli => |d| d.log,
             .netconf => |d| d.log,
         };
 
@@ -169,7 +169,7 @@ pub const FfiDriver = struct {
 
     pub fn open(self: *FfiDriver) !void {
         switch (self.real_driver) {
-            .driver => {
+            .cli => {
                 self.operation_thread = std.Thread.spawn(
                     .{},
                     FfiDriver.operationLoop,
@@ -215,7 +215,7 @@ pub const FfiDriver = struct {
         // there is no point sending any string content back because there will be none (this is
         // in contrast to open where there may be login/auth content!)
         switch (self.real_driver) {
-            .driver => |d| {
+            .cli => |d| {
                 const close_res = try d.close(
                     self.allocator,
                     .{ .cancel = cancel },
@@ -264,13 +264,13 @@ pub const FfiDriver = struct {
             var ret_err: ?anyerror = null;
 
             const rd = switch (self.real_driver) {
-                .driver => |d| d,
+                .cli => |d| d,
                 else => {
                     @panic("netconf operation loop executed, but driver is not netconf");
                 },
             };
 
-            switch (op.?.driver) {
+            switch (op.?.cli) {
                 .open => |o| {
                     operation_id = o.id;
 
@@ -336,7 +336,7 @@ pub const FfiDriver = struct {
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
-                            .driver = null,
+                            .cli = null,
                         },
                         .err = ret_err,
                     },
@@ -349,7 +349,7 @@ pub const FfiDriver = struct {
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
-                            .driver = ret_ok,
+                            .cli = ret_ok,
                         },
                         .err = null,
                     },
@@ -609,31 +609,31 @@ pub const FfiDriver = struct {
         const operation_id = self.operation_id_counter;
 
         switch (options) {
-            .driver => |doptions| {
+            .cli => |doptions| {
                 try self.operation_results.put(
                     operation_id,
                     ffi_operations.OperationResult{
                         .done = false,
-                        .result = .{ .driver = null },
+                        .result = .{ .cli = null },
                         .err = null,
                     },
                 );
 
                 switch (doptions) {
                     .open => {
-                        mut_options.driver.open.id = operation_id;
+                        mut_options.cli.open.id = operation_id;
                     },
                     .enter_mode => {
-                        mut_options.driver.enter_mode.id = operation_id;
+                        mut_options.cli.enter_mode.id = operation_id;
                     },
                     .get_prompt => {
-                        mut_options.driver.get_prompt.id = operation_id;
+                        mut_options.cli.get_prompt.id = operation_id;
                     },
                     .send_input => {
-                        mut_options.driver.send_input.id = operation_id;
+                        mut_options.cli.send_input.id = operation_id;
                     },
                     .send_prompted_input => {
-                        mut_options.driver.send_prompted_input.id = operation_id;
+                        mut_options.cli.send_prompted_input.id = operation_id;
                     },
                 }
 

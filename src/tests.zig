@@ -1,8 +1,8 @@
 comptime {
     _ = @import("bytes.zig");
-    _ = @import("driver.zig");
+    _ = @import("cli.zig");
     _ = @import("ascii.zig");
-    _ = @import("result-netconf.zig");
+    _ = @import("netconf-result.zig");
 }
 
 comptime {

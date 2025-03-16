@@ -6,7 +6,7 @@
 const std = @import("std");
 const os = @import("builtin").os.tag;
 
-const driver = @import("../../driver.zig");
+const cli = @import("../../cli.zig");
 const transport = @import("../../transport.zig");
 const ssh2_transport = @import("../../transport-ssh2.zig");
 const telnet_transport = @import("../../transport-telnet.zig");
@@ -25,13 +25,13 @@ fn GetDriver(
     username: ?[]const u8,
     key: ?[]const u8,
     passphrase: ?[]const u8,
-) !*driver.Driver {
+) !*cli.Driver {
     // on darwin we'll be targetting localhost, on linux we'll target the ips exposed via clab/docker
     var host: []const u8 = undefined;
 
     var platform_definition_path: []const u8 = undefined;
 
-    var config = driver.Config{
+    var config = cli.Config{
         .definition = .{
             .file = "",
         },
@@ -120,7 +120,7 @@ fn GetDriver(
         },
     }
 
-    return driver.Driver.init(
+    return cli.Driver.init(
         std.testing.allocator,
         host,
         config,
@@ -131,7 +131,7 @@ test "driver open" {
     const test_name = "driver-open";
 
     const cases = [_]struct { name: []const u8, transportKind: transport.Kind, platform: []const u8, username: []const u8, key: ?[]const u8 = null, passphrase: ?[]const u8 = null, on_open_callback: ?*const fn (
-        d: *driver.Driver,
+        d: *cli.Driver,
         allocator: std.mem.Allocator,
         cancel: ?*bool,
     ) anyerror!*result.Result = null }{

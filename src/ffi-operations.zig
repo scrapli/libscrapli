@@ -1,11 +1,11 @@
 const result = @import("result.zig");
-const result_netconf = @import("result-netconf.zig");
+const result_netconf = @import("netconf-result.zig");
 
 const operation = @import("operation.zig");
-const operation_netconf = @import("operation-netconf.zig");
+const operation_netconf = @import("netconf-operation.zig");
 
 pub const Result = union(enum) {
-    driver: ?*result.Result,
+    cli: ?*result.Result,
     netconf: ?*result_netconf.Result,
 };
 
@@ -107,6 +107,6 @@ pub const NetconfOperationOptions = union(enum) {
 };
 
 pub const OperationOptions = union(enum) {
-    driver: DriverOperationOptions,
+    cli: DriverOperationOptions,
     netconf: NetconfOperationOptions,
 };

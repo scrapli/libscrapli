@@ -2,7 +2,7 @@ const std = @import("std");
 
 const scrapli = @import("scrapli");
 
-const driver = scrapli.driver;
+const cli = scrapli.cli;
 const strings = scrapli.strings;
 
 const banner = "********************";
@@ -143,7 +143,7 @@ pub fn main() !void {
     // defer f.close();
     // then uncomment recorder in OptionsInputs below
 
-    const d = try driver.Driver.init(
+    const d = try cli.Driver.init(
         allocator,
         host.string,
         .{

@@ -15,7 +15,7 @@ export fn setDriverOptionSessionReadSize(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.options.read_size = value;
         },
         .netconf => |rd| {
@@ -33,7 +33,7 @@ export fn setDriverOptionSessionReadDelayMinNs(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.options.read_delay_min_ns = value;
         },
         .netconf => |rd| {
@@ -51,7 +51,7 @@ export fn setDriverOptionSessionReadDelayMaxNs(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.options.read_delay_max_ns = value;
         },
         .netconf => |rd| {
@@ -69,7 +69,7 @@ export fn setDriverOptionSessionReadDelayBackoffFactor(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.options.read_delay_backoff_factor = value;
         },
         .netconf => |rd| {
@@ -87,7 +87,7 @@ export fn setDriverOptionSessionReturnChar(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.options.return_char = rd.session.options.allocator.dupe(
                 u8,
                 std.mem.span(value),
@@ -115,7 +115,7 @@ export fn setDriverOptionSessionOperationTimeoutNs(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.options.operation_timeout_ns = value;
         },
         .netconf => |rd| {
@@ -133,7 +133,7 @@ export fn setDriverOptionSessionOperationMaxSearchDepth(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.options.operation_max_search_depth = value;
         },
         .netconf => |rd| {
@@ -159,7 +159,7 @@ export fn setDriverOptionSessionRecorderPath(
     };
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.options.recorder = f.writer();
         },
         .netconf => |rd| {
@@ -181,7 +181,7 @@ export fn setDriverOptionAuthUsername(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.options.auth.username = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
@@ -209,7 +209,7 @@ export fn setDriverOptionAuthPassword(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.options.auth.password = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
@@ -237,7 +237,7 @@ export fn setDriverOptionAuthPrivateKeyPath(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.options.auth.private_key_path = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
@@ -265,7 +265,7 @@ export fn setDriverOptionAuthPrivateKeyPassphrase(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.options.auth.private_key_passphrase = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
@@ -292,7 +292,7 @@ export fn setDriverOptionAuthInSessionAuthBypass(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.session.auth_options.in_session_auth_bypass = true;
         },
         .netconf => |rd| {
@@ -311,7 +311,7 @@ export fn setDriverOptionAuthLookupKeyValue(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.options.auth.extendLookupMap(
                 std.mem.span(key),
                 std.mem.span(value),
@@ -339,7 +339,7 @@ export fn setDriverOptionAuthUsernamePattern(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.options.auth.username_pattern = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
@@ -367,7 +367,7 @@ export fn setDriverOptionAuthPasswordPattern(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.options.auth.password_pattern = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
@@ -395,7 +395,7 @@ export fn setDriverOptionAuthPassphrasePattern(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             rd.options.auth.passphrase_pattern = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
@@ -427,7 +427,7 @@ export fn setDriverOptionBinTransportBin(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .bin => |i| {
                     i.options.bin = rd.options.transport.bin.allocator.dupe(
@@ -469,7 +469,7 @@ export fn setDriverOptionBinTransportExtraOpenArgs(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .bin => |i| {
                     i.options.extra_open_args = rd.options.transport.bin.allocator.dupe(
@@ -511,7 +511,7 @@ export fn setDriverOptionBinTransportOverrideOpenArgs(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .bin => |i| {
                     i.options.override_open_args = rd.options.transport.bin.allocator.dupe(
@@ -553,7 +553,7 @@ export fn setDriverOptionBinTransportSSHConfigPath(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .bin => |i| {
                     i.options.ssh_config_path = rd.options.transport.bin.allocator.dupe(
@@ -595,7 +595,7 @@ export fn setDriverOptionBinTransportKnownHostsPath(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .bin => |i| {
                     i.options.known_hosts_path = rd.options.transport.bin.allocator.dupe(
@@ -636,7 +636,7 @@ export fn setDriverOptionBinTransportEnableStrictKey(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .bin => |i| {
                     i.options.enable_strict_key = true;
@@ -668,7 +668,7 @@ export fn setDriverOptionBinTransportTermHeight(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .bin => |i| {
                     i.options.term_height = value;
@@ -700,7 +700,7 @@ export fn setDriverOptionBinTransportTermWidth(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .bin => |i| {
                     i.options.term_width = value;
@@ -735,7 +735,7 @@ export fn setDriverOptionSSH2TransportSSH2Trace(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .ssh2 => |i| {
                     i.options.libssh2_trace = true;
@@ -771,7 +771,7 @@ export fn setDriverOptionTestTransportF(
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
-        .driver => |rd| {
+        .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .test_ => |i| {
                     i.options.f = rd.options.transport.test_.allocator.dupe(
