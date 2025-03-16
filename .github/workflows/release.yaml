@@ -18,7 +18,9 @@ jobs:
       - lint
       - test
 
-    runs-on: ubuntu-latest
+    # running on macos since x86 macos seems to not want to compile nicely due to some openssl stuff
+    # on debian?
+    runs-on: macos-latest
 
     steps:
       - name: checkout
@@ -35,6 +37,13 @@ jobs:
         uses: mlugg/setup-zig@v1
         with:
           version: ${{ env.ZIG_VERSION }}
+
+      # never got around to figuring out how to ensure the openssl generate step runs *once* even
+      # when being built against all the targets, so this is a quick/easy hack to ensure that :)
+      - name: ensure openssl generate step cached
+        run: |
+          zig build
+        working-directory: lib/openssl
 
       - name: build release shared objects
         run: |
