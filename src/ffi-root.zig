@@ -3,7 +3,7 @@ const std = @import("std");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const ffi_apply_options = @import("ffi-apply-options.zig");
-const ffi_root_driver = @import("ffi-root-driver.zig");
+const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
 
 const operation = @import("cli-operation.zig");
@@ -13,7 +13,7 @@ const transport = @import("transport.zig");
 
 // TODO dont do this shit, just figure out including more shit in build.zig
 pub export const _force_include_apply_options = &ffi_apply_options.noop;
-pub export const _force_include_root_driver = &ffi_root_driver.noop;
+pub export const _force_include_root_driver = &ffi_root_cli.noop;
 pub export const _force_include_root_driver_netconf = &ffi_root_netconf.noop;
 
 pub const std_options = std.Options{

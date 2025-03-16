@@ -4,11 +4,23 @@ const operation = @import("cli-operation.zig");
 fn getInputHandling(input_handling: [*c]const u8) operation.InputHandling {
     const _input_handling = std.mem.span(input_handling);
 
-    if (std.mem.eql(u8, @tagName(operation.InputHandling.exact), _input_handling)) {
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.InputHandling.exact),
+        _input_handling,
+    )) {
         return operation.InputHandling.exact;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.fuzzy), _input_handling)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.InputHandling.fuzzy),
+        _input_handling,
+    )) {
         return operation.InputHandling.fuzzy;
-    } else if (std.mem.eql(u8, @tagName(operation.InputHandling.ignore), _input_handling)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.InputHandling.ignore),
+        _input_handling,
+    )) {
         return operation.InputHandling.ignore;
     } else {
         return operation.InputHandling.fuzzy;

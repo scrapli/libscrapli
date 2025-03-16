@@ -47,7 +47,10 @@ pub fn pcre2CompileMany(
     allocator: std.mem.Allocator,
     patterns: []const []const u8,
 ) ![]?*pcre2.pcre2_code_8 {
-    var compiled_patterns = try allocator.alloc(?*pcre2.pcre2_code_8, patterns.len);
+    var compiled_patterns = try allocator.alloc(
+        ?*pcre2.pcre2_code_8,
+        patterns.len,
+    );
 
     for (0.., patterns) |idx, pattern| {
         compiled_patterns[idx] = pcre2Compile(pattern);
@@ -97,7 +100,10 @@ pub fn pcre2Find(
 
         return error.UtilFailed;
     } else if (rc == 0) {
-        std.log.err("match vectors was not big enough for all captured substrings", .{});
+        std.log.err(
+            "match vectors was not big enough for all captured substrings",
+            .{},
+        );
 
         return error.UtilFailed;
     }
@@ -188,7 +194,10 @@ pub fn pcre2FindIndex(
 
         return error.UtilFailed;
     } else if (rc == 0) {
-        std.log.err("match vectors was not big enough for all captured substrings", .{});
+        std.log.err(
+            "match vectors was not big enough for all captured substrings",
+            .{},
+        );
 
         return error.UtilFailed;
     }

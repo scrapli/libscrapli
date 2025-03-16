@@ -201,7 +201,11 @@ pub fn determineMode(
             if (std.mem.eql(u8, current_prompt, prompt_exact)) {
                 if (mode_def.value_ptr.*.prompt_excludes) |prompt_excludes| {
                     for (prompt_excludes) |exclusion| {
-                        if (std.mem.indexOf(u8, current_prompt, exclusion) != 0) {
+                        if (std.mem.indexOf(
+                            u8,
+                            current_prompt,
+                            exclusion,
+                        ) != 0) {
                             continue;
                         }
                     }
@@ -221,7 +225,11 @@ pub fn determineMode(
 
                 if (mode_def.value_ptr.*.prompt_excludes) |prompt_excludes| {
                     for (prompt_excludes) |exclusion| {
-                        if (std.mem.indexOf(u8, current_prompt, exclusion) != null) {
+                        if (std.mem.indexOf(
+                            u8,
+                            current_prompt,
+                            exclusion,
+                        ) != null) {
                             is_excluded = true;
                             break;
                         }
@@ -390,7 +398,10 @@ test "determineMode" {
     }
 
     for (cases) |case| {
-        const actual = try determineMode(case.modes, case.current_prompt);
+        const actual = try determineMode(
+            case.modes,
+            case.current_prompt,
+        );
 
         if (case.expect_fail) {
             std.testing.expectEqual(case.expected, actual) catch {

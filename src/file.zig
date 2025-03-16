@@ -29,7 +29,10 @@ pub fn setNonBlocking(fd: std.posix.fd_t) !void {
 
 pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     if (!std.mem.startsWith(u8, path, "~")) {
-        const resolved = std.fs.realpathAlloc(allocator, path) catch |err| switch (err) {
+        const resolved = std.fs.realpathAlloc(
+            allocator,
+            path,
+        ) catch |err| switch (err) {
             error.FileNotFound => {
                 var dir = try std.fs.cwd().openDir(std.fs.path.dirname(path).?, .{});
                 defer dir.close();
@@ -50,7 +53,11 @@ pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8
     const home = try std.process.getEnvVarOwned(allocator, "HOME");
     defer allocator.free(home);
 
-    const expanded_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ home, path[2..] });
+    const expanded_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ home, path[2..] },
+    );
     defer allocator.free(expanded_path);
 
     return std.fs.realpathAlloc(allocator, expanded_path);
@@ -69,7 +76,10 @@ pub fn readFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     defer allocator.free(resolved_path);
 
     const f = try std.fs.openFileAbsolute(resolved_path, .{});
-    const content = try f.readToEndAlloc(allocator, std.math.maxInt(usize));
+    const content = try f.readToEndAlloc(
+        allocator,
+        std.math.maxInt(usize),
+    );
 
     return content;
 }

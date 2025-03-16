@@ -49,7 +49,10 @@ pub const Options = struct {
             .port = config.port,
             .auth = try auth.Options.init(allocator, config.auth),
             .session = try session.Options.init(allocator, config.session),
-            .transport = try transport.Options.init(allocator, config.transport),
+            .transport = try transport.Options.init(
+                allocator,
+                config.transport,
+            ),
         };
 
         return o;
@@ -443,7 +446,10 @@ pub const Driver = struct {
         if (!std.mem.eql(u8, target_mode, self.current_mode)) {
             const ret = try self.enterMode(
                 allocator,
-                .{ .cancel = options.cancel, .requested_mode = target_mode },
+                .{
+                    .cancel = options.cancel,
+                    .requested_mode = target_mode,
+                },
             );
             ret.deinit();
         }

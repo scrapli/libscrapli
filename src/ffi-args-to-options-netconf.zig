@@ -7,19 +7,47 @@ fn getDatastoreType(
 ) operation.DatastoreType {
     const _datastore_type = std.mem.span(datastore_type);
 
-    if (std.mem.eql(u8, @tagName(operation.DatastoreType.conventional), _datastore_type)) {
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.DatastoreType.conventional),
+        _datastore_type,
+    )) {
         return operation.DatastoreType.conventional;
-    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.running), _datastore_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DatastoreType.running),
+        _datastore_type,
+    )) {
         return operation.DatastoreType.running;
-    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.candidate), _datastore_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DatastoreType.candidate),
+        _datastore_type,
+    )) {
         return operation.DatastoreType.candidate;
-    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.startup), _datastore_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DatastoreType.startup),
+        _datastore_type,
+    )) {
         return operation.DatastoreType.startup;
-    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.intended), _datastore_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DatastoreType.intended),
+        _datastore_type,
+    )) {
         return operation.DatastoreType.intended;
-    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.dynamic), _datastore_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DatastoreType.dynamic),
+        _datastore_type,
+    )) {
         return operation.DatastoreType.dynamic;
-    } else if (std.mem.eql(u8, @tagName(operation.DatastoreType.operational), _datastore_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DatastoreType.operational),
+        _datastore_type,
+    )) {
         return operation.DatastoreType.operational;
     } else {
         return default;
@@ -29,9 +57,17 @@ fn getDatastoreType(
 fn getFilterType(filter_type: [*c]const u8) operation.FilterType {
     const _filter_type = std.mem.span(filter_type);
 
-    if (std.mem.eql(u8, @tagName(operation.FilterType.subtree), _filter_type)) {
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.FilterType.subtree),
+        _filter_type,
+    )) {
         return operation.FilterType.subtree;
-    } else if (std.mem.eql(u8, @tagName(operation.FilterType.xpath), _filter_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.FilterType.xpath),
+        _filter_type,
+    )) {
         return operation.FilterType.xpath;
     } else {
         return operation.FilterType.subtree;
@@ -41,13 +77,29 @@ fn getFilterType(filter_type: [*c]const u8) operation.FilterType {
 fn getDefaultsType(defaults_type: [*c]const u8) ?operation.DefaultsType {
     const _defaults_type = std.mem.span(defaults_type);
 
-    if (std.mem.eql(u8, @tagName(operation.DefaultsType.explicit), _defaults_type)) {
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultsType.explicit),
+        _defaults_type,
+    )) {
         return operation.DefaultsType.explicit;
-    } else if (std.mem.eql(u8, @tagName(operation.DefaultsType.report_all), _defaults_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultsType.report_all),
+        _defaults_type,
+    )) {
         return operation.DefaultsType.report_all;
-    } else if (std.mem.eql(u8, @tagName(operation.DefaultsType.report_all_tagged), _defaults_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultsType.report_all_tagged),
+        _defaults_type,
+    )) {
         return operation.DefaultsType.report_all_tagged;
-    } else if (std.mem.eql(u8, @tagName(operation.DefaultsType.trim), _defaults_type)) {
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultsType.trim),
+        _defaults_type,
+    )) {
         return operation.DefaultsType.trim;
     } else {
         return null;

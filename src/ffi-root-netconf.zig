@@ -18,7 +18,10 @@ export fn netconfPollOperation(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const ret = d.pollOperation(operation_id, false) catch |err| {
+    const ret = d.pollOperation(
+        operation_id,
+        false,
+    ) catch |err| {
         d.log(
             logging.LogLevel.critical,
             "error during poll operation {any}",
@@ -71,7 +74,10 @@ export fn netconfFetchOperation(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const ret = d.pollOperation(operation_id, true) catch |err| {
+    const ret = d.pollOperation(
+        operation_id,
+        true,
+    ) catch |err| {
         d.log(
             logging.LogLevel.critical,
             "error during fetch operation {any}",

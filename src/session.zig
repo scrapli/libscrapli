@@ -276,7 +276,10 @@ pub const Session = struct {
         options: operation.OpenOptions,
     ) ![2][]const u8 {
         var timer = std.time.Timer.start() catch |err| {
-            self.log.critical("failed initializing open/authentication timer, err: {}", .{err});
+            self.log.critical(
+                "failed initializing open/authentication timer, err: {}",
+                .{err},
+            );
 
             return error.AuthenicationFailed;
         };
@@ -1197,7 +1200,10 @@ test "readUntilAnyPatternCheckDone" {
     }
 
     for (cases) |case| {
-        const actual = try readUntilAnyPatternCheckDone(case.haystack, case.read_args);
+        const actual = try readUntilAnyPatternCheckDone(
+            case.haystack,
+            case.read_args,
+        );
 
         try std.testing.expectEqual(case.expected, actual);
     }
@@ -1259,7 +1265,10 @@ test "readUntilExactCheckDone" {
     };
 
     for (cases) |case| {
-        const actual = try readUntilExactCheckDone(case.haystack, case.read_args);
+        const actual = try readUntilExactCheckDone(
+            case.haystack,
+            case.read_args,
+        );
 
         try std.testing.expectEqual(case.expected, actual);
     }
@@ -1315,7 +1324,10 @@ test "readUntilFuzzyCheckDone" {
     };
 
     for (cases) |case| {
-        const actual = try readUntilFuzzyCheckDone(case.haystack, case.read_args);
+        const actual = try readUntilFuzzyCheckDone(
+            case.haystack,
+            case.read_args,
+        );
 
         try std.testing.expectEqual(case.expected, actual);
     }
