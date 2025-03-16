@@ -5,22 +5,11 @@ on:
   release:
     types:
       - created
-  workflow_dispatch: {}
 
 jobs:
-  lint:
-    uses: ./.github/workflows/lint.yaml
-
-  test:
-    uses: ./.github/workflows/test.yaml
-
   release:
-    needs:
-      - lint
-      - test
-
     # running on macos since x86 macos seems to not want to compile nicely due to some openssl stuff
-    # on debian?
+    # on debian/ubuntu and too lazy rn to figure it out!
     runs-on: macos-latest
 
     steps:
@@ -28,6 +17,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
+      # not present by default on macos gh runner
+      - name: install shasum256
+        run: |
+          brew install coreutils
+
+      - name: set release version
+        run: |
+          RELEASE_TAG=${{ github.ref_name }}
+          RELEASE_VERSION=${RELEASE_TAG#v}
+          
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
 
       - name: load env vars for workflow run
         run: |
@@ -50,14 +51,30 @@ jobs:
         run: |
           make build-release
 
+      - name: Extract version number from files
+        run: |
+          LIB_VERSION=$(basename $(readlink -f zig-out/aarch64-linux/libscrapli.so) | grep -o -E "\d+\.\d+\.\d+")
+          echo "LIB_VERSION=$LIB_VERSION" >> "$GITHUB_ENV"
+
+      # note, have to rename before uploading since libscrapli.so.VERSION is the same for all the
+      # linux variants (and equally .dylib for macos) and gh doesnt appreciate this!
       - name: upload built shared objects to release
         run: |
-          cd .dist
-          gh release upload ${{ github.ref_name }} zig-out/checksums.txt #checksums
-          gh release upload ${{ github.ref_name }} "zig-out/aarch64-linux/libscrapli.so.0.0.1" #libscrapli-aarch64-linux-0.0.1
-          gh release upload ${{ github.ref_name }} "zig-out/aarch64-macos/libscrapli.0.0.1.dylib" #libscrapli-aarch64-macos-0.0.1
-          gh release upload ${{ github.ref_name }} "zig-out/x86_64_linux-gnu/libscrapli.so.0.0.1" #libscrapli-x86-linux-gnu-0.0.1
-          gh release upload ${{ github.ref_name }} "zig-out/x86_64_linux-musl/libscrapli.so.0.0.1" #libscrapli-x86-linux-musl-0.0.1
-          gh release upload ${{ github.ref_name }} "zig-out/x86_64-macos/libscrapli.0.0.1.dylib" #libscrapli-x86-macos-0.0.1
+          gh release upload ${{ github.ref_name }} zig-out/checksums.txt
+          
+          mv zig-out/aarch64-linux/libscrapli.so.${{ env.LIB_VERSION }} zig-out/aarch64-linux/libscrapli-aarch64-linux.so.${{ env.LIB_VERSION }}
+          gh release upload ${{ github.ref_name }} zig-out/aarch64-linux/libscrapli-aarch64-linux.so.${{ env.LIB_VERSION }}#libscrapli-aarch64-linux-${{ env.RELEASE_VERSION }}
+          
+          mv zig-out/aarch64-macos/libscrapli.${{ env.LIB_VERSION }}.dylib zig-out/aarch64-macos/libscrapli-aarch64-macos.dylib.${{ env.LIB_VERSION }}
+          gh release upload ${{ github.ref_name }} zig-out/aarch64-macos/libscrapli-aarch64-macos.dylib.${{ env.LIB_VERSION }}#libscrapli-aarch64-macos-${{ env.RELEASE_VERSION }}
+          
+          mv zig-out/x86_64-linux-gnu/libscrapli.so.${{ env.LIB_VERSION }} zig-out/x86_64-linux-gnu/libscrapli-x86_64-linux-gnu.so.${{ env.LIB_VERSION }}
+          gh release upload ${{ github.ref_name }} zig-out/x86_64-linux-gnu/libscrapli-x86_64-linux-gnu.so.${{ env.LIB_VERSION }}#libscrapli-x86-linux-gnu-${{ env.RELEASE_VERSION }}
+          
+          mv zig-out/x86_64-linux-musl/libscrapli.so.${{ env.LIB_VERSION }} zig-out/x86_64-linux-musl/libscrapli-x86_64-linux-musl.so.${{ env.LIB_VERSION }}
+          gh release upload ${{ github.ref_name }} zig-out/x86_64-linux-musl/libscrapli-x86_64-linux-musl.so.${{ env.LIB_VERSION }}#libscrapli-x86-linux-musl-${{ env.RELEASE_VERSION }}
+          
+          mv zig-out/x86_64-macos/libscrapli.${{ env.LIB_VERSION }}.dylib zig-out/x86_64-macos/libscrapli-x86_64-macos.dylib.${{ env.LIB_VERSION }}
+          gh release upload ${{ github.ref_name }} zig-out/x86_64-macos/libscrapli-x86_64-macos.dylib.${{ env.LIB_VERSION }}#libscrapli-x86-macos-${{ env.RELEASE_VERSION }}
         env:
           GITHUB_TOKEN: ${{ github.TOKEN }}

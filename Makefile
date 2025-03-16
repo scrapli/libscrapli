@@ -29,7 +29,7 @@ open-coverage: ## Open the generated coverage report
 	open zig-out/cover/index.html
 
 clean-zig-cache: ## Nukes the local zig cache dir if its > 16gb
-	bash -c "[ $$(du -s .zig-cache | awk '{print $$1}') -gt $$((16 * 1024 * 1024)) ] && rm -rf .zig-cache" || true
+	bash -c "[ -d .zig-cache ] && [ $$(du -s .zig-cache | awk '{print $$1}') -gt $$((16 * 1024 * 1024)) ] && rm -rf .zig-cache" || true
 
 build: fmt clean-zig-cache ## Build the shared objects.
 	zig build -freference-trace --summary all
