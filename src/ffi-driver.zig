@@ -472,6 +472,132 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
+                .commit => |o| {
+                    ret_ok = rd.commit(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .discard => |o| {
+                    ret_ok = rd.discard(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .cancel_commit => |o| {
+                    ret_ok = rd.cancelCommit(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .validate => |o| {
+                    ret_ok = rd.validate(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .create_subscription => |o| {
+                    ret_ok = rd.createSubscription(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .establish_subscription => |o| {
+                    ret_ok = rd.establishSubscription(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .modify_subscription => |o| {
+                    ret_ok = rd.modifySubscription(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .delete_subscription => |o| {
+                    ret_ok = rd.deleteSubscription(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .resync_subscription => |o| {
+                    ret_ok = rd.resyncSubscription(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .kill_subscription => |o| {
+                    ret_ok = rd.killSubscription(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .get_schema => |o| {
+                    ret_ok = rd.getSchema(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .get_data => |o| {
+                    ret_ok = rd.getData(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .edit_data => |o| {
+                    ret_ok = rd.editData(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .action => |o| {
+                    ret_ok = rd.action(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
             }
 
             self.operation_lock.lock();

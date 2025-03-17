@@ -1805,7 +1805,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CreateSubscription = options,
+                .create_subscription = options,
             },
         );
     }
@@ -1877,7 +1877,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .EstablishSubscription = options,
+                .establish_subscription = options,
             },
         );
     }
@@ -1955,7 +1955,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .ModifySubscription = options,
+                .modify_subscription = options,
             },
         );
     }
@@ -2017,7 +2017,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .DeleteSubscription = options,
+                .delete_subscription = options,
             },
         );
     }
@@ -2079,7 +2079,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .ResyncSubscriptionOptions = options,
+                .resync_subscription = options,
             },
         );
     }
@@ -2141,7 +2141,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .KillSubscriptionOptions = options,
+                .kill_subscription = options,
             },
         );
     }
@@ -2207,7 +2207,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .GetSchemaOptions = options,
+                .get_schema = options,
             },
         );
     }
@@ -2317,7 +2317,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .GetData = options,
+                .get_data = options,
             },
         );
     }
@@ -2379,7 +2379,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .EditData = options,
+                .edit_data = options,
             },
         );
     }
@@ -2433,7 +2433,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Action = options,
+                .action = options,
             },
         );
     }
