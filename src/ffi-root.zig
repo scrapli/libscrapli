@@ -7,6 +7,7 @@ const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
 
 const logging = @import("logging.zig");
+const session = @import("session.zig");
 const transport = @import("transport.zig");
 
 // TODO dont do this shit, just figure out including more shit in build.zig
@@ -249,6 +250,66 @@ export fn closeDriver(
         d.log(
             logging.LogLevel.critical,
             "error during driver close {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    return 0;
+}
+
+/// Reads from the driver's session, bypassing the "driver" itself, use with care.
+export fn readSession(
+    d_ptr: usize,
+    buf: *[]u8,
+    read_n: *u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    // SAFETY: will always be set!
+    var s: *session.Session = undefined;
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            s = rd.session;
+        },
+        .netconf => |rd| {
+            s = rd.session;
+        },
+    }
+
+    const n = s.read(buf.*);
+
+    read_n.* = n;
+
+    return 0;
+}
+
+/// Writes from the driver's session, bypassing the "driver" itself, use with care.
+export fn writeSession(
+    d_ptr: usize,
+    buf: [*c]const u8,
+    redacted: bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    // SAFETY: will always be set!
+    var s: *session.Session = undefined;
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            s = rd.session;
+        },
+        .netconf => |rd| {
+            s = rd.session;
+        },
+    }
+
+    s.write(std.mem.span(buf), redacted) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during driver write {any}",
             .{err},
         );
 
