@@ -12,7 +12,6 @@ const c = @cImport({
 });
 
 extern fn setsid() callconv(.C) i32;
-extern fn ioctl(fd: i32, request: u32, arg: usize) callconv(.C) i32;
 
 const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
@@ -554,14 +553,17 @@ fn openPtyChild(
         return error.PtyCreationFailedSetSid;
     }
 
-    if (ioctl(slave_fd.handle, c.TIOCSCTTY, 0) == -1) {
+    if (std.posix.system.ioctl(
+        slave_fd.handle,
+        c.TIOCSCTTY,
+    ) != 0) {
         return error.PtyCreationFailedSetCtty;
     }
 
     if (!netconf) {
-        const set_win_size_rc = ioctl(
+        const set_win_size_rc = std.posix.system.ioctl(
             slave_fd.handle,
-            c.TIOCSWINSZ,
+            @bitCast(@as(u32, c.TIOCSWINSZ)),
             @intFromPtr(
                 &c.winsize{
                     .ws_row = term_height,
@@ -571,6 +573,7 @@ fn openPtyChild(
                 },
             ),
         );
+
         if (set_win_size_rc != 0) {
             return error.PtyCreationFailedSetWinSize;
         }
