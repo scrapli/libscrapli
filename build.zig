@@ -105,6 +105,55 @@ fn getZigXmlDep(
     );
 }
 
+fn genFfiLibOutputName(
+    b: *std.Build,
+    lib: *std.Build.Step.Compile,
+) ![]const u8 {
+    const standard_name = try std.zig.binNameAlloc(
+        b.allocator,
+        .{
+            .root_name = lib.name,
+            .target = lib.rootModuleTarget(),
+            .output_mode = switch (lib.kind) {
+                .lib => .Lib,
+                .obj => .Obj,
+                .exe, .@"test" => .Exe,
+            },
+            .link_mode = lib.linkage,
+            .version = lib.version,
+        },
+    );
+
+    if (libscrapli_version.pre == null) {
+        return standard_name;
+    }
+
+    defer b.allocator.free(standard_name);
+
+    switch (lib.rootModuleTarget().os.tag) {
+        .macos => {
+            return std.fmt.allocPrint(
+                b.allocator,
+                "{s}-{s}.dylib",
+                .{
+                    standard_name[0 .. standard_name.len - 6],
+                    libscrapli_version.pre.?,
+                },
+            );
+        },
+        else => {
+            return std.fmt.allocPrint(
+                b.allocator,
+                "{s}-{s}",
+                .{
+                    standard_name,
+                    libscrapli_version.pre.?,
+                },
+            );
+        },
+    }
+}
+
 fn buildFfiLib(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
@@ -115,20 +164,34 @@ fn buildFfiLib(
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
 
-    const lib = b.addSharedLibrary(
-        .{
+    const lib = b.addLibrary(
+        std.Build.LibraryOptions{
             .name = "scrapli",
-            .root_source_file = b.path("src/ffi-root.zig"),
-            .target = b.resolveTargetQuery(target),
-            .optimize = optimize,
+            .root_module = std.Build.Module.create(
+                b,
+                .{
+                    .root_source_file = b.path("src/ffi-root.zig"),
+                    .target = b.resolveTargetQuery(target),
+                    .optimize = optimize,
+                    .imports = &.{
+                        .{
+                            .name = "yaml",
+                            .module = yaml.module("yaml"),
+                        },
+                        .{
+                            .name = "xml",
+                            .module = xml.module("xml"),
+                        },
+                    },
+                },
+            ),
             .version = libscrapli_version,
+            .linkage = .dynamic,
         },
     );
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
-    lib.root_module.addImport("yaml", yaml.module("yaml"));
-    lib.root_module.addImport("xml", xml.module("xml"));
 
     const lib_target_output = b.addInstallArtifact(
         lib,
@@ -138,6 +201,8 @@ fn buildFfiLib(
                     .custom = try target.zigTriple(b.allocator),
                 },
             },
+            .dest_sub_path = try genFfiLibOutputName(b, lib),
+            .dylib_symlinks = false,
         },
     );
 
@@ -154,28 +219,46 @@ fn buildExamples(
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
 
-    const lib = b.addStaticLibrary(.{
-        .name = "scrapli",
-        .root_source_file = b.path("src/root.zig"),
-        .target = b.resolveTargetQuery(target),
-        .optimize = optimize,
-        .version = libscrapli_version,
-    });
+    const lib = b.addLibrary(
+        .{
+            .name = "scrapli",
+            .root_module = std.Build.Module.create(
+                b,
+                .{
+                    .root_source_file = b.path("src/root.zig"),
+                    .target = b.resolveTargetQuery(target),
+                    .optimize = optimize,
+                    .imports = &.{
+                        .{
+                            .name = "yaml",
+                            .module = yaml.module("yaml"),
+                        },
+                        .{
+                            .name = "xml",
+                            .module = xml.module("xml"),
+                        },
+                    },
+                },
+            ),
+            .version = libscrapli_version,
+            .linkage = .static,
+        },
+    );
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
-    lib.root_module.addImport("yaml", yaml.module("yaml"));
-    lib.root_module.addImport("xml", xml.module("xml"));
 
     for (all_examples) |example| {
-        const exe = b.addExecutable(.{
-            .name = example,
-            .root_source_file = b.path(
-                b.pathJoin(&[_][]const u8{ "examples", example, "main.zig" }),
-            ),
-            .target = b.resolveTargetQuery(target),
-            .optimize = optimize,
-        });
+        const exe = b.addExecutable(
+            .{
+                .name = example,
+                .root_source_file = b.path(
+                    b.pathJoin(&[_][]const u8{ "examples", example, "main.zig" }),
+                ),
+                .target = b.resolveTargetQuery(target),
+                .optimize = optimize,
+            },
+        );
         exe.linkLibrary(lib);
         exe.root_module.addImport("scrapli", lib.root_module);
 
@@ -208,15 +291,17 @@ fn buildTests(
     const yaml = getZigYamlDep(b, target.query, optimize);
     const xml = getZigXmlDep(b, target.query, optimize);
 
-    const tests = b.addTest(.{
-        .root_source_file = b.path("src/tests.zig"),
-        .target = target,
-        .optimize = optimize,
-        .test_runner = std.Build.Step.Compile.TestRunner{
-            .mode = .simple,
-            .path = b.path("src/test-runner.zig"),
+    const tests = b.addTest(
+        .{
+            .root_source_file = b.path("src/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .test_runner = std.Build.Step.Compile.TestRunner{
+                .mode = .simple,
+                .path = b.path("src/test-runner.zig"),
+            },
         },
-    });
+    );
 
     tests.linkLibrary(pcre2.artifact("pcre2-8"));
     tests.linkLibrary(libssh2.artifact("ssh2"));
@@ -245,15 +330,17 @@ fn buildTests(
         ) catch "";
         defer b.allocator.free(exclude);
 
-        const run_coverage = b.addSystemCommand(&.{
-            "kcov",
-            "--clean",
-            exclude,
-            "--include-pattern=src/",
-            // exclude "vendored" deps
-            "--exclude-pattern=lib/",
-            b.pathJoin(&.{ b.install_path, "cover" }),
-        });
+        const run_coverage = b.addSystemCommand(
+            &.{
+                "kcov",
+                "--clean",
+                exclude,
+                "--include-pattern=src/",
+                // exclude "vendored" deps
+                "--exclude-pattern=lib/",
+                b.pathJoin(&.{ b.install_path, "cover" }),
+            },
+        );
 
         run_coverage.addArtifactArg(tests);
 
@@ -321,25 +408,43 @@ fn buildMainExe(
     const yaml = getZigYamlDep(b, target.query, optimize);
     const xml = getZigXmlDep(b, target.query, optimize);
 
-    const lib = b.addStaticLibrary(.{
-        .name = "scrapli",
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .version = libscrapli_version,
-    });
+    const lib = b.addLibrary(
+        .{
+            .name = "scrapli",
+            .root_module = std.Build.Module.create(
+                b,
+                .{
+                    .root_source_file = b.path("src/root.zig"),
+                    .target = target,
+                    .optimize = optimize,
+                    .imports = &.{
+                        .{
+                            .name = "yaml",
+                            .module = yaml.module("yaml"),
+                        },
+                        .{
+                            .name = "xml",
+                            .module = xml.module("xml"),
+                        },
+                    },
+                },
+            ),
+            .version = libscrapli_version,
+            .linkage = .static,
+        },
+    );
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
-    lib.root_module.addImport("yaml", yaml.module("yaml"));
-    lib.root_module.addImport("xml", xml.module("xml"));
 
-    const exe = b.addExecutable(.{
-        .name = "scrapli",
-        .root_source_file = b.path("main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const exe = b.addExecutable(
+        .{
+            .name = "scrapli",
+            .root_source_file = b.path("main.zig"),
+            .target = target,
+            .optimize = optimize,
+        },
+    );
     exe.linkLibrary(lib);
     exe.root_module.addImport("scrapli", lib.root_module);
 
@@ -358,18 +463,34 @@ fn buildCheck(
     const yaml = getZigYamlDep(b, target.query, optimize);
     const xml = getZigXmlDep(b, target.query, optimize);
 
-    const lib = b.addStaticLibrary(.{
-        .name = "scrapli",
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .version = libscrapli_version,
-    });
+    const lib = b.addLibrary(
+        .{
+            .name = "scrapli",
+            .root_module = std.Build.Module.create(
+                b,
+                .{
+                    .root_source_file = b.path("src/root.zig"),
+                    .target = target,
+                    .optimize = optimize,
+                    .imports = &.{
+                        .{
+                            .name = "yaml",
+                            .module = yaml.module("yaml"),
+                        },
+                        .{
+                            .name = "xml",
+                            .module = xml.module("xml"),
+                        },
+                    },
+                },
+            ),
+            .version = libscrapli_version,
+            .linkage = .static,
+        },
+    );
 
     lib.linkLibrary(pcre2.artifact("pcre2-8"));
     lib.linkLibrary(libssh2.artifact("ssh2"));
-    lib.root_module.addImport("yaml", yaml.module("yaml"));
-    lib.root_module.addImport("xml", xml.module("xml"));
 
     const check = b.step("check", "complitaion check step for zls");
     check.dependOn(&lib.step);
