@@ -480,10 +480,10 @@ pub const Session = struct {
             );
 
             switch (state) {
-                .Complete => {
+                .complete => {
                     return bufs.toOwnedSlices(allocator);
                 },
-                .UsernamePrompted => {
+                .username_prompted => {
                     if (self.auth_options.username == null) {
                         self.log.critical(
                             "username prompt seen but no username set",
@@ -510,7 +510,7 @@ pub const Session = struct {
 
                     continue;
                 },
-                .PasswordPrompted => {
+                .password_prompted => {
                     if (self.auth_options.password == null) {
                         self.log.critical(
                             "password prompt seen but no password set",
@@ -542,7 +542,7 @@ pub const Session = struct {
 
                     continue;
                 },
-                .PassphrasePrompted => {
+                .passphrase_prompted => {
                     if (self.auth_options.private_key_passphrase == null) {
                         self.log.critical(
                             "private key passphrase prompt seen but no passphrase set",
@@ -572,7 +572,7 @@ pub const Session = struct {
 
                     cur_check_start_idx = bufs.processed.items.len;
                 },
-                .Continue => {},
+                ._continue => {},
             }
         }
     }
