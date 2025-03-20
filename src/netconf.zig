@@ -826,6 +826,12 @@ pub const Driver = struct {
                 matched_chars += 1;
 
                 if (matched_chars == message_complete_delim.len) {
+                    if (std.mem.indexOf(u8, message_buf.items, "<rpc-reply") == null) {
+                        // consuming the input we sent, zeroize the buf and continue on
+                        try message_buf.resize(0);
+                        break;
+                    }
+
                     try self.processFoundMessage(try message_buf.toOwnedSlice());
                     break;
                 }
@@ -839,12 +845,6 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
-        if (std.mem.indexOf(u8, buf, "</rpc>") != null) {
-            // found echo from an input, ignore
-            self.allocator.free(buf);
-            return;
-        }
-
         const index_of_message_id = std.mem.indexOf(
             u8,
             buf,
@@ -2619,7 +2619,12 @@ pub const Driver = struct {
         // *previous* message id!
         self.message_id += 1;
 
-        const ret = try self.sendRpc(&timer, cancel, res.input.?, self.message_id - 1);
+        const ret = try self.sendRpc(
+            &timer,
+            cancel,
+            res.input.?,
+            self.message_id - 1,
+        );
 
         try res.record(ret);
 
