@@ -221,7 +221,13 @@ pub const Transport = struct {
         self.log.info("authentication complete", .{});
 
         try self.openChannel(timer, cancel, operation_timeout_ns);
-        try self.requestPty(timer, cancel, operation_timeout_ns);
+
+        if (!self.options.netconf) {
+            // no pty for netconf, it causes inputs to be echoed (which we normally want, but not
+            // in netconf), and disabling them via term mode only makes it echo once not twice :p
+            try self.requestPty(timer, cancel, operation_timeout_ns);
+        }
+
         try self.requestShell(timer, cancel, operation_timeout_ns);
 
         // all the open things are sequential/single-threaded, any read/write operation past this
@@ -720,7 +726,10 @@ pub const Transport = struct {
                 return error.OpenTimeoutExceeded;
             }
 
-            const rc = libssh2ChannelProcessStartup(self.channel, self.options.netconf);
+            const rc = libssh2ChannelProcessStartup(
+                self.channel,
+                self.options.netconf,
+            );
 
             if (rc == 0) {
                 break;
