@@ -32,6 +32,12 @@ fn GetDriver(
             .{ .key = "login", .value = "NokiaSrl1!" },
         };
 
+        if (username == null) {
+            config.auth.username = "admin";
+        } else {
+            config.auth.username = username.?;
+        }
+
         if (os == .macos) {
             host = "localhost";
             config.port = 21830;
@@ -44,6 +50,12 @@ fn GetDriver(
             .{ .key = "login", .value = "admin" },
         };
 
+        if (username == null) {
+            config.auth.username = "netconf-admin";
+        } else {
+            config.auth.username = username.?;
+        }
+
         if (os == .macos) {
             host = "localhost";
             config.port = 22830;
@@ -53,12 +65,6 @@ fn GetDriver(
         }
     } else {
         return error.UnknownPlatform;
-    }
-
-    if (username == null) {
-        config.auth.username = "admin";
-    } else {
-        config.auth.username = username.?;
     }
 
     if (key != null) {

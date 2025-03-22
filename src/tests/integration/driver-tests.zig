@@ -70,7 +70,9 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*cli.Driver {
                 .password = "password",
             },
             .session = .{
-                .recorder = recorder,
+                .record_destination = .{
+                    .writer = recorder,
+                },
             },
         },
     );

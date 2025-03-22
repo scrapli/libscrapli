@@ -250,10 +250,16 @@ pub const Driver = struct {
     }
 
     pub fn deinit(self: *Driver) void {
+        if (self.process_stop.load(std.builtin.AtomicOrder.acquire) == ProcessThreadState.run) {
+            // same as session, for ignoring errors on close and just gracefully freeing things
+            // zlint-disable suppressed-errors
+            _ = self.close(self.allocator, .{}) catch {};
+        }
+
         self.session.deinit();
 
-        if (self.server_capabilities != null) {
-            for (self.server_capabilities.?.items) |cap| {
+        if (self.server_capabilities) |caps| {
+            for (caps.items) |cap| {
                 var mut_cap = cap;
                 mut_cap.deinit();
             }
@@ -365,7 +371,7 @@ pub const Driver = struct {
 
         try self.processServerCapabilities(cap_buf);
         try self.determineVersion();
-        try self.sendClientCapabilities(allocator, options, &timer);
+        try self.sendClientCapabilities();
 
         self.process_stop.store(
             ProcessThreadState.run,
@@ -405,7 +411,7 @@ pub const Driver = struct {
             self.process_thread.?.join();
         }
 
-        self.session.close();
+        try self.session.close();
 
         return self.NewResult(allocator, operation.Kind.close_session);
     }
@@ -666,12 +672,7 @@ pub const Driver = struct {
 
     fn sendClientCapabilities(
         self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.OpenOptions,
-        timer: *std.time.Timer,
     ) !void {
-        var cur_read_delay_ns: u64 = self.session.options.read_delay_min_ns;
-
         var caps: []const u8 = version_1_0_capability;
 
         if (self.negotiated_version == Version.version_1_1) {
@@ -679,57 +680,6 @@ pub const Driver = struct {
         }
 
         try self.session.writeAndReturn(caps, false);
-
-        const _read_cap_buf = try allocator.alloc(u8, 64);
-        defer allocator.free(_read_cap_buf);
-
-        // drain the channel of our sent caps
-        while (true) {
-            if (options.cancel != null and options.cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return error.Cancelled;
-            }
-
-            const elapsed_time = timer.read();
-
-            if (self.session.options.operation_timeout_ns != 0 and
-                (elapsed_time + cur_read_delay_ns) > self.session.options.operation_timeout_ns)
-            {
-                self.log.critical("op timeout exceeded", .{});
-
-                return error.Timeout;
-            }
-
-            const n = self.session.read(_read_cap_buf);
-
-            if (n == 0) {
-                cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
-
-                continue;
-            } else {
-                cur_read_delay_ns = self.session.options.read_delay_min_ns;
-            }
-
-            const delim_index = std.mem.indexOf(
-                u8,
-                _read_cap_buf,
-                delimiter_Version_1_0,
-            );
-
-            if (delim_index != null) {
-                if (delim_index.? + delimiter_Version_1_0.len < _read_cap_buf.len) {
-                    // almost certainly in an integration test and we overshot the delim
-                    // which would cause a test to fail later on as we'll never be able to find
-                    // the start of the next message, just put back whatever we over read
-                    try self.session.read_queue.unget(
-                        _read_cap_buf[delim_index.? + delimiter_Version_1_0.len ..],
-                    );
-                }
-
-                return;
-            }
-        }
     }
 
     fn getReadDelay(self: *Driver, cur_read_delay_ns: u64) u64 {
@@ -839,12 +789,6 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
-        if (std.mem.indexOf(u8, buf, "</rpc>") != null) {
-            // found echo from an input, ignore
-            self.allocator.free(buf);
-            return;
-        }
-
         const index_of_message_id = std.mem.indexOf(
             u8,
             buf,
@@ -1805,7 +1749,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .CreateSubscription = options,
+                .create_subscription = options,
             },
         );
     }
@@ -1877,7 +1821,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .EstablishSubscription = options,
+                .establish_subscription = options,
             },
         );
     }
@@ -1955,7 +1899,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .ModifySubscription = options,
+                .modify_subscription = options,
             },
         );
     }
@@ -2017,7 +1961,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .DeleteSubscription = options,
+                .delete_subscription = options,
             },
         );
     }
@@ -2079,7 +2023,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .ResyncSubscriptionOptions = options,
+                .resync_subscription = options,
             },
         );
     }
@@ -2141,7 +2085,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .KillSubscriptionOptions = options,
+                .kill_subscription = options,
             },
         );
     }
@@ -2207,7 +2151,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .GetSchemaOptions = options,
+                .get_schema = options,
             },
         );
     }
@@ -2317,7 +2261,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .GetData = options,
+                .get_data = options,
             },
         );
     }
@@ -2379,7 +2323,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .EditData = options,
+                .edit_data = options,
             },
         );
     }
@@ -2433,7 +2377,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Action = options,
+                .action = options,
             },
         );
     }
@@ -2619,7 +2563,12 @@ pub const Driver = struct {
         // *previous* message id!
         self.message_id += 1;
 
-        const ret = try self.sendRpc(&timer, cancel, res.input.?, self.message_id - 1);
+        const ret = try self.sendRpc(
+            &timer,
+            cancel,
+            res.input.?,
+            self.message_id - 1,
+        );
 
         try res.record(ret);
 

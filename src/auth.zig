@@ -15,11 +15,11 @@ pub const lookup_prefix = "__lookup::";
 pub const lookup_default_key = "__default__";
 
 pub const State = enum {
-    Complete,
-    UsernamePrompted,
-    PasswordPrompted,
-    PassphrasePrompted,
-    Continue,
+    complete,
+    username_prompted,
+    password_prompted,
+    passphrase_prompted,
+    _continue,
 };
 
 pub const LookupKeyValue = struct {
@@ -222,7 +222,7 @@ pub fn processSearchableAuthBuf(
         searchable_buf,
     );
     if (prompt_match.len > 0) {
-        return State.Complete;
+        return State.complete;
     }
 
     const password_match = try re.pcre2Find(
@@ -230,7 +230,7 @@ pub fn processSearchableAuthBuf(
         searchable_buf,
     );
     if (password_match.len > 0) {
-        return State.PasswordPrompted;
+        return State.password_prompted;
     }
 
     const username_match = try re.pcre2Find(
@@ -238,7 +238,7 @@ pub fn processSearchableAuthBuf(
         searchable_buf,
     );
     if (username_match.len > 0) {
-        return State.UsernamePrompted;
+        return State.username_prompted;
     }
 
     const passphrase_match = try re.pcre2Find(
@@ -246,10 +246,10 @@ pub fn processSearchableAuthBuf(
         searchable_buf,
     );
     if (passphrase_match.len > 0) {
-        return State.PassphrasePrompted;
+        return State.passphrase_prompted;
     }
 
-    return State.Continue;
+    return State._continue;
 }
 
 const openMessageErrorSubstrings = [_][]const u8{

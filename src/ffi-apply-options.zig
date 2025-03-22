@@ -144,26 +144,56 @@ export fn setDriverOptionSessionOperationMaxSearchDepth(
     return 0;
 }
 
-// this is unsafe/will leak, and should only be used in testing
 export fn setDriverOptionSessionRecorderPath(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    var f = std.fs.cwd().createFile(
-        std.mem.span(value),
-        .{},
-    ) catch {
-        return 1;
-    };
-
     switch (d.real_driver) {
         .cli => |rd| {
-            rd.session.options.recorder = f.writer();
+            rd.session.options.record_destination = .{
+                .f = rd.session.options.allocator.dupe(
+                    u8,
+                    std.mem.span(value),
+                ) catch {
+                    return 1;
+                },
+            };
+
+            const out_f = std.fs.cwd().createFile(
+                rd.session.options.record_destination.?.f,
+                .{},
+            ) catch {
+                return 1;
+            };
+
+            var recorder = out_f.writer();
+            recorder.context = out_f;
+
+            rd.session.recorder = recorder;
         },
         .netconf => |rd| {
-            rd.session.options.recorder = f.writer();
+            rd.session.options.record_destination = .{
+                .f = rd.session.options.allocator.dupe(
+                    u8,
+                    std.mem.span(value),
+                ) catch {
+                    return 1;
+                },
+            };
+
+            const out_f = std.fs.cwd().createFile(
+                rd.session.options.record_destination.?.f,
+                .{},
+            ) catch {
+                return 1;
+            };
+
+            var recorder = out_f.writer();
+            recorder.context = out_f;
+
+            rd.session.recorder = recorder;
         },
     }
 

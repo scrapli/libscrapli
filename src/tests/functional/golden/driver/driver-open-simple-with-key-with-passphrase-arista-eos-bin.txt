@@ -1,4 +1,4 @@
 Enter passphrase for key 'src/tests/fixtures/libscrapli_test_ssh_key_passphrase': 
 
-eos1>
-eos1>
+eos1#
+eos1#

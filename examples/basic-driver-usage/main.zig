@@ -135,14 +135,6 @@ pub fn main() !void {
     );
     defer password.deinit();
 
-    // for logging to a file:
-    // const f = try std.fs.cwd().createFile(
-    //     "out.txt",
-    //     .{},
-    // );
-    // defer f.close();
-    // then uncomment recorder in OptionsInputs below
-
     const d = try cli.Driver.init(
         allocator,
         host.string,
@@ -159,7 +151,10 @@ pub fn main() !void {
                 .password = password.string,
             },
             .session = .{
-                // .recorder = f,
+                // uncomment to log/record to a file
+                // .record_destination = .{
+                //     .f = "out.txt",
+                // },
             },
             .transport = .{
                 // comment out to use bin transport if desired

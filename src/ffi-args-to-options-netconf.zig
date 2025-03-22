@@ -106,6 +106,44 @@ fn getDefaultsType(defaults_type: [*c]const u8) ?operation.DefaultsType {
     }
 }
 
+fn getFormat(format: [*c]const u8) operation.SchemaFormat {
+    const _format = std.mem.span(format);
+
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.SchemaFormat.rnc),
+        _format,
+    )) {
+        return operation.SchemaFormat.rnc;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.SchemaFormat.rng),
+        _format,
+    )) {
+        return operation.SchemaFormat.rng;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.SchemaFormat.xsd),
+        _format,
+    )) {
+        return operation.SchemaFormat.xsd;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.SchemaFormat.yang),
+        _format,
+    )) {
+        return operation.SchemaFormat.yang;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.SchemaFormat.yin),
+        _format,
+    )) {
+        return operation.SchemaFormat.yin;
+    } else {
+        return operation.SchemaFormat.yang;
+    }
+}
+
 pub fn GetConfigOptionsFromArgs(
     cancel: *bool,
     source: [*c]const u8,
@@ -232,4 +270,217 @@ pub fn GetOptionsFromArgs(
     }
 
     return options;
+}
+
+pub fn ValidateOptionsFromArgs(
+    cancel: *bool,
+    source: [*c]const u8,
+) operation.ValidateOptions {
+    return operation.ValidateOptions{
+        .cancel = cancel,
+        .source = getDatastoreType(
+            source,
+            operation.DatastoreType.running,
+        ),
+    };
+}
+
+pub fn CreateSubscriptionOptionsFromArgs(
+    cancel: *bool,
+    stream: [*c]const u8,
+    filter: [*c]const u8,
+    filter_type: [*c]const u8,
+    filter_namespace_prefix: [*c]const u8,
+    filter_namespace: [*c]const u8,
+    start_time: u64,
+    stop_time: u64,
+) operation.CreateSubscriptionOptions {
+    var options = operation.CreateSubscriptionOptions{
+        .cancel = cancel,
+        .stream = std.mem.span(stream),
+        .filter_type = getFilterType(filter_type),
+        .start_time = start_time,
+        .stop_time = stop_time,
+    };
+
+    const _filter = std.mem.span(filter);
+    if (_filter.len > 0) {
+        options.filter = _filter;
+    }
+
+    const _filter_namespace_prefix = std.mem.span(filter_namespace_prefix);
+    if (_filter_namespace_prefix.len > 0) {
+        options.filter_namespace_prefix = _filter_namespace_prefix;
+    }
+
+    const _filter_namespace = std.mem.span(filter_namespace);
+    if (_filter_namespace.len > 0) {
+        options.filter_namespace = _filter_namespace;
+    }
+
+    return options;
+}
+
+pub fn EstablishSubscriptionOptionsFromArgs(
+    cancel: *bool,
+    stream: [*c]const u8,
+    filter: [*c]const u8,
+    filter_type: [*c]const u8,
+    filter_namespace_prefix: [*c]const u8,
+    filter_namespace: [*c]const u8,
+    period: u64,
+    stop_time: u64,
+    dscp: u8,
+    weighting: u8,
+    dependency: u32,
+    encoding: [*c]const u8,
+) operation.EstablishSubscriptionOptions {
+    var options = operation.EstablishSubscriptionOptions{
+        .cancel = cancel,
+        .stream = std.mem.span(stream),
+        .filter_type = getFilterType(filter_type),
+        .period = period,
+        .stop_time = stop_time,
+        .dscp = dscp,
+        .weighting = weighting,
+        .dependency = dependency,
+        .encoding = std.mem.span(encoding),
+    };
+
+    const _filter = std.mem.span(filter);
+    if (_filter.len > 0) {
+        options.filter = _filter;
+    }
+
+    const _filter_namespace_prefix = std.mem.span(filter_namespace_prefix);
+    if (_filter_namespace_prefix.len > 0) {
+        options.filter_namespace_prefix = _filter_namespace_prefix;
+    }
+
+    const _filter_namespace = std.mem.span(filter_namespace);
+    if (_filter_namespace.len > 0) {
+        options.filter_namespace = _filter_namespace;
+    }
+
+    return options;
+}
+
+pub fn ModifySubscriptionOptionsFromArgs(
+    cancel: *bool,
+    id: u64,
+    stream: [*c]const u8,
+    filter: [*c]const u8,
+    filter_type: [*c]const u8,
+    filter_namespace_prefix: [*c]const u8,
+    filter_namespace: [*c]const u8,
+    period: u64,
+    stop_time: u64,
+    dscp: u8,
+    weighting: u8,
+    dependency: u32,
+    encoding: [*c]const u8,
+) operation.ModifySubscriptionOptions {
+    var options = operation.ModifySubscriptionOptions{
+        .cancel = cancel,
+        .id = id,
+        .stream = std.mem.span(stream),
+        .filter_type = getFilterType(filter_type),
+        .period = period,
+        .stop_time = stop_time,
+        .dscp = dscp,
+        .weighting = weighting,
+        .dependency = dependency,
+        .encoding = std.mem.span(encoding),
+    };
+
+    const _filter = std.mem.span(filter);
+    if (_filter.len > 0) {
+        options.filter = _filter;
+    }
+
+    const _filter_namespace_prefix = std.mem.span(filter_namespace_prefix);
+    if (_filter_namespace_prefix.len > 0) {
+        options.filter_namespace_prefix = _filter_namespace_prefix;
+    }
+
+    const _filter_namespace = std.mem.span(filter_namespace);
+    if (_filter_namespace.len > 0) {
+        options.filter_namespace = _filter_namespace;
+    }
+
+    return options;
+}
+
+pub fn GetSchemaOptionsFromArgs(
+    cancel: *bool,
+    identifier: [*c]const u8,
+    version: [*c]const u8,
+    format: [*c]const u8,
+) operation.GetSchemaOptions {
+    return operation.GetSchemaOptions{
+        .cancel = cancel,
+        .identifier = std.mem.span(identifier),
+        .version = std.mem.span(version),
+        .format = getFormat(format),
+    };
+}
+
+pub fn GetDataOptionsFromArgs(
+    cancel: *bool,
+    datastore: [*c]const u8,
+    filter: [*c]const u8,
+    filter_type: [*c]const u8,
+    filter_namespace_prefix: [*c]const u8,
+    filter_namespace: [*c]const u8,
+    config_filter: bool,
+    origin_filters: [*c]const u8,
+    max_depth: i32, // TODO is uint so if we pass -1 can be null
+    with_origin: bool,
+    defaults_type: [*c]const u8,
+) operation.GetDataOptions {
+    var options = operation.GetDataOptions{
+        .cancel = cancel,
+        .datastore = getDatastoreType(
+            datastore,
+            operation.DatastoreType.running,
+        ),
+        .filter_type = getFilterType(filter_type),
+        .config_filter = config_filter,
+        .origin_filters = std.mem.span(origin_filters),
+        .max_depth = @intCast(max_depth),
+        .with_origin = with_origin,
+        .defaults_type = getDefaultsType(defaults_type),
+    };
+
+    const _filter = std.mem.span(filter);
+    if (_filter.len > 0) {
+        options.filter = _filter;
+    }
+
+    const _filter_namespace_prefix = std.mem.span(filter_namespace_prefix);
+    if (_filter_namespace_prefix.len > 0) {
+        options.filter_namespace_prefix = _filter_namespace_prefix;
+    }
+
+    const _filter_namespace = std.mem.span(filter_namespace);
+    if (_filter_namespace.len > 0) {
+        options.filter_namespace = _filter_namespace;
+    }
+
+    return options;
+}
+
+pub fn EditDataOptionsFromArgs(
+    cancel: *bool,
+    datastore: [*c]const u8,
+    edit_content: [*c]const u8,
+) operation.EditDataOptions {
+    return operation.EditDataOptions{
+        .cancel = cancel,
+        .datastore = getDatastoreType(
+            datastore,
+            operation.DatastoreType.running,
+        ),
+        .edit_content = std.mem.span(edit_content),
+    };
 }

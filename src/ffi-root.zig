@@ -7,6 +7,7 @@ const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
 
 const logging = @import("logging.zig");
+const session = @import("session.zig");
 const transport = @import("transport.zig");
 
 // TODO dont do this shit, just figure out including more shit in build.zig
@@ -235,6 +236,21 @@ export fn openDriver(
         },
     }
 
+    while (true) {
+        // weve already waited for the operation loop to start in the queue operation function,
+        // but we also need to ensure we wait for the open operation to actually get put into
+        // the queue before continuing
+        d.operation_lock.lock();
+        defer d.operation_lock.unlock();
+
+        const op = d.operation_results.get(operation_id.*);
+        if (op != null) {
+            break;
+        }
+
+        std.time.sleep(ffi_driver.operation_thread_ready_sleep);
+    }
+
     return 0;
 }
 
@@ -249,6 +265,66 @@ export fn closeDriver(
         d.log(
             logging.LogLevel.critical,
             "error during driver close {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    return 0;
+}
+
+/// Reads from the driver's session, bypassing the "driver" itself, use with care.
+export fn readSession(
+    d_ptr: usize,
+    buf: *[]u8,
+    read_n: *u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    // SAFETY: will always be set!
+    var s: *session.Session = undefined;
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            s = rd.session;
+        },
+        .netconf => |rd| {
+            s = rd.session;
+        },
+    }
+
+    const n = s.read(buf.*);
+
+    read_n.* = n;
+
+    return 0;
+}
+
+/// Writes from the driver's session, bypassing the "driver" itself, use with care.
+export fn writeSession(
+    d_ptr: usize,
+    buf: [*c]const u8,
+    redacted: bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    // SAFETY: will always be set!
+    var s: *session.Session = undefined;
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            s = rd.session;
+        },
+        .netconf => |rd| {
+            s = rd.session;
+        },
+    }
+
+    s.write(std.mem.span(buf), redacted) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during driver write {any}",
             .{err},
         );
 
