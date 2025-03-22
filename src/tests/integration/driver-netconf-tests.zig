@@ -17,7 +17,9 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*netconf.Driver {
                 .password = "admin",
             },
             .session = .{
-                .recorder = recorder,
+                .record_destination = .{
+                    .writer = recorder,
+                },
             },
         },
     );
