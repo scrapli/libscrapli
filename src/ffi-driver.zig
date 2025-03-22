@@ -8,7 +8,7 @@ const logging = @import("logging.zig");
 
 const ffi_operations = @import("ffi-operations.zig");
 
-const operation_thread_ready_sleep: u64 = 2_500;
+pub const operation_thread_ready_sleep: u64 = 2_500;
 const poll_operation_sleep: u64 = 250_000;
 
 pub const RealDriver = union(enum) {
@@ -202,8 +202,7 @@ pub const FfiDriver = struct {
         }
 
         while (true) {
-            // this blocks us until the operation thread is ready and processing, otherwise the
-            // submit open will never get picked up
+            // this blocks us until the operation thread is ready and processing before we continue
             const ready = self.operation_ready.load(std.builtin.AtomicOrder.acquire);
             if (ready) {
                 break;
@@ -211,10 +210,6 @@ pub const FfiDriver = struct {
 
             std.time.sleep(operation_thread_ready_sleep);
         }
-
-        // im not sure why but w/out this -- especially (only?) -- in go test cases -- there seems
-        // to be a race condition where the signal cant notify the operation loop properly
-        std.time.sleep(operation_thread_ready_sleep * 2);
     }
 
     pub fn close(self: *FfiDriver, cancel: *bool) !void {
@@ -255,10 +250,18 @@ pub const FfiDriver = struct {
 
         self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
 
-        while (!self.operation_stop.load(std.builtin.AtomicOrder.acquire)) {
+        while (true) {
+            const stop = self.operation_stop.load(std.builtin.AtomicOrder.acquire);
+            if (stop) {
+                break;
+            }
+
             self.operation_lock.lock();
 
-            self.operation_condition.wait(&self.operation_lock);
+            if (self.operation_queue.count == 0) {
+                // nothing in the queue to process, wait for the signal
+                self.operation_condition.wait(&self.operation_lock);
+            }
 
             const op = self.operation_queue.readItem();
 
@@ -367,10 +370,18 @@ pub const FfiDriver = struct {
 
         self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
 
-        while (!self.operation_stop.load(std.builtin.AtomicOrder.acquire)) {
+        while (true) {
+            const stop = self.operation_stop.load(std.builtin.AtomicOrder.acquire);
+            if (stop) {
+                break;
+            }
+
             self.operation_lock.lock();
 
-            self.operation_condition.wait(&self.operation_lock);
+            if (self.operation_queue.count == 0) {
+                // nothing in the queue to process, wait for the signal
+                self.operation_condition.wait(&self.operation_lock);
+            }
 
             const op = self.operation_queue.readItem();
 
