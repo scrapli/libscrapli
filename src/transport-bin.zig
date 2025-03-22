@@ -577,6 +577,9 @@ fn openPtyChild(
         if (set_win_size_rc != 0) {
             return error.PtyCreationFailedSetWinSize;
         }
+    } else {
+        // zlint-disable suppressed-errors
+        setnoecho(slave_fd.handle) catch {};
     }
 
     try std.posix.dup2(slave_fd.handle, 0); // stdin
@@ -595,6 +598,14 @@ fn setonlcr(fd: std.posix.fd_t) !void {
     var term = try std.posix.tcgetattr(fd);
 
     term.oflag.ONLCR = false;
+
+    try std.posix.tcsetattr(fd, std.posix.TCSA.NOW, term);
+}
+
+fn setnoecho(fd: std.posix.fd_t) !void {
+    var term = try std.posix.tcgetattr(fd);
+
+    term.lflag.ECHO = false;
 
     try std.posix.tcsetattr(fd, std.posix.TCSA.NOW, term);
 }
