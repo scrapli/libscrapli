@@ -260,7 +260,7 @@ pub const Driver = struct {
             }
         }
 
-        self.session.close();
+        try self.session.close();
 
         return res;
     }

@@ -8,7 +8,7 @@ const logging = @import("logging.zig");
 
 const ffi_operations = @import("ffi-operations.zig");
 
-const operation_thread_ready_sleep: u64 = 250;
+const operation_thread_ready_sleep: u64 = 2_500;
 const poll_operation_sleep: u64 = 250_000;
 
 pub const RealDriver = union(enum) {
@@ -201,11 +201,20 @@ pub const FfiDriver = struct {
             },
         }
 
-        while (!self.operation_ready.load(std.builtin.AtomicOrder.acquire)) {
+        while (true) {
             // this blocks us until the operation thread is ready and processing, otherwise the
             // submit open will never get picked up
+            const ready = self.operation_ready.load(std.builtin.AtomicOrder.acquire);
+            if (ready) {
+                break;
+            }
+
             std.time.sleep(operation_thread_ready_sleep);
         }
+
+        // im not sure why but w/out this -- especially (only?) -- in go test cases -- there seems
+        // to be a race condition where the signal cant notify the operation loop properly
+        std.time.sleep(operation_thread_ready_sleep * 2);
     }
 
     pub fn close(self: *FfiDriver, cancel: *bool) !void {
@@ -696,7 +705,7 @@ pub const FfiDriver = struct {
         var mut_options = options;
 
         self.operation_lock.lock();
-        defer self.operation_lock.unlock();
+        errdefer self.operation_lock.unlock();
 
         self.operation_id_counter += 1;
 
@@ -729,6 +738,8 @@ pub const FfiDriver = struct {
                 try self.operation_queue.writeItem(mut_options);
             },
         }
+
+        self.operation_lock.unlock();
 
         // signal to unblock the operation loop (we do this so we dont have to do some sleep in the
         // loop between checking for operations)
