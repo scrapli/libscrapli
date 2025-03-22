@@ -13,7 +13,7 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*netconf.Driver {
         .{
             .port = 22830,
             .auth = .{
-                .username = "admin",
+                .username = "netconf-admin",
                 .password = "admin",
             },
             .session = .{
@@ -32,7 +32,7 @@ fn GetTestDriver(f: []const u8) !*netconf.Driver {
         .{
             .port = 22830,
             .auth = .{
-                .username = "admin",
+                .username = "netconf-admin",
                 .password = "admin",
             },
             .session = .{
