@@ -344,7 +344,6 @@ pub fn EstablishSubscriptionOptionsFromArgs(
         .dscp = dscp,
         .weighting = weighting,
         .dependency = dependency,
-        .encoding = std.mem.span(encoding),
     };
 
     const _filter = std.mem.span(filter);
@@ -360,6 +359,11 @@ pub fn EstablishSubscriptionOptionsFromArgs(
     const _filter_namespace = std.mem.span(filter_namespace);
     if (_filter_namespace.len > 0) {
         options.filter_namespace = _filter_namespace;
+    }
+
+    const _encoding = std.mem.span(encoding);
+    if (_encoding.len > 0) {
+        options.encoding = _encoding;
     }
 
     return options;
