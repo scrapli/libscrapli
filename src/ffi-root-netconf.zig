@@ -14,6 +14,7 @@ export fn netconfPollOperation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
+    operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
     // TODO all the other netconf result stuff
@@ -47,6 +48,10 @@ export fn netconfPollOperation(
             else => @panic("attempting to access non netconf result from netconf type"),
         };
 
+        if (dret.input) |i| {
+            operation_input_size.* = i.len;
+        }
+
         operation_result_raw_size.* = dret.getResultRawLen();
         operation_result_size.* = dret.getResultLen();
     }
@@ -70,6 +75,7 @@ export fn netconfFetchOperation(
     operation_id: u32,
     operation_start_time: *u64,
     operation_end_time: *u64,
+    operation_input: *[]u8,
     operation_result_raw: *[]u8,
     operation_result: *[]u8,
     // TODO error things, see also netconfPollOperation
@@ -112,6 +118,10 @@ export fn netconfFetchOperation(
             // was a noop -- like enterMode but where mode didn't change
             operation_start_time.* = @intCast(dret.start_time_ns);
             operation_end_time.* = @intCast(dret.start_time_ns);
+        }
+
+        if (dret.input) |i| {
+            @memcpy(operation_input.*[0..i.len], i);
         }
 
         // to avoid a pointless allocation since we are already copying from the result into the

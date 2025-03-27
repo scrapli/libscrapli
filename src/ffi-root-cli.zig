@@ -72,6 +72,7 @@ export fn pollOperation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
+    operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
     operation_failure_indicator_size: *u64,
@@ -108,6 +109,7 @@ export fn pollOperation(
             else => @panic("attempting to access non driver result from driver type"),
         };
 
+        operation_input_size.* = dret.getInputLen();
         operation_result_raw_size.* = dret.getResultRawLen();
         operation_result_size.* = dret.getResultLen();
         operation_failure_indicator_size.* = 0;
@@ -126,6 +128,7 @@ export fn pollOperation(
 export fn waitOperation(
     d_ptr: usize,
     operation_id: u32,
+    operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
     operation_failure_indicator_size: *u64,
@@ -159,6 +162,7 @@ export fn waitOperation(
                 else => @panic("attempting to access non driver result from driver type"),
             };
 
+            operation_input_size.* = dret.getInputLen();
             operation_result_raw_size.* = dret.getResultRawLen();
             operation_result_size.* = dret.getResultLen();
             operation_failure_indicator_size.* = 0;
@@ -183,6 +187,7 @@ export fn fetchOperation(
     operation_id: u32,
     operation_start_time: *u64,
     operation_end_time: *u64,
+    operation_input: *[]u8,
     operation_result_raw: *[]u8,
     operation_result: *[]u8,
     operation_result_failed_indicator: *[]u8,
@@ -234,6 +239,19 @@ export fn fetchOperation(
         // operations in getResult/getResultRaw by iterating over the underlying array list and
         // copying from there, inserting newlines between results, into the given pointer(s)
         var cur: usize = 0;
+
+        for (0.., dret.inputs.items) |idx, input| {
+            @memcpy(operation_input.*[cur .. cur + input.len], input);
+            cur += input.len;
+
+            if (idx != dret.inputs.items.len - 1) {
+                operation_input.*[cur] = ascii.control_chars.lf;
+                cur += 1;
+            }
+        }
+
+        cur = 0;
+
         for (0.., dret.results_raw.items) |idx, result_raw| {
             @memcpy(operation_result_raw.*[cur .. cur + result_raw.len], result_raw);
             cur += result_raw.len;

@@ -171,13 +171,28 @@ pub const Result = struct {
         return secs_rounded;
     }
 
+    pub fn getInputLen(self: *Result) usize {
+        var out_size: usize = 0;
+
+        for (0.., self.inputs.items) |idx, input| {
+            out_size += input.len + 1;
+
+            if (idx != self.inputs.items.len - 1) {
+                // not last result, add char for newline
+                out_size += 1;
+            }
+        }
+
+        return out_size;
+    }
+
     pub fn getResultRawLen(self: *Result) usize {
         var out_size: usize = 0;
 
         for (0.., self.results_raw.items) |idx, result_raw| {
             out_size += result_raw.len + 1;
 
-            if (idx != self.results.items.len - 1) {
+            if (idx != self.results_raw.items.len - 1) {
                 // not last result, add char for newline
                 out_size += 1;
             }
