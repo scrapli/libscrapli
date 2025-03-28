@@ -477,6 +477,36 @@ pub const Result = struct {
 
         return out;
     }
+
+    pub fn getWarningsLen(self: *Result) usize {
+        var out_size: usize = 0;
+
+        for (0.., self.result_warning_messages.items) |idx, warning| {
+            out_size += warning.len + 1;
+
+            if (idx != self.result_warning_messages.items.len - 1) {
+                // not last result, add char for newline
+                out_size += 1;
+            }
+        }
+
+        return out_size;
+    }
+
+    pub fn getErrorsLen(self: *Result) usize {
+        var out_size: usize = 0;
+
+        for (0.., self.result_error_messages.items) |idx, err| {
+            out_size += err.len + 1;
+
+            if (idx != self.result_error_messages.items.len - 1) {
+                // not last result, add char for newline
+                out_size += 1;
+            }
+        }
+
+        return out_size;
+    }
 };
 
 test "parseRpcErrors" {

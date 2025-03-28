@@ -17,7 +17,9 @@ export fn netconfPollOperation(
     operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
-    // TODO all the other netconf result stuff
+    operation_rpc_warnings_size: *u64,
+    operation_rpc_errors_size: *u64,
+    operation_error_size: *u64,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
@@ -42,7 +44,12 @@ export fn netconfPollOperation(
 
     operation_done.* = true;
 
-    if (ret.err != null) {} else {
+    if (ret.err != null) {
+        const err_name = @errorName(ret.err.?);
+
+        operation_result_size.* = 0;
+        operation_error_size.* = err_name.len;
+    } else {
         const dret = switch (ret.result) {
             .netconf => |r| r.?,
             else => @panic("attempting to access non netconf result from netconf type"),
@@ -54,6 +61,11 @@ export fn netconfPollOperation(
 
         operation_result_raw_size.* = dret.getResultRawLen();
         operation_result_size.* = dret.getResultLen();
+
+        if (dret.result_failure_indicated) {
+            operation_rpc_warnings_size.* = dret.getWarningsLen();
+            operation_rpc_errors_size.* = dret.getErrorsLen();
+        }
     }
 
     return 0;
@@ -78,7 +90,9 @@ export fn netconfFetchOperation(
     operation_input: *[]u8,
     operation_result_raw: *[]u8,
     operation_result: *[]u8,
-    // TODO error things, see also netconfPollOperation
+    operation_rpc_warnings: *[]u8,
+    operation_rpc_errors: *[]u8,
+    operation_error: *[]u8,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
@@ -105,7 +119,11 @@ export fn netconfFetchOperation(
         }
     }
 
-    if (ret.err != null) {} else {
+    if (ret.err != null) {
+        const err_name = @errorName(ret.err.?);
+
+        @memcpy(operation_error.*.ptr, err_name);
+    } else {
         const dret = switch (ret.result) {
             .netconf => |r| r.?,
             else => @panic("attempting to access non netconf result from netconf type"),
@@ -147,6 +165,30 @@ export fn netconfFetchOperation(
 
             if (idx != dret.results.items.len - 1) {
                 operation_result.*[cur] = ascii.control_chars.lf;
+                cur += 1;
+            }
+        }
+
+        cur = 0;
+
+        for (0.., dret.result_warning_messages.items) |idx, warning| {
+            @memcpy(operation_rpc_warnings.*[cur .. cur + warning.len], warning);
+            cur += warning.len;
+
+            if (idx != dret.result_warning_messages.items.len - 1) {
+                operation_rpc_warnings.*[cur] = ascii.control_chars.lf;
+                cur += 1;
+            }
+        }
+
+        cur = 0;
+
+        for (0.., dret.result_error_messages.items) |idx, err| {
+            @memcpy(operation_rpc_errors.*[cur .. cur + err.len], err);
+            cur += err.len;
+
+            if (idx != dret.result_error_messages.items.len - 1) {
+                operation_rpc_errors.*[cur] = ascii.control_chars.lf;
                 cur += 1;
             }
         }
@@ -683,6 +725,8 @@ export fn netconfCreateSubscription(
     return 0;
 }
 
+// TODO would be nice to order things nicer (as in the same order as the options see purego issue:
+// https://github.com/ebitengine/purego/issues/309
 export fn netconfEstablishSubscription(
     d_ptr: usize,
     operation_id: *u32,
@@ -738,21 +782,23 @@ export fn netconfEstablishSubscription(
     return 0;
 }
 
+// TODO would be nice to order things nicer (as in the same order as the options see purego issue:
+// https://github.com/ebitengine/purego/issues/309
 export fn netconfModifySubscription(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
     id: u64,
-    stream: [*c]const u8,
-    filter: [*c]const u8,
-    filter_type: [*c]const u8,
-    filter_namespace_prefix: [*c]const u8,
-    filter_namespace: [*c]const u8,
     period: u64,
     stop_time: u64,
     dscp: u8,
     weighting: u8,
     dependency: u32,
+    stream: [*c]const u8,
+    filter: [*c]const u8,
+    filter_type: [*c]const u8,
+    filter_namespace_prefix: [*c]const u8,
+    filter_namespace: [*c]const u8,
     encoding: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
@@ -939,19 +985,21 @@ export fn netconfGetSchema(
     return 0;
 }
 
+// TODO would be nice to order things nicer (as in the same order as the options see purego issue:
+// https://github.com/ebitengine/purego/issues/309
 export fn netconfGetData(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
+    config_filter: bool,
+    max_depth: i32, // TODO is uint so if we pass -1 can be null
+    with_origin: bool,
     datastore: [*c]const u8,
     filter: [*c]const u8,
     filter_type: [*c]const u8,
     filter_namespace_prefix: [*c]const u8,
     filter_namespace: [*c]const u8,
-    config_filter: bool,
     origin_filters: [*c]const u8,
-    max_depth: i32, // TODO is uint so if we pass -1 can be null
-    with_origin: bool,
     defaults_type: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
