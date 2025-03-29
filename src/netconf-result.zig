@@ -3,9 +3,6 @@ const ascii = @import("ascii.zig");
 const operation = @import("netconf-operation.zig");
 const netconf = @import("netconf.zig");
 
-// dec: 35 | hex: 0x23 | "#"
-const hashChar = 0x23;
-
 // dec: 60 | hex: 0x3C | "<"
 const openElementChar = 0x3C;
 
@@ -15,12 +12,47 @@ const rpcErrorSeverityTag = "error-severity";
 const rpcErrorSeverityWarning = "warning";
 const rpcErrorSeverityError = "error";
 
-const xmlDeclaration = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>";
+const subscription_id_close_tag = "</subscription-id>";
 
-// https://datatracker.ietf.org/doc/html/rfc6242#section-4.2 max chunk size is 4294967295 so
-// for us that is a max of 10 chars that the chunk size could be when we are parsing it out of
-// raw bytes.
-const maxNetconf1_1_Chunk_Size = 10;
+pub fn get_subscription_id(buf: []const u8) !?u64 {
+    const index_of_subscription_id = std.mem.indexOf(
+        u8,
+        buf,
+        subscription_id_close_tag,
+    );
+
+    if (index_of_subscription_id == null) {
+        return null;
+    }
+
+    // max should be uint32, so 10 chars covers that
+    var _idx: usize = 0;
+    var _id_buf: [10]u8 = undefined;
+
+    for (0..10) |idx| {
+        const reverse_idx = index_of_subscription_id.? - 1 - idx;
+
+        if (!std.ascii.isDigit(buf[reverse_idx])) {
+            break;
+        }
+
+        _id_buf[_idx] = buf[reverse_idx];
+        _idx += 1;
+    }
+
+    var _id_buf_left: usize = 0;
+    var _id_buf_right = _idx;
+
+    while (_id_buf_left < _id_buf_right) {
+        _id_buf_right -= 1;
+        const tmp = _id_buf[_id_buf_left];
+        _id_buf[_id_buf_left] = _id_buf[_id_buf_right];
+        _id_buf[_id_buf_right] = tmp;
+        _id_buf_left += 1;
+    }
+
+    return try std.fmt.parseInt(u64, _id_buf[0.._idx], 10);
+}
 
 pub fn NewResult(
     allocator: std.mem.Allocator,
@@ -223,153 +255,17 @@ pub const Result = struct {
 
     pub fn record(
         self: *Result,
-        ret: []const u8,
+        ret: [2][]const u8,
     ) !void {
         try self.splits_ns.append(std.time.nanoTimestamp());
-        try self.results_raw.append(ret);
+        try self.results_raw.append(ret[0]);
+        try self.results.append(ret[1]);
 
-        if (std.mem.indexOf(u8, ret, self.error_tag) != null) {
+        if (std.mem.indexOf(u8, ret[1], self.error_tag) != null) {
             self.result_failure_indicated = true;
 
-            try self.parseRpcErrors(ret);
+            try self.parseRpcErrors(ret[1]);
         }
-
-        switch (self.version) {
-            .version_1_0 => {
-                try self.recordVersion1_0(ret);
-            },
-            .version_1_1 => {
-                try self.recordVersion1_1(ret);
-            },
-        }
-    }
-
-    fn recordVersion1_0(
-        self: *Result,
-        ret: []const u8,
-    ) !void {
-        var declaration_index: usize = 0;
-
-        const _declaration_index = std.mem.indexOf(
-            u8,
-            ret,
-            xmlDeclaration,
-        );
-        if (_declaration_index != null) {
-            declaration_index = _declaration_index.? + xmlDeclaration.len;
-        }
-
-        const delimiter_index = std.mem.indexOf(
-            u8,
-            ret,
-            netconf.delimiter_Version_1_0,
-        );
-
-        try self.results.append(
-            try self.allocator.dupe(
-                u8,
-                ret[declaration_index .. delimiter_index orelse ret.len],
-            ),
-        );
-    }
-
-    fn recordVersion1_1(
-        self: *Result,
-        ret: []const u8,
-    ) !void {
-        // rather than deal w/ an arraylist and a bunch of allocations, we'll allocate a single
-        // slice since the final parsed result will always be smaller than the heap of chunks that
-        // we need to parse. we'll track what we put into it so we can allcoate a right sized slice
-        // when we're done. so two allocations rather than a zillion with array list basically.
-        const _parsed = try self.allocator.alloc(u8, ret.len);
-        defer self.allocator.free(_parsed);
-
-        var parsed_idx: usize = 0;
-
-        var iter_idx: usize = 0;
-
-        while (iter_idx < ret.len) {
-            if (std.ascii.isWhitespace(ret[iter_idx])) {
-                iter_idx += 1;
-
-                continue;
-            }
-
-            if (ret[iter_idx] != hashChar) {
-                // we *must* have found a hash indicating a chunk size, but we didn't something
-                // is wrong
-                return error.ParseNetconf11ResponseFailed;
-            }
-
-            iter_idx += 1;
-
-            if (ret[iter_idx] == hashChar) {
-                // now we've found two consequtive hash signs, indicating end of message
-                break;
-            }
-
-            var chunk_size_end_idx: usize = 0;
-
-            for (0..maxNetconf1_1_Chunk_Size) |maybe_chunk_size_idx_offset| {
-                if (!std.ascii.isDigit(ret[iter_idx + maybe_chunk_size_idx_offset])) {
-                    chunk_size_end_idx = iter_idx + maybe_chunk_size_idx_offset;
-                    break;
-                }
-            }
-
-            var chunk_size: usize = 0;
-
-            for (iter_idx..chunk_size_end_idx) |chunk_idx| {
-                chunk_size = chunk_size * 10 + (ret[chunk_idx] - '0');
-            }
-
-            // now that we processed the size, consume any whitespace up to the chunk to read;
-            // first move the iter_idx past the chunk size marker, then consume cr/lf before the
-            // actual chunk content (whitespace like an actual space is valid for chunks!)
-            iter_idx = chunk_size_end_idx;
-
-            while (true) {
-                if (ret[iter_idx] == ascii.control_chars.cr or
-                    ret[iter_idx] == ascii.control_chars.lf)
-                {
-                    iter_idx += 1;
-
-                    continue;
-                }
-
-                break;
-            }
-
-            if (chunk_size == 0) {
-                return error.ParseNetconf11ResponseFailed;
-            }
-
-            var counted_chunk_iter: usize = 0;
-            var final_chunk_size: usize = chunk_size;
-
-            // i despise this but it seems like we get lf+cr in both bin and ssh2 transports and
-            // at least srlinux only counts one of those, so... our chunk sizing is wrong if we
-            // dont account for that
-            while (counted_chunk_iter < chunk_size) {
-                defer counted_chunk_iter += 1;
-                if (ret[iter_idx + counted_chunk_iter] == ascii.control_chars.cr) {
-                    final_chunk_size += 1;
-
-                    continue;
-                }
-            }
-
-            @memcpy(
-                _parsed[parsed_idx .. parsed_idx + final_chunk_size],
-                ret[iter_idx .. iter_idx + final_chunk_size],
-            );
-            parsed_idx += final_chunk_size;
-
-            // finally increment iter_idx past this chunk
-            iter_idx += final_chunk_size;
-        }
-
-        try self.results.append(try self.allocator.dupe(u8, _parsed[0..parsed_idx]));
     }
 
     pub fn elapsedTimeSeconds(
@@ -626,210 +522,5 @@ test "parseRpcErrors" {
         for (0.., case.result.result_warning_messages.items) |idx, actual| {
             try std.testing.expectEqualStrings(case.expected_warnings[idx], actual);
         }
-    }
-}
-
-test "recordVersion1_0" {
-    const cases = [_]struct {
-        name: []const u8,
-        result: *Result,
-        input: []const u8,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple",
-            .result = try NewResult(
-                std.testing.allocator,
-                "1.2.3.4",
-                830,
-                netconf.Version.version_1_0,
-                netconf.default_rpc_error_tag,
-                operation.Kind.get,
-            ),
-            .input =
-            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
-            \\  <data>
-            \\    <cli-config-data-block>
-            \\    some cli output here
-            \\    </cli-config-data-block>
-            \\  </data>
-            \\</rpc-reply>
-            ,
-            .expected =
-            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
-            \\  <data>
-            \\    <cli-config-data-block>
-            \\    some cli output here
-            \\    </cli-config-data-block>
-            \\  </data>
-            \\</rpc-reply>
-            ,
-        },
-        .{
-            .name = "simple-with-delim",
-            .result = try NewResult(
-                std.testing.allocator,
-                "1.2.3.4",
-                830,
-                netconf.Version.version_1_0,
-                netconf.default_rpc_error_tag,
-                operation.Kind.get,
-            ),
-            .input =
-            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
-            \\  <data>
-            \\    <cli-config-data-block>
-            \\    some cli output here
-            \\    </cli-config-data-block>
-            \\  </data>
-            \\</rpc-reply>]]>]]>
-            ,
-            .expected =
-            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
-            \\  <data>
-            \\    <cli-config-data-block>
-            \\    some cli output here
-            \\    </cli-config-data-block>
-            \\  </data>
-            \\</rpc-reply>
-            ,
-        },
-        .{
-            .name = "simple-with-declaration",
-            .result = try NewResult(
-                std.testing.allocator,
-                "1.2.3.4",
-                830,
-                netconf.Version.version_1_0,
-                netconf.default_rpc_error_tag,
-                operation.Kind.get,
-            ),
-            .input =
-            \\<?xml version="1.0" encoding="UTF-8"?>
-            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
-            \\  <data>
-            \\    <cli-config-data-block>
-            \\    some cli output here
-            \\    </cli-config-data-block>
-            \\  </data>
-            \\</rpc-reply>
-            ,
-            .expected =
-            \\
-            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
-            \\  <data>
-            \\    <cli-config-data-block>
-            \\    some cli output here
-            \\    </cli-config-data-block>
-            \\  </data>
-            \\</rpc-reply>
-            ,
-        },
-        .{
-            .name = "simple-with-declaration-and-delim",
-            .result = try NewResult(
-                std.testing.allocator,
-                "1.2.3.4",
-                830,
-                netconf.Version.version_1_0,
-                netconf.default_rpc_error_tag,
-                operation.Kind.get,
-            ),
-            .input =
-            \\<?xml version="1.0" encoding="UTF-8"?>
-            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
-            \\  <data>
-            \\    <cli-config-data-block>
-            \\    some cli output here
-            \\    </cli-config-data-block>
-            \\  </data>
-            \\</rpc-reply>]]>]]>
-            ,
-            .expected =
-            \\
-            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
-            \\  <data>
-            \\    <cli-config-data-block>
-            \\    some cli output here
-            \\    </cli-config-data-block>
-            \\  </data>
-            \\</rpc-reply>
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        defer case.result.deinit();
-
-        // dupe otherwise deinit of result will fail freeing the input
-        try case.result.record(try std.testing.allocator.dupe(u8, case.input));
-        try std.testing.expectEqualStrings(
-            case.expected,
-            case.result.results.items[0],
-        );
-    }
-}
-
-test "recordVersion1_1" {
-    const cases = [_]struct {
-        name: []const u8,
-        result: *Result,
-        input: []const u8,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple",
-            .result = try NewResult(
-                std.testing.allocator,
-                "1.2.3.4",
-                830,
-                netconf.Version.version_1_1,
-                netconf.default_rpc_error_tag,
-                operation.Kind.get,
-            ),
-            .input =
-            \\#293
-            \\<?xml version="1.0"?>
-            \\<rpc-reply message-id="101" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-            \\ <data>
-            \\  <netconf-yang xmlns="http://cisco.com/ns/yang/Cisco-IOS-XR-man-netconf-cfg">
-            \\   <agent>
-            \\    <ssh>
-            \\     <enable></enable>
-            \\    </ssh>
-            \\   </agent>
-            \\  </netconf-yang>
-            \\ </data>
-            \\</rpc-reply>
-            \\
-            \\##
-            ,
-            .expected =
-            \\<?xml version="1.0"?>
-            \\<rpc-reply message-id="101" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-            \\ <data>
-            \\  <netconf-yang xmlns="http://cisco.com/ns/yang/Cisco-IOS-XR-man-netconf-cfg">
-            \\   <agent>
-            \\    <ssh>
-            \\     <enable></enable>
-            \\    </ssh>
-            \\   </agent>
-            \\  </netconf-yang>
-            \\ </data>
-            \\</rpc-reply>
-            \\
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        defer case.result.deinit();
-
-        // dupe otherwise deinit of result will fail freeing the input
-        try case.result.record(try std.testing.allocator.dupe(u8, case.input));
-        try std.testing.expectEqualStrings(
-            case.expected,
-            case.result.results.items[0],
-        );
     }
 }
