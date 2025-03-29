@@ -197,6 +197,41 @@ export fn netconfFetchOperation(
     return 0;
 }
 
+export fn netconfRaw(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    payload: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .raw = .{
+                        .cancel = cancel,
+                        .payload = std.mem.span(payload),
+                    },
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue raw {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
 export fn netconfGetConfig(
     d_ptr: usize,
     operation_id: *u32,
@@ -667,274 +702,6 @@ export fn netconfValidate(
         d.log(
             logging.LogLevel.critical,
             "error during queue validate {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-export fn netconfCreateSubscription(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    stream: [*c]const u8,
-    filter: [*c]const u8,
-    filter_type: [*c]const u8,
-    filter_namespace_prefix: [*c]const u8,
-    filter_namespace: [*c]const u8,
-    start_time: u64,
-    stop_time: u64,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .create_subscription = ffi_args_to_options.CreateSubscriptionOptionsFromArgs(
-                        cancel,
-                        stream,
-                        filter,
-                        filter_type,
-                        filter_namespace_prefix,
-                        filter_namespace,
-                        start_time,
-                        stop_time,
-                    ),
-                },
-            },
-        },
-    ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue createSubscription {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-// TODO would be nice to order things nicer (as in the same order as the options see purego issue:
-// https://github.com/ebitengine/purego/issues/309
-export fn netconfEstablishSubscription(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    period: u64,
-    stop_time: u64,
-    dscp: u8,
-    weighting: u8,
-    dependency: u32,
-    stream: [*c]const u8,
-    filter: [*c]const u8,
-    filter_type: [*c]const u8,
-    filter_namespace_prefix: [*c]const u8,
-    filter_namespace: [*c]const u8,
-    encoding: [*c]const u8,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .establish_subscription = ffi_args_to_options.EstablishSubscriptionOptionsFromArgs(
-                        cancel,
-                        stream,
-                        filter,
-                        filter_type,
-                        filter_namespace_prefix,
-                        filter_namespace,
-                        period,
-                        stop_time,
-                        dscp,
-                        weighting,
-                        dependency,
-                        encoding,
-                    ),
-                },
-            },
-        },
-    ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue establishSubscription {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-// TODO would be nice to order things nicer (as in the same order as the options see purego issue:
-// https://github.com/ebitengine/purego/issues/309
-export fn netconfModifySubscription(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    id: u64,
-    period: u64,
-    stop_time: u64,
-    dscp: u8,
-    weighting: u8,
-    dependency: u32,
-    stream: [*c]const u8,
-    filter: [*c]const u8,
-    filter_type: [*c]const u8,
-    filter_namespace_prefix: [*c]const u8,
-    filter_namespace: [*c]const u8,
-    encoding: [*c]const u8,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .modify_subscription = ffi_args_to_options.ModifySubscriptionOptionsFromArgs(
-                        cancel,
-                        id,
-                        stream,
-                        filter,
-                        filter_type,
-                        filter_namespace_prefix,
-                        filter_namespace,
-                        period,
-                        stop_time,
-                        dscp,
-                        weighting,
-                        dependency,
-                        encoding,
-                    ),
-                },
-            },
-        },
-    ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue modifySubscription {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-export fn netconfDeleteSubscription(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    id: u64,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .delete_subscription = .{
-                        .cancel = cancel,
-                        .id = id,
-                    },
-                },
-            },
-        },
-    ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue deleteSubscription {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-export fn netconfResyncSubscription(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    id: u64,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .resync_subscription = .{
-                        .cancel = cancel,
-                        .id = id,
-                    },
-                },
-            },
-        },
-    ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue resyncSubscription {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    operation_id.* = _operation_id;
-
-    return 0;
-}
-
-export fn netconfKillSubscription(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-    id: u64,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .kill_subscription = .{
-                        .cancel = cancel,
-                        .id = id,
-                    },
-                },
-            },
-        },
-    ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue killSubscription {any}",
             .{err},
         );
 

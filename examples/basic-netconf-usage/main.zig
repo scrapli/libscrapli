@@ -94,9 +94,9 @@ pub fn main() !void {
         allocator,
         host.string,
         .{
-            // uncomment and import the logger package like: `const logger = scrapli.logger;`
+            // uncomment and import the logger package like: `const logging = scrapli.logging;`
             // for a simple logger setup
-            // .logger = logger.Logger{ .allocator = allocator, .f = logger.stdLogf, },
+            // .logger = logging.Logger{ .allocator = allocator, .f = logging.stdLogf, },
             .port = try get_port(),
             .auth = .{
                 .username = "admin",

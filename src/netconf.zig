@@ -63,7 +63,7 @@ pub const default_rpc_error_tag = "rpc-error>";
 const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-defaults:1.0";
 
 const message_id_attribute_prefix = "message-id=\"";
-const subscription_id_attribute_prefix = "subscription-id=\"";
+const subscription_id_attribute_prefix = "<subscription-id>";
 
 const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
@@ -133,6 +133,12 @@ pub const Options = struct {
     }
 };
 
+const RelevantCapabilities = struct {
+    // TODO datastores, with defaults, etc. etc.
+    rfc5277_event_notifications: bool = false,
+    rfc8639_subscribed_notifications: bool = false,
+};
+
 pub const Driver = struct {
     allocator: std.mem.Allocator,
     log: logging.Logger,
@@ -144,6 +150,7 @@ pub const Driver = struct {
     session: *session.Session,
 
     server_capabilities: ?std.ArrayList(Capability),
+    relevant_capabilities: RelevantCapabilities,
     negotiated_version: Version,
 
     process_thread: ?std.Thread,
@@ -161,7 +168,7 @@ pub const Driver = struct {
 
     subscriptions: std.HashMap(
         u64,
-        []const u8,
+        std.ArrayList([]const u8),
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
@@ -220,6 +227,7 @@ pub const Driver = struct {
             .session = sess,
 
             .server_capabilities = std.ArrayList(Capability).init(allocator),
+            .relevant_capabilities = RelevantCapabilities{},
             .negotiated_version = Version.version_1_0,
 
             .process_thread = null,
@@ -239,7 +247,7 @@ pub const Driver = struct {
 
             .subscriptions = std.HashMap(
                 u64,
-                []const u8,
+                std.ArrayList([]const u8),
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
@@ -586,10 +594,37 @@ pub const Driver = struct {
                         }
                     }
 
+                    self.checkCapabilityRelevance(found_capability);
+
                     try self.server_capabilities.?.append(found_capability);
                 },
                 else => {},
             }
+        }
+    }
+
+    fn checkCapabilityRelevance(
+        self: *Driver,
+        capability: Capability,
+    ) void {
+        if (std.mem.indexOf(
+            u8,
+            "urn:ietf:params:xml:ns:yang:ietf-event-notifications",
+            capability.name,
+        ) != null) {
+            self.relevant_capabilities.rfc5277_event_notifications = true;
+
+            return;
+        }
+
+        if (std.mem.indexOf(
+            u8,
+            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
+            capability.name,
+        ) != null) {
+            self.relevant_capabilities.rfc8639_subscribed_notifications = true;
+
+            return;
         }
     }
 
@@ -789,6 +824,10 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
+        // TODO we need to move the result processing into this, this is because we cant know if
+        // we only got *onee* message here. we may ahve gotten a sub and a reply, and all the loop
+        // does is say "oh is the end of the buf a delim" -- it doesnt know anything ebyond that.
+        // so we have to process here
         const index_of_message_id = std.mem.indexOf(
             u8,
             buf,
@@ -803,9 +842,10 @@ pub const Driver = struct {
         if (index_of_message_id == null and
             index_of_subscription_id == null)
         {
-            // TODO not message/subscription, ignore (this probably should not happen ever?)
-            // printing for now to see if this ever happens
-            std.debug.print("GOT NOT A MESSAGE/SUB? {s}\n", .{buf[0..100]});
+            self.log.warn(
+                "found message that had neither message id or subscription id, ignoring",
+                .{},
+            );
             self.allocator.free(buf);
             return;
         }
@@ -836,13 +876,36 @@ pub const Driver = struct {
             self.messages_lock.lock();
             defer self.messages_lock.unlock();
 
+            // message id will be unique, clobber away
             try self.messages.put(_id, buf);
         } else if (index_of_subscription_id != null) {
             self.subscriptions_lock.lock();
             defer self.subscriptions_lock.unlock();
 
-            try self.subscriptions.put(_id, buf);
+            const ret = try self.subscriptions.getOrPut(_id);
+            if (!ret.found_existing) {
+                ret.value_ptr.* = std.ArrayList([]const u8).init(self.allocator);
+            }
+
+            try ret.value_ptr.*.append(buf);
         }
+    }
+
+    pub fn getSubscriptionMessages(
+        self: *Driver,
+        id: u64,
+    ) ![][]const u8 {
+        // TODO obvikously this stuff, can we make it an iterator? seems nice? but does it lock
+        //   the subscsripiotns the whole tiem?
+        self.subscriptions_lock.lock();
+        defer self.subscriptions_lock.unlock();
+
+        if (!self.subscriptions.contains(id)) {
+            return &[_][]const u8{};
+        }
+
+        const ret = self.subscriptions.get(id);
+        return ret.?.items;
     }
 
     fn processCancelAndTimeout(
@@ -1008,6 +1071,19 @@ pub const Driver = struct {
         try writer.eof();
 
         return self.finalizeElem(allocator, sink.items);
+    }
+
+    pub fn raw(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: operation.RawOptions,
+    ) !*result.Result {
+        return self.dispatchRpc(
+            allocator,
+            operation.RpcOptions{
+                .raw = options,
+            },
+        );
     }
 
     pub fn getConfig(
@@ -1684,412 +1760,6 @@ pub const Driver = struct {
         );
     }
 
-    fn buildCreateSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.CreateSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("create-subscription");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:notification:1.0");
-
-        if (options.filter != null and options.filter.?.len > 0) {
-            try Driver.addFilterElem(
-                &writer,
-                options.filter.?,
-                options.filter_type,
-                options.filter_namespace_prefix,
-                options.filter_namespace,
-            );
-        }
-
-        if (options.start_time != null) {
-            // TODO
-        }
-
-        if (options.stop_time != null) {
-            // TODO
-        }
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn createSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.CreateSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .create_subscription = options,
-            },
-        );
-    }
-
-    fn buildEstablishSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.EstablishSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("establish-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // TODO stream and other options/settings
-
-        if (options.filter != null and options.filter.?.len > 0) {
-            try Driver.addFilterElem(
-                &writer,
-                options.filter.?,
-                options.filter_type,
-                options.filter_namespace_prefix,
-                options.filter_namespace,
-            );
-        }
-
-        if (options.stop_time != null) {
-            // TODO
-        }
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn establishSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.EstablishSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .establish_subscription = options,
-            },
-        );
-    }
-
-    fn buildModifySubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.ModifySubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("modify-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // see also getMessageId, same situation
-        try writer.elementStart("id");
-        var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.id}));
-        try writer.elementEnd();
-
-        // TODO stream and other options/settings
-
-        if (options.filter != null and options.filter.?.len > 0) {
-            try Driver.addFilterElem(
-                &writer,
-                options.filter.?,
-                options.filter_type,
-                options.filter_namespace_prefix,
-                options.filter_namespace,
-            );
-        }
-
-        if (options.stop_time != null) {
-            // TODO
-        }
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn modifySubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.ModifySubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .modify_subscription = options,
-            },
-        );
-    }
-
-    fn buildDeleteSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.DeleteSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("delete-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // see also getMessageId, same situation
-        try writer.elementStart("id");
-        var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.id}));
-        try writer.elementEnd();
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn deleteSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.DeleteSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .delete_subscription = options,
-            },
-        );
-    }
-
-    fn buildResyncSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.ResyncSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("resync-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // see also getMessageId, same situation
-        try writer.elementStart("id");
-        var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.id}));
-        try writer.elementEnd();
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn resyncSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.ResyncSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .resync_subscription = options,
-            },
-        );
-    }
-
-    fn buildKillSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.KillSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("kill-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // see also getMessageId, same situation
-        try writer.elementStart("id");
-        var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.id}));
-        try writer.elementEnd();
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn killSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.KillSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .kill_subscription = options,
-            },
-        );
-    }
-
     fn buildGetSchemaElem(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2395,165 +2065,130 @@ pub const Driver = struct {
         var cancel: ?*bool = null;
 
         switch (options) {
-            .get_config => {
-                cancel = options.get_config.cancel;
+            .raw => |o| {
+                cancel = o.cancel;
+                res.input = try self.finalizeElem(
+                    allocator,
+                    o.payload,
+                );
+            },
+            .get_config => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildGetConfigElem(
                     allocator,
-                    options.get_config,
+                    o,
                 );
             },
-            .edit_config => {
-                cancel = options.edit_config.cancel;
+            .edit_config => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildEditConfigElem(
                     allocator,
-                    options.edit_config,
+                    o,
                 );
             },
-            .copy_config => {
-                cancel = options.copy_config.cancel;
+            .copy_config => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildCopyConfigElem(
                     allocator,
-                    options.copy_config,
+                    o,
                 );
             },
-            .delete_config => {
-                cancel = options.delete_config.cancel;
+            .delete_config => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildDeleteConfigElem(
                     allocator,
-                    options.delete_config,
+                    o,
                 );
             },
-            .lock => {
-                cancel = options.lock.cancel;
+            .lock => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildLockElem(
                     allocator,
-                    options.lock,
+                    o,
                 );
             },
-            .unlock => {
-                cancel = options.unlock.cancel;
+            .unlock => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildUnlockElem(
                     allocator,
-                    options.unlock,
+                    o,
                 );
             },
-            .get => {
-                cancel = options.get.cancel;
+            .get => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildGetElem(
                     allocator,
-                    options.get,
+                    o,
                 );
             },
-            .close_session => {
-                cancel = options.close_session.cancel;
+            .close_session => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildCloseSessionElem(
                     allocator,
-                    options.close_session,
+                    o,
                 );
             },
-            .kill_session => {
-                cancel = options.kill_session.cancel;
+            .kill_session => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildKillSessionElem(
                     allocator,
-                    options.kill_session,
+                    o,
                 );
             },
-            .commit => {
-                cancel = options.commit.cancel;
+            .commit => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildCommitElem(
                     allocator,
-                    options.commit,
+                    o,
                 );
             },
-            .discard => {
-                cancel = options.discard.cancel;
+            .discard => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildDiscardElem(
                     allocator,
-                    options.discard,
+                    o,
                 );
             },
-            .cancel_commit => {
-                cancel = options.cancel_commit.cancel;
+            .cancel_commit => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildCancelCommitElem(
                     allocator,
-                    options.cancel_commit,
+                    o,
                 );
             },
-            .validate => {
-                cancel = options.validate.cancel;
+            .validate => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildValidateElem(
                     allocator,
-                    options.validate,
+                    o,
                 );
             },
-            .create_subscription => {
-                cancel = options.create_subscription.cancel;
-                res.input = try self.buildCreateSubscriptionElem(
-                    allocator,
-                    options.create_subscription,
-                );
-            },
-            .establish_subscription => {
-                cancel = options.establish_subscription.cancel;
-                res.input = try self.buildEstablishSubscriptionElem(
-                    allocator,
-                    options.establish_subscription,
-                );
-            },
-            .modify_subscription => {
-                cancel = options.modify_subscription.cancel;
-                res.input = try self.buildModifySubscriptionElem(
-                    allocator,
-                    options.modify_subscription,
-                );
-            },
-            .delete_subscription => {
-                cancel = options.delete_subscription.cancel;
-                res.input = try self.buildDeleteSubscriptionElem(
-                    allocator,
-                    options.delete_subscription,
-                );
-            },
-            .resync_subscription => {
-                cancel = options.resync_subscription.cancel;
-                res.input = try self.buildResyncSubscriptionElem(
-                    allocator,
-                    options.resync_subscription,
-                );
-            },
-            .kill_subscription => {
-                cancel = options.kill_subscription.cancel;
-                res.input = try self.buildKillSubscriptionElem(
-                    allocator,
-                    options.kill_subscription,
-                );
-            },
-            .get_schema => {
+            .get_schema => |o| {
                 cancel = options.get_schema.cancel;
                 res.input = try self.buildGetSchemaElem(
                     allocator,
-                    options.get_schema,
+                    o,
                 );
             },
-            .get_data => {
-                cancel = options.get_data.cancel;
+            .get_data => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildGetDataElem(
                     allocator,
-                    options.get_data,
+                    o,
                 );
             },
-            .edit_data => {
-                cancel = options.edit_data.cancel;
+            .edit_data => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildEditDataElem(
                     allocator,
-                    options.edit_data,
+                    o,
                 );
             },
-            .action => {
-                cancel = options.action.cancel;
+            .action => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildActionElem(
                     allocator,
-                    options.action,
+                    o,
                 );
             },
             else => return error.UnsupportedOperation,
@@ -2606,6 +2241,54 @@ pub const Driver = struct {
         }
     }
 };
+
+test "processFoundMessage" {
+    const test_name = "processFoundMessage";
+
+    const cases = [_]struct {
+        name: []const u8,
+        version: Version,
+        buf: []const u8,
+    }{
+        .{
+            .name = "simple-1.0",
+            .version = Version.version_1_0,
+            .buf =
+            \\#1097
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"><eventTime>\\2025-03-29T00:37:34.12Z</eventTime><push-update \\xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><subscription-id>\\2147483680</subscription-id><datastore-contents-xml><mdt-oper-data xmlns="http://cisco.com/ns/\\yang/Cisco-IOS-XE-mdt-oper"><mdt-subscriptions><subscription-id>\\2147483680</subscription-id><base><stream>yang-push</stream><source-vrf></source-vrf><period>\\1000</period><xpath>/mdt-oper:mdt-oper-data/mdt-subscriptions</xpath></base><type>\\sub-type-dynamic</type><state>sub-state-valid</state><comments>Subscription \\validated</comments><mdt-receivers><address>10.0.0.2</address><port>44712</port><protocol>\\netconf</protocol><state>\\rcvr-state-connected</state><comments></comments><profile></profile><last-state-change-time>20\\25-03-29T00:37:34.113431+00:00</last-state-change-time></mdt-receivers><last-state-change-time\\>2025-03-29T00:37:34.111926+00:00</last-state-change-time></mdt-subscriptions></mdt-oper-data>\\</datastore-contents-xml></push-update></notification>
+            \\
+            \\##
+            \\
+            \\#422
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" \\message-id="101"><subscription-result \\xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications' xmlns:notif-bis="urn:ietf:params:\\xml:ns:yang:ietf-event-notifications">notif-bis:ok</subscription-result>
+            \\<subscription-id \\xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications'>2147483680</subscription-id>
+            \\</rpc-reply>
+            \\##
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = case.version;
+
+        try d.processFoundMessage(
+            case.buf,
+        );
+
+        _ = test_name;
+        // TODO check messages/subs and then free/cleanup
+    }
+}
 
 test "buildGetConfigElem" {
     const test_name = "buildGetConfigElem";
@@ -3335,342 +3018,6 @@ test "buildValidateElem" {
         d.negotiated_version = case.version;
 
         const actual = try d.buildValidateElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildCreateSubscriptionElem" {
-    const test_name = "buildCreateSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.CreateSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></create-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{},
-            .expected =
-            \\#213
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></create-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildCreateSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildEstablishSubscriptionElem" {
-    const test_name = "buildEstablishSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.EstablishSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .stream = "NETCONF" },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"></establish-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .stream = "NETCONF" },
-            .expected =
-            \\#283
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"></establish-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildEstablishSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildModifySubscriptionElem" {
-    const test_name = "buildModifySubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.ModifySubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .id = 0, .stream = "NETCONF'" },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><modify-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></modify-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .id = 0, .stream = "NETCONF'" },
-            .expected =
-            \\#287
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><modify-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></modify-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildModifySubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildDeleteSubscriptionElem" {
-    const test_name = "buildDeleteSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.DeleteSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .id = 0 },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></delete-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .id = 0 },
-            .expected =
-            \\#287
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></delete-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildDeleteSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildResyncSubscriptionElem" {
-    const test_name = "buildResyncSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.ResyncSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .id = 0 },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><resync-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></resync-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .id = 0 },
-            .expected =
-            \\#287
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><resync-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></resync-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildResyncSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildKillSubscriptionElem" {
-    const test_name = "buildKillSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.KillSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .id = 0 },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><kill-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></kill-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .id = 0 },
-            .expected =
-            \\#283
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><kill-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></kill-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildKillSubscriptionElem(
             std.testing.allocator,
             case.options,
         );

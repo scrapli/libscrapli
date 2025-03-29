@@ -411,6 +411,15 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
+                .raw => |o| {
+                    ret_ok = rd.raw(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
                 .get_config => |o| {
                     ret_ok = rd.getConfig(
                         self.allocator,
@@ -521,60 +530,6 @@ pub const FfiDriver = struct {
                 },
                 .validate => |o| {
                     ret_ok = rd.validate(
-                        self.allocator,
-                        o,
-                    ) catch |err| blk: {
-                        ret_err = err;
-                        break :blk null;
-                    };
-                },
-                .create_subscription => |o| {
-                    ret_ok = rd.createSubscription(
-                        self.allocator,
-                        o,
-                    ) catch |err| blk: {
-                        ret_err = err;
-                        break :blk null;
-                    };
-                },
-                .establish_subscription => |o| {
-                    ret_ok = rd.establishSubscription(
-                        self.allocator,
-                        o,
-                    ) catch |err| blk: {
-                        ret_err = err;
-                        break :blk null;
-                    };
-                },
-                .modify_subscription => |o| {
-                    ret_ok = rd.modifySubscription(
-                        self.allocator,
-                        o,
-                    ) catch |err| blk: {
-                        ret_err = err;
-                        break :blk null;
-                    };
-                },
-                .delete_subscription => |o| {
-                    ret_ok = rd.deleteSubscription(
-                        self.allocator,
-                        o,
-                    ) catch |err| blk: {
-                        ret_err = err;
-                        break :blk null;
-                    };
-                },
-                .resync_subscription => |o| {
-                    ret_ok = rd.resyncSubscription(
-                        self.allocator,
-                        o,
-                    ) catch |err| blk: {
-                        ret_err = err;
-                        break :blk null;
-                    };
-                },
-                .kill_subscription => |o| {
-                    ret_ok = rd.killSubscription(
                         self.allocator,
                         o,
                     ) catch |err| blk: {
