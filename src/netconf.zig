@@ -2435,53 +2435,65 @@ pub const Driver = struct {
     }
 };
 
-test "processFoundMessage" {
-    // TODO for the 1.0 and 1.1 new flavor setup
-    // const test_name = "processFoundMessage";
-    //
-    // const cases = [_]struct {
-    //     name: []const u8,
-    //     version: Version,
-    //     buf: []const u8,
-    // }{
-    //     .{
-    //         .name = "simple-1.0",
-    //         .version = Version.version_1_0,
-    //         .buf =
-    //         \\#1097
-    //         \\<?xml version="1.0" encoding="UTF-8"?>
-    //         \\<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"><eventTime>\\2025-03-29T00:37:34.12Z</eventTime><push-update \\xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><subscription-id>\\2147483680</subscription-id><datastore-contents-xml><mdt-oper-data xmlns="http://cisco.com/ns/\\yang/Cisco-IOS-XE-mdt-oper"><mdt-subscriptions><subscription-id>\\2147483680</subscription-id><base><stream>yang-push</stream><source-vrf></source-vrf><period>\\1000</period><xpath>/mdt-oper:mdt-oper-data/mdt-subscriptions</xpath></base><type>\\sub-type-dynamic</type><state>sub-state-valid</state><comments>Subscription \\validated</comments><mdt-receivers><address>10.0.0.2</address><port>44712</port><protocol>\\netconf</protocol><state>\\rcvr-state-connected</state><comments></comments><profile></profile><last-state-change-time>20\\25-03-29T00:37:34.113431+00:00</last-state-change-time></mdt-receivers><last-state-change-time\\>2025-03-29T00:37:34.111926+00:00</last-state-change-time></mdt-subscriptions></mdt-oper-data>\\</datastore-contents-xml></push-update></notification>
-    //         \\
-    //         \\##
-    //         \\
-    //         \\#422
-    //         \\<?xml version="1.0" encoding="UTF-8"?>
-    //         \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" \\message-id="101"><subscription-result \\xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications' xmlns:notif-bis="urn:ietf:params:\\xml:ns:yang:ietf-event-notifications">notif-bis:ok</subscription-result>
-    //         \\<subscription-id \\xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications'>2147483680</subscription-id>
-    //         \\</rpc-reply>
-    //         \\##
-    //         ,
-    //     },
-    // };
-    //
-    // for (cases) |case| {
-    //     const d = try Driver.init(
-    //         std.testing.allocator,
-    //         "localhost",
-    //         .{},
-    //     );
-    //
-    //     defer d.deinit();
-    //
-    //     d.negotiated_version = case.version;
-    //
-    //     try d.processFoundMessage(
-    //         case.buf,
-    //     );
-    //
-    //     _ = test_name;
-    //     // TODO check messages/subs and then free/cleanup
-    // }
+test "processFoundMessageIds" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected: struct {
+            found: bool = false,
+            is_subscription_message: bool = false,
+            found_id: usize = 0,
+        },
+    }{
+        .{
+            .name = "simple-not-found",
+            .input =
+            \\#1097
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></notification>
+            \\
+            \\##
+            ,
+            .expected = .{},
+        },
+        .{
+            .name = "simple-message-id",
+            .input =
+            \\#422
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><subscription-result xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications' \\xmlns:notif-bis="urn:ietf:params:xml:ns:yang:ietf-event-notifications">notif-bis:ok</subscription-result>
+            \\<subscription-id xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications'>2147483729</subscription-id>
+            \\</rpc-reply>
+            \\#
+            ,
+            .expected = .{
+                .found = true,
+                .found_id = 101,
+            },
+        },
+        .{
+            .name = "simple-subscription-id",
+            .input =
+            \\#1097
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"><eventTime>2025-03-29T00:37:34.12Z</eventTime><push-update xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><subscription-id>2147483680</subscription-id><datastore-contents-xml><mdt-oper-data xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-mdt-oper"><mdt-subscriptions><subscription-id>2147483680</subscription-id><base><stream>yang-push</stream><source-vrf></source-vrf><period>1000</period><xpath>/mdt-oper:mdt-oper-data/mdt-subscriptions</xpath></base><type>sub-type-dynamic</type><state>sub-state-valid</state><comments>Subscription validated</comments><mdt-receivers><address>10.0.0.2</address><port>44712</port><protocol>netconf</protocol><state>rcvr-state-connected</state><comments></comments><profile></profile><last-state-change-time>2025-03-29T00:37:34.113431+00:00</last-state-change-time></mdt-receivers><last-state-change-time>2025-03-29T00:37:34.111926+00:00</last-state-change-time></mdt-subscriptions></mdt-oper-data></datastore-contents-xml></push-update></notification>
+            \\
+            \\##
+            ,
+            .expected = .{
+                .found = true,
+                .is_subscription_message = true,
+                .found_id = 2147483680,
+            },
+        },
+    };
+
+    for (cases) |case| {
+        const actual = try Driver.processFoundMessageIds(case.input);
+        try std.testing.expectEqual(case.expected.found, actual.found);
+        try std.testing.expectEqual(case.expected.is_subscription_message, actual.is_subscription_message);
+        try std.testing.expectEqual(case.expected.found_id, actual.found_id);
+    }
 }
 
 test "buildGetConfigElem" {
