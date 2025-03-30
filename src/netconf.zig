@@ -956,8 +956,13 @@ pub const Driver = struct {
 
             const message_view = buf[message_start_idx..delimiter_index.?];
 
-            // TODO need to alloc/memcopy this shit since we frfee the buf in the process loop
-            try self.storeMessageOrSubscription(buf, message_view);
+            const owned_raw = try self.allocator.alloc(u8, buf.len);
+            @memcpy(owned_raw, buf);
+
+            const owned_parsed = try self.allocator.alloc(u8, message_view.len);
+            @memcpy(owned_parsed, message_view);
+
+            try self.storeMessageOrSubscription(owned_raw, owned_parsed);
 
             delimiter_count -= 1;
             message_start_idx = delimiter_index.? + delimiter_version_1_0.len + 1;
@@ -2493,6 +2498,143 @@ test "processFoundMessageIds" {
         try std.testing.expectEqual(case.expected.found, actual.found);
         try std.testing.expectEqual(case.expected.is_subscription_message, actual.is_subscription_message);
         try std.testing.expectEqual(case.expected.found_id, actual.found_id);
+    }
+}
+
+test "processFoundMessageVersion1_0" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple-with-delim",
+            .input =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>]]>]]>
+            ,
+            .expected =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>
+            ,
+        },
+        .{
+            .name = "simple-with-declaration",
+            .input =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>]]>]]>
+            ,
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = Version.version_1_0;
+
+        try d.processFoundMessageVersion1_0(case.input);
+
+        const actual_kv = d.messages.fetchRemove(101);
+        defer d.allocator.free(actual_kv.?.value[0]);
+        defer d.allocator.free(actual_kv.?.value[1]);
+
+        try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
+    }
+}
+
+test "processFoundMessageVersion1_1" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple",
+            .input =
+            \\#293
+            \\<?xml version="1.0"?>
+            \\<rpc-reply message-id="101" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+            \\ <data>
+            \\  <netconf-yang xmlns="http://cisco.com/ns/yang/Cisco-IOS-XR-man-netconf-cfg">
+            \\   <agent>
+            \\    <ssh>
+            \\     <enable></enable>
+            \\    </ssh>
+            \\   </agent>
+            \\  </netconf-yang>
+            \\ </data>
+            \\</rpc-reply>
+            \\
+            \\##
+            ,
+            .expected =
+            \\<?xml version="1.0"?>
+            \\<rpc-reply message-id="101" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+            \\ <data>
+            \\  <netconf-yang xmlns="http://cisco.com/ns/yang/Cisco-IOS-XR-man-netconf-cfg">
+            \\   <agent>
+            \\    <ssh>
+            \\     <enable></enable>
+            \\    </ssh>
+            \\   </agent>
+            \\  </netconf-yang>
+            \\ </data>
+            \\</rpc-reply>
+            \\
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = Version.version_1_1;
+
+        try d.processFoundMessageVersion1_1(case.input);
+
+        const actual_kv = d.messages.fetchRemove(101);
+        defer d.allocator.free(actual_kv.?.value[0]);
+        defer d.allocator.free(actual_kv.?.value[1]);
+
+        try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
     }
 }
 
