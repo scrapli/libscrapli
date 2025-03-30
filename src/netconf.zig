@@ -355,7 +355,7 @@ pub const Driver = struct {
                 // note that this all applies to the test transport as well (reading from file)
                 const cap_start_index = std.mem.indexOf(
                     u8,
-                    res.results.items[0],
+                    res.result,
                     "<hello ",
                 );
                 if (cap_start_index == null) {
@@ -366,7 +366,7 @@ pub const Driver = struct {
                 // so we just need find the end of the server hello/capabilities.
                 const cap_end_index = std.mem.indexOf(
                     u8,
-                    res.results.items[0],
+                    res.result,
                     "/hello>",
                 );
                 if (cap_end_index == null) {
@@ -375,7 +375,7 @@ pub const Driver = struct {
 
                 cap_buf = try allocator.dupe(
                     u8,
-                    res.results.items[0][cap_start_index.? .. cap_end_index.? + "/hello>".len],
+                    res.result[cap_start_index.? .. cap_end_index.? + "/hello>".len],
                 );
             },
             else => {
@@ -384,7 +384,15 @@ pub const Driver = struct {
                     options,
                     &timer,
                 );
-                try res.results.append(try allocator.dupe(u8, cap_buf));
+
+                res.result = try std.fmt.allocPrint(
+                    allocator,
+                    "{s}\n{s}",
+                    .{
+                        res.result,
+                        cap_buf,
+                    },
+                );
             },
         }
 

@@ -107,8 +107,8 @@ pub fn NewResult(
         .error_tag = error_tag,
         .operation_kind = operation_kind,
         .input = null,
-        .results_raw = std.ArrayList([]const u8).init(allocator),
-        .results = std.ArrayList([]const u8).init(allocator),
+        .result_raw = "",
+        .result = "",
         .start_time_ns = std.time.nanoTimestamp(),
         .splits_ns = std.ArrayList(i128).init(allocator),
         .result_failure_indicated = false,
@@ -131,8 +131,8 @@ pub const Result = struct {
     operation_kind: operation.Kind,
     input: ?[]const u8,
 
-    results_raw: std.ArrayList([]const u8),
-    results: std.ArrayList([]const u8),
+    result_raw: []const u8,
+    result: []const u8,
 
     start_time_ns: i128,
     splits_ns: std.ArrayList(i128),
@@ -149,21 +149,13 @@ pub const Result = struct {
             self.allocator.free(self.input.?);
         }
 
-        for (self.results_raw.items) |i| {
-            self.allocator.free(i);
-        }
-
-        for (self.results.items) |i| {
-            self.allocator.free(i);
-        }
+        self.allocator.free(self.result_raw);
+        self.allocator.free(self.result);
 
         // important note: we *do not* deallocate warnings/errors as we hold
         // views to the original result object (what we store in the "raw result" rather
         // than copies for them! so, we only need to deinit the array list that
         // holds those pointers!
-
-        self.results_raw.deinit();
-        self.results.deinit();
 
         self.result_warning_messages.deinit();
         self.result_error_messages.deinit();
@@ -293,8 +285,8 @@ pub const Result = struct {
         ret: [2][]const u8,
     ) !void {
         try self.splits_ns.append(std.time.nanoTimestamp());
-        try self.results_raw.append(ret[0]);
-        try self.results.append(ret[1]);
+        self.result_raw = ret[0];
+        self.result = ret[1];
 
         if (std.mem.indexOf(u8, ret[1], self.error_tag) != null) {
             self.result_failure_indicated = true;
@@ -335,78 +327,6 @@ pub const Result = struct {
         }
 
         return secs_rounded;
-    }
-
-    pub fn getResultRawLen(self: *Result) usize {
-        var out_size: usize = 0;
-
-        for (0.., self.results_raw.items) |idx, result_raw| {
-            out_size += result_raw.len + 1;
-
-            if (idx != self.results.items.len - 1) {
-                // not last result, add char for newline
-                out_size += 1;
-            }
-        }
-
-        return out_size;
-    }
-
-    /// Returns all raw results joined on a \n char, caller owns joined string.
-    pub fn getResultRaw(
-        self: *Result,
-        allocator: std.mem.Allocator,
-    ) ![]const u8 {
-        const out = try allocator.alloc(u8, self.getResultRawLen());
-
-        var cur: usize = 0;
-        for (0.., self.results_raw.items) |idx, result_raw| {
-            @memcpy(out[cur .. cur + result_raw.len], result_raw);
-            cur += result_raw.len;
-
-            if (idx != self.results_raw.items.len - 1) {
-                out[cur] = ascii.control_chars.lf;
-                cur += 1;
-            }
-        }
-
-        return out;
-    }
-
-    pub fn getResultLen(self: *Result) usize {
-        var out_size: usize = 0;
-
-        for (0.., self.results.items) |idx, result| {
-            out_size += result.len;
-
-            if (idx != self.results.items.len - 1) {
-                // not last result, add char for newline
-                out_size += 1;
-            }
-        }
-
-        return out_size;
-    }
-
-    /// Returns all results joined on a \n char, caller owns joined string.
-    pub fn getResult(
-        self: *Result,
-        allocator: std.mem.Allocator,
-    ) ![]const u8 {
-        const out = try allocator.alloc(u8, self.getResultLen());
-
-        var cur: usize = 0;
-        for (0.., self.results.items) |idx, result| {
-            @memcpy(out[cur .. cur + result.len], result);
-            cur += result.len;
-
-            if (idx != self.results.items.len - 1) {
-                out[cur] = ascii.control_chars.lf;
-                cur += 1;
-            }
-        }
-
-        return out;
     }
 
     pub fn getWarningsLen(self: *Result) usize {

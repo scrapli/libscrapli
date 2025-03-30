@@ -823,7 +823,7 @@ fn kbdInteractiveCallback(
         if (abstract) |abstract_ptr| {
             const auth_callback_data_ptr: *AuthCallbackData = @ptrCast(@alignCast(abstract_ptr.*));
 
-            const password_copy = @as([*c]u8, @ptrCast(c.malloc(auth_callback_data_ptr.password.len + 1)));
+            const password_copy: [*c]u8 = @ptrCast(c.malloc(auth_callback_data_ptr.password.len + 1));
 
             @memcpy(
                 password_copy[0..auth_callback_data_ptr.password.len],

@@ -241,9 +241,6 @@ test "driver-netconf open" {
             close_ret.deinit();
         }
 
-        const open_ret = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(open_ret);
-
         // for open, we'll just check/assert the capabilities because if we check that we know
         // that the open/auth worked of course, and also cap parcing is good, if those are null
         // we obviously failed
@@ -355,14 +352,11 @@ test "driver-netconf get-config" {
         const actual_res = try d.getConfig(std.testing.allocator, .{});
         defer actual_res.deinit();
 
-        const actual_ret = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(actual_ret);
-
         try helper.processFixutreTestStrResult(
             test_name,
             case.name,
             golden_filename,
-            actual_ret,
+            actual_res.result,
         );
     }
 }
