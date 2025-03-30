@@ -3,9 +3,6 @@ const ascii = @import("ascii.zig");
 const operation = @import("netconf-operation.zig");
 const netconf = @import("netconf.zig");
 
-// dec: 60 | hex: 0x3C | "<"
-const openElementChar = 0x3C;
-
 const rpcErrorTag = "rpc-error";
 const rpcReplyTag = "rpc-reply";
 const rpcErrorSeverityTag = "error-severity";
@@ -178,7 +175,7 @@ pub const Result = struct {
         var message_severity_end_idx: ?usize = null;
 
         while (iter_idx < ret.len) {
-            if (ret[iter_idx] != openElementChar) {
+            if (ret[iter_idx] != ascii.control_chars.open_element_char) {
                 iter_idx += 1;
                 continue;
             }
@@ -199,7 +196,7 @@ pub const Result = struct {
                     ret[iter_idx + 1 .. iter_idx + 1 + rpcErrorTag.len],
                     rpcErrorTag,
                 )) {
-                    message_start_idx = iter_idx - 1;
+                    message_start_idx = iter_idx;
                     iter_idx = iter_idx + 2 + rpcErrorTag.len;
                 } else {
                     iter_idx += 1;
@@ -258,7 +255,7 @@ pub const Result = struct {
                 iter_idx = iter_idx + 2 + rpcErrorSeverityTag.len;
 
                 while (true) {
-                    if (ret[iter_idx] != openElementChar) {
+                    if (ret[iter_idx] != ascii.control_chars.open_element_char) {
                         iter_idx += 1;
 
                         continue;
@@ -415,7 +412,7 @@ test "parseRpcErrors" {
             ,
             .expected_warnings = &[_][]const u8{},
             .expected_errors = &[_][]const u8{
-                \\ <rpc-error>
+                \\<rpc-error>
                 \\   <error-type>rpc</error-type>
                 \\   <error-tag>missing-attribute</error-tag>
                 \\   <error-severity>error</error-severity>
@@ -450,7 +447,7 @@ test "parseRpcErrors" {
             \\</rpc-reply>
             ,
             .expected_warnings = &[_][]const u8{
-                \\ <rpc-error>
+                \\<rpc-error>
                 \\   <error-type>rpc</error-type>
                 \\   <error-tag>missing-attribute</error-tag>
                 \\   <error-severity>warning</error-severity>
@@ -462,6 +459,25 @@ test "parseRpcErrors" {
                 ,
             },
             .expected_errors = &[_][]const u8{},
+        },
+        .{
+            .name = "simple-not-pretty-with-single-warning",
+            .result = try NewResult(
+                std.testing.allocator,
+                "1.2.3.4",
+                830,
+                netconf.Version.version_1_0,
+                netconf.default_rpc_error_tag,
+                operation.Kind.get,
+            ),
+            .input =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><rpc-error><error-type>application</error-type><error-tag>invalid-value</error-tag><error-severity>error</error-severity><error-message xml:lang="en">No pending confirmed commit to cancel.</error-message></rpc-error></rpc-reply>
+            ,
+            .expected_warnings = &[_][]const u8{},
+            .expected_errors = &[_][]const u8{
+                \\<rpc-error><error-type>application</error-type><error-tag>invalid-value</error-tag><error-severity>error</error-severity><error-message xml:lang="en">No pending confirmed commit to cancel.</error-message></rpc-error>
+                ,
+            },
         },
     };
 
