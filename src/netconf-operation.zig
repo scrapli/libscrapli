@@ -181,9 +181,8 @@ pub const CloseOptions = operation.CloseOptions;
 
 pub const RawRpcOptions = struct {
     cancel: ?*bool = null,
+    // the inner payload, we wrap this with the outer rpc tag w/ appropriate message id
     payload: []const u8,
-    // TODO should support user providing a fully formed rpc *or* just the "inside" of the rpc tag
-    //   in the former they need to give us the message id, in the latter we wrap what they gave
 };
 
 pub const GetConfigOptions = struct {

@@ -1218,6 +1218,55 @@ pub const Driver = struct {
         }
     }
 
+    fn buildRawRpcElement(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: operation.RawRpcOptions,
+    ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
+        var sink = std.ArrayList(u8).init(allocator);
+        defer sink.deinit();
+
+        var out = xml.streamingOutput(sink.writer());
+
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
+        defer writer.deinit();
+
+        try writer.xmlDeclaration("UTF-8", null);
+        try writer.elementStart("rpc");
+        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
+        try writer.embed(options.payload);
+        try writer.elementEnd();
+        try writer.eof();
+
+        return self.finalizeElem(allocator, sink.items);
+    }
+
+    pub fn rawRpc(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: operation.RawRpcOptions,
+    ) !*result.Result {
+        return self.dispatchRpc(
+            allocator,
+            operation.RpcOptions{
+                .raw_rpc = options,
+            },
+        );
+    }
+
     fn buildGetConfigElem(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -1275,19 +1324,6 @@ pub const Driver = struct {
         try writer.eof();
 
         return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn rawRpc(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.RawRpcOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .raw_rpc = options,
-            },
-        );
     }
 
     pub fn getConfig(
@@ -2271,9 +2307,9 @@ pub const Driver = struct {
         switch (options) {
             .raw_rpc => |o| {
                 cancel = o.cancel;
-                res.input = try self.finalizeElem(
+                res.input = try self.buildRawRpcElement(
                     allocator,
-                    o.payload,
+                    o,
                 );
             },
             .get_config => |o| {
@@ -2643,6 +2679,70 @@ test "processFoundMessageVersion1_1" {
         defer d.allocator.free(actual_kv.?.value[1]);
 
         try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
+    }
+}
+
+test "buildRawRpcElement" {
+    const test_name = "buildRawRpcElement";
+
+    const cases = [_]struct {
+        name: []const u8,
+        version: Version,
+        options: operation.RawRpcOptions,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple-1.0",
+            .version = Version.version_1_0,
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1",
+            .version = Version.version_1_1,
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+            },
+            .expected =
+            \\#175
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
+            \\##
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = case.version;
+
+        const actual = try d.buildRawRpcElement(
+            std.testing.allocator,
+            case.options,
+        );
+        defer std.testing.allocator.free(actual);
+
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
     }
 }
 
