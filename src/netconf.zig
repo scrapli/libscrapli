@@ -287,6 +287,7 @@ pub const Driver = struct {
 
         self.messages.deinit();
 
+        // and then subscription messages
         var subscriptions_iterator = self.subscriptions.valueIterator();
         while (subscriptions_iterator.next()) |sl| {
             for (sl.items) |s| {

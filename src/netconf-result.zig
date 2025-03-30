@@ -14,7 +14,7 @@ const rpcErrorSeverityError = "error";
 
 const subscription_id_close_tag = "</subscription-id>";
 
-pub fn get_subscription_id(buf: []const u8) !?u64 {
+pub fn getSubscriptionId(buf: []const u8) !?u64 {
     const index_of_subscription_id = std.mem.indexOf(
         u8,
         buf,
@@ -52,6 +52,41 @@ pub fn get_subscription_id(buf: []const u8) !?u64 {
     }
 
     return try std.fmt.parseInt(u64, _id_buf[0.._idx], 10);
+}
+
+test "getSubscriptionId" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected: ?u64 = null,
+    }{
+        .{
+            .name = "simple-no-subscription-id",
+            .input =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>
+            ,
+        },
+        .{
+            .name = "simple-no-subscription-id",
+            .input =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><subscription-result xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications' xmlns:notif-bis="urn:ietf:params:xml:ns:yang:ietf-event-notifications">notif-bis:ok</subscription-result>
+            \\<subscription-id xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications'>2147483728</subscription-id>
+            \\</rpc-reply>
+            ,
+            .expected = 2147483728,
+        },
+    };
+
+    for (cases) |case| {
+        try std.testing.expectEqual(case.expected, try getSubscriptionId(case.input));
+    }
 }
 
 pub fn NewResult(
