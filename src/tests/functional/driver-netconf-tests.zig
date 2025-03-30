@@ -106,43 +106,17 @@ fn compareAllocatorlessCapability(
 ) bool {
     _ = context;
 
-    if (std.mem.eql(u8, a.namespace, b.namespace)) {
-        // if namespace is equal we'll compare the name, we'll almost certainly have duplicated
-        // namaespaces but *not* names
-        for (0.., a.name) |idx, char| {
-            if (idx >= b.name.len) {
-                return false;
-            }
-
-            if (char == b.name[idx]) {
-                continue;
-            }
-
-            if (char > b.name[idx]) {
-                return false;
-            }
-
-            return true;
-        }
-    } else {
-        for (0.., a.namespace) |idx, char| {
-            if (idx >= b.namespace.len) {
-                return false;
-            }
-
-            if (char == b.namespace[idx]) {
-                continue;
-            }
-
-            if (char > b.namespace[idx]) {
-                return false;
-            }
-
-            return true;
-        }
+    const ns_order = std.mem.order(u8, a.namespace, b.namespace);
+    if (ns_order != .eq) {
+        return ns_order == .lt;
     }
 
-    return false;
+    const name_order = std.mem.order(u8, a.name, b.name);
+    if (name_order != .eq) {
+        return name_order == .lt;
+    }
+
+    return std.mem.order(u8, a.revision, b.revision) == .lt;
 }
 
 test "driver-netconf open" {
@@ -256,8 +230,6 @@ test "driver-netconf open" {
         );
         defer std.testing.allocator.free(yamlable_capabilities);
 
-        // TODO we need to sort this i think otherwise we'll still get stuff out of order breaking
-        // the test (i think)
         for (0.., d.server_capabilities.?.items) |idx, cap| {
             yamlable_capabilities[idx] = allocatorlessCapability{
                 .namespace = cap.namespace,
