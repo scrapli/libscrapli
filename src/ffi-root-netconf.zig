@@ -59,8 +59,8 @@ export fn netconfPollOperation(
             operation_input_size.* = i.len;
         }
 
-        operation_result_raw_size.* = dret.getResultRawLen();
-        operation_result_size.* = dret.getResultLen();
+        operation_result_raw_size.* = dret.result_raw.len;
+        operation_result_size.* = dret.result.len;
 
         if (dret.result_failure_indicated) {
             operation_rpc_warnings_size.* = dret.getWarningsLen();
@@ -142,35 +142,14 @@ export fn netconfFetchOperation(
             @memcpy(operation_input.*[0..i.len], i);
         }
 
+        @memcpy(operation_result_raw.*, dret.result_raw);
+        @memcpy(operation_result.*, dret.result);
+
         // to avoid a pointless allocation since we are already copying from the result into the
         // given string pointers, we'll do basically the same thing the result does in normal (zig)
         // operations in getResult/getResultRaw by iterating over the underlying array list and
         // copying from there, inserting newlines between results, into the given pointer(s)
         var cur: usize = 0;
-        for (0.., dret.results_raw.items) |idx, result_raw| {
-            @memcpy(operation_result_raw.*[cur .. cur + result_raw.len], result_raw);
-            cur += result_raw.len;
-
-            if (idx != dret.results_raw.items.len - 1) {
-                operation_result_raw.*[cur] = ascii.control_chars.lf;
-                cur += 1;
-            }
-        }
-
-        cur = 0;
-
-        for (0.., dret.results.items) |idx, result| {
-            @memcpy(operation_result.*[cur .. cur + result.len], result);
-            cur += result.len;
-
-            if (idx != dret.results.items.len - 1) {
-                operation_result.*[cur] = ascii.control_chars.lf;
-                cur += 1;
-            }
-        }
-
-        cur = 0;
-
         for (0.., dret.result_warning_messages.items) |idx, warning| {
             @memcpy(operation_rpc_warnings.*[cur .. cur + warning.len], warning);
             cur += warning.len;

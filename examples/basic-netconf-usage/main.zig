@@ -126,7 +126,7 @@ pub fn main() !void {
         "{s}\n{s}\n{s}\n Completed in {d}s\n",
         .{
             banner,
-            open_result.results.items[0],
+            open_result.result,
             banner,
             open_result.elapsedTimeSeconds(),
         },
@@ -139,7 +139,7 @@ pub fn main() !void {
         "{s}\n{s}\n{s}\n Completed in {d}s\n",
         .{
             banner,
-            get_result.results.items[0],
+            get_result.result,
             banner,
             get_result.elapsedTimeSeconds(),
         },
@@ -154,7 +154,7 @@ pub fn main() !void {
         "{s}\n{s}\n{s}\n Completed in {d}s\n",
         .{
             banner,
-            get_config_result.results.items[0],
+            get_config_result.result,
             banner,
             get_config_result.elapsedTimeSeconds(),
         },
