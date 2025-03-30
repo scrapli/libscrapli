@@ -6,7 +6,7 @@ pub const Kind = enum {
     // not "standard" netconf operations, but operations for us!
     open,
     close,
-    raw,
+    raw_rpc,
 
     // rfc 4741 rpcs
     get_config,
@@ -39,7 +39,7 @@ pub const Kind = enum {
 pub const RpcOptions = union(Kind) {
     open: OpenOptions,
     close: CloseOptions,
-    raw: RawOptions,
+    raw_rpc: RawRpcOptions,
 
     get_config: GetConfigOptions,
     edit_config: EditConfigOptions,
@@ -179,7 +179,7 @@ pub const OpenOptions = operation.OpenOptions;
 
 pub const CloseOptions = operation.CloseOptions;
 
-pub const RawOptions = struct {
+pub const RawRpcOptions = struct {
     cancel: ?*bool = null,
     payload: []const u8,
     // TODO should support user providing a fully formed rpc *or* just the "inside" of the rpc tag

@@ -176,7 +176,7 @@ export fn netconfFetchOperation(
     return 0;
 }
 
-export fn netconfRaw(
+export fn netconfRawRpc(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -189,7 +189,7 @@ export fn netconfRaw(
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .raw = .{
+                    .raw_rpc = .{
                         .cancel = cancel,
                         .payload = std.mem.span(payload),
                     },

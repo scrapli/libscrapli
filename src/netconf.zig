@@ -1277,15 +1277,15 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, sink.items);
     }
 
-    pub fn raw(
+    pub fn rawRpc(
         self: *Driver,
         allocator: std.mem.Allocator,
-        options: operation.RawOptions,
+        options: operation.RawRpcOptions,
     ) !*result.Result {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .raw = options,
+                .raw_rpc = options,
             },
         );
     }
@@ -2269,7 +2269,7 @@ pub const Driver = struct {
         var cancel: ?*bool = null;
 
         switch (options) {
-            .raw => |o| {
+            .raw_rpc => |o| {
                 cancel = o.cancel;
                 res.input = try self.finalizeElem(
                     allocator,

@@ -27,7 +27,7 @@ pub const OperationOptions = struct {
         },
         netconf: union(enum) {
             open: operation.OpenOptions,
-            raw: operation_netconf.RawOptions,
+            raw_rpc: operation_netconf.RawRpcOptions,
             get_config: operation_netconf.GetConfigOptions,
             edit_config: operation_netconf.EditConfigOptions,
             copy_config: operation_netconf.CopyConfigOptions,

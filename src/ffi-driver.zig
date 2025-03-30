@@ -411,8 +411,8 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                .raw => |o| {
-                    ret_ok = rd.raw(
+                .raw_rpc => |o| {
+                    ret_ok = rd.rawRpc(
                         self.allocator,
                         o,
                     ) catch |err| blk: {
