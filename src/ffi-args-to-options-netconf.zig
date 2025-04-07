@@ -144,6 +144,26 @@ fn getFormat(format: [*c]const u8) operation.SchemaFormat {
     }
 }
 
+fn getConfigFilter(config_filter: [*c]const u8) ?bool {
+    const _config_filter = std.mem.span(config_filter);
+
+    if (std.mem.eql(
+        u8,
+        "true",
+        _config_filter,
+    )) {
+        return true;
+    } else if (std.mem.eql(
+        u8,
+        "false",
+        _config_filter,
+    )) {
+        return false;
+    }
+
+    return null;
+}
+
 pub fn GetConfigOptionsFromArgs(
     cancel: *bool,
     source: [*c]const u8,
@@ -306,9 +326,9 @@ pub fn GetDataOptionsFromArgs(
     filter_type: [*c]const u8,
     filter_namespace_prefix: [*c]const u8,
     filter_namespace: [*c]const u8,
-    config_filter: bool,
+    config_filter: [*c]const u8,
     origin_filters: [*c]const u8,
-    max_depth: i32, // TODO is uint so if we pass -1 can be null
+    max_depth: u32,
     with_origin: bool,
     defaults_type: [*c]const u8,
 ) operation.GetDataOptions {
@@ -319,12 +339,18 @@ pub fn GetDataOptionsFromArgs(
             operation.DatastoreType.running,
         ),
         .filter_type = getFilterType(filter_type),
-        .config_filter = config_filter,
-        .origin_filters = std.mem.span(origin_filters),
-        .max_depth = @intCast(max_depth),
-        .with_origin = with_origin,
+        .config_filter = getConfigFilter(config_filter),
         .defaults_type = getDefaultsType(defaults_type),
     };
+
+    if (with_origin) {
+        options.with_origin = true;
+
+        const _origin_filters = std.mem.span(origin_filters);
+        if (_origin_filters.len > 0) {
+            options.origin_filters = _origin_filters;
+        }
+    }
 
     const _filter = std.mem.span(filter);
     if (_filter.len > 0) {
@@ -339,6 +365,10 @@ pub fn GetDataOptionsFromArgs(
     const _filter_namespace = std.mem.span(filter_namespace);
     if (_filter_namespace.len > 0) {
         options.filter_namespace = _filter_namespace;
+    }
+
+    if (max_depth > 0) {
+        options.max_depth = max_depth;
     }
 
     return options;

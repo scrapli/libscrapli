@@ -1163,6 +1163,41 @@ pub const Driver = struct {
         try writer.elementEnd();
     }
 
+    // for at least get-data rpc that expects subtree-filter / xpath-filter tags rather than the
+    // "traditional" filter tag
+    fn addFilterElemExplicitTag(
+        writer: *xml.GenericWriter(error{OutOfMemory}),
+        filter: []const u8,
+        filter_type: operation.FilterType,
+        filter_namespace_prefix: ?[]const u8,
+        filter_namespace: ?[]const u8,
+    ) !void {
+        if (filter_type == operation.FilterType.subtree) {
+            try writer.elementStart("subtree-filter");
+
+            if (filter_namespace != null and filter_namespace.?.len > 0) {
+                try writer.bindNs(
+                    filter_namespace_prefix orelse "",
+                    filter_namespace.?,
+                );
+            }
+        } else {
+            try writer.elementStart("xpath-filter");
+
+            if (filter_namespace != null and filter_namespace.?.len > 0) {
+                try writer.bindNs(
+                    filter_namespace_prefix orelse "",
+                    filter_namespace.?,
+                );
+            }
+        }
+
+        // with either "outer" tag opened, we can write the filter
+        try writer.embed(filter);
+
+        // finally close out the filter tag
+        try writer.elementEnd();
+    }
     fn addTargetElem(
         writer: *xml.GenericWriter(error{OutOfMemory}),
         target: []const u8,
@@ -2112,7 +2147,7 @@ pub const Driver = struct {
         try writer.elementEnd();
 
         if (options.filter != null and options.filter.?.len > 0) {
-            try Driver.addFilterElem(
+            try Driver.addFilterElemExplicitTag(
                 &writer,
                 options.filter.?,
                 options.filter_type,
@@ -2121,13 +2156,15 @@ pub const Driver = struct {
             );
         }
 
-        try writer.elementStart("config-filter");
-        if (options.config_filter) {
-            try writer.text("true");
-        } else {
-            try writer.text("false");
+        if (options.config_filter) |cf| {
+            try writer.elementStart("config-filter");
+            if (cf) {
+                try writer.text("true");
+            } else {
+                try writer.text("false");
+            }
+            try writer.elementEnd();
         }
-        try writer.elementEnd();
 
         if (options.origin_filters != null and options.origin_filters.?.len > 0) {
             try writer.embed(options.origin_filters.?);

@@ -272,7 +272,7 @@ pub const GetDataOptions = struct {
     filter_type: FilterType = FilterType.subtree,
     filter_namespace_prefix: ?[]const u8 = null,
     filter_namespace: ?[]const u8 = null,
-    config_filter: bool = true,
+    config_filter: ?bool = null,
     // TODO check if this should/could be typed or if it makes more sense to leave as a str
     origin_filters: ?[]const u8 = null,
     max_depth: ?u32 = null,

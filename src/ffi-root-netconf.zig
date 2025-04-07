@@ -737,8 +737,8 @@ export fn netconfGetData(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
-    config_filter: bool,
-    max_depth: i32, // TODO is uint so if we pass -1 can be null
+    config_filter: [*c]const u8,
+    max_depth: u32,
     with_origin: bool,
     datastore: [*c]const u8,
     filter: [*c]const u8,
