@@ -134,7 +134,8 @@ pub const Options = struct {
 };
 
 const RelevantCapabilities = struct {
-    // TODO datastores, with defaults, etc. etc.
+    // TODO datastores, with defaults, etc. etc. and actually maybe ingore these onse since i gave
+    // up on dealing w/ supporting all the stuff for them
     rfc5277_event_notifications: bool = false,
     rfc8639_subscribed_notifications: bool = false,
 };
@@ -152,6 +153,7 @@ pub const Driver = struct {
     server_capabilities: ?std.ArrayList(Capability),
     relevant_capabilities: RelevantCapabilities,
     negotiated_version: Version,
+    session_id: ?u64,
 
     process_thread: ?std.Thread,
     process_stop: std.atomic.Value(ProcessThreadState),
@@ -229,6 +231,7 @@ pub const Driver = struct {
             .server_capabilities = std.ArrayList(Capability).init(allocator),
             .relevant_capabilities = RelevantCapabilities{},
             .negotiated_version = Version.version_1_0,
+            .session_id = null,
 
             .process_thread = null,
             .process_stop = std.atomic.Value(ProcessThreadState).init(
@@ -573,7 +576,23 @@ pub const Driver = struct {
                 .eof => break,
                 .element_start => {
                     const element_name = xml_reader.elementNameNs();
-                    if (!std.mem.eql(u8, element_name.local, "capability")) {
+
+                    if (std.mem.eql(u8, element_name.local, "session-id")) {
+                        const inner_node = try xml_reader.read();
+                        switch (inner_node) {
+                            .text => {
+                                const text_content = try xml_reader.text();
+                                self.session_id = try std.fmt.parseInt(
+                                    u64,
+                                    text_content,
+                                    10,
+                                );
+                            },
+                            else => {},
+                        }
+
+                        continue;
+                    } else if (!std.mem.eql(u8, element_name.local, "capability")) {
                         continue;
                     }
 
@@ -2253,7 +2272,10 @@ pub const Driver = struct {
             .{options.datastore.toString()},
         ));
         try writer.elementEnd();
+
+        try writer.elementStart("config");
         try writer.embed(options.edit_content);
+        try writer.elementEnd();
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -3655,7 +3677,7 @@ test "builEditDataElem" {
             .version = Version.version_1_0,
             .options = .{ .edit_content = "foo" },
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore>foo</edit-data></rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></rpc>
             \\]]>]]>
             ,
         },
@@ -3664,8 +3686,8 @@ test "builEditDataElem" {
             .version = Version.version_1_1,
             .options = .{ .edit_content = "foo" },
             .expected =
-            \\#282
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore>foo</edit-data></rpc>
+            \\#299
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></rpc>
             \\##
             ,
         },

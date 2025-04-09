@@ -176,6 +176,21 @@ export fn netconfFetchOperation(
     return 0;
 }
 
+export fn netconfGetSessionID(
+    d_ptr: usize,
+    session_id: *u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    if (d.real_driver.netconf.session_id) |s| {
+        session_id.* = s;
+
+        return 0;
+    }
+
+    return 1;
+}
+
 export fn netconfRawRpc(
     d_ptr: usize,
     operation_id: *u32,
