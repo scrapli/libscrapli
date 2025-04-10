@@ -159,7 +159,7 @@ export fn waitOperation(
         } else {
             const dret = switch (ret.result) {
                 .cli => |r| r.?,
-                else => @panic("attempting to access non driver result from driver type"),
+                else => @panic("attempting to access non cli result from cli type"),
             };
 
             operation_input_size.* = dret.getInputLen();
@@ -218,7 +218,7 @@ export fn fetchOperation(
     if (ret.err != null) {
         const err_name = @errorName(ret.err.?);
 
-        @memcpy(operation_error.*.ptr, err_name);
+        @memcpy(operation_error.*, err_name);
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,

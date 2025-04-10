@@ -277,7 +277,7 @@ pub const FfiDriver = struct {
             const rd = switch (self.real_driver) {
                 .cli => |d| d,
                 else => {
-                    @panic("netconf operation loop executed, but driver is not netconf");
+                    @panic("cli operation loop executed, but driver is not cli");
                 },
             };
 
