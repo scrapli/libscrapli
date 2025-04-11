@@ -10,6 +10,8 @@ const logging = @import("logging.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
 
+// TODO, again here gotta clean up from "driver" -> cli/netconf also should move the allocs for
+//  the specific driver types to their respective pacakge
 // TODO dont do this shit, just figure out including more shit in build.zig
 pub export const _force_include_apply_options = &ffi_apply_options.noop;
 pub export const _force_include_root_driver = &ffi_root_cli.noop;

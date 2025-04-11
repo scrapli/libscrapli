@@ -315,10 +315,20 @@ pub const Driver = struct {
             ),
         );
 
-        self.current_mode = try mode.determineMode(
+        self.current_mode = mode.determineMode(
             self.definition.modes,
             res.results.items[0],
-        );
+        ) catch |err| {
+            self.log.critical(
+                "failed determining prompt from '{s}' | {d}\n",
+                .{
+                    res.results.items[0],
+                    res.results.items[0],
+                },
+            );
+
+            return err;
+        };
 
         if (std.mem.eql(u8, self.current_mode, options.requested_mode)) {
             return res;
