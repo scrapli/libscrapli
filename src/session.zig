@@ -813,7 +813,6 @@ pub const Session = struct {
 
         try self.write(input, false);
 
-        // TODO this saftey is/was a lie lol, ingore case does *not*
         // SAFETY: will always be set or we'll error
         var match_indexes: MatchPositions = undefined;
 
@@ -837,7 +836,11 @@ pub const Session = struct {
                 );
             },
             operation.InputHandling.ignore => {
-                // ignore, not reading input
+                // ignore, not reading input; to not break our saftey rule above we return here
+                // when in "ignore" handling mode
+                try self.writeReturn();
+
+                return MatchPositions{ .start = 0, .end = 0 };
             },
         }
 
