@@ -426,7 +426,7 @@ export fn setDriverOptionAuthPassphrasePattern(
 
     switch (d.real_driver) {
         .cli => |rd| {
-            rd.options.auth.passphrase_pattern = rd.options.auth.allocator.dupe(
+            rd.options.auth.private_key_passphrase_pattern = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
             ) catch {
@@ -434,7 +434,7 @@ export fn setDriverOptionAuthPassphrasePattern(
             };
         },
         .netconf => |rd| {
-            rd.options.auth.passphrase_pattern = rd.options.auth.allocator.dupe(
+            rd.options.auth.private_key_passphrase_pattern = rd.options.auth.allocator.dupe(
                 u8,
                 std.mem.span(value),
             ) catch {

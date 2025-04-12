@@ -179,7 +179,7 @@ pub const Session = struct {
 
     compiled_username_pattern: ?*pcre2.pcre2_code_8,
     compiled_password_pattern: ?*pcre2.pcre2_code_8,
-    compiled_passphrase_pattern: ?*pcre2.pcre2_code_8,
+    compiled_private_key_passphrase_pattern: ?*pcre2.pcre2_code_8,
 
     prompt_pattern: []const u8,
     compiled_prompt_pattern: ?*pcre2.pcre2_code_8,
@@ -237,7 +237,7 @@ pub const Session = struct {
             .recorder = recorder,
             .compiled_username_pattern = null,
             .compiled_password_pattern = null,
-            .compiled_passphrase_pattern = null,
+            .compiled_private_key_passphrase_pattern = null,
             .prompt_pattern = prompt_pattern,
             .compiled_prompt_pattern = null,
             .last_consumed_prompt = std.ArrayList(u8).init(allocator),
@@ -264,11 +264,13 @@ pub const Session = struct {
             return error.InitFailed;
         }
 
-        s.compiled_passphrase_pattern = re.pcre2Compile(s.auth_options.passphrase_pattern);
-        if (s.compiled_passphrase_pattern == null) {
+        s.compiled_private_key_passphrase_pattern = re.pcre2Compile(
+            s.auth_options.private_key_passphrase_pattern,
+        );
+        if (s.compiled_private_key_passphrase_pattern == null) {
             s.log.critical(
                 "failed compling passphrase pattern {s}",
-                .{s.auth_options.passphrase_pattern},
+                .{s.auth_options.private_key_passphrase_pattern},
             );
 
             return error.InitFailed;
@@ -304,8 +306,8 @@ pub const Session = struct {
             re.pcre2Free(self.compiled_password_pattern.?);
         }
 
-        if (self.compiled_passphrase_pattern != null) {
-            re.pcre2Free(self.compiled_passphrase_pattern.?);
+        if (self.compiled_private_key_passphrase_pattern != null) {
+            re.pcre2Free(self.compiled_private_key_passphrase_pattern.?);
         }
 
         if (self.compiled_prompt_pattern != null) {
@@ -559,7 +561,7 @@ pub const Session = struct {
                 self.compiled_prompt_pattern,
                 self.compiled_username_pattern,
                 self.compiled_password_pattern,
-                self.compiled_passphrase_pattern,
+                self.compiled_private_key_passphrase_pattern,
             );
 
             switch (state) {
