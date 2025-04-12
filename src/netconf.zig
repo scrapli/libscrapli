@@ -7,6 +7,7 @@ const operation = @import("netconf-operation.zig");
 const result = @import("netconf-result.zig");
 const ascii = @import("ascii.zig");
 const xml = @import("xml");
+const errors = @import("errors.zig");
 const test_helper = @import("test-helper.zig");
 
 const ProcessThreadState = enum(u8) {
@@ -199,7 +200,7 @@ pub const Driver = struct {
                 // nothing to do for test transport, but its "allowed" so dont return an error
             },
             else => {
-                return error.UnsupportedTransport;
+                return errors.ScrapliError.UnsupportedTransport;
             },
         }
 
@@ -362,7 +363,7 @@ pub const Driver = struct {
                     "<hello ",
                 );
                 if (cap_start_index == null) {
-                    return error.CapabilitiesExchange;
+                    return errors.ScrapliError.CapabilitiesError;
                 }
 
                 // session will have read up to (and consumed) the prompt (]]>]]> at this point),
@@ -373,7 +374,7 @@ pub const Driver = struct {
                     "/hello>",
                 );
                 if (cap_end_index == null) {
-                    return error.CapabilitiesExchange;
+                    return errors.ScrapliError.CapabilitiesError;
                 }
 
                 cap_buf = try allocator.dupe(
@@ -428,7 +429,7 @@ pub const Driver = struct {
                 .{err},
             );
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
 
         return res;
@@ -482,7 +483,7 @@ pub const Driver = struct {
             if (options.cancel != null and options.cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -492,7 +493,7 @@ pub const Driver = struct {
             {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.Timeout;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const n = self.session.read(_read_cap_buf);
@@ -683,7 +684,7 @@ pub const Driver = struct {
         revision: ?[]const u8,
     ) !bool {
         if (self.server_capabilities == null) {
-            return error.CapabilitiesNotProcessed;
+            return errors.ScrapliError.CapabilitiesError;
         }
 
         for (self.server_capabilities.?.items) |cap| {
@@ -727,7 +728,9 @@ pub const Driver = struct {
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
-            return error.CapabilitiesExchange;
+            self.log.critical("capabilities negotiation failed", .{});
+
+            return errors.ScrapliError.CapabilitiesError;
         }
 
         if (self.options.preferred_version == null) {
@@ -741,14 +744,18 @@ pub const Driver = struct {
                     self.negotiated_version = Version.version_1_0;
                 }
 
-                return error.PreferredCapabilityUnavailable;
+                self.log.critical("preferred capability unavailable", .{});
+
+                return errors.ScrapliError.CapabilitiesError;
             },
             Version.version_1_1 => {
                 if (hasVersion_1_1) {
                     self.negotiated_version = Version.version_1_1;
                 }
 
-                return error.PreferredCapabilityUnavailable;
+                self.log.critical("preferred capability unavailable", .{});
+
+                return errors.ScrapliError.CapabilitiesError;
             },
         }
     }
@@ -1022,7 +1029,7 @@ pub const Driver = struct {
             if (buf[iter_idx] != ascii.control_chars.hash_char) {
                 // we *must* have found a hash indicating a chunk size, but we didn't something
                 // is wrong
-                return error.ParseNetconf11ResponseFailed;
+                return errors.ScrapliError.ParsingError;
             }
 
             iter_idx += 1;
@@ -1084,7 +1091,7 @@ pub const Driver = struct {
             }
 
             if (chunk_size == 0) {
-                return error.ParseNetconf11ResponseFailed;
+                return errors.ScrapliError.ParsingError;
             }
 
             var counted_chunk_iter: usize = 0;
@@ -1139,7 +1146,7 @@ pub const Driver = struct {
         if (cancel != null and cancel.?.*) {
             self.log.critical("operation cancelled", .{});
 
-            return error.Cancelled;
+            return errors.ScrapliError.Cancelled;
         }
 
         const elapsed_time = timer.read();
@@ -1151,7 +1158,7 @@ pub const Driver = struct {
         {
             self.log.critical("op timeout exceeded", .{});
 
-            return error.Timeout;
+            return errors.ScrapliError.RegexError;
         }
     }
 
@@ -2490,7 +2497,7 @@ pub const Driver = struct {
                     o,
                 );
             },
-            else => return error.UnsupportedOperation,
+            else => return errors.ScrapliError.UnsupportedOperation,
         }
 
         // before sending increment, but remember that in sendRpc we need to check for the

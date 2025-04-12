@@ -1,4 +1,5 @@
 const std = @import("std");
+const errors = @import("errors.zig");
 
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
@@ -16,14 +17,14 @@ const c = @cImport({
 pub fn setNonBlocking(fd: std.posix.fd_t) !void {
     var got_flags = c.fcntl(fd, c.F_GETFL);
     if (got_flags == -1) {
-        return error.PosixCallFailure;
+        return errors.ScrapliError.SetNonBlockingFailed;
     }
 
     got_flags |= c.O_NONBLOCK;
 
     const set_flags_ret = c.fcntl(fd, c.F_SETFL, got_flags);
     if (set_flags_ret == -1) {
-        return error.PosixCallFailure;
+        return errors.ScrapliError.SetNonBlockingFailed;
     }
 }
 

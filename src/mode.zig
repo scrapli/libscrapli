@@ -1,6 +1,7 @@
 const std = @import("std");
 const re = @import("re.zig");
 const hashmaps = @import("hashmaps.zig");
+const errors = @import("errors.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
@@ -63,7 +64,7 @@ pub const Mode = struct {
             const compiled = re.pcre2Compile(pattern);
 
             if (compiled == null) {
-                return error.RegexError;
+                return errors.ScrapliError.RegexError;
             }
 
             m.compiled_prompt_pattern = compiled;
@@ -245,7 +246,7 @@ pub fn determineMode(
         }
     }
 
-    return error.UnknownMode;
+    return errors.ScrapliError.UnknownMode;
 }
 
 test "determineMode" {

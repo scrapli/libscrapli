@@ -1,6 +1,7 @@
 const std = @import("std");
 const bytes = @import("bytes.zig");
 const re = @import("re.zig");
+const errors = @import("errors.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
@@ -183,7 +184,7 @@ pub const Options = struct {
         }
 
         if (self.lookups == null) {
-            return error.LookupFailure;
+            return errors.ScrapliError.LookupFailed;
         }
 
         var default_idx: ?usize = null;
@@ -204,7 +205,7 @@ pub const Options = struct {
             return self.lookups.?[default_idx.?].value;
         }
 
-        return error.LookupFailure;
+        return errors.ScrapliError.LookupFailed;
     }
 };
 
@@ -267,9 +268,9 @@ const openMessageErrorSubstrings = [_][]const u8{
     "too many authentication failures",
 };
 
-fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
+pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
     const copied_buf = allocator.alloc(u8, buf.len) catch {
-        return error.OpenFailedMessageHandler;
+        return errors.ScrapliError.OpenFailed;
     };
     defer allocator.free(copied_buf);
 
@@ -279,7 +280,7 @@ fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
 
     for (openMessageErrorSubstrings) |needle| {
         if (std.mem.indexOf(u8, copied_buf, needle) != null) {
-            return error.OpenFailedMessageHandler;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 }
@@ -360,7 +361,7 @@ test "openMessageHandler" {
     for (cases) |case| {
         if (case.expect_error) {
             try std.testing.expectError(
-                error.OpenFailedMessageHandler,
+                errors.ScrapliError.OpenFailed,
                 openMessageHandler(
                     std.testing.allocator,
                     case.haystack,

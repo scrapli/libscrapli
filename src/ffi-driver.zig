@@ -5,11 +5,11 @@ const netconf = @import("netconf.zig");
 const result = @import("cli-result.zig");
 const result_netconf = @import("netconf-result.zig");
 const logging = @import("logging.zig");
+const errors = @import("errors.zig");
 
 const ffi_operations = @import("ffi-operations.zig");
 
 pub const operation_thread_ready_sleep: u64 = 2_500;
-const poll_operation_sleep: u64 = 250_000;
 
 pub const RealDriver = union(enum) {
     cli: *cli.Driver,
@@ -181,7 +181,7 @@ pub const FfiDriver = struct {
                         .{err},
                     );
 
-                    return error.OpenFailed;
+                    return errors.ScrapliError.OpenFailed;
                 };
             },
             .netconf => {
@@ -196,7 +196,7 @@ pub const FfiDriver = struct {
                         .{err},
                     );
 
-                    return error.OpenFailed;
+                    return errors.ScrapliError.OpenFailed;
                 };
             },
         }
@@ -615,7 +615,7 @@ pub const FfiDriver = struct {
         defer self.operation_lock.unlock();
 
         if (!self.operation_results.contains(operation_id)) {
-            return error.BadId;
+            return errors.ScrapliError.BadOperationId;
         }
 
         const ret = self.operation_results.get(operation_id);

@@ -1,4 +1,5 @@
 const std = @import("std");
+const errors = @import("errors.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
@@ -98,14 +99,14 @@ pub fn pcre2Find(
             err_message_buf[0..@intCast(err_message_len)],
         });
 
-        return error.UtilFailed;
+        return errors.ScrapliError.RegexError;
     } else if (rc == 0) {
         std.log.err(
             "match vectors was not big enough for all captured substrings",
             .{},
         );
 
-        return error.UtilFailed;
+        return errors.ScrapliError.RegexError;
     }
 
     const match_vectors = pcre2.pcre2_get_ovector_pointer_8(matches);
@@ -113,7 +114,7 @@ pub fn pcre2Find(
     if (match_vectors[0] > match_vectors[1]) {
         std.log.err("match vectors first match pointers invalid", .{});
 
-        return error.UtilFailed;
+        return errors.ScrapliError.RegexError;
     }
 
     const match = haystack[match_vectors[0]..match_vectors[1]];
@@ -139,7 +140,7 @@ test "pcre2Find" {
     for (cases) |case| {
         const compiled_pattern = pcre2Compile(case.pattern);
         if (compiled_pattern == null) {
-            return error.CompilePromptPatternFailed;
+            return errors.ScrapliError.RegexError;
         }
 
         defer pcre2Free(compiled_pattern.?);
@@ -192,14 +193,14 @@ pub fn pcre2FindIndex(
             err_message_buf[0..@intCast(err_message_len)],
         });
 
-        return error.UtilFailed;
+        return errors.ScrapliError.RegexError;
     } else if (rc == 0) {
         std.log.err(
             "match vectors was not big enough for all captured substrings",
             .{},
         );
 
-        return error.UtilFailed;
+        return errors.ScrapliError.RegexError;
     }
 
     const match_vectors = pcre2.pcre2_get_ovector_pointer_8(matches);
@@ -207,7 +208,7 @@ pub fn pcre2FindIndex(
     if (match_vectors[0] > match_vectors[1]) {
         std.log.err("match vectors first match pointers invalid", .{});
 
-        return error.UtilFailed;
+        return errors.ScrapliError.RegexError;
     }
 
     return [2]usize{ match_vectors[0], match_vectors[1] };

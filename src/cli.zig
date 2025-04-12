@@ -7,6 +7,7 @@ const platform = @import("platform.zig");
 const operation = @import("cli-operation.zig");
 const mode = @import("mode.zig");
 const result = @import("cli-result.zig");
+const errors = @import("errors.zig");
 
 const default_ssh_port: u16 = 22;
 const default_telnet_port: u16 = 23;
@@ -353,14 +354,14 @@ pub const Driver = struct {
 
             const step_mode = self.definition.modes.get(step);
             if (step_mode == null) {
-                return error.UnknownMode;
+                return errors.ScrapliError.UnknownMode;
             }
 
             const next_mode_name = steps.items[step_idx + 1];
 
             const next_operation = step_mode.?.accessible_modes.get(next_mode_name);
             if (next_operation == null) {
-                return error.UnknownMode;
+                return errors.ScrapliError.UnknownMode;
             }
 
             for (next_operation.?) |op| {

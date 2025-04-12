@@ -1,6 +1,7 @@
 const std = @import("std");
 const auth = @import("auth.zig");
 const logging = @import("logging.zig");
+const errors = @import("errors.zig");
 
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
@@ -151,7 +152,7 @@ pub const Transport = struct {
         if (rc != 0) {
             log.critical("failed initializing ssh2", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
 
         const t = try allocator.create(Transport);
@@ -247,14 +248,14 @@ pub const Transport = struct {
         ) catch |err| {
             self.log.critical("failed initializing resolved addresses, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
         defer resolved_addresses.deinit();
 
         if (resolved_addresses.addrs.len == 0) {
             self.log.critical("failed resolving any address for host '{s}'", .{host});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
 
         // TODO should try all address families/resolved addresses at some point -- we do this in
@@ -266,7 +267,7 @@ pub const Transport = struct {
         ) catch |err| {
             self.log.critical("failed initializing socket, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
 
         std.posix.connect(
@@ -276,7 +277,7 @@ pub const Transport = struct {
         ) catch |err| {
             self.log.critical("failed connecting socket, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
     }
 
@@ -295,7 +296,7 @@ pub const Transport = struct {
         if (self.session == null) {
             self.log.critical("failed creating libssh2 session", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
 
         // set blocking status (0 non-block, 1 block)
@@ -319,7 +320,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -327,7 +328,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const rc = ssh2.libssh2_session_handshake(self.session, self.socket.?);
@@ -342,7 +343,7 @@ pub const Transport = struct {
 
             self.log.critical("failed session handshake", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 
@@ -356,7 +357,7 @@ pub const Transport = struct {
         const _username = self.allocator.dupeZ(u8, auth_options.username.?) catch |err| {
             self.log.critical("failed casting username to c string, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
         defer self.allocator.free(_username);
 
@@ -391,7 +392,7 @@ pub const Transport = struct {
             ) catch |err| {
                 self.log.critical("failed casting password to c string, err: {}", .{err});
 
-                return error.OpenFailed;
+                return errors.ScrapliError.OpenFailed;
             };
             defer self.allocator.free(_password);
             self.auth_callback_data.password = _password;
@@ -418,7 +419,7 @@ pub const Transport = struct {
             }
         }
 
-        return error.NoMoreAuthenticationmethods;
+        return errors.ScrapliError.AuthenticationFailed;
     }
 
     fn isAuthenticated(
@@ -431,7 +432,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -439,7 +440,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const rc = ssh2.libssh2_userauth_authenticated(self.session);
@@ -472,7 +473,7 @@ pub const Transport = struct {
         ) catch |err| {
             self.log.critical("failed casting private key path to c string, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
         defer self.allocator.free(_private_key_path);
 
@@ -498,7 +499,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -506,7 +507,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             // -18 rc == "failed" (key auth not supported)
@@ -530,7 +531,7 @@ pub const Transport = struct {
 
             self.log.critical("failed private key authentication", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 
@@ -545,7 +546,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -553,7 +554,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const rc = ssh2.libssh2_userauth_keyboard_interactive_ex(
@@ -573,7 +574,7 @@ pub const Transport = struct {
 
             self.log.critical("failed keyboard interactive authentication", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 
@@ -591,7 +592,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -599,7 +600,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const rc = ssh2.libssh2_userauth_password_ex(
@@ -621,7 +622,7 @@ pub const Transport = struct {
 
             self.log.critical("failed password authentication, will try keyboard interactive", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 
@@ -635,7 +636,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -643,7 +644,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const channel = libssh2ChannelOpenSession(self.session);
@@ -664,7 +665,7 @@ pub const Transport = struct {
 
             self.log.critical("failed opening session channel", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 
@@ -678,7 +679,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -686,7 +687,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const rc = libssh2_channel_request_pty(self.channel);
@@ -701,7 +702,7 @@ pub const Transport = struct {
 
             self.log.critical("failed requesting pty", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 
@@ -715,7 +716,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -723,7 +724,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const rc = libssh2ChannelProcessStartup(
@@ -741,7 +742,7 @@ pub const Transport = struct {
 
             self.log.critical("failed requesting shell", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 
@@ -769,13 +770,13 @@ pub const Transport = struct {
         }
 
         if (n < 0) {
-            return error.WriteFailed;
+            return errors.ScrapliError.WriteFailed;
         }
 
         if (n != buf.len) {
             self.log.critical("wrote {d} bytes, expected to write {d}", .{ n, buf.len });
 
-            return error.WriteFailed;
+            return errors.ScrapliError.WriteFailed;
         }
     }
 
@@ -796,7 +797,7 @@ pub const Transport = struct {
         }
 
         if (n < 0) {
-            return error.ReadFailed;
+            return errors.ScrapliError.ReadFailed;
         }
 
         return @intCast(n);

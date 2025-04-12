@@ -1,5 +1,6 @@
 const std = @import("std");
 const file = @import("file.zig");
+const errors = @import("errors.zig");
 
 pub const OptionsInputs = struct {
     f: ?[]const u8 = null,
@@ -87,7 +88,7 @@ pub const Transport = struct {
                     return 0;
                 },
                 else => {
-                    return error.ReadFailed;
+                    return errors.ScrapliError.ReadFailed;
                 },
             }
         };
