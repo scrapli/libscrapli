@@ -213,8 +213,6 @@ pub const FfiDriver = struct {
     }
 
     pub fn close(self: *FfiDriver, cancel: *bool) !void {
-        // TODO this is no longer the case i think, we *should* be returning the result data from
-        //   a close operation.
         // in ffi land the wrapper (py/go/whatever) deals with on open/close so in the case of close
         // there is no point sending any string content back because there will be none (this is
         // in contrast to open where there may be login/auth content!)
@@ -636,32 +634,6 @@ pub const FfiDriver = struct {
         }
 
         return ret.?;
-    }
-
-    /// Wait for an enqueued operation to complete.
-    pub fn waitOperation(
-        self: *FfiDriver,
-        operation_id: u32,
-        poll_interval: u64,
-    ) !void {
-        var sleep_interval = poll_operation_sleep;
-        if (poll_interval > 0) {
-            sleep_interval = poll_interval;
-        }
-
-        while (true) {
-            const ret = try self.pollOperation(
-                operation_id,
-                false,
-            );
-
-            if (!ret.done) {
-                std.time.sleep(sleep_interval);
-                continue;
-            }
-
-            return;
-        }
     }
 
     pub fn queueOperation(
