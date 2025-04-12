@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
@@ -34,15 +35,26 @@ pub const std_options = std.Options{
     },
 };
 
-// TODO should ensure that we use std page alloc for release/debug for test
-// std page allocator
-// const allocator = std.heap.page_allocator;
+const is_debug_build = builtin.mode == .Debug;
 
-// gpa for testing allocs
-var debug_allocator = std.heap.DebugAllocator(.{}){};
-const allocator = debug_allocator.allocator();
+var debug_allocator = if (is_debug_build)
+    std.heap.DebugAllocator(.{}){}
+else
+    null;
+
+pub const allocator = switch (builtin.mode) {
+    .Debug,
+    => blk: {
+        break :blk debug_allocator.allocator();
+    },
+    .ReleaseSafe, .ReleaseFast, .ReleaseSmall => std.heap.page_allocator,
+};
 
 export fn assertNoLeaks() bool {
+    if (!is_debug_build) {
+        return false;
+    }
+
     switch (debug_allocator.deinit()) {
         .leak => return false,
         .ok => return true,
