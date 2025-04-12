@@ -9,6 +9,7 @@ const mode = @import("../../mode.zig");
 const flags = @import("../../flags.zig");
 const ascii = @import("../../ascii.zig");
 const file = @import("../../file.zig");
+const errors = @import("../../errors.zig");
 const result = @import("../../cli-result.zig");
 
 const helper = @import("../../test-helper.zig");
@@ -314,7 +315,7 @@ test "driver open-timeout" {
     defer d.deinit();
 
     try std.testing.expectError(
-        error.AuthenicationTimeoutExceeded,
+        errors.ScrapliError.TimeoutExceeded,
         d.open(std.testing.allocator, .{}),
     );
 }
@@ -508,7 +509,7 @@ test "driver get-prompt-timeout" {
     d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
 
     try std.testing.expectError(
-        error.Timeout,
+        errors.ScrapliError.TimeoutExceeded,
         d.getPrompt(
             std.testing.allocator,
             .{},
@@ -704,7 +705,7 @@ test "driver enter-mode-timeout" {
     d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
 
     try std.testing.expectError(
-        error.Timeout,
+        errors.ScrapliError.TimeoutExceeded,
         d.enterMode(
             std.testing.allocator,
             .{ .requested_mode = "configuration" },
@@ -950,7 +951,7 @@ test "driver send-input-timeout" {
         d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
 
         try std.testing.expectError(
-            error.Timeout,
+            errors.ScrapliError.TimeoutExceeded,
             d.sendInput(
                 std.testing.allocator,
                 .{
@@ -1207,7 +1208,7 @@ test "driver send-inputs-timeout" {
         d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
 
         try std.testing.expectError(
-            error.Timeout,
+            errors.ScrapliError.TimeoutExceeded,
             d.sendInputs(
                 std.testing.allocator,
                 .{
@@ -1542,7 +1543,7 @@ test "driver send-prompted-input-cancellation" {
         d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
 
         try std.testing.expectError(
-            error.Timeout,
+            errors.ScrapliError.TimeoutExceeded,
             d.sendPromptedInput(
                 std.testing.allocator,
                 .{
