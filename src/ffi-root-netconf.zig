@@ -71,17 +71,6 @@ export fn netconfPollOperation(
     return 0;
 }
 
-// TODO ofc, only needed for python sync (not go, not py async), so lower prio
-export fn netconfWaitOperation(
-    d_ptr: usize,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    _ = d;
-
-    return 0;
-}
-
 export fn netconfFetchOperation(
     d_ptr: usize,
     operation_id: u32,
@@ -746,21 +735,19 @@ export fn netconfGetSchema(
     return 0;
 }
 
-// TODO would be nice to order things nicer (as in the same order as the options see purego issue:
-// https://github.com/ebitengine/purego/issues/309
 export fn netconfGetData(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
-    config_filter: [*c]const u8,
-    max_depth: u32,
-    with_origin: bool,
     datastore: [*c]const u8,
     filter: [*c]const u8,
     filter_type: [*c]const u8,
     filter_namespace_prefix: [*c]const u8,
     filter_namespace: [*c]const u8,
+    config_filter: [*c]const u8,
     origin_filters: [*c]const u8,
+    max_depth: u32,
+    with_origin: bool,
     defaults_type: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
