@@ -20,6 +20,7 @@ pub const OperationOptions = struct {
     operation: union(enum) {
         cli: union(enum) {
             open: operation.OpenOptions,
+            close: operation.CloseOptions,
             enter_mode: operation.EnterModeOptions,
             get_prompt: operation.GetPromptOptions,
             send_input: operation.SendInputOptions,
@@ -27,6 +28,7 @@ pub const OperationOptions = struct {
         },
         netconf: union(enum) {
             open: operation.OpenOptions,
+            close: operation.CloseOptions,
             raw_rpc: operation_netconf.RawRpcOptions,
             get_config: operation_netconf.GetConfigOptions,
             edit_config: operation_netconf.EditConfigOptions,

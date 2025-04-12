@@ -212,28 +212,6 @@ pub const FfiDriver = struct {
         }
     }
 
-    pub fn close(self: *FfiDriver, cancel: *bool) !void {
-        // in ffi land the wrapper (py/go/whatever) deals with on open/close so in the case of close
-        // there is no point sending any string content back because there will be none (this is
-        // in contrast to open where there may be login/auth content!)
-        switch (self.real_driver) {
-            .cli => |d| {
-                const close_res = try d.close(
-                    self.allocator,
-                    .{ .cancel = cancel },
-                );
-                close_res.deinit();
-            },
-            .netconf => |d| {
-                const close_res = try d.close(
-                    self.allocator,
-                    .{ .cancel = cancel },
-                );
-                close_res.deinit();
-            },
-        }
-    }
-
     /// The operation loop is the "thing" that actually invokes user requested functions by popping
     /// the requested operations from the operation queue. This ensures that all operations are done
     /// sequentially (and in theory this is more or less thread safe?). The loop idea itself came
@@ -282,6 +260,15 @@ pub const FfiDriver = struct {
             switch (op.?.operation.cli) {
                 .open => |o| {
                     ret_ok = rd.open(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .close => |o| {
+                    ret_ok = rd.close(
                         self.allocator,
                         o,
                     ) catch |err| blk: {
@@ -402,6 +389,15 @@ pub const FfiDriver = struct {
             switch (op.?.operation.netconf) {
                 .open => |o| {
                     ret_ok = rd.open(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .close => |o| {
+                    ret_ok = rd.close(
                         self.allocator,
                         o,
                     ) catch |err| blk: {

@@ -259,24 +259,63 @@ export fn openDriver(
 /// Closes the driver, does *not* free/deinit.
 export fn closeDriver(
     d_ptr: usize,
+    operation_id: *u32,
     cancel: *bool,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.close(cancel) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during driver close {any}",
-            .{err},
-        );
+    switch (d.real_driver) {
+        .cli => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .id = 0,
+                    .operation = .{
+                        .cli = .{
+                            .close = .{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue close {any}",
+                    .{err},
+                );
 
-        return 1;
-    };
+                return 1;
+            };
+        },
+        .netconf => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .id = 0,
+                    .operation = .{
+                        .netconf = .{
+                            .close = .{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue close {any}",
+                    .{err},
+                );
+
+                return 1;
+            };
+        },
+    }
 
     return 0;
 }
 
-/// Reads from the driver's session, bypassing the "driver" itself, use with care.
+/// Reads from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
+/// ffi-driver operation loop entirely.
 export fn readSession(
     d_ptr: usize,
     buf: *[]u8,
@@ -303,7 +342,8 @@ export fn readSession(
     return 0;
 }
 
-/// Writes from the driver's session, bypassing the "driver" itself, use with care.
+/// Writes from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
+/// ffi-driver operation loop entirely.
 export fn writeSession(
     d_ptr: usize,
     buf: [*c]const u8,
