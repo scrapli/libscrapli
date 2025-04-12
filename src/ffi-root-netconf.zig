@@ -10,7 +10,7 @@ const ascii = @import("ascii.zig");
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
 
-export fn netconfPollOperation(
+export fn ls_netconf_poll_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
@@ -71,7 +71,7 @@ export fn netconfPollOperation(
     return 0;
 }
 
-export fn netconfFetchOperation(
+export fn ls_netconf_fetch_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_start_time: *u64,
@@ -165,7 +165,7 @@ export fn netconfFetchOperation(
     return 0;
 }
 
-export fn netconfGetSessionID(
+export fn ls_netconf_get_session_id(
     d_ptr: usize,
     session_id: *u64,
 ) u8 {
@@ -180,7 +180,7 @@ export fn netconfGetSessionID(
     return 1;
 }
 
-export fn netconfRawRpc(
+export fn ls_netconf_raw_rpc(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -215,7 +215,7 @@ export fn netconfRawRpc(
     return 0;
 }
 
-export fn netconfGetConfig(
+export fn ls_netconf_get_config(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -262,7 +262,7 @@ export fn netconfGetConfig(
     return 0;
 }
 
-export fn netconfEditConfig(
+export fn ls_netconf_edit_config(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -301,7 +301,7 @@ export fn netconfEditConfig(
     return 0;
 }
 
-export fn netconfCopyConfig(
+export fn ls_netconf_copy_config(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -340,7 +340,7 @@ export fn netconfCopyConfig(
     return 0;
 }
 
-export fn netconfDeleteConfig(
+export fn ls_netconf_delete_config(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -377,7 +377,7 @@ export fn netconfDeleteConfig(
     return 0;
 }
 
-export fn netconfLock(
+export fn ls_netconf_lock(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -414,7 +414,7 @@ export fn netconfLock(
     return 0;
 }
 
-export fn netconfUnlock(
+export fn ls_netconf_unlock(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -451,7 +451,7 @@ export fn netconfUnlock(
     return 0;
 }
 
-export fn netconfGet(
+export fn ls_netconf_get(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -496,7 +496,7 @@ export fn netconfGet(
     return 0;
 }
 
-export fn netconfCloseSession(
+export fn ls_netconf_close_session(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -529,7 +529,7 @@ export fn netconfCloseSession(
     return 0;
 }
 
-export fn netconfKillSession(
+export fn ls_netconf_kill_session(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -564,7 +564,7 @@ export fn netconfKillSession(
     return 0;
 }
 
-export fn netconfCommit(
+export fn ls_netconf_commit(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -597,7 +597,7 @@ export fn netconfCommit(
     return 0;
 }
 
-export fn netconfDiscard(
+export fn ls_netconf_discard(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -630,7 +630,7 @@ export fn netconfDiscard(
     return 0;
 }
 
-export fn netconfCancelCommit(
+export fn ls_netconf_cancel_commit(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -663,7 +663,7 @@ export fn netconfCancelCommit(
     return 0;
 }
 
-export fn netconfValidate(
+export fn ls_netconf_validate(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -696,7 +696,7 @@ export fn netconfValidate(
     return 0;
 }
 
-export fn netconfGetSchema(
+export fn ls_netconf_get_schema(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -735,7 +735,7 @@ export fn netconfGetSchema(
     return 0;
 }
 
-export fn netconfGetData(
+export fn ls_netconf_get_data(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -788,7 +788,7 @@ export fn netconfGetData(
     return 0;
 }
 
-export fn netconfEditData(
+export fn ls_netconf_edit_data(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -825,7 +825,7 @@ export fn netconfEditData(
     return 0;
 }
 
-export fn netconfAction(
+export fn ls_netconf_action(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,

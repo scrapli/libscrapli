@@ -8,7 +8,7 @@ pub const noop = true;
 // session options
 //
 
-export fn setDriverOptionSessionReadSize(
+export fn ls_option_session_read_size(
     d_ptr: usize,
     value: u64,
 ) u8 {
@@ -26,7 +26,7 @@ export fn setDriverOptionSessionReadSize(
     return 0;
 }
 
-export fn setDriverOptionSessionReadDelayMinNs(
+export fn ls_option_session_read_delay_min_ns(
     d_ptr: usize,
     value: u64,
 ) u8 {
@@ -44,7 +44,7 @@ export fn setDriverOptionSessionReadDelayMinNs(
     return 0;
 }
 
-export fn setDriverOptionSessionReadDelayMaxNs(
+export fn ls_option_session_read_delay_max_ns(
     d_ptr: usize,
     value: u64,
 ) u8 {
@@ -62,7 +62,7 @@ export fn setDriverOptionSessionReadDelayMaxNs(
     return 0;
 }
 
-export fn setDriverOptionSessionReadDelayBackoffFactor(
+export fn ls_option_session_read_delay_backoff_factor(
     d_ptr: usize,
     value: u8,
 ) u8 {
@@ -80,7 +80,7 @@ export fn setDriverOptionSessionReadDelayBackoffFactor(
     return 0;
 }
 
-export fn setDriverOptionSessionReturnChar(
+export fn ls_option_session_return_char(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -108,7 +108,7 @@ export fn setDriverOptionSessionReturnChar(
     return 0;
 }
 
-export fn setDriverOptionSessionOperationTimeoutNs(
+export fn ls_option_session_operation_timeout_ns(
     d_ptr: usize,
     value: u64,
 ) u8 {
@@ -126,7 +126,7 @@ export fn setDriverOptionSessionOperationTimeoutNs(
     return 0;
 }
 
-export fn setDriverOptionSessionOperationMaxSearchDepth(
+export fn ls_option_session_operation_max_search_depth(
     d_ptr: usize,
     value: u64,
 ) u8 {
@@ -144,7 +144,7 @@ export fn setDriverOptionSessionOperationMaxSearchDepth(
     return 0;
 }
 
-export fn setDriverOptionSessionRecorderPath(
+export fn ls_option_session_record_destination(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -204,7 +204,7 @@ export fn setDriverOptionSessionRecorderPath(
 // auth options
 //
 
-export fn setDriverOptionAuthUsername(
+export fn ls_option_auth_username(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -232,7 +232,7 @@ export fn setDriverOptionAuthUsername(
     return 0;
 }
 
-export fn setDriverOptionAuthPassword(
+export fn ls_option_auth_password(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -260,7 +260,7 @@ export fn setDriverOptionAuthPassword(
     return 0;
 }
 
-export fn setDriverOptionAuthPrivateKeyPath(
+export fn ls_option_auth_private_key_path(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -288,7 +288,7 @@ export fn setDriverOptionAuthPrivateKeyPath(
     return 0;
 }
 
-export fn setDriverOptionAuthPrivateKeyPassphrase(
+export fn ls_option_auth_private_key_passphrase(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -316,24 +316,7 @@ export fn setDriverOptionAuthPrivateKeyPassphrase(
     return 0;
 }
 
-export fn setDriverOptionAuthInSessionAuthBypass(
-    d_ptr: usize,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    switch (d.real_driver) {
-        .cli => |rd| {
-            rd.session.auth_options.in_session_auth_bypass = true;
-        },
-        .netconf => |rd| {
-            rd.session.auth_options.in_session_auth_bypass = true;
-        },
-    }
-
-    return 0;
-}
-
-export fn setDriverOptionAuthLookupKeyValue(
+export fn ls_option_auth_set_lookup_key_value(
     d_ptr: usize,
     key: [*c]const u8,
     value: [*c]const u8,
@@ -362,7 +345,24 @@ export fn setDriverOptionAuthLookupKeyValue(
     return 0;
 }
 
-export fn setDriverOptionAuthUsernamePattern(
+export fn ls_option_auth_in_session_auth_bypass(
+    d_ptr: usize,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            rd.session.auth_options.in_session_auth_bypass = true;
+        },
+        .netconf => |rd| {
+            rd.session.auth_options.in_session_auth_bypass = true;
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_auth_username_pattern(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -390,7 +390,7 @@ export fn setDriverOptionAuthUsernamePattern(
     return 0;
 }
 
-export fn setDriverOptionAuthPasswordPattern(
+export fn ls_option_auth_password_pattern(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -418,7 +418,7 @@ export fn setDriverOptionAuthPasswordPattern(
     return 0;
 }
 
-export fn setDriverOptionAuthPassphrasePattern(
+export fn ls_option_auth_private_key_passphrase_pattern(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -450,7 +450,7 @@ export fn setDriverOptionAuthPassphrasePattern(
 // bin transport options
 //
 
-export fn setDriverOptionBinTransportBin(
+export fn ls_option_transport_bin_bin(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -492,7 +492,7 @@ export fn setDriverOptionBinTransportBin(
     return 0;
 }
 
-export fn setDriverOptionBinTransportExtraOpenArgs(
+export fn ls_option_transport_bin_extra_open_args(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -534,7 +534,7 @@ export fn setDriverOptionBinTransportExtraOpenArgs(
     return 0;
 }
 
-export fn setDriverOptionBinTransportOverrideOpenArgs(
+export fn ls_option_transport_bin_override_open_args(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -576,7 +576,7 @@ export fn setDriverOptionBinTransportOverrideOpenArgs(
     return 0;
 }
 
-export fn setDriverOptionBinTransportSSHConfigPath(
+export fn ls_option_transport_bin_ssh_config_path(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -618,7 +618,7 @@ export fn setDriverOptionBinTransportSSHConfigPath(
     return 0;
 }
 
-export fn setDriverOptionBinTransportKnownHostsPath(
+export fn ls_option_transport_bin_known_hosts_path(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {
@@ -660,7 +660,7 @@ export fn setDriverOptionBinTransportKnownHostsPath(
     return 0;
 }
 
-export fn setDriverOptionBinTransportEnableStrictKey(
+export fn ls_option_transport_bin_enable_strict_key(
     d_ptr: usize,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
@@ -691,7 +691,7 @@ export fn setDriverOptionBinTransportEnableStrictKey(
     return 0;
 }
 
-export fn setDriverOptionBinTransportTermHeight(
+export fn ls_option_transport_bin_term_height(
     d_ptr: usize,
     value: u16,
 ) u8 {
@@ -723,7 +723,7 @@ export fn setDriverOptionBinTransportTermHeight(
     return 0;
 }
 
-export fn setDriverOptionBinTransportTermWidth(
+export fn ls_option_transport_bin_term_width(
     d_ptr: usize,
     value: u16,
 ) u8 {
@@ -759,7 +759,7 @@ export fn setDriverOptionBinTransportTermWidth(
 // ssh2 transport options
 //
 
-export fn setDriverOptionSSH2TransportSSH2Trace(
+export fn ls_option_transport_ssh2_libssh2trace(
     d_ptr: usize,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
@@ -794,7 +794,7 @@ export fn setDriverOptionSSH2TransportSSH2Trace(
 // test transport options
 //
 
-export fn setDriverOptionTestTransportF(
+export fn ls_option_transport_test_f(
     d_ptr: usize,
     value: [*c]const u8,
 ) u8 {

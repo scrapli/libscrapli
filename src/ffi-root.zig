@@ -50,7 +50,9 @@ pub const allocator = switch (builtin.mode) {
     .ReleaseSafe, .ReleaseFast, .ReleaseSmall => std.heap.page_allocator,
 };
 
-export fn assertNoLeaks() bool {
+// all exported functions are named using c standard and prepended with "ls" for libscrapli for
+// namespacing reasons.
+export fn ls_assert_no_leaks() bool {
     if (!is_debug_build) {
         return false;
     }
@@ -91,7 +93,7 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
     }
 }
 
-export fn allocCliDriver(
+export fn ls_alloc_cli(
     definition_string: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
@@ -135,7 +137,7 @@ export fn allocCliDriver(
     return @intFromPtr(d);
 }
 
-export fn allocNetconfDriver(
+export fn ls_alloc_netconf(
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
     port: u16,
@@ -178,7 +180,7 @@ export fn allocNetconfDriver(
     return @intFromPtr(d);
 }
 
-export fn freeDriver(
+export fn ls_free(
     d_ptr: usize,
 ) void {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
@@ -186,7 +188,7 @@ export fn freeDriver(
     d.deinit();
 }
 
-export fn openDriver(
+export fn ls_open(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -268,8 +270,8 @@ export fn openDriver(
     return 0;
 }
 
-/// Closes the driver, does *not* free/deinit.
-export fn closeDriver(
+/// Closes the cli/netconf driver, does *not* free/deinit.
+export fn ls_close(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -328,7 +330,7 @@ export fn closeDriver(
 
 /// Reads from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
 /// ffi-driver operation loop entirely.
-export fn readSession(
+export fn ls_read_session(
     d_ptr: usize,
     buf: *[]u8,
     read_n: *u64,
@@ -356,7 +358,7 @@ export fn readSession(
 
 /// Writes from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
 /// ffi-driver operation loop entirely.
-export fn writeSession(
+export fn ls_write_session(
     d_ptr: usize,
     buf: [*c]const u8,
     redacted: bool,

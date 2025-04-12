@@ -13,7 +13,7 @@ pub const noop = true;
 /// writes the ntc template platform from the driver's definition into the character slice at
 /// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
 /// 256?). while unused in zig, ntc templates platform is useful in python land.
-export fn getNtcTemplatePlatform(
+export fn ls_cli_get_ntc_templates_platform(
     d_ptr: usize,
     ntc_template_platform: *[]u8,
 ) u8 {
@@ -40,7 +40,7 @@ export fn getNtcTemplatePlatform(
 /// writes the genie platform from the driver's definition into the character slice at
 /// `genie_platform` -- this slice should be pre populated w/ sufficient size (lets say
 /// 256?). while unused in zig, genie platform/parser is useful in python land.
-export fn getGeniePlatform(
+export fn ls_cli_get_genie_platform(
     d_ptr: usize,
     genie_platform: *[]u8,
 ) u8 {
@@ -68,7 +68,7 @@ export fn getGeniePlatform(
 
 /// Poll a given operation id, if the operation is completed fill a result and error u64 pointer
 /// so the caller can subsequenty call fetch with appropriately sized buffers.
-export fn pollOperation(
+export fn ls_cli_poll_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
@@ -123,66 +123,10 @@ export fn pollOperation(
     return 0;
 }
 
-/// Similar to `pollOperation`, but blocks until the specified operation is complete and obviously
-/// does not require the bool pointer for done.
-export fn waitOperation(
-    d_ptr: usize,
-    operation_id: u32,
-    operation_input_size: *u64,
-    operation_result_raw_size: *u64,
-    operation_result_size: *u64,
-    operation_failure_indicator_size: *u64,
-    operation_error_size: *u64,
-) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    while (true) {
-        const ret = d.pollOperation(operation_id, false) catch |err| {
-            d.log(
-                logging.LogLevel.critical,
-                "error during poll operation {any}",
-                .{err},
-            );
-
-            return 1;
-        };
-
-        if (!ret.done) {
-            continue;
-        }
-
-        if (ret.err != null) {
-            const err_name = @errorName(ret.err.?);
-
-            operation_result_size.* = 0;
-            operation_error_size.* = err_name.len;
-        } else {
-            const dret = switch (ret.result) {
-                .cli => |r| r.?,
-                else => @panic("attempting to access non cli result from cli type"),
-            };
-
-            operation_input_size.* = dret.getInputLen();
-            operation_result_raw_size.* = dret.getResultRawLen();
-            operation_result_size.* = dret.getResultLen();
-            operation_failure_indicator_size.* = 0;
-            operation_error_size.* = 0;
-
-            if (dret.result_failure_indicated) {
-                operation_failure_indicator_size.* = dret.failed_indicators.?.items[@intCast(dret.result_failure_indicator)].len;
-            }
-        }
-
-        break;
-    }
-
-    return 0;
-}
-
 /// Fetches the result of the given operation id -- writing the result and error into the given
 /// buffers. Must be preceeded by a `pollOperation` or `waitOperation` in order to get the sizes
 /// of the result and error buffers.
-export fn fetchOperation(
+export fn ls_cli_fetch_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_start_time: *u64,
@@ -287,7 +231,7 @@ export fn fetchOperation(
     return 0;
 }
 
-export fn enterMode(
+export fn ls_cli_enter_mode(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -322,7 +266,7 @@ export fn enterMode(
     return 0;
 }
 
-export fn getPrompt(
+export fn ls_cli_get_prompt(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -355,7 +299,7 @@ export fn getPrompt(
     return 0;
 }
 
-export fn sendInput(
+export fn ls_cli_send_input(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -400,7 +344,7 @@ export fn sendInput(
     return 0;
 }
 
-export fn sendPromptedInput(
+export fn ls_cli_send_prompted_input(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
