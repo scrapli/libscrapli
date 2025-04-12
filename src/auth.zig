@@ -45,6 +45,7 @@ pub const Options = struct {
     password: ?[]const u8,
     private_key_path: ?[]const u8,
     private_key_passphrase: ?[]const u8,
+    // TODO rename -> lookups or something cuz its not a map :P
     lookup_map: ?[]const LookupKeyValue,
     in_session_auth_bypass: bool,
     username_pattern: []const u8,
@@ -65,6 +66,7 @@ pub const Options = struct {
             .in_session_auth_bypass = opts.in_session_auth_bypass,
             .username_pattern = opts.username_pattern,
             .password_pattern = opts.password_pattern,
+            // TODO rename -> private_key_passphrase_pattern
             .passphrase_pattern = opts.passphrase_pattern,
         };
 
