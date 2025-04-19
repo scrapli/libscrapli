@@ -6,6 +6,7 @@ const ffi_args_to_options = @import("ffi-args-to-options.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
+const time = @import("time.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -106,7 +107,7 @@ export fn ls_cli_poll_operation(
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
-            else => @panic("attempting to access non driver result from driver type"),
+            else => @panic("attempting to access non cli result from cli type"),
         };
 
         operation_input_size.* = dret.getInputLen();
@@ -121,6 +122,71 @@ export fn ls_cli_poll_operation(
     }
 
     return 0;
+}
+
+export fn ls_cli_wait_operation(
+    d_ptr: usize,
+    operation_id: u32,
+    operation_done: *bool,
+    operation_input_size: *u64,
+    operation_result_raw_size: *u64,
+    operation_result_size: *u64,
+    operation_failure_indicator_size: *u64,
+    operation_error_size: *u64,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    var cur_read_delay_ns: u64 = d.real_driver.cli.session.options.read_delay_min_ns;
+
+    while (true) {
+        const ret = d.pollOperation(operation_id, false) catch |err| {
+            d.log(
+                logging.LogLevel.critical,
+                "error during poll operation {any}",
+                .{err},
+            );
+
+            return 1;
+        };
+
+        if (!ret.done) {
+            cur_read_delay_ns = time.getBackoffValue(
+                cur_read_delay_ns,
+                d.real_driver.cli.session.options.read_delay_max_ns,
+                d.real_driver.cli.session.options.read_delay_backoff_factor,
+            );
+
+            std.time.sleep(cur_read_delay_ns);
+
+            continue;
+        }
+
+        operation_done.* = true;
+
+        if (ret.err != null) {
+            const err_name = @errorName(ret.err.?);
+
+            operation_result_size.* = 0;
+            operation_error_size.* = err_name.len;
+        } else {
+            const dret = switch (ret.result) {
+                .cli => |r| r.?,
+                else => @panic("attempting to access non cli result from cli type"),
+            };
+
+            operation_input_size.* = dret.getInputLen();
+            operation_result_raw_size.* = dret.getResultRawLen();
+            operation_result_size.* = dret.getResultLen();
+            operation_failure_indicator_size.* = 0;
+            operation_error_size.* = 0;
+
+            if (dret.result_failure_indicated) {
+                operation_failure_indicator_size.* = dret.failed_indicators.?.items[@intCast(dret.result_failure_indicator)].len;
+            }
+        }
+
+        return 0;
+    }
 }
 
 /// Fetches the result of the given operation id -- writing the result and error into the given
@@ -152,7 +218,7 @@ export fn ls_cli_fetch_operation(
     defer {
         const dret = switch (ret.result) {
             .cli => |r| r,
-            else => @panic("attempting to access non driver result from driver type"),
+            else => @panic("attempting to access non cli result from cli type"),
         };
         if (dret != null) {
             dret.?.deinit();
@@ -166,7 +232,7 @@ export fn ls_cli_fetch_operation(
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
-            else => @panic("attempting to access non driver result from driver type"),
+            else => @panic("attempting to access non cli result from cli type"),
         };
 
         if (dret.splits_ns.items.len > 0) {
