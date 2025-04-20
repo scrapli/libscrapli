@@ -26,17 +26,28 @@ pub fn build(b: *std.Build) !void {
     const main = flags.parseCustomFlag("--main", false);
     const skip_ffi_lib = flags.parseCustomFlag("--skip-ffi-lib", false);
     const release = flags.parseCustomFlag("--release", false);
+    const all_targets = flags.parseCustomFlag("--all-targets", false);
     const default_target = b.standardTargetOptions(.{});
 
     const optimize = if (release) std.builtin.OptimizeMode.ReleaseSafe else std.builtin.OptimizeMode.Debug;
 
-    for (targets) |target| {
+    if (all_targets) {
+        for (targets) |target| {
+            if (!skip_ffi_lib) {
+                try buildFfiLib(b, optimize, target);
+            }
+
+            if (examples) {
+                try buildExamples(b, optimize, target);
+            }
+        }
+    } else {
         if (!skip_ffi_lib) {
-            try buildFfiLib(b, optimize, target);
+            try buildFfiLib(b, optimize, default_target.query);
         }
 
         if (examples) {
-            try buildExamples(b, optimize, target);
+            try buildExamples(b, optimize, default_target.query);
         }
     }
 
