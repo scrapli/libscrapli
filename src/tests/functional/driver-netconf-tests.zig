@@ -32,6 +32,12 @@ fn GetDriver(
             .{ .key = "login", .value = "NokiaSrl1!" },
         };
 
+        if (username == null) {
+            config.auth.username = "admin";
+        } else {
+            config.auth.username = username.?;
+        }
+
         if (os == .macos) {
             host = "localhost";
             config.port = 21830;
@@ -44,6 +50,12 @@ fn GetDriver(
             .{ .key = "login", .value = "admin" },
         };
 
+        if (username == null) {
+            config.auth.username = "netconf-admin";
+        } else {
+            config.auth.username = username.?;
+        }
+
         if (os == .macos) {
             host = "localhost";
             config.port = 22830;
@@ -53,12 +65,6 @@ fn GetDriver(
         }
     } else {
         return error.UnknownPlatform;
-    }
-
-    if (username == null) {
-        config.auth.username = "admin";
-    } else {
-        config.auth.username = username.?;
     }
 
     if (key != null) {
@@ -100,43 +106,17 @@ fn compareAllocatorlessCapability(
 ) bool {
     _ = context;
 
-    if (std.mem.eql(u8, a.namespace, b.namespace)) {
-        // if namespace is equal we'll compare the name, we'll almost certainly have duplicated
-        // namaespaces but *not* names
-        for (0.., a.name) |idx, char| {
-            if (idx >= b.name.len) {
-                return false;
-            }
-
-            if (char == b.name[idx]) {
-                continue;
-            }
-
-            if (char > b.name[idx]) {
-                return false;
-            }
-
-            return true;
-        }
-    } else {
-        for (0.., a.namespace) |idx, char| {
-            if (idx >= b.namespace.len) {
-                return false;
-            }
-
-            if (char == b.namespace[idx]) {
-                continue;
-            }
-
-            if (char > b.namespace[idx]) {
-                return false;
-            }
-
-            return true;
-        }
+    const ns_order = std.mem.order(u8, a.namespace, b.namespace);
+    if (ns_order != .eq) {
+        return ns_order == .lt;
     }
 
-    return false;
+    const name_order = std.mem.order(u8, a.name, b.name);
+    if (name_order != .eq) {
+        return name_order == .lt;
+    }
+
+    return std.mem.order(u8, a.revision, b.revision) == .lt;
 }
 
 test "driver-netconf open" {
@@ -235,9 +215,6 @@ test "driver-netconf open" {
             close_ret.deinit();
         }
 
-        const open_ret = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(open_ret);
-
         // for open, we'll just check/assert the capabilities because if we check that we know
         // that the open/auth worked of course, and also cap parcing is good, if those are null
         // we obviously failed
@@ -253,8 +230,6 @@ test "driver-netconf open" {
         );
         defer std.testing.allocator.free(yamlable_capabilities);
 
-        // TODO we need to sort this i think otherwise we'll still get stuff out of order breaking
-        // the test (i think)
         for (0.., d.server_capabilities.?.items) |idx, cap| {
             yamlable_capabilities[idx] = allocatorlessCapability{
                 .namespace = cap.namespace,
@@ -349,14 +324,11 @@ test "driver-netconf get-config" {
         const actual_res = try d.getConfig(std.testing.allocator, .{});
         defer actual_res.deinit();
 
-        const actual_ret = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(actual_ret);
-
         try helper.processFixutreTestStrResult(
             test_name,
             case.name,
             golden_filename,
-            actual_ret,
+            actual_res.result,
         );
     }
 }

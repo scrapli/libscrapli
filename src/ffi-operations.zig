@@ -20,6 +20,7 @@ pub const OperationOptions = struct {
     operation: union(enum) {
         cli: union(enum) {
             open: operation.OpenOptions,
+            close: operation.CloseOptions,
             enter_mode: operation.EnterModeOptions,
             get_prompt: operation.GetPromptOptions,
             send_input: operation.SendInputOptions,
@@ -27,6 +28,8 @@ pub const OperationOptions = struct {
         },
         netconf: union(enum) {
             open: operation.OpenOptions,
+            close: operation.CloseOptions,
+            raw_rpc: operation_netconf.RawRpcOptions,
             get_config: operation_netconf.GetConfigOptions,
             edit_config: operation_netconf.EditConfigOptions,
             copy_config: operation_netconf.CopyConfigOptions,
@@ -36,6 +39,14 @@ pub const OperationOptions = struct {
             get: operation_netconf.GetOptions,
             close_session: operation_netconf.CloseSessionOptions,
             kill_session: operation_netconf.KillSessionOptions,
+            commit: operation_netconf.CommitOptions,
+            discard: operation_netconf.DiscardOptions,
+            cancel_commit: operation_netconf.CancelCommitOptions,
+            validate: operation_netconf.ValidateOptions,
+            get_schema: operation_netconf.GetSchemaOptions,
+            get_data: operation_netconf.GetDataOptions,
+            edit_data: operation_netconf.EditDataOptions,
+            action: operation_netconf.ActionOptions,
         },
     },
 };

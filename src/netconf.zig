@@ -7,6 +7,7 @@ const operation = @import("netconf-operation.zig");
 const result = @import("netconf-result.zig");
 const ascii = @import("ascii.zig");
 const xml = @import("xml");
+const errors = @import("errors.zig");
 const test_helper = @import("test-helper.zig");
 
 const ProcessThreadState = enum(u8) {
@@ -35,8 +36,8 @@ pub const Capability = struct {
 
 const default_netconf_port = 830;
 
-pub const delimiter_Version_1_0 = "]]>]]>";
-pub const delimiter_Version_1_1 = "##";
+pub const delimiter_version_1_0 = "]]>]]>";
+pub const delimiter_version_1_1 = "##";
 
 pub const version_1_0_capability_name = "urn:ietf:params:netconf:base:1.0";
 pub const version_1_1_capability_name = "urn:ietf:params:netconf:base:1.1";
@@ -63,7 +64,7 @@ pub const default_rpc_error_tag = "rpc-error>";
 const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-defaults:1.0";
 
 const message_id_attribute_prefix = "message-id=\"";
-const subscription_id_attribute_prefix = "subscription-id=\"";
+pub const subscription_id_attribute_prefix = "<subscription-id>";
 
 const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
@@ -133,6 +134,13 @@ pub const Options = struct {
     }
 };
 
+const RelevantCapabilities = struct {
+    // TODO datastores, with defaults, etc. etc. and actually maybe ingore these onse since i gave
+    // up on dealing w/ supporting all the stuff for them
+    rfc5277_event_notifications: bool = false,
+    rfc8639_subscribed_notifications: bool = false,
+};
+
 pub const Driver = struct {
     allocator: std.mem.Allocator,
     log: logging.Logger,
@@ -144,7 +152,9 @@ pub const Driver = struct {
     session: *session.Session,
 
     server_capabilities: ?std.ArrayList(Capability),
+    relevant_capabilities: RelevantCapabilities,
     negotiated_version: Version,
+    session_id: ?u64,
 
     process_thread: ?std.Thread,
     process_stop: std.atomic.Value(ProcessThreadState),
@@ -153,7 +163,7 @@ pub const Driver = struct {
 
     messages: std.HashMap(
         u64,
-        []const u8,
+        [2][]const u8,
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
@@ -161,7 +171,7 @@ pub const Driver = struct {
 
     subscriptions: std.HashMap(
         u64,
-        []const u8,
+        std.ArrayList([2][]const u8),
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
@@ -190,7 +200,7 @@ pub const Driver = struct {
                 // nothing to do for test transport, but its "allowed" so dont return an error
             },
             else => {
-                return error.UnsupportedTransport;
+                return errors.ScrapliError.UnsupportedTransport;
             },
         }
 
@@ -201,7 +211,7 @@ pub const Driver = struct {
         const sess = try session.Session.init(
             allocator,
             log,
-            delimiter_Version_1_0,
+            delimiter_version_1_0,
             opts.session,
             opts.auth,
             opts.transport,
@@ -220,7 +230,9 @@ pub const Driver = struct {
             .session = sess,
 
             .server_capabilities = std.ArrayList(Capability).init(allocator),
+            .relevant_capabilities = RelevantCapabilities{},
             .negotiated_version = Version.version_1_0,
+            .session_id = null,
 
             .process_thread = null,
             .process_stop = std.atomic.Value(ProcessThreadState).init(
@@ -231,7 +243,7 @@ pub const Driver = struct {
 
             .messages = std.HashMap(
                 u64,
-                []const u8,
+                [2][]const u8,
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
@@ -239,7 +251,7 @@ pub const Driver = struct {
 
             .subscriptions = std.HashMap(
                 u64,
-                []const u8,
+                std.ArrayList([2][]const u8),
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
@@ -250,10 +262,19 @@ pub const Driver = struct {
     }
 
     pub fn deinit(self: *Driver) void {
+        if (self.process_stop.load(std.builtin.AtomicOrder.acquire) == ProcessThreadState.run) {
+            // same as session, for ignoring errors on close and just gracefully freeing things
+            // zlint-disable suppressed-errors
+            const ret = self.close(self.allocator, .{}) catch null;
+            if (ret) |r| {
+                r.deinit();
+            }
+        }
+
         self.session.deinit();
 
-        if (self.server_capabilities != null) {
-            for (self.server_capabilities.?.items) |cap| {
+        if (self.server_capabilities) |caps| {
+            for (caps.items) |cap| {
                 var mut_cap = cap;
                 mut_cap.deinit();
             }
@@ -261,7 +282,26 @@ pub const Driver = struct {
             self.server_capabilities.?.deinit();
         }
 
+        // free any messages that were never fetched
+        var messages_iterator = self.messages.valueIterator();
+        while (messages_iterator.next()) |m| {
+            self.allocator.free(m[0]);
+            self.allocator.free(m[1]);
+        }
+
         self.messages.deinit();
+
+        // and then subscription messages
+        var subscriptions_iterator = self.subscriptions.valueIterator();
+        while (subscriptions_iterator.next()) |sl| {
+            for (sl.items) |s| {
+                self.allocator.free(s[0]);
+                self.allocator.free(s[1]);
+            }
+
+            sl.deinit();
+        }
+
         self.subscriptions.deinit();
 
         self.options.deinit();
@@ -303,9 +343,8 @@ pub const Driver = struct {
             self.options.port.?,
             options,
         );
-        allocator.free(rets[0]);
 
-        try res.record(rets[1]);
+        try res.record([2][]const u8{ rets[0], rets[1] });
 
         // SAFETY: undefined now but will always be set before use (below) or we will have
         // errored out.
@@ -320,27 +359,27 @@ pub const Driver = struct {
                 // note that this all applies to the test transport as well (reading from file)
                 const cap_start_index = std.mem.indexOf(
                     u8,
-                    res.results.items[0],
+                    res.result,
                     "<hello ",
                 );
                 if (cap_start_index == null) {
-                    return error.CapabilitiesExchange;
+                    return errors.ScrapliError.CapabilitiesError;
                 }
 
                 // session will have read up to (and consumed) the prompt (]]>]]> at this point),
                 // so we just need find the end of the server hello/capabilities.
                 const cap_end_index = std.mem.indexOf(
                     u8,
-                    res.results.items[0],
+                    res.result,
                     "/hello>",
                 );
                 if (cap_end_index == null) {
-                    return error.CapabilitiesExchange;
+                    return errors.ScrapliError.CapabilitiesError;
                 }
 
                 cap_buf = try allocator.dupe(
                     u8,
-                    res.results.items[0][cap_start_index.? .. cap_end_index.? + "/hello>".len],
+                    res.result[cap_start_index.? .. cap_end_index.? + "/hello>".len],
                 );
             },
             else => {
@@ -349,7 +388,15 @@ pub const Driver = struct {
                     options,
                     &timer,
                 );
-                try res.results.append(try allocator.dupe(u8, cap_buf));
+
+                res.result = try std.fmt.allocPrint(
+                    allocator,
+                    "{s}\n{s}",
+                    .{
+                        res.result,
+                        cap_buf,
+                    },
+                );
             },
         }
 
@@ -365,7 +412,7 @@ pub const Driver = struct {
 
         try self.processServerCapabilities(cap_buf);
         try self.determineVersion();
-        try self.sendClientCapabilities(allocator, options, &timer);
+        try self.sendClientCapabilities();
 
         self.process_stop.store(
             ProcessThreadState.run,
@@ -382,7 +429,7 @@ pub const Driver = struct {
                 .{err},
             );
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
 
         return res;
@@ -405,7 +452,7 @@ pub const Driver = struct {
             self.process_thread.?.join();
         }
 
-        self.session.close();
+        try self.session.close();
 
         return self.NewResult(allocator, operation.Kind.close_session);
     }
@@ -436,7 +483,7 @@ pub const Driver = struct {
             if (options.cancel != null and options.cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -446,7 +493,7 @@ pub const Driver = struct {
             {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.Timeout;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             const n = self.session.read(_read_cap_buf);
@@ -477,7 +524,7 @@ pub const Driver = struct {
             const cap_end_index = std.mem.indexOf(
                 u8,
                 _read_cap_buf,
-                delimiter_Version_1_0,
+                delimiter_version_1_0,
             );
             if (cap_end_index != null) {
                 end_copy_index = cap_end_index.?;
@@ -530,7 +577,23 @@ pub const Driver = struct {
                 .eof => break,
                 .element_start => {
                     const element_name = xml_reader.elementNameNs();
-                    if (!std.mem.eql(u8, element_name.local, "capability")) {
+
+                    if (std.mem.eql(u8, element_name.local, "session-id")) {
+                        const inner_node = try xml_reader.read();
+                        switch (inner_node) {
+                            .text => {
+                                const text_content = try xml_reader.text();
+                                self.session_id = try std.fmt.parseInt(
+                                    u64,
+                                    text_content,
+                                    10,
+                                );
+                            },
+                            else => {},
+                        }
+
+                        continue;
+                    } else if (!std.mem.eql(u8, element_name.local, "capability")) {
                         continue;
                     }
 
@@ -580,10 +643,37 @@ pub const Driver = struct {
                         }
                     }
 
+                    self.checkCapabilityRelevance(found_capability);
+
                     try self.server_capabilities.?.append(found_capability);
                 },
                 else => {},
             }
+        }
+    }
+
+    fn checkCapabilityRelevance(
+        self: *Driver,
+        capability: Capability,
+    ) void {
+        if (std.mem.indexOf(
+            u8,
+            "urn:ietf:params:xml:ns:yang:ietf-event-notifications",
+            capability.name,
+        ) != null) {
+            self.relevant_capabilities.rfc5277_event_notifications = true;
+
+            return;
+        }
+
+        if (std.mem.indexOf(
+            u8,
+            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
+            capability.name,
+        ) != null) {
+            self.relevant_capabilities.rfc8639_subscribed_notifications = true;
+
+            return;
         }
     }
 
@@ -594,7 +684,7 @@ pub const Driver = struct {
         revision: ?[]const u8,
     ) !bool {
         if (self.server_capabilities == null) {
-            return error.CapabilitiesNotProcessed;
+            return errors.ScrapliError.CapabilitiesError;
         }
 
         for (self.server_capabilities.?.items) |cap| {
@@ -638,7 +728,9 @@ pub const Driver = struct {
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
-            return error.CapabilitiesExchange;
+            self.log.critical("capabilities negotiation failed", .{});
+
+            return errors.ScrapliError.CapabilitiesError;
         }
 
         if (self.options.preferred_version == null) {
@@ -652,26 +744,25 @@ pub const Driver = struct {
                     self.negotiated_version = Version.version_1_0;
                 }
 
-                return error.PreferredCapabilityUnavailable;
+                self.log.critical("preferred capability unavailable", .{});
+
+                return errors.ScrapliError.CapabilitiesError;
             },
             Version.version_1_1 => {
                 if (hasVersion_1_1) {
                     self.negotiated_version = Version.version_1_1;
                 }
 
-                return error.PreferredCapabilityUnavailable;
+                self.log.critical("preferred capability unavailable", .{});
+
+                return errors.ScrapliError.CapabilitiesError;
             },
         }
     }
 
     fn sendClientCapabilities(
         self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.OpenOptions,
-        timer: *std.time.Timer,
     ) !void {
-        var cur_read_delay_ns: u64 = self.session.options.read_delay_min_ns;
-
         var caps: []const u8 = version_1_0_capability;
 
         if (self.negotiated_version == Version.version_1_1) {
@@ -679,57 +770,6 @@ pub const Driver = struct {
         }
 
         try self.session.writeAndReturn(caps, false);
-
-        const _read_cap_buf = try allocator.alloc(u8, 64);
-        defer allocator.free(_read_cap_buf);
-
-        // drain the channel of our sent caps
-        while (true) {
-            if (options.cancel != null and options.cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return error.Cancelled;
-            }
-
-            const elapsed_time = timer.read();
-
-            if (self.session.options.operation_timeout_ns != 0 and
-                (elapsed_time + cur_read_delay_ns) > self.session.options.operation_timeout_ns)
-            {
-                self.log.critical("op timeout exceeded", .{});
-
-                return error.Timeout;
-            }
-
-            const n = self.session.read(_read_cap_buf);
-
-            if (n == 0) {
-                cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
-
-                continue;
-            } else {
-                cur_read_delay_ns = self.session.options.read_delay_min_ns;
-            }
-
-            const delim_index = std.mem.indexOf(
-                u8,
-                _read_cap_buf,
-                delimiter_Version_1_0,
-            );
-
-            if (delim_index != null) {
-                if (delim_index.? + delimiter_Version_1_0.len < _read_cap_buf.len) {
-                    // almost certainly in an integration test and we overshot the delim
-                    // which would cause a test to fail later on as we'll never be able to find
-                    // the start of the next message, just put back whatever we over read
-                    try self.session.read_queue.unget(
-                        _read_cap_buf[delim_index.? + delimiter_Version_1_0.len ..],
-                    );
-                }
-
-                return;
-            }
-        }
     }
 
     fn getReadDelay(self: *Driver, cur_read_delay_ns: u64) u64 {
@@ -765,10 +805,10 @@ pub const Driver = struct {
         var message_complete_delim: []const u8 = undefined;
         switch (self.negotiated_version) {
             Version.version_1_0 => {
-                message_complete_delim = delimiter_Version_1_0;
+                message_complete_delim = delimiter_version_1_0;
             },
             Version.version_1_1 => {
-                message_complete_delim = delimiter_Version_1_1;
+                message_complete_delim = delimiter_version_1_1;
             },
         }
 
@@ -826,7 +866,18 @@ pub const Driver = struct {
                 matched_chars += 1;
 
                 if (matched_chars == message_complete_delim.len) {
-                    try self.processFoundMessage(try message_buf.toOwnedSlice());
+                    const owned_buf = try message_buf.toOwnedSlice();
+                    defer self.allocator.free(owned_buf);
+
+                    switch (self.negotiated_version) {
+                        .version_1_0 => {
+                            try self.processFoundMessageVersion1_0(owned_buf);
+                        },
+                        .version_1_1 => {
+                            try self.processFoundMessageVersion1_1(owned_buf);
+                        },
+                    }
+
                     break;
                 }
             }
@@ -835,35 +886,24 @@ pub const Driver = struct {
         self.log.info("message processing thread stopped", .{});
     }
 
-    fn processFoundMessage(
-        self: *Driver,
-        buf: []const u8,
-    ) !void {
-        if (std.mem.indexOf(u8, buf, "</rpc>") != null) {
-            // found echo from an input, ignore
-            self.allocator.free(buf);
-            return;
-        }
-
+    fn processFoundMessageIds(
+        message_view: []const u8,
+    ) !struct { found: bool = false, is_subscription_message: bool = false, found_id: usize = 0 } {
         const index_of_message_id = std.mem.indexOf(
             u8,
-            buf,
+            message_view,
             message_id_attribute_prefix,
         );
         const index_of_subscription_id = std.mem.indexOf(
             u8,
-            buf,
+            message_view,
             subscription_id_attribute_prefix,
         );
 
         if (index_of_message_id == null and
             index_of_subscription_id == null)
         {
-            // TODO not message/subscription, ignore (this probably should not happen ever?)
-            // printing for now to see if this ever happens
-            std.debug.print("GOT NOT A MESSAGE/SUB? {s}\n", .{buf[0..100]});
-            self.allocator.free(buf);
-            return;
+            return .{};
         }
 
         var _start_index: usize = 0;
@@ -873,32 +913,229 @@ pub const Driver = struct {
             _start_index = index_of_subscription_id.? + subscription_id_attribute_prefix.len;
         }
 
-        // 32 chars *should* absolutely be enough to capture any messages/sub id?
+        // max should be uint32, so 10 chars covers that
         var _idx: usize = 0;
-        var _id_buf: [32]u8 = undefined;
+        var _id_buf: [10]u8 = undefined;
 
-        for (_start_index.._start_index + 32) |idx| {
-            if (!std.ascii.isDigit(buf[idx])) {
+        for (_start_index.._start_index + 10) |idx| {
+            if (!std.ascii.isDigit(message_view[idx])) {
                 break;
             }
 
-            _id_buf[_idx] = buf[idx];
+            _id_buf[_idx] = message_view[idx];
             _idx += 1;
         }
 
         const _id = try std.fmt.parseInt(u64, _id_buf[0.._idx], 10);
 
-        if (index_of_message_id != null) {
-            self.messages_lock.lock();
-            defer self.messages_lock.unlock();
+        return .{
+            .found = true,
+            .is_subscription_message = index_of_subscription_id != null,
+            .found_id = _id,
+        };
+    }
 
-            try self.messages.put(_id, buf);
-        } else if (index_of_subscription_id != null) {
+    fn storeMessageOrSubscription(
+        self: *Driver,
+        raw_buf: []const u8,
+        processed_buf: []const u8,
+    ) !void {
+        const id_info = try Driver.processFoundMessageIds(processed_buf);
+
+        if (!id_info.found) {
+            self.log.warn(
+                "found message that had neither message id or subscription id, ignoring",
+                .{},
+            );
+
+            self.allocator.free(raw_buf);
+            self.allocator.free(processed_buf);
+
+            return;
+        }
+
+        if (id_info.is_subscription_message) {
             self.subscriptions_lock.lock();
             defer self.subscriptions_lock.unlock();
 
-            try self.subscriptions.put(_id, buf);
+            const ret = try self.subscriptions.getOrPut(id_info.found_id);
+            if (!ret.found_existing) {
+                ret.value_ptr.* = std.ArrayList([2][]const u8).init(self.allocator);
+            }
+
+            try ret.value_ptr.*.append([2][]const u8{ raw_buf, processed_buf });
+        } else {
+            self.messages_lock.lock();
+            defer self.messages_lock.unlock();
+
+            // message id will be unique, clobber away
+            try self.messages.put(id_info.found_id, [2][]const u8{ raw_buf, processed_buf });
         }
+    }
+
+    fn processFoundMessageVersion1_0(
+        self: *Driver,
+        buf: []const u8,
+    ) !void {
+        var delimiter_count = std.mem.count(u8, buf, delimiter_version_1_0);
+
+        var message_start_idx: usize = 0;
+
+        while (delimiter_count > 0) {
+            const delimiter_index = std.mem.indexOf(
+                u8,
+                buf,
+                delimiter_version_1_0,
+            );
+
+            const message_view = buf[message_start_idx..delimiter_index.?];
+
+            const owned_raw = try self.allocator.alloc(u8, buf.len);
+            @memcpy(owned_raw, buf);
+
+            const owned_parsed = try self.allocator.alloc(u8, message_view.len);
+            @memcpy(owned_parsed, message_view);
+
+            try self.storeMessageOrSubscription(owned_raw, owned_parsed);
+
+            delimiter_count -= 1;
+            message_start_idx = delimiter_index.? + delimiter_version_1_0.len + 1;
+        }
+    }
+
+    fn processFoundMessageVersion1_1(
+        self: *Driver,
+        buf: []const u8,
+    ) !void {
+        // rather than deal w/ an arraylist and a bunch of allocations, we'll allocate a single
+        // slice since the final parsed result will always be smaller than the heap of chunks that
+        // we need to parse. we'll track what we put into it so we can allocate a right sized slice
+        // when we're done. so two (or N for multiple messages found in the chunk we are processing)
+        // allocations rather than a zillion with array list basically.
+        const _parsed = try self.allocator.alloc(u8, buf.len);
+        defer self.allocator.free(_parsed);
+
+        var parsed_idx: usize = 0;
+
+        var iter_idx: usize = 0;
+
+        while (iter_idx < buf.len) {
+            if (std.ascii.isWhitespace(buf[iter_idx])) {
+                iter_idx += 1;
+
+                continue;
+            }
+
+            if (buf[iter_idx] != ascii.control_chars.hash_char) {
+                // we *must* have found a hash indicating a chunk size, but we didn't something
+                // is wrong
+                return errors.ScrapliError.ParsingError;
+            }
+
+            iter_idx += 1;
+
+            if (buf[iter_idx] == ascii.control_chars.hash_char) {
+                // now we've found two consequtive hash signs, indicating end of message we can
+                // store the raw and processed bits in the messages map
+                const owned_raw = try self.allocator.alloc(u8, iter_idx);
+                @memcpy(owned_raw, buf[0..iter_idx]);
+
+                const owned_parsed = try self.allocator.alloc(u8, parsed_idx);
+                @memcpy(owned_parsed[0..parsed_idx], _parsed[0..parsed_idx]);
+
+                try self.storeMessageOrSubscription(
+                    owned_raw,
+                    owned_parsed,
+                );
+
+                if (iter_idx + 1 >= buf.len) {
+                    return;
+                }
+
+                return self.processFoundMessageVersion1_1(buf[iter_idx + 1 ..]);
+            }
+
+            var chunk_size_end_idx: usize = 0;
+
+            // https://datatracker.ietf.org/doc/html/rfc6242#section-4.2 max chunk size is
+            // 4294967295 so for us that is a max of 10 chars that the chunk size could be when we
+            //  are parsing it out of raw bytes.
+            for (0..10) |maybe_chunk_size_idx_offset| {
+                if (!std.ascii.isDigit(buf[iter_idx + maybe_chunk_size_idx_offset])) {
+                    chunk_size_end_idx = iter_idx + maybe_chunk_size_idx_offset;
+                    break;
+                }
+            }
+
+            var chunk_size: usize = 0;
+
+            for (iter_idx..chunk_size_end_idx) |chunk_idx| {
+                chunk_size = chunk_size * 10 + (buf[chunk_idx] - '0');
+            }
+
+            // now that we processed the size, consume any whitespace up to the chunk to read;
+            // first move the iter_idx past the chunk size marker, then consume cr/lf before the
+            // actual chunk content (whitespace like an actual space is valid for chunks!)
+            iter_idx = chunk_size_end_idx;
+
+            while (true) {
+                if (buf[iter_idx] == ascii.control_chars.cr or
+                    buf[iter_idx] == ascii.control_chars.lf)
+                {
+                    iter_idx += 1;
+
+                    continue;
+                }
+
+                break;
+            }
+
+            if (chunk_size == 0) {
+                return errors.ScrapliError.ParsingError;
+            }
+
+            var counted_chunk_iter: usize = 0;
+            var final_chunk_size: usize = chunk_size;
+
+            // TODO revisit this maybe this is no longer true after some of the fuckery that i did
+            // i despise this but it seems like we get lf+cr in both bin and ssh2 transports and
+            // at least srlinux only counts one of those, so... our chunk sizing is wrong if we
+            // dont account for that
+            while (counted_chunk_iter < chunk_size) {
+                defer counted_chunk_iter += 1;
+                if (buf[iter_idx + counted_chunk_iter] == ascii.control_chars.cr) {
+                    final_chunk_size += 1;
+
+                    continue;
+                }
+            }
+
+            @memcpy(
+                _parsed[parsed_idx .. parsed_idx + final_chunk_size],
+                buf[iter_idx .. iter_idx + final_chunk_size],
+            );
+            parsed_idx += final_chunk_size;
+
+            // finally increment iter_idx past this chunk
+            iter_idx += final_chunk_size;
+        }
+    }
+
+    pub fn getSubscriptionMessages(
+        self: *Driver,
+        id: u64,
+    ) ![][2][]const u8 {
+        // TODO obvikously this stuff, can we make it an iterator? seems nice? but does it lock
+        //   the subscsripiotns the whole tiem?
+        self.subscriptions_lock.lock();
+        defer self.subscriptions_lock.unlock();
+
+        if (!self.subscriptions.contains(id)) {
+            return &[_][2][]const u8{};
+        }
+
+        const ret = self.subscriptions.get(id);
+        return ret.?.items;
     }
 
     fn processCancelAndTimeout(
@@ -909,7 +1146,7 @@ pub const Driver = struct {
         if (cancel != null and cancel.?.*) {
             self.log.critical("operation cancelled", .{});
 
-            return error.Cancelled;
+            return errors.ScrapliError.Cancelled;
         }
 
         const elapsed_time = timer.read();
@@ -921,7 +1158,7 @@ pub const Driver = struct {
         {
             self.log.critical("op timeout exceeded", .{});
 
-            return error.Timeout;
+            return errors.ScrapliError.RegexError;
         }
     }
 
@@ -952,6 +1189,41 @@ pub const Driver = struct {
         try writer.elementEnd();
     }
 
+    // for at least get-data rpc that expects subtree-filter / xpath-filter tags rather than the
+    // "traditional" filter tag
+    fn addFilterElemExplicitTag(
+        writer: *xml.GenericWriter(error{OutOfMemory}),
+        filter: []const u8,
+        filter_type: operation.FilterType,
+        filter_namespace_prefix: ?[]const u8,
+        filter_namespace: ?[]const u8,
+    ) !void {
+        if (filter_type == operation.FilterType.subtree) {
+            try writer.elementStart("subtree-filter");
+
+            if (filter_namespace != null and filter_namespace.?.len > 0) {
+                try writer.bindNs(
+                    filter_namespace_prefix orelse "",
+                    filter_namespace.?,
+                );
+            }
+        } else {
+            try writer.elementStart("xpath-filter");
+
+            if (filter_namespace != null and filter_namespace.?.len > 0) {
+                try writer.bindNs(
+                    filter_namespace_prefix orelse "",
+                    filter_namespace.?,
+                );
+            }
+        }
+
+        // with either "outer" tag opened, we can write the filter
+        try writer.embed(filter);
+
+        // finally close out the filter tag
+        try writer.elementEnd();
+    }
     fn addTargetElem(
         writer: *xml.GenericWriter(error{OutOfMemory}),
         target: []const u8,
@@ -996,15 +1268,64 @@ pub const Driver = struct {
             return std.fmt.allocPrint(
                 allocator,
                 "{s}\n{s}",
-                .{ elem_conent, delimiter_Version_1_0 },
+                .{ elem_conent, delimiter_version_1_0 },
             );
         } else {
             return std.fmt.allocPrint(
                 allocator,
                 "#{d}\n{s}\n{s}",
-                .{ elem_conent.len, elem_conent, delimiter_Version_1_1 },
+                .{ elem_conent.len, elem_conent, delimiter_version_1_1 },
             );
         }
+    }
+
+    fn buildRawRpcElement(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: operation.RawRpcOptions,
+    ) ![]const u8 {
+        var message_id_buf: [20]u8 = undefined;
+
+        var sink = std.ArrayList(u8).init(allocator);
+        defer sink.deinit();
+
+        var out = xml.streamingOutput(sink.writer());
+
+        var writer = out.writer(
+            allocator,
+            .{ .indent = "" },
+        );
+        defer writer.deinit();
+
+        try writer.xmlDeclaration("UTF-8", null);
+        try writer.elementStart("rpc");
+        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try writer.attribute(
+            "message-id",
+            try std.fmt.bufPrint(
+                &message_id_buf,
+                "{}",
+                .{self.message_id},
+            ),
+        );
+        try writer.embed(options.payload);
+        try writer.elementEnd();
+        try writer.eof();
+
+        return self.finalizeElem(allocator, sink.items);
+    }
+
+    pub fn rawRpc(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: operation.RawRpcOptions,
+    ) !*result.Result {
+        return self.dispatchRpc(
+            allocator,
+            operation.RpcOptions{
+                .raw_rpc = options,
+            },
+        );
     }
 
     fn buildGetConfigElem(
@@ -1740,412 +2061,6 @@ pub const Driver = struct {
         );
     }
 
-    fn buildCreateSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.CreateSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("create-subscription");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:notification:1.0");
-
-        if (options.filter != null and options.filter.?.len > 0) {
-            try Driver.addFilterElem(
-                &writer,
-                options.filter.?,
-                options.filter_type,
-                options.filter_namespace_prefix,
-                options.filter_namespace,
-            );
-        }
-
-        if (options.start_time != null) {
-            // TODO
-        }
-
-        if (options.stop_time != null) {
-            // TODO
-        }
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn createSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.CreateSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .CreateSubscription = options,
-            },
-        );
-    }
-
-    fn buildEstablishSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.EstablishSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("establish-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // TODO stream and other options/settings
-
-        if (options.filter != null and options.filter.?.len > 0) {
-            try Driver.addFilterElem(
-                &writer,
-                options.filter.?,
-                options.filter_type,
-                options.filter_namespace_prefix,
-                options.filter_namespace,
-            );
-        }
-
-        if (options.stop_time != null) {
-            // TODO
-        }
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn establishSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.EstablishSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .EstablishSubscription = options,
-            },
-        );
-    }
-
-    fn buildModifySubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.ModifySubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("modify-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // see also getMessageId, same situation
-        try writer.elementStart("id");
-        var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.id}));
-        try writer.elementEnd();
-
-        // TODO stream and other options/settings
-
-        if (options.filter != null and options.filter.?.len > 0) {
-            try Driver.addFilterElem(
-                &writer,
-                options.filter.?,
-                options.filter_type,
-                options.filter_namespace_prefix,
-                options.filter_namespace,
-            );
-        }
-
-        if (options.stop_time != null) {
-            // TODO
-        }
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn modifySubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.ModifySubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .ModifySubscription = options,
-            },
-        );
-    }
-
-    fn buildDeleteSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.DeleteSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("delete-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // see also getMessageId, same situation
-        try writer.elementStart("id");
-        var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.id}));
-        try writer.elementEnd();
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn deleteSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.DeleteSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .DeleteSubscription = options,
-            },
-        );
-    }
-
-    fn buildResyncSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.ResyncSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("resync-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // see also getMessageId, same situation
-        try writer.elementStart("id");
-        var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.id}));
-        try writer.elementEnd();
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn resyncSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.ResyncSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .ResyncSubscriptionOptions = options,
-            },
-        );
-    }
-
-    fn buildKillSubscriptionElem(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.KillSubscriptionOptions,
-    ) ![]const u8 {
-        var message_id_buf: [20]u8 = undefined;
-
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
-
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
-        defer writer.deinit();
-
-        try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
-        try writer.attribute(
-            "message-id",
-            try std.fmt.bufPrint(
-                &message_id_buf,
-                "{}",
-                .{self.message_id},
-            ),
-        );
-        try writer.elementStart("kill-subscription");
-        try writer.bindNs(
-            "",
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-        );
-        try writer.bindNs("yp", "urn:ietf:params:xml:ns:yang:ietf-yang-push");
-
-        // see also getMessageId, same situation
-        try writer.elementStart("id");
-        var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(&session_id_buf, "{}", .{options.id}));
-        try writer.elementEnd();
-
-        try writer.elementEnd();
-        try writer.elementEnd();
-        try writer.eof();
-
-        return self.finalizeElem(allocator, sink.items);
-    }
-
-    pub fn killSubscription(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.KillSubscriptionOptions,
-    ) !*result.Result {
-        return self.dispatchRpc(
-            allocator,
-            operation.RpcOptions{
-                .KillSubscriptionOptions = options,
-            },
-        );
-    }
-
     fn buildGetSchemaElem(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2207,7 +2122,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .GetSchemaOptions = options,
+                .get_schema = options,
             },
         );
     }
@@ -2258,7 +2173,7 @@ pub const Driver = struct {
         try writer.elementEnd();
 
         if (options.filter != null and options.filter.?.len > 0) {
-            try Driver.addFilterElem(
+            try Driver.addFilterElemExplicitTag(
                 &writer,
                 options.filter.?,
                 options.filter_type,
@@ -2267,13 +2182,15 @@ pub const Driver = struct {
             );
         }
 
-        try writer.elementStart("config-filter");
-        if (options.config_filter) {
-            try writer.text("true");
-        } else {
-            try writer.text("false");
+        if (options.config_filter) |cf| {
+            try writer.elementStart("config-filter");
+            if (cf) {
+                try writer.text("true");
+            } else {
+                try writer.text("false");
+            }
+            try writer.elementEnd();
         }
-        try writer.elementEnd();
 
         if (options.origin_filters != null and options.origin_filters.?.len > 0) {
             try writer.embed(options.origin_filters.?);
@@ -2317,7 +2234,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .GetData = options,
+                .get_data = options,
             },
         );
     }
@@ -2362,7 +2279,10 @@ pub const Driver = struct {
             .{options.datastore.toString()},
         ));
         try writer.elementEnd();
+
+        try writer.elementStart("config");
         try writer.embed(options.edit_content);
+        try writer.elementEnd();
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -2379,7 +2299,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .EditData = options,
+                .edit_data = options,
             },
         );
     }
@@ -2433,7 +2353,7 @@ pub const Driver = struct {
         return self.dispatchRpc(
             allocator,
             operation.RpcOptions{
-                .Action = options,
+                .action = options,
             },
         );
     }
@@ -2451,175 +2371,145 @@ pub const Driver = struct {
         var cancel: ?*bool = null;
 
         switch (options) {
-            .get_config => {
-                cancel = options.get_config.cancel;
+            .raw_rpc => |o| {
+                cancel = o.cancel;
+                res.input = try self.buildRawRpcElement(
+                    allocator,
+                    o,
+                );
+            },
+            .get_config => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildGetConfigElem(
                     allocator,
-                    options.get_config,
+                    o,
                 );
             },
-            .edit_config => {
-                cancel = options.edit_config.cancel;
+            .edit_config => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildEditConfigElem(
                     allocator,
-                    options.edit_config,
+                    o,
                 );
             },
-            .copy_config => {
-                cancel = options.copy_config.cancel;
+            .copy_config => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildCopyConfigElem(
                     allocator,
-                    options.copy_config,
+                    o,
                 );
             },
-            .delete_config => {
-                cancel = options.delete_config.cancel;
+            .delete_config => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildDeleteConfigElem(
                     allocator,
-                    options.delete_config,
+                    o,
                 );
             },
-            .lock => {
-                cancel = options.lock.cancel;
+            .lock => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildLockElem(
                     allocator,
-                    options.lock,
+                    o,
                 );
             },
-            .unlock => {
-                cancel = options.unlock.cancel;
+            .unlock => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildUnlockElem(
                     allocator,
-                    options.unlock,
+                    o,
                 );
             },
-            .get => {
-                cancel = options.get.cancel;
+            .get => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildGetElem(
                     allocator,
-                    options.get,
+                    o,
                 );
             },
-            .close_session => {
-                cancel = options.close_session.cancel;
+            .close_session => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildCloseSessionElem(
                     allocator,
-                    options.close_session,
+                    o,
                 );
             },
-            .kill_session => {
-                cancel = options.kill_session.cancel;
+            .kill_session => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildKillSessionElem(
                     allocator,
-                    options.kill_session,
+                    o,
                 );
             },
-            .commit => {
-                cancel = options.commit.cancel;
+            .commit => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildCommitElem(
                     allocator,
-                    options.commit,
+                    o,
                 );
             },
-            .discard => {
-                cancel = options.discard.cancel;
+            .discard => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildDiscardElem(
                     allocator,
-                    options.discard,
+                    o,
                 );
             },
-            .cancel_commit => {
-                cancel = options.cancel_commit.cancel;
+            .cancel_commit => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildCancelCommitElem(
                     allocator,
-                    options.cancel_commit,
+                    o,
                 );
             },
-            .validate => {
-                cancel = options.validate.cancel;
+            .validate => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildValidateElem(
                     allocator,
-                    options.validate,
+                    o,
                 );
             },
-            .create_subscription => {
-                cancel = options.create_subscription.cancel;
-                res.input = try self.buildCreateSubscriptionElem(
-                    allocator,
-                    options.create_subscription,
-                );
-            },
-            .establish_subscription => {
-                cancel = options.establish_subscription.cancel;
-                res.input = try self.buildEstablishSubscriptionElem(
-                    allocator,
-                    options.establish_subscription,
-                );
-            },
-            .modify_subscription => {
-                cancel = options.modify_subscription.cancel;
-                res.input = try self.buildModifySubscriptionElem(
-                    allocator,
-                    options.modify_subscription,
-                );
-            },
-            .delete_subscription => {
-                cancel = options.delete_subscription.cancel;
-                res.input = try self.buildDeleteSubscriptionElem(
-                    allocator,
-                    options.delete_subscription,
-                );
-            },
-            .resync_subscription => {
-                cancel = options.resync_subscription.cancel;
-                res.input = try self.buildResyncSubscriptionElem(
-                    allocator,
-                    options.resync_subscription,
-                );
-            },
-            .kill_subscription => {
-                cancel = options.kill_subscription.cancel;
-                res.input = try self.buildKillSubscriptionElem(
-                    allocator,
-                    options.kill_subscription,
-                );
-            },
-            .get_schema => {
+            .get_schema => |o| {
                 cancel = options.get_schema.cancel;
                 res.input = try self.buildGetSchemaElem(
                     allocator,
-                    options.get_schema,
+                    o,
                 );
             },
-            .get_data => {
-                cancel = options.get_data.cancel;
+            .get_data => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildGetDataElem(
                     allocator,
-                    options.get_data,
+                    o,
                 );
             },
-            .edit_data => {
-                cancel = options.edit_data.cancel;
+            .edit_data => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildEditDataElem(
                     allocator,
-                    options.edit_data,
+                    o,
                 );
             },
-            .action => {
-                cancel = options.action.cancel;
+            .action => |o| {
+                cancel = o.cancel;
                 res.input = try self.buildActionElem(
                     allocator,
-                    options.action,
+                    o,
                 );
             },
-            else => return error.UnsupportedOperation,
+            else => return errors.ScrapliError.UnsupportedOperation,
         }
 
         // before sending increment, but remember that in sendRpc we need to check for the
         // *previous* message id!
         self.message_id += 1;
 
-        const ret = try self.sendRpc(&timer, cancel, res.input.?, self.message_id - 1);
+        const ret = try self.sendRpc(
+            &timer,
+            cancel,
+            res.input.?,
+            self.message_id - 1,
+        );
 
         try res.record(ret);
 
@@ -2632,7 +2522,7 @@ pub const Driver = struct {
         cancel: ?*bool,
         input: []const u8,
         message_id: u64,
-    ) ![]const u8 {
+    ) ![2][]const u8 {
         try self.session.writeAndReturn(input, false);
 
         if (self.negotiated_version == Version.version_1_1) {
@@ -2653,10 +2543,274 @@ pub const Driver = struct {
 
             self.messages_lock.unlock();
 
-            return self.messages.get(message_id).?;
+            const kv = self.messages.fetchRemove(message_id);
+
+            return kv.?.value;
         }
     }
 };
+
+test "processFoundMessageIds" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected: struct {
+            found: bool = false,
+            is_subscription_message: bool = false,
+            found_id: usize = 0,
+        },
+    }{
+        .{
+            .name = "simple-not-found",
+            .input =
+            \\#1097
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></notification>
+            \\
+            \\##
+            ,
+            .expected = .{},
+        },
+        .{
+            .name = "simple-message-id",
+            .input =
+            \\#422
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><subscription-result xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications' \\xmlns:notif-bis="urn:ietf:params:xml:ns:yang:ietf-event-notifications">notif-bis:ok</subscription-result>
+            \\<subscription-id xmlns='urn:ietf:params:xml:ns:yang:ietf-event-notifications'>2147483729</subscription-id>
+            \\</rpc-reply>
+            \\#
+            ,
+            .expected = .{
+                .found = true,
+                .found_id = 101,
+            },
+        },
+        .{
+            .name = "simple-subscription-id",
+            .input =
+            \\#1097
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"><eventTime>2025-03-29T00:37:34.12Z</eventTime><push-update xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><subscription-id>2147483680</subscription-id><datastore-contents-xml><mdt-oper-data xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-mdt-oper"><mdt-subscriptions><subscription-id>2147483680</subscription-id><base><stream>yang-push</stream><source-vrf></source-vrf><period>1000</period><xpath>/mdt-oper:mdt-oper-data/mdt-subscriptions</xpath></base><type>sub-type-dynamic</type><state>sub-state-valid</state><comments>Subscription validated</comments><mdt-receivers><address>10.0.0.2</address><port>44712</port><protocol>netconf</protocol><state>rcvr-state-connected</state><comments></comments><profile></profile><last-state-change-time>2025-03-29T00:37:34.113431+00:00</last-state-change-time></mdt-receivers><last-state-change-time>2025-03-29T00:37:34.111926+00:00</last-state-change-time></mdt-subscriptions></mdt-oper-data></datastore-contents-xml></push-update></notification>
+            \\
+            \\##
+            ,
+            .expected = .{
+                .found = true,
+                .is_subscription_message = true,
+                .found_id = 2147483680,
+            },
+        },
+    };
+
+    for (cases) |case| {
+        const actual = try Driver.processFoundMessageIds(case.input);
+        try std.testing.expectEqual(case.expected.found, actual.found);
+        try std.testing.expectEqual(case.expected.is_subscription_message, actual.is_subscription_message);
+        try std.testing.expectEqual(case.expected.found_id, actual.found_id);
+    }
+}
+
+test "processFoundMessageVersion1_0" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple-with-delim",
+            .input =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>]]>]]>
+            ,
+            .expected =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>
+            ,
+        },
+        .{
+            .name = "simple-with-declaration",
+            .input =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>]]>]]>
+            ,
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\  <data>
+            \\    <cli-config-data-block>
+            \\    some cli output here
+            \\    </cli-config-data-block>
+            \\  </data>
+            \\</rpc-reply>
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = Version.version_1_0;
+
+        try d.processFoundMessageVersion1_0(case.input);
+
+        const actual_kv = d.messages.fetchRemove(101);
+        defer d.allocator.free(actual_kv.?.value[0]);
+        defer d.allocator.free(actual_kv.?.value[1]);
+
+        try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
+    }
+}
+
+test "processFoundMessageVersion1_1" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple",
+            .input =
+            \\#293
+            \\<?xml version="1.0"?>
+            \\<rpc-reply message-id="101" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+            \\ <data>
+            \\  <netconf-yang xmlns="http://cisco.com/ns/yang/Cisco-IOS-XR-man-netconf-cfg">
+            \\   <agent>
+            \\    <ssh>
+            \\     <enable></enable>
+            \\    </ssh>
+            \\   </agent>
+            \\  </netconf-yang>
+            \\ </data>
+            \\</rpc-reply>
+            \\
+            \\##
+            ,
+            .expected =
+            \\<?xml version="1.0"?>
+            \\<rpc-reply message-id="101" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+            \\ <data>
+            \\  <netconf-yang xmlns="http://cisco.com/ns/yang/Cisco-IOS-XR-man-netconf-cfg">
+            \\   <agent>
+            \\    <ssh>
+            \\     <enable></enable>
+            \\    </ssh>
+            \\   </agent>
+            \\  </netconf-yang>
+            \\ </data>
+            \\</rpc-reply>
+            \\
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = Version.version_1_1;
+
+        try d.processFoundMessageVersion1_1(case.input);
+
+        const actual_kv = d.messages.fetchRemove(101);
+        defer d.allocator.free(actual_kv.?.value[0]);
+        defer d.allocator.free(actual_kv.?.value[1]);
+
+        try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
+    }
+}
+
+test "buildRawRpcElement" {
+    const test_name = "buildRawRpcElement";
+
+    const cases = [_]struct {
+        name: []const u8,
+        version: Version,
+        options: operation.RawRpcOptions,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple-1.0",
+            .version = Version.version_1_0,
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1",
+            .version = Version.version_1_1,
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+            },
+            .expected =
+            \\#175
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
+            \\##
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = case.version;
+
+        const actual = try d.buildRawRpcElement(
+            std.testing.allocator,
+            case.options,
+        );
+        defer std.testing.allocator.free(actual);
+
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
+    }
+}
 
 test "buildGetConfigElem" {
     const test_name = "buildGetConfigElem";
@@ -3400,342 +3554,6 @@ test "buildValidateElem" {
     }
 }
 
-test "buildCreateSubscriptionElem" {
-    const test_name = "buildCreateSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.CreateSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></create-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{},
-            .expected =
-            \\#213
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></create-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildCreateSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildEstablishSubscriptionElem" {
-    const test_name = "buildEstablishSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.EstablishSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .stream = "NETCONF" },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"></establish-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .stream = "NETCONF" },
-            .expected =
-            \\#283
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"></establish-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildEstablishSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildModifySubscriptionElem" {
-    const test_name = "buildModifySubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.ModifySubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .id = 0, .stream = "NETCONF'" },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><modify-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></modify-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .id = 0, .stream = "NETCONF'" },
-            .expected =
-            \\#287
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><modify-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></modify-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildModifySubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildDeleteSubscriptionElem" {
-    const test_name = "buildDeleteSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.DeleteSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .id = 0 },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></delete-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .id = 0 },
-            .expected =
-            \\#287
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></delete-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildDeleteSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildResyncSubscriptionElem" {
-    const test_name = "buildResyncSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.ResyncSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .id = 0 },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><resync-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></resync-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .id = 0 },
-            .expected =
-            \\#287
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><resync-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></resync-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildResyncSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
-test "buildKillSubscriptionElem" {
-    const test_name = "buildKillSubscriptionElem";
-
-    const cases = [_]struct {
-        name: []const u8,
-        version: Version,
-        options: operation.KillSubscriptionOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "simple-1.0",
-            .version = Version.version_1_0,
-            .options = .{ .id = 0 },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><kill-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></kill-subscription></rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1",
-            .version = Version.version_1_1,
-            .options = .{ .id = 0 },
-            .expected =
-            \\#283
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><kill-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><id>0</id></kill-subscription></rpc>
-            \\##
-            ,
-        },
-    };
-
-    for (cases) |case| {
-        const d = try Driver.init(
-            std.testing.allocator,
-            "localhost",
-            .{},
-        );
-
-        defer d.deinit();
-
-        d.negotiated_version = case.version;
-
-        const actual = try d.buildKillSubscriptionElem(
-            std.testing.allocator,
-            case.options,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try test_helper.testStrResult(
-            test_name,
-            case.name,
-            actual,
-            case.expected,
-        );
-    }
-}
-
 test "buildGetSchemaElem" {
     const test_name = "buildGetSchemaElem";
 
@@ -3810,7 +3628,7 @@ test "buildGetDataElem" {
             .version = Version.version_1_0,
             .options = .{},
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore><config-filter>true</config-filter></get-data></rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></rpc>
             \\]]>]]>
             ,
         },
@@ -3819,8 +3637,8 @@ test "buildGetDataElem" {
             .version = Version.version_1_1,
             .options = .{},
             .expected =
-            \\#363
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore><config-filter>true</config-filter></get-data></rpc>
+            \\#328
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></rpc>
             \\##
             ,
         },
@@ -3866,7 +3684,7 @@ test "builEditDataElem" {
             .version = Version.version_1_0,
             .options = .{ .edit_content = "foo" },
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore>foo</edit-data></rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></rpc>
             \\]]>]]>
             ,
         },
@@ -3875,8 +3693,8 @@ test "builEditDataElem" {
             .version = Version.version_1_1,
             .options = .{ .edit_content = "foo" },
             .expected =
-            \\#282
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore>foo</edit-data></rpc>
+            \\#299
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></rpc>
             \\##
             ,
         },

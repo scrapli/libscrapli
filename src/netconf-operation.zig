@@ -6,6 +6,7 @@ pub const Kind = enum {
     // not "standard" netconf operations, but operations for us!
     open,
     close,
+    raw_rpc,
 
     // rfc 4741 rpcs
     get_config,
@@ -24,16 +25,6 @@ pub const Kind = enum {
     cancel_commit,
     validate,
 
-    // rfc 5277 rpcs
-    create_subscription,
-
-    // rfc 8640/8641
-    establish_subscription,
-    modify_subscription,
-    delete_subscription,
-    resync_subscription,
-    kill_subscription,
-
     // rfc 6022 rpcs
     get_schema,
 
@@ -48,6 +39,7 @@ pub const Kind = enum {
 pub const RpcOptions = union(Kind) {
     open: OpenOptions,
     close: CloseOptions,
+    raw_rpc: RawRpcOptions,
 
     get_config: GetConfigOptions,
     edit_config: EditConfigOptions,
@@ -63,14 +55,6 @@ pub const RpcOptions = union(Kind) {
     discard: DiscardOptions,
     cancel_commit: CancelCommitOptions,
     validate: ValidateOptions,
-
-    create_subscription: CreateSubscriptionOptions,
-
-    establish_subscription: EstablishSubscriptionOptions,
-    modify_subscription: ModifySubscriptionOptions,
-    delete_subscription: DeleteSubscriptionOptions,
-    resync_subscription: ResyncSubscriptionOptions,
-    kill_subscription: KillSubscriptionOptions,
 
     get_schema: GetSchemaOptions,
 
@@ -195,6 +179,12 @@ pub const OpenOptions = operation.OpenOptions;
 
 pub const CloseOptions = operation.CloseOptions;
 
+pub const RawRpcOptions = struct {
+    cancel: ?*bool = null,
+    // the inner payload, we wrap this with the outer rpc tag w/ appropriate message id
+    payload: []const u8,
+};
+
 pub const GetConfigOptions = struct {
     cancel: ?*bool = null,
     source: DatastoreType = DatastoreType.running,
@@ -267,63 +257,6 @@ pub const ValidateOptions = struct {
     source: DatastoreType = DatastoreType.running,
 };
 
-pub const CreateSubscriptionOptions = struct {
-    cancel: ?*bool = null,
-    stream: ?[]const u8 = null,
-    filter: ?[]const u8 = null,
-    filter_type: FilterType = FilterType.subtree,
-    filter_namespace_prefix: ?[]const u8 = null,
-    filter_namespace: ?[]const u8 = null,
-    start_time: ?u64 = null,
-    stop_time: ?u64 = null,
-};
-
-pub const EstablishSubscriptionOptions = struct {
-    cancel: ?*bool = null,
-    stream: []const u8,
-    filter: ?[]const u8 = null,
-    filter_type: FilterType = FilterType.subtree,
-    filter_namespace_prefix: ?[]const u8 = null,
-    filter_namespace: ?[]const u8 = null,
-    period: ?u64 = null,
-    stop_time: ?u64 = null,
-    dscp: ?u8 = null,
-    weighting: ?u8 = null,
-    dependency: ?u32 = null,
-    encoding: ?[]const u8 = null,
-};
-
-pub const ModifySubscriptionOptions = struct {
-    cancel: ?*bool = null,
-    id: u64,
-    stream: []const u8,
-    filter: ?[]const u8 = null,
-    filter_type: FilterType = FilterType.subtree,
-    filter_namespace_prefix: ?[]const u8 = null,
-    filter_namespace: ?[]const u8 = null,
-    period: ?u64 = null,
-    stop_time: ?u64 = null,
-    dscp: ?u8 = null,
-    weighting: ?u8 = null,
-    dependency: ?u32 = null,
-    encoding: ?[]const u8 = null,
-};
-
-pub const DeleteSubscriptionOptions = struct {
-    cancel: ?*bool = null,
-    id: u64,
-};
-
-pub const ResyncSubscriptionOptions = struct {
-    cancel: ?*bool = null,
-    id: u64,
-};
-
-pub const KillSubscriptionOptions = struct {
-    cancel: ?*bool = null,
-    id: u64,
-};
-
 pub const GetSchemaOptions = struct {
     cancel: ?*bool = null,
     identifier: []const u8,
@@ -339,7 +272,7 @@ pub const GetDataOptions = struct {
     filter_type: FilterType = FilterType.subtree,
     filter_namespace_prefix: ?[]const u8 = null,
     filter_namespace: ?[]const u8 = null,
-    config_filter: bool = true,
+    config_filter: ?bool = null,
     // TODO check if this should/could be typed or if it makes more sense to leave as a str
     origin_filters: ?[]const u8 = null,
     max_depth: ?u32 = null,

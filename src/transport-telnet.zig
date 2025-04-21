@@ -2,6 +2,7 @@ const std = @import("std");
 const file = @import("file.zig");
 const bytes = @import("bytes.zig");
 const logging = @import("logging.zig");
+const errors = @import("errors.zig");
 
 const control_char_iac: u8 = 255;
 const control_char_do: u8 = 253;
@@ -88,7 +89,7 @@ pub const Transport = struct {
                         .{err},
                     );
 
-                    return error.OpenFailed;
+                    return errors.ScrapliError.OpenFailed;
                 };
 
                 return true;
@@ -99,7 +100,7 @@ pub const Transport = struct {
                         .{err},
                     );
 
-                    return error.OpenFailed;
+                    return errors.ScrapliError.OpenFailed;
                 };
             }
         } else if (control_buf.items.len == 1 and
@@ -111,7 +112,7 @@ pub const Transport = struct {
                     .{err},
                 );
 
-                return error.OpenFailed;
+                return errors.ScrapliError.OpenFailed;
             };
         } else if (control_buf.items.len == 2) {
             const cmd = control_buf.items[1..2][0];
@@ -122,7 +123,7 @@ pub const Transport = struct {
                     .{err},
                 );
 
-                return error.OpenFailed;
+                return errors.ScrapliError.OpenFailed;
             };
 
             if (cmd == control_char_do and maybe_control_char == control_char_sga) {
@@ -173,7 +174,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -181,7 +182,7 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.OpenTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             var control_char_buf: [1]u8 = undefined;
@@ -228,13 +229,13 @@ pub const Transport = struct {
                 .{ host, err },
             );
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
 
         file.setNonBlocking(self.stream.?.handle) catch {
             self.log.critical("failed ensuring socket set to non blocking", .{});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
 
         try self.handleControlChars(
@@ -253,19 +254,19 @@ pub const Transport = struct {
 
     pub fn write(self: *Transport, buf: []const u8) !void {
         if (self.stream == null) {
-            return error.NotOpened;
+            return errors.ScrapliError.NotOpened;
         }
 
         self.stream.?.writeAll(buf) catch |err| {
             self.log.critical("failed writing to stream, err: {}", .{err});
 
-            return error.WriteFailed;
+            return errors.ScrapliError.WriteFailed;
         };
     }
 
     pub fn read(self: *Transport, buf: []u8) !usize {
         if (self.stream == null) {
-            return error.NotOpened;
+            return errors.ScrapliError.NotOpened;
         }
 
         if (self.initial_buf.items.len > 0) {
@@ -287,7 +288,7 @@ pub const Transport = struct {
                 else => {
                     self.log.critical("failed reading from stream, err: {}", .{err});
 
-                    return error.ReadFailed;
+                    return errors.ScrapliError.ReadFailed;
                 },
             }
         };

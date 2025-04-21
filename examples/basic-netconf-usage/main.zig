@@ -90,28 +90,23 @@ pub fn main() !void {
     );
     defer password.deinit();
 
-    // for logging to a file:
-    // const f = try std.fs.cwd().createFile(
-    //     "out.txt",
-    //     .{},
-    // );
-    // defer f.close();
-    // then uncomment recorder in OptionsInputs below
-
     const d = try netconf.Driver.init(
         allocator,
         host.string,
         .{
-            // uncomment and import the logger package like: `const logger = scrapli.logger;`
+            // uncomment and import the logger package like: `const logging = scrapli.logging;`
             // for a simple logger setup
-            // .logger = logger.Logger{ .allocator = allocator, .f = logger.stdLogf, },
+            // .logger = logging.Logger{ .allocator = allocator, .f = logging.stdLogf, },
             .port = try get_port(),
             .auth = .{
                 .username = "admin",
                 .password = password.string,
             },
             .session = .{
-                // .recorder = f,
+                // uncomment to log/record to a file
+                // .record_destination = .{
+                //     .f = "out.txt",
+                // },
             },
             .transport = .{
                 // comment out to use bin transport if desired
@@ -131,7 +126,7 @@ pub fn main() !void {
         "{s}\n{s}\n{s}\n Completed in {d}s\n",
         .{
             banner,
-            open_result.results.items[0],
+            open_result.result,
             banner,
             open_result.elapsedTimeSeconds(),
         },
@@ -144,7 +139,7 @@ pub fn main() !void {
         "{s}\n{s}\n{s}\n Completed in {d}s\n",
         .{
             banner,
-            get_result.results.items[0],
+            get_result.result,
             banner,
             get_result.elapsedTimeSeconds(),
         },
@@ -159,7 +154,7 @@ pub fn main() !void {
         "{s}\n{s}\n{s}\n Completed in {d}s\n",
         .{
             banner,
-            get_config_result.results.items[0],
+            get_config_result.result,
             banner,
             get_config_result.elapsedTimeSeconds(),
         },

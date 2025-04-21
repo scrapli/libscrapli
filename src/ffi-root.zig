@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
@@ -7,9 +8,9 @@ const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
 
 const logging = @import("logging.zig");
+const session = @import("session.zig");
 const transport = @import("transport.zig");
 
-// TODO dont do this shit, just figure out including more shit in build.zig
 pub export const _force_include_apply_options = &ffi_apply_options.noop;
 pub export const _force_include_root_driver = &ffi_root_cli.noop;
 pub export const _force_include_root_driver_netconf = &ffi_root_netconf.noop;
@@ -31,15 +32,28 @@ pub const std_options = std.Options{
     },
 };
 
-// TODO should ensure that we use std page alloc for release/debug for test
-// std page allocator
-// const allocator = std.heap.page_allocator;
+const is_debug_build = builtin.mode == .Debug;
 
-// gpa for testing allocs
-var debug_allocator = std.heap.DebugAllocator(.{}){};
-const allocator = debug_allocator.allocator();
+var debug_allocator = if (is_debug_build)
+    std.heap.DebugAllocator(.{}){}
+else
+    null;
 
-export fn assertNoLeaks() bool {
+pub const allocator = switch (builtin.mode) {
+    .Debug,
+    => blk: {
+        break :blk debug_allocator.allocator();
+    },
+    .ReleaseSafe, .ReleaseFast, .ReleaseSmall => std.heap.page_allocator,
+};
+
+// all exported functions are named using c standard and prepended with "ls" for libscrapli for
+// namespacing reasons.
+export fn ls_assert_no_leaks() bool {
+    if (!is_debug_build) {
+        return false;
+    }
+
     switch (debug_allocator.deinit()) {
         .leak => return false,
         .ok => return true,
@@ -76,7 +90,7 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
     }
 }
 
-export fn allocCliDriver(
+export fn ls_alloc_cli(
     definition_string: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
@@ -120,7 +134,7 @@ export fn allocCliDriver(
     return @intFromPtr(d);
 }
 
-export fn allocNetconfDriver(
+export fn ls_alloc_netconf(
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
     port: u16,
@@ -163,7 +177,7 @@ export fn allocNetconfDriver(
     return @intFromPtr(d);
 }
 
-export fn freeDriver(
+export fn ls_free(
     d_ptr: usize,
 ) void {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
@@ -171,7 +185,7 @@ export fn freeDriver(
     d.deinit();
 }
 
-export fn openDriver(
+export fn ls_open(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -235,20 +249,135 @@ export fn openDriver(
         },
     }
 
+    while (true) {
+        // weve already waited for the operation loop to start in the queue operation function,
+        // but we also need to ensure we wait for the open operation to actually get put into
+        // the queue before continuing
+        d.operation_lock.lock();
+        defer d.operation_lock.unlock();
+
+        const op = d.operation_results.get(operation_id.*);
+        if (op != null) {
+            break;
+        }
+
+        std.time.sleep(ffi_driver.operation_thread_ready_sleep);
+    }
+
     return 0;
 }
 
-/// Closes the driver, does *not* free/deinit.
-export fn closeDriver(
+/// Closes the cli/netconf driver, does *not* free/deinit.
+export fn ls_close(
     d_ptr: usize,
+    operation_id: *u32,
     cancel: *bool,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.close(cancel) catch |err| {
+    switch (d.real_driver) {
+        .cli => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .id = 0,
+                    .operation = .{
+                        .cli = .{
+                            .close = .{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue close {any}",
+                    .{err},
+                );
+
+                return 1;
+            };
+        },
+        .netconf => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .id = 0,
+                    .operation = .{
+                        .netconf = .{
+                            .close = .{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue close {any}",
+                    .{err},
+                );
+
+                return 1;
+            };
+        },
+    }
+
+    return 0;
+}
+
+/// Reads from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
+/// ffi-driver operation loop entirely.
+export fn ls_read_session(
+    d_ptr: usize,
+    buf: *[]u8,
+    read_n: *u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    // SAFETY: will always be set!
+    var s: *session.Session = undefined;
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            s = rd.session;
+        },
+        .netconf => |rd| {
+            s = rd.session;
+        },
+    }
+
+    const n = s.read(buf.*);
+
+    read_n.* = n;
+
+    return 0;
+}
+
+/// Writes from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
+/// ffi-driver operation loop entirely.
+export fn ls_write_session(
+    d_ptr: usize,
+    buf: [*c]const u8,
+    redacted: bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    // SAFETY: will always be set!
+    var s: *session.Session = undefined;
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            s = rd.session;
+        },
+        .netconf => |rd| {
+            s = rd.session;
+        },
+    }
+
+    s.write(std.mem.span(buf), redacted) catch |err| {
         d.log(
             logging.LogLevel.critical,
-            "error during driver close {any}",
+            "error during driver write {any}",
             .{err},
         );
 

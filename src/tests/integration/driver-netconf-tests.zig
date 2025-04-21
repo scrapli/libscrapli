@@ -13,11 +13,13 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*netconf.Driver {
         .{
             .port = 22830,
             .auth = .{
-                .username = "admin",
+                .username = "netconf-admin",
                 .password = "admin",
             },
             .session = .{
-                .recorder = recorder,
+                .record_destination = .{
+                    .writer = recorder,
+                },
             },
         },
     );
@@ -30,7 +32,7 @@ fn GetTestDriver(f: []const u8) !*netconf.Driver {
         .{
             .port = 22830,
             .auth = .{
-                .username = "admin",
+                .username = "netconf-admin",
                 .password = "admin",
             },
             .session = .{
@@ -127,16 +129,13 @@ test "driver-netconf open" {
             close_ret.deinit();
         }
 
-        const actual = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(actual);
-
         try std.testing.expect(!actual_res.result_failure_indicated);
 
         try helper.processFixutreTestStrResult(
             test_name,
             case.name,
             golden_filename,
-            actual,
+            actual_res.result,
         );
     }
 }
@@ -211,16 +210,13 @@ test "driver-netconf get-config" {
             close_ret.deinit();
         }
 
-        const actual = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(actual);
-
         try std.testing.expect(!actual_res.result_failure_indicated);
 
         try helper.processFixutreTestStrResult(
             test_name,
             case.name,
             golden_filename,
-            actual,
+            actual_res.result,
         );
     }
 }
@@ -303,16 +299,13 @@ test "driver-netconf lock" {
             close_ret.deinit();
         }
 
-        const actual = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(actual);
-
         try std.testing.expect(!actual_res.result_failure_indicated);
 
         try helper.processFixutreTestStrResult(
             test_name,
             case.name,
             golden_filename,
-            actual,
+            actual_res.result,
         );
     }
 }
@@ -397,16 +390,13 @@ test "driver-netconf unlock" {
             close_ret.deinit();
         }
 
-        const actual = try actual_res.getResult(std.testing.allocator);
-        defer std.testing.allocator.free(actual);
-
         try std.testing.expect(!actual_res.result_failure_indicated);
 
         try helper.processFixutreTestStrResult(
             test_name,
             case.name,
             golden_filename,
-            actual,
+            actual_res.result,
         );
     }
 }

@@ -7,6 +7,8 @@ const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
 const time = @import("time.zig");
 const auth = @import("auth.zig");
+const file = @import("file.zig");
+const errors = @import("errors.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
@@ -80,6 +82,11 @@ const MatchPositions = struct {
     }
 };
 
+pub const RecordDestination = union(enum) {
+    writer: std.fs.File.Writer,
+    f: []const u8,
+};
+
 pub const OptionsInputs = struct {
     read_size: u64 = default_read_size,
     read_delay_min_ns: u64 = default_read_delay_min_ns,
@@ -88,7 +95,7 @@ pub const OptionsInputs = struct {
     return_char: []const u8 = default_return_char,
     operation_timeout_ns: u64 = default_operation_timeout_ns,
     operation_max_search_depth: u64 = default_operation_max_search_depth,
-    recorder: ?std.fs.File.Writer = null,
+    record_destination: ?RecordDestination = null,
 };
 
 pub const Options = struct {
@@ -100,7 +107,7 @@ pub const Options = struct {
     return_char: []const u8,
     operation_timeout_ns: u64,
     operation_max_search_depth: u64,
-    recorder: ?std.fs.File.Writer,
+    record_destination: ?RecordDestination,
 
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
@@ -115,11 +122,22 @@ pub const Options = struct {
             .return_char = opts.return_char,
             .operation_timeout_ns = opts.operation_timeout_ns,
             .operation_max_search_depth = opts.operation_max_search_depth,
-            .recorder = opts.recorder,
+            .record_destination = opts.record_destination,
         };
 
         if (&o.return_char[0] != &default_return_char[0]) {
             o.return_char = try o.allocator.dupe(u8, o.return_char);
+        }
+
+        if (o.record_destination) |rd| {
+            switch (rd) {
+                .f => {
+                    o.record_destination = RecordDestination{
+                        .f = try o.allocator.dupe(u8, rd.f),
+                    };
+                },
+                else => {},
+            }
         }
 
         return o;
@@ -128,6 +146,15 @@ pub const Options = struct {
     pub fn deinit(self: *Options) void {
         if (&self.return_char[0] != &default_return_char[0]) {
             self.allocator.free(self.return_char);
+        }
+
+        if (self.record_destination) |rd| {
+            switch (rd) {
+                .f => {
+                    self.allocator.free(rd.f);
+                },
+                else => {},
+            }
         }
 
         self.allocator.destroy(self);
@@ -149,9 +176,11 @@ pub const Session = struct {
         std.fifo.LinearFifoBufferType.Dynamic,
     ),
 
+    recorder: ?std.fs.File.Writer,
+
     compiled_username_pattern: ?*pcre2.pcre2_code_8,
     compiled_password_pattern: ?*pcre2.pcre2_code_8,
-    compiled_passphrase_pattern: ?*pcre2.pcre2_code_8,
+    compiled_private_key_passphrase_pattern: ?*pcre2.pcre2_code_8,
 
     prompt_pattern: []const u8,
     compiled_prompt_pattern: ?*pcre2.pcre2_code_8,
@@ -175,6 +204,24 @@ pub const Session = struct {
 
         const s = try allocator.create(Session);
 
+        var recorder: ?std.fs.File.Writer = null;
+        if (options.record_destination) |rd| {
+            switch (rd) {
+                .f => {
+                    const out_f = try std.fs.cwd().createFile(
+                        rd.f,
+                        .{},
+                    );
+
+                    recorder = out_f.writer();
+                    recorder.?.context = out_f;
+                },
+                .writer => {
+                    recorder = rd.writer;
+                },
+            }
+        }
+
         s.* = Session{
             .allocator = allocator,
             .log = log,
@@ -188,9 +235,10 @@ pub const Session = struct {
                 u8,
                 std.fifo.LinearFifoBufferType.Dynamic,
             ).init(allocator),
+            .recorder = recorder,
             .compiled_username_pattern = null,
             .compiled_password_pattern = null,
-            .compiled_passphrase_pattern = null,
+            .compiled_private_key_passphrase_pattern = null,
             .prompt_pattern = prompt_pattern,
             .compiled_prompt_pattern = null,
             .last_consumed_prompt = std.ArrayList(u8).init(allocator),
@@ -204,7 +252,7 @@ pub const Session = struct {
                 .{s.auth_options.username_pattern},
             );
 
-            return error.InitFailed;
+            return errors.ScrapliError.RegexError;
         }
 
         s.compiled_password_pattern = re.pcre2Compile(s.auth_options.password_pattern);
@@ -214,37 +262,42 @@ pub const Session = struct {
                 .{s.auth_options.password_pattern},
             );
 
-            return error.InitFailed;
+            return errors.ScrapliError.RegexError;
         }
 
-        s.compiled_passphrase_pattern = re.pcre2Compile(s.auth_options.passphrase_pattern);
-        if (s.compiled_passphrase_pattern == null) {
+        s.compiled_private_key_passphrase_pattern = re.pcre2Compile(
+            s.auth_options.private_key_passphrase_pattern,
+        );
+        if (s.compiled_private_key_passphrase_pattern == null) {
             s.log.critical(
                 "failed compling passphrase pattern {s}",
-                .{s.auth_options.passphrase_pattern},
+                .{s.auth_options.private_key_passphrase_pattern},
             );
 
-            return error.InitFailed;
+            return errors.ScrapliError.RegexError;
         }
 
         s.compiled_prompt_pattern = re.pcre2Compile(s.prompt_pattern);
         if (s.compiled_prompt_pattern == null) {
             s.log.critical("failed compling prompt pattern {s}", .{s.prompt_pattern});
 
-            return error.InitFailed;
+            return errors.ScrapliError.RegexError;
         }
 
         return s;
     }
 
     pub fn deinit(self: *Session) void {
-        self.last_consumed_prompt.deinit();
-
         if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.run) {
             // if for whatever reason (likely because a call to driver.open failed causing a defer
             // close to *not* trigger) the session didnt get "closed", ensure we do that...
-            self.close();
+            // but... we ignore errors here since we want deinit to return void and it really
+            // shouldn't matter if something errors during close
+            // zlint-disable suppressed-errors
+            self.close() catch {};
         }
+
+        self.last_consumed_prompt.deinit();
 
         if (self.compiled_username_pattern != null) {
             re.pcre2Free(self.compiled_username_pattern.?);
@@ -254,8 +307,8 @@ pub const Session = struct {
             re.pcre2Free(self.compiled_password_pattern.?);
         }
 
-        if (self.compiled_passphrase_pattern != null) {
-            re.pcre2Free(self.compiled_passphrase_pattern.?);
+        if (self.compiled_private_key_passphrase_pattern != null) {
+            re.pcre2Free(self.compiled_private_key_passphrase_pattern.?);
         }
 
         if (self.compiled_prompt_pattern != null) {
@@ -281,7 +334,7 @@ pub const Session = struct {
                 .{err},
             );
 
-            return error.AuthenicationFailed;
+            return errors.ScrapliError.AuthenticationFailed;
         };
 
         try self.transport.open(
@@ -295,7 +348,6 @@ pub const Session = struct {
 
         self.read_stop.store(ReadThreadState.run, std.builtin.AtomicOrder.unordered);
 
-        // start read thread
         self.read_thread = std.Thread.spawn(
             .{},
             Session.readLoop,
@@ -303,7 +355,7 @@ pub const Session = struct {
         ) catch |err| {
             self.log.critical("failed spawning read thread, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
 
         const is_in_session_auth = self.transport.isInSessionAuth();
@@ -321,11 +373,45 @@ pub const Session = struct {
         );
     }
 
-    pub fn close(self: *Session) void {
+    pub fn close(self: *Session) !void {
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
-        if (self.read_thread != null) {
-            self.read_thread.?.join();
+        while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
+            std.time.sleep(self.options.read_delay_min_ns);
+        }
+
+        if (self.read_thread) |t| {
+            t.join();
+        }
+
+        if (self.options.record_destination) |rd| {
+            switch (rd) {
+                .f => {
+                    // when just given a file path we'll "own" that lifecycle and close/cleanup
+                    // as well as ensure we strip asci/ansi bits (so the file is easy to read etc.
+                    // and especially for tests!); otherwise we'll leave it to the user
+                    self.recorder.?.context.close();
+
+                    var f = try file.ReaderFromPath(
+                        self.allocator,
+                        rd.f,
+                    );
+                    const content = try f.readAllAlloc(
+                        self.allocator,
+                        std.math.maxInt(usize),
+                    );
+                    const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                        content,
+                        0,
+                    );
+                    try file.writeToPath(
+                        self.allocator,
+                        rd.f,
+                        content[0..new_size],
+                    );
+                },
+                else => {},
+            }
         }
 
         self.transport.close();
@@ -356,8 +442,8 @@ pub const Session = struct {
                 cur_read_delay_ns = self.options.read_delay_min_ns;
             }
 
-            if (self.options.recorder != null) {
-                try self.options.recorder.?.writeAll(buf[0..n]);
+            if (self.recorder) |recorder| {
+                try recorder.writeAll(buf[0..n]);
             }
 
             self.read_lock.lock();
@@ -422,7 +508,7 @@ pub const Session = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -432,7 +518,7 @@ pub const Session = struct {
             {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.AuthenicationTimeoutExceeded;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             defer std.time.sleep(cur_read_delay_ns);
@@ -462,7 +548,7 @@ pub const Session = struct {
                 );
                 try bufs.processed.resize(new_size);
 
-                try openMessageHandler(allocator, bufs.processed.items);
+                try auth.openMessageHandler(allocator, bufs.processed.items);
             }
 
             const searchable_buf = bytes.getBufSearchView(
@@ -476,21 +562,21 @@ pub const Session = struct {
                 self.compiled_prompt_pattern,
                 self.compiled_username_pattern,
                 self.compiled_password_pattern,
-                self.compiled_passphrase_pattern,
+                self.compiled_private_key_passphrase_pattern,
             );
 
             switch (state) {
-                .Complete => {
+                .complete => {
                     return bufs.toOwnedSlices(allocator);
                 },
-                .UsernamePrompted => {
+                .username_prompted => {
                     if (self.auth_options.username == null) {
                         self.log.critical(
                             "username prompt seen but no username set",
                             .{},
                         );
 
-                        return error.AuthenicationFailed;
+                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     auth_username_prompt_seen_count += 1;
@@ -501,7 +587,7 @@ pub const Session = struct {
                             .{},
                         );
 
-                        return error.AuthenicationFailed;
+                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     try self.writeAndReturn(self.auth_options.username.?, true);
@@ -510,14 +596,14 @@ pub const Session = struct {
 
                     continue;
                 },
-                .PasswordPrompted => {
+                .password_prompted => {
                     if (self.auth_options.password == null) {
                         self.log.critical(
                             "password prompt seen but no password set",
                             .{},
                         );
 
-                        return error.AuthenicationFailed;
+                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     auth_password_prompt_seen_count += 1;
@@ -528,7 +614,7 @@ pub const Session = struct {
                             .{},
                         );
 
-                        return error.AuthenicationFailed;
+                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     try self.writeAndReturn(
@@ -542,14 +628,14 @@ pub const Session = struct {
 
                     continue;
                 },
-                .PassphrasePrompted => {
+                .passphrase_prompted => {
                     if (self.auth_options.private_key_passphrase == null) {
                         self.log.critical(
                             "private key passphrase prompt seen but no passphrase set",
                             .{},
                         );
 
-                        return error.AuthenicationFailed;
+                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     auth_passphrase_prompt_seen_count += 1;
@@ -560,7 +646,7 @@ pub const Session = struct {
                             .{},
                         );
 
-                        return error.AuthenicationFailed;
+                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     try self.writeAndReturn(
@@ -572,7 +658,7 @@ pub const Session = struct {
 
                     cur_check_start_idx = bufs.processed.items.len;
                 },
-                .Continue => {},
+                ._continue => {},
             }
         }
     }
@@ -600,7 +686,7 @@ pub const Session = struct {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
 
-                return error.Cancelled;
+                return errors.ScrapliError.Cancelled;
             }
 
             const elapsed_time = timer.read();
@@ -612,7 +698,7 @@ pub const Session = struct {
             {
                 self.log.critical("op timeout exceeded", .{});
 
-                return error.Timeout;
+                return errors.ScrapliError.TimeoutExceeded;
             }
 
             defer std.time.sleep(cur_read_delay_ns);
@@ -728,7 +814,6 @@ pub const Session = struct {
 
         try self.write(input, false);
 
-        // TODO this saftey is/was a lie lol, ingore case does *not*
         // SAFETY: will always be set or we'll error
         var match_indexes: MatchPositions = undefined;
 
@@ -752,7 +837,11 @@ pub const Session = struct {
                 );
             },
             operation.InputHandling.ignore => {
-                // ignore, not reading input
+                // ignore, not reading input; to not break our saftey rule above we return here
+                // when in "ignore" handling mode
+                try self.writeReturn();
+
+                return MatchPositions{ .start = 0, .end = 0 };
             },
         }
 
@@ -836,7 +925,7 @@ pub const Session = struct {
             if (pattern.len > 0) {
                 compiled_pattern = re.pcre2Compile(pattern);
                 if (compiled_pattern == null) {
-                    return error.CompilePromptPatternFailed;
+                    return errors.ScrapliError.RegexError;
                 }
             }
         }
@@ -934,120 +1023,6 @@ pub const Session = struct {
         return bufs.toOwnedSlices(allocator);
     }
 };
-
-const openMessageErrorSubstrings = [_][]const u8{
-    "host key verification failed",
-    "no matching key exchange",
-    "no matching host key",
-    "no matching cipher",
-    "operation timed out",
-    "connection timed out",
-    "no route to host",
-    "bad configuration",
-    "could not resolve hostname",
-    "permission denied",
-    "unprotected private key file",
-};
-
-fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
-    const copied_buf = allocator.alloc(u8, buf.len) catch {
-        return error.OpenFailedMessageHandler;
-    };
-    defer allocator.free(copied_buf);
-
-    @memcpy(copied_buf, buf);
-
-    bytes.toLower(copied_buf);
-
-    for (openMessageErrorSubstrings) |needle| {
-        if (std.mem.indexOf(u8, copied_buf, needle) != null) {
-            return error.OpenFailedMessageHandler;
-        }
-    }
-}
-
-test "openMessageHandler" {
-    const cases = [_]struct {
-        name: []const u8,
-        haystack: []const u8,
-        expect_error: bool,
-    }{
-        .{
-            .name = "no error",
-            .haystack = "",
-            .expect_error = false,
-        },
-        .{
-            .name = "host key verification failed",
-            .haystack = "blah: host key verification failed",
-            .expect_error = true,
-        },
-        .{
-            .name = "no matching key exchange",
-            .haystack = "blah: no matching key exchange",
-            .expect_error = true,
-        },
-        .{
-            .name = "no matching host key",
-            .haystack = "blah: no matching host key",
-            .expect_error = true,
-        },
-        .{
-            .name = "no matching cipher",
-            .haystack = "blah: no matching cipher",
-            .expect_error = true,
-        },
-        .{
-            .name = "operation timed out",
-            .haystack = "blah: operation timed out",
-            .expect_error = true,
-        },
-        .{
-            .name = "connection timed out",
-            .haystack = "blah: connection timed out",
-            .expect_error = true,
-        },
-        .{
-            .name = "no route to host",
-            .haystack = "blah: no route to host",
-            .expect_error = true,
-        },
-        .{
-            .name = "bad configuration",
-            .haystack = "blah: bad configuration",
-            .expect_error = true,
-        },
-        .{
-            .name = "could not resolve hostname",
-            .haystack = "blah: could not resolve hostname",
-            .expect_error = true,
-        },
-        .{
-            .name = "permission denied",
-            .haystack = "blah: permission denied",
-            .expect_error = true,
-        },
-        .{
-            .name = "unprotected private key file",
-            .haystack = "blah: unprotected private key file",
-            .expect_error = true,
-        },
-    };
-
-    for (cases) |case| {
-        if (case.expect_error) {
-            try std.testing.expectError(
-                error.OpenFailedMessageHandler,
-                openMessageHandler(
-                    std.testing.allocator,
-                    case.haystack,
-                ),
-            );
-        } else {
-            try openMessageHandler(std.testing.allocator, case.haystack);
-        }
-    }
-}
 
 fn readUntilPatternCheckDone(buf: []const u8, args: ReadArgs) !MatchPositions {
     if (buf.len == 0) {

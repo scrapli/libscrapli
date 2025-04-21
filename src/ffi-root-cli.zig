@@ -6,6 +6,7 @@ const ffi_args_to_options = @import("ffi-args-to-options.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
+const time = @import("time.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -13,7 +14,7 @@ pub const noop = true;
 /// writes the ntc template platform from the driver's definition into the character slice at
 /// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
 /// 256?). while unused in zig, ntc templates platform is useful in python land.
-export fn getNtcTemplatePlatform(
+export fn ls_cli_get_ntc_templates_platform(
     d_ptr: usize,
     ntc_template_platform: *[]u8,
 ) u8 {
@@ -40,7 +41,7 @@ export fn getNtcTemplatePlatform(
 /// writes the genie platform from the driver's definition into the character slice at
 /// `genie_platform` -- this slice should be pre populated w/ sufficient size (lets say
 /// 256?). while unused in zig, genie platform/parser is useful in python land.
-export fn getGeniePlatform(
+export fn ls_cli_get_genie_platform(
     d_ptr: usize,
     genie_platform: *[]u8,
 ) u8 {
@@ -68,10 +69,11 @@ export fn getGeniePlatform(
 
 /// Poll a given operation id, if the operation is completed fill a result and error u64 pointer
 /// so the caller can subsequenty call fetch with appropriately sized buffers.
-export fn pollOperation(
+export fn ls_cli_poll_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
+    operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
     operation_failure_indicator_size: *u64,
@@ -105,9 +107,10 @@ export fn pollOperation(
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
-            else => @panic("attempting to access non driver result from driver type"),
+            else => @panic("attempting to access non cli result from cli type"),
         };
 
+        operation_input_size.* = dret.getInputLen();
         operation_result_raw_size.* = dret.getResultRawLen();
         operation_result_size.* = dret.getResultLen();
         operation_failure_indicator_size.* = 0;
@@ -121,17 +124,19 @@ export fn pollOperation(
     return 0;
 }
 
-/// Similar to `pollOperation`, but blocks until the specified operation is complete and obviously
-/// does not require the bool pointer for done.
-export fn waitOperation(
+export fn ls_cli_wait_operation(
     d_ptr: usize,
     operation_id: u32,
+    operation_done: *bool,
+    operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
     operation_failure_indicator_size: *u64,
     operation_error_size: *u64,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    var cur_read_delay_ns: u64 = d.real_driver.cli.session.options.read_delay_min_ns;
 
     while (true) {
         const ret = d.pollOperation(operation_id, false) catch |err| {
@@ -145,8 +150,18 @@ export fn waitOperation(
         };
 
         if (!ret.done) {
+            cur_read_delay_ns = time.getBackoffValue(
+                cur_read_delay_ns,
+                d.real_driver.cli.session.options.read_delay_max_ns,
+                d.real_driver.cli.session.options.read_delay_backoff_factor,
+            );
+
+            std.time.sleep(cur_read_delay_ns);
+
             continue;
         }
+
+        operation_done.* = true;
 
         if (ret.err != null) {
             const err_name = @errorName(ret.err.?);
@@ -156,9 +171,10 @@ export fn waitOperation(
         } else {
             const dret = switch (ret.result) {
                 .cli => |r| r.?,
-                else => @panic("attempting to access non driver result from driver type"),
+                else => @panic("attempting to access non cli result from cli type"),
             };
 
+            operation_input_size.* = dret.getInputLen();
             operation_result_raw_size.* = dret.getResultRawLen();
             operation_result_size.* = dret.getResultLen();
             operation_failure_indicator_size.* = 0;
@@ -169,20 +185,19 @@ export fn waitOperation(
             }
         }
 
-        break;
+        return 0;
     }
-
-    return 0;
 }
 
 /// Fetches the result of the given operation id -- writing the result and error into the given
 /// buffers. Must be preceeded by a `pollOperation` or `waitOperation` in order to get the sizes
 /// of the result and error buffers.
-export fn fetchOperation(
+export fn ls_cli_fetch_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_start_time: *u64,
     operation_end_time: *u64,
+    operation_input: *[]u8,
     operation_result_raw: *[]u8,
     operation_result: *[]u8,
     operation_result_failed_indicator: *[]u8,
@@ -203,7 +218,7 @@ export fn fetchOperation(
     defer {
         const dret = switch (ret.result) {
             .cli => |r| r,
-            else => @panic("attempting to access non driver result from driver type"),
+            else => @panic("attempting to access non cli result from cli type"),
         };
         if (dret != null) {
             dret.?.deinit();
@@ -213,11 +228,11 @@ export fn fetchOperation(
     if (ret.err != null) {
         const err_name = @errorName(ret.err.?);
 
-        @memcpy(operation_error.*.ptr, err_name);
+        @memcpy(operation_error.*, err_name);
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
-            else => @panic("attempting to access non driver result from driver type"),
+            else => @panic("attempting to access non cli result from cli type"),
         };
 
         if (dret.splits_ns.items.len > 0) {
@@ -234,6 +249,19 @@ export fn fetchOperation(
         // operations in getResult/getResultRaw by iterating over the underlying array list and
         // copying from there, inserting newlines between results, into the given pointer(s)
         var cur: usize = 0;
+
+        for (0.., dret.inputs.items) |idx, input| {
+            @memcpy(operation_input.*[cur .. cur + input.len], input);
+            cur += input.len;
+
+            if (idx != dret.inputs.items.len - 1) {
+                operation_input.*[cur] = ascii.control_chars.lf;
+                cur += 1;
+            }
+        }
+
+        cur = 0;
+
         for (0.., dret.results_raw.items) |idx, result_raw| {
             @memcpy(operation_result_raw.*[cur .. cur + result_raw.len], result_raw);
             cur += result_raw.len;
@@ -269,7 +297,7 @@ export fn fetchOperation(
     return 0;
 }
 
-export fn enterMode(
+export fn ls_cli_enter_mode(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -304,7 +332,7 @@ export fn enterMode(
     return 0;
 }
 
-export fn getPrompt(
+export fn ls_cli_get_prompt(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -337,7 +365,7 @@ export fn getPrompt(
     return 0;
 }
 
-export fn sendInput(
+export fn ls_cli_send_input(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
@@ -382,7 +410,7 @@ export fn sendInput(
     return 0;
 }
 
-export fn sendPromptedInput(
+export fn ls_cli_send_prompted_input(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,

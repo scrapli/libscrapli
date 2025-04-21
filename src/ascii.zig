@@ -78,7 +78,13 @@ pub const control_chars = struct {
     const control_sequence_introducer_operating_system = 0x5D;
 
     // Delete | 0x7F | 127
-    const del = 0x7F;
+    pub const del = 0x7F;
+
+    // dec: 35 | hex: 0x23 | "#"
+    pub const hash_char = 0x23;
+
+    // dec: 60 | hex: 0x3C | "<"
+    pub const open_element_char = 0x3C;
 };
 
 pub fn stripAsciiAndAnsiControlCharsInPlace(

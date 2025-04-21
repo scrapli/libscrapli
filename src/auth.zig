@@ -1,6 +1,7 @@
 const std = @import("std");
 const bytes = @import("bytes.zig");
 const re = @import("re.zig");
+const errors = @import("errors.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
@@ -15,11 +16,11 @@ pub const lookup_prefix = "__lookup::";
 pub const lookup_default_key = "__default__";
 
 pub const State = enum {
-    Complete,
-    UsernamePrompted,
-    PasswordPrompted,
-    PassphrasePrompted,
-    Continue,
+    complete,
+    username_prompted,
+    password_prompted,
+    passphrase_prompted,
+    _continue,
 };
 
 pub const LookupKeyValue = struct {
@@ -45,11 +46,11 @@ pub const Options = struct {
     password: ?[]const u8,
     private_key_path: ?[]const u8,
     private_key_passphrase: ?[]const u8,
-    lookup_map: ?[]const LookupKeyValue,
+    lookups: ?[]const LookupKeyValue,
     in_session_auth_bypass: bool,
     username_pattern: []const u8,
     password_pattern: []const u8,
-    passphrase_pattern: []const u8,
+    private_key_passphrase_pattern: []const u8,
 
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
@@ -61,11 +62,11 @@ pub const Options = struct {
             .password = opts.password,
             .private_key_path = opts.private_key_path,
             .private_key_passphrase = opts.private_key_passphrase,
-            .lookup_map = opts.lookup_map,
+            .lookups = opts.lookup_map,
             .in_session_auth_bypass = opts.in_session_auth_bypass,
             .username_pattern = opts.username_pattern,
             .password_pattern = opts.password_pattern,
-            .passphrase_pattern = opts.passphrase_pattern,
+            .private_key_passphrase_pattern = opts.passphrase_pattern,
         };
 
         if (o.username != null) {
@@ -84,20 +85,20 @@ pub const Options = struct {
             o.private_key_passphrase = try o.allocator.dupe(u8, o.private_key_passphrase.?);
         }
 
-        if (o.lookup_map != null) {
+        if (o.lookups != null) {
             const lm = try o.allocator.alloc(
                 LookupKeyValue,
-                o.lookup_map.?.len,
+                o.lookups.?.len,
             );
 
-            for (0..o.lookup_map.?.len) |idx| {
+            for (0..o.lookups.?.len) |idx| {
                 lm[idx] = .{
-                    .key = try o.allocator.dupe(u8, o.lookup_map.?[idx].key),
-                    .value = try o.allocator.dupe(u8, o.lookup_map.?[idx].value),
+                    .key = try o.allocator.dupe(u8, o.lookups.?[idx].key),
+                    .value = try o.allocator.dupe(u8, o.lookups.?[idx].value),
                 };
             }
 
-            o.lookup_map = lm;
+            o.lookups = lm;
         }
 
         if (&o.username_pattern[0] != &default_username_pattern[0]) {
@@ -108,8 +109,8 @@ pub const Options = struct {
             o.password_pattern = try o.allocator.dupe(u8, o.password_pattern);
         }
 
-        if (&o.passphrase_pattern[0] != &default_passphrase_pattern[0]) {
-            o.passphrase_pattern = try o.allocator.dupe(u8, o.passphrase_pattern);
+        if (&o.private_key_passphrase_pattern[0] != &default_passphrase_pattern[0]) {
+            o.private_key_passphrase_pattern = try o.allocator.dupe(u8, o.private_key_passphrase_pattern);
         }
 
         return o;
@@ -132,13 +133,13 @@ pub const Options = struct {
             self.allocator.free(self.private_key_passphrase.?);
         }
 
-        if (self.lookup_map != null) {
-            for (self.lookup_map.?) |lookup_entry| {
+        if (self.lookups != null) {
+            for (self.lookups.?) |lookup_entry| {
                 self.allocator.free(lookup_entry.key);
                 self.allocator.free(lookup_entry.value);
             }
 
-            self.allocator.free(self.lookup_map.?);
+            self.allocator.free(self.lookups.?);
         }
 
         if (&self.username_pattern[0] != &default_username_pattern[0]) {
@@ -149,8 +150,8 @@ pub const Options = struct {
             self.allocator.free(self.password_pattern);
         }
 
-        if (&self.passphrase_pattern[0] != &default_passphrase_pattern[0]) {
-            self.allocator.free(self.passphrase_pattern);
+        if (&self.private_key_passphrase_pattern[0] != &default_passphrase_pattern[0]) {
+            self.allocator.free(self.private_key_passphrase_pattern);
         }
 
         self.allocator.destroy(self);
@@ -159,14 +160,14 @@ pub const Options = struct {
     pub fn extendLookupMap(self: *Options, k: []const u8, v: []const u8) !void {
         var cur_size: usize = 0;
 
-        if (self.lookup_map != null) {
-            cur_size = self.lookup_map.?.len;
+        if (self.lookups != null) {
+            cur_size = self.lookups.?.len;
         }
 
         const lm = try self.allocator.alloc(LookupKeyValue, cur_size + 1);
 
         if (cur_size > 1) {
-            @memcpy(lm[0..cur_size], self.lookup_map.?[0..]);
+            @memcpy(lm[0..cur_size], self.lookups.?[0..]);
         }
 
         lm[cur_size] = .{
@@ -174,7 +175,7 @@ pub const Options = struct {
             .value = try self.allocator.dupe(u8, v),
         };
 
-        self.lookup_map = lm;
+        self.lookups = lm;
     }
 
     pub fn resolveAuthValue(self: *Options, v: []const u8) ![]const u8 {
@@ -182,15 +183,15 @@ pub const Options = struct {
             return v;
         }
 
-        if (self.lookup_map == null) {
-            return error.LookupFailure;
+        if (self.lookups == null) {
+            return errors.ScrapliError.LookupFailed;
         }
 
         var default_idx: ?usize = null;
 
         const lookup_key = v[lookup_prefix.len..];
 
-        for (0.., self.lookup_map.?) |idx, lookup_item| {
+        for (0.., self.lookups.?) |idx, lookup_item| {
             if (std.mem.eql(u8, lookup_item.key, lookup_default_key)) {
                 default_idx = idx;
             }
@@ -201,10 +202,10 @@ pub const Options = struct {
         }
 
         if (default_idx != null) {
-            return self.lookup_map.?[default_idx.?].value;
+            return self.lookups.?[default_idx.?].value;
         }
 
-        return error.LookupFailure;
+        return errors.ScrapliError.LookupFailed;
     }
 };
 
@@ -222,7 +223,7 @@ pub fn processSearchableAuthBuf(
         searchable_buf,
     );
     if (prompt_match.len > 0) {
-        return State.Complete;
+        return State.complete;
     }
 
     const password_match = try re.pcre2Find(
@@ -230,7 +231,7 @@ pub fn processSearchableAuthBuf(
         searchable_buf,
     );
     if (password_match.len > 0) {
-        return State.PasswordPrompted;
+        return State.password_prompted;
     }
 
     const username_match = try re.pcre2Find(
@@ -238,7 +239,7 @@ pub fn processSearchableAuthBuf(
         searchable_buf,
     );
     if (username_match.len > 0) {
-        return State.UsernamePrompted;
+        return State.username_prompted;
     }
 
     const passphrase_match = try re.pcre2Find(
@@ -246,10 +247,10 @@ pub fn processSearchableAuthBuf(
         searchable_buf,
     );
     if (passphrase_match.len > 0) {
-        return State.PassphrasePrompted;
+        return State.passphrase_prompted;
     }
 
-    return State.Continue;
+    return State._continue;
 }
 
 const openMessageErrorSubstrings = [_][]const u8{
@@ -267,9 +268,9 @@ const openMessageErrorSubstrings = [_][]const u8{
     "too many authentication failures",
 };
 
-fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
+pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
     const copied_buf = allocator.alloc(u8, buf.len) catch {
-        return error.OpenFailedMessageHandler;
+        return errors.ScrapliError.OpenFailed;
     };
     defer allocator.free(copied_buf);
 
@@ -279,7 +280,7 @@ fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
 
     for (openMessageErrorSubstrings) |needle| {
         if (std.mem.indexOf(u8, copied_buf, needle) != null) {
-            return error.OpenFailedMessageHandler;
+            return errors.ScrapliError.OpenFailed;
         }
     }
 }
@@ -360,7 +361,7 @@ test "openMessageHandler" {
     for (cases) |case| {
         if (case.expect_error) {
             try std.testing.expectError(
-                error.OpenFailedMessageHandler,
+                errors.ScrapliError.OpenFailed,
                 openMessageHandler(
                     std.testing.allocator,
                     case.haystack,

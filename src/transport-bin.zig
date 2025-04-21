@@ -3,6 +3,7 @@ const auth = @import("auth.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
 const strings = @import("strings.zig");
+const errors = @import("errors.zig");
 
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
@@ -12,7 +13,6 @@ const c = @cImport({
 });
 
 extern fn setsid() callconv(.C) i32;
-extern fn ioctl(fd: i32, request: u32, arg: usize) callconv(.C) i32;
 
 const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
@@ -378,13 +378,13 @@ pub const Transport = struct {
         self.buildArgs(host, port, auth_options, operation_timeout_ns) catch |err| {
             self.log.critical("failed generating open command, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
 
         const open_args = self.allocator.alloc([]const u8, self.open_args.items.len) catch |err| {
             self.log.critical("failed preparing open command, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
         defer self.allocator.free(open_args);
 
@@ -403,7 +403,7 @@ pub const Transport = struct {
         ) catch |err| {
             self.log.critical("failed inizializing master_fd, err: {}", .{err});
 
-            return error.OpenFailed;
+            return errors.ScrapliError.OpenFailed;
         };
 
         self.reader = self.f.?.reader();
@@ -420,19 +420,19 @@ pub const Transport = struct {
 
     pub fn write(self: *Transport, buf: []const u8) !void {
         if (self.writer == null) {
-            return error.NotOpened;
+            return errors.ScrapliError.NotOpened;
         }
 
         self.writer.?.writeAll(buf) catch |err| {
             self.log.critical("failed writing to pty, err: {}", .{err});
 
-            return error.WriteFailed;
+            return errors.ScrapliError.WriteFailed;
         };
     }
 
     pub fn read(self: *Transport, buf: []u8) !usize {
         if (self.reader == null) {
-            return error.NotOpened;
+            return errors.ScrapliError.NotOpened;
         }
 
         const n = self.reader.?.read(buf) catch |err| {
@@ -443,7 +443,7 @@ pub const Transport = struct {
                 else => {
                     self.log.critical("failed reading from pty, err: {}", .{err});
 
-                    return error.ReadFailed;
+                    return errors.ScrapliError.ReadFailed;
                 },
             }
         };
@@ -452,7 +452,7 @@ pub const Transport = struct {
             self.log.critical("read from pty returned zero bytes read", .{});
 
             // this should kill the read loop, but the main program will be killed from session
-            return error.ReadFailed;
+            return errors.ScrapliError.ReadFailed;
         }
 
         return n;
@@ -471,8 +471,8 @@ fn openPty(
         .allow_ctty = false,
     });
 
-    if (c.grantpt(master_fd.handle) < 0) return error.PtyCreationFailed;
-    if (c.unlockpt(master_fd.handle) < 0) return error.PtyCreationFailed;
+    if (c.grantpt(master_fd.handle) < 0) return errors.ScrapliError.PtyError;
+    if (c.unlockpt(master_fd.handle) < 0) return errors.ScrapliError.PtyError;
 
     const s_name = c.ptsname(master_fd.handle);
 
@@ -487,7 +487,7 @@ fn openPty(
     const pid = c.fork();
 
     if (pid < 0) {
-        return error.ForkFailed;
+        return errors.ScrapliError.PtyError;
     } else if (pid == 0) {
         // child process
         const args = try allocator.allocSentinel(?[*:0]const u8, open_args.len, null);
@@ -551,17 +551,20 @@ fn openPtyChild(
     // calling setsid and ioctl to set ctty in zig os.linux functions does *not* work for...
     // reasons? but... the C bits work juuuuust fine
     if (setsid() == -1) {
-        return error.PtyCreationFailedSetSid;
+        return errors.ScrapliError.PtyError;
     }
 
-    if (ioctl(slave_fd.handle, c.TIOCSCTTY, 0) == -1) {
-        return error.PtyCreationFailedSetCtty;
+    if (std.posix.system.ioctl(
+        slave_fd.handle,
+        c.TIOCSCTTY,
+    ) != 0) {
+        return errors.ScrapliError.PtyError;
     }
 
     if (!netconf) {
-        const set_win_size_rc = ioctl(
+        const set_win_size_rc = std.posix.system.ioctl(
             slave_fd.handle,
-            c.TIOCSWINSZ,
+            @bitCast(@as(u32, c.TIOCSWINSZ)),
             @intFromPtr(
                 &c.winsize{
                     .ws_row = term_height,
@@ -571,9 +574,13 @@ fn openPtyChild(
                 },
             ),
         );
+
         if (set_win_size_rc != 0) {
-            return error.PtyCreationFailedSetWinSize;
+            return errors.ScrapliError.PtyError;
         }
+    } else {
+        // zlint-disable suppressed-errors
+        setnoecho(slave_fd.handle) catch {};
     }
 
     try std.posix.dup2(slave_fd.handle, 0); // stdin
@@ -592,6 +599,14 @@ fn setonlcr(fd: std.posix.fd_t) !void {
     var term = try std.posix.tcgetattr(fd);
 
     term.oflag.ONLCR = false;
+
+    try std.posix.tcsetattr(fd, std.posix.TCSA.NOW, term);
+}
+
+fn setnoecho(fd: std.posix.fd_t) !void {
+    var term = try std.posix.tcgetattr(fd);
+
+    term.lflag.ECHO = false;
 
     try std.posix.tcsetattr(fd, std.posix.TCSA.NOW, term);
 }

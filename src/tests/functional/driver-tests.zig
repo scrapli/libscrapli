@@ -130,11 +130,19 @@ fn GetDriver(
 test "driver open" {
     const test_name = "driver-open";
 
-    const cases = [_]struct { name: []const u8, transportKind: transport.Kind, platform: []const u8, username: []const u8, key: ?[]const u8 = null, passphrase: ?[]const u8 = null, on_open_callback: ?*const fn (
-        d: *cli.Driver,
-        allocator: std.mem.Allocator,
-        cancel: ?*bool,
-    ) anyerror!*result.Result = null }{
+    const cases = [_]struct {
+        name: []const u8,
+        transportKind: transport.Kind,
+        platform: []const u8,
+        username: []const u8,
+        key: ?[]const u8 = null,
+        passphrase: ?[]const u8 = null,
+        on_open_callback: ?*const fn (
+            d: *cli.Driver,
+            allocator: std.mem.Allocator,
+            cancel: ?*bool,
+        ) anyerror!*result.Result = null,
+    }{
         .{
             .name = "simple",
             .transportKind = transport.Kind.bin,
