@@ -51,9 +51,9 @@ jobs:
         run: |
           make build-release
 
-      - name: Extract version number from files
+      - name: extract version number from files
         run: |
-          LIB_VERSION=$(basename $(readlink -f zig-out/aarch64-linux/libscrapli.so) | grep -o -E "\d+\.\d+\.\d+")
+          LIB_VERSION=$(basename $(ls zig-out/aarch64-linux) | grep -o -E "\d+\.\d+\.\d+(.*)?")
           echo "LIB_VERSION=$LIB_VERSION" >> "$GITHUB_ENV"
 
       # note, have to rename before uploading since libscrapli.so.VERSION is the same for all the
