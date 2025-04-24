@@ -11,6 +11,8 @@ const time = @import("time.zig");
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
 
+const operation_delimiter = "__libscrapli__";
+
 /// writes the ntc template platform from the driver's definition into the character slice at
 /// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
 /// 256?). while unused in zig, ntc templates platform is useful in python land.
@@ -73,6 +75,7 @@ export fn ls_cli_poll_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
+    operation_count: *u32,
     operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
@@ -110,9 +113,17 @@ export fn ls_cli_poll_operation(
             else => @panic("attempting to access non cli result from cli type"),
         };
 
-        operation_input_size.* = dret.getInputLen();
-        operation_result_raw_size.* = dret.getResultRawLen();
-        operation_result_size.* = dret.getResultLen();
+        operation_count.* = @intCast(dret.results.items.len);
+
+        operation_input_size.* = dret.getInputLen(
+            .{ .delimiter = operation_delimiter },
+        );
+        operation_result_raw_size.* = dret.getResultRawLen(
+            .{ .delimiter = operation_delimiter },
+        );
+        operation_result_size.* = dret.getResultLen(
+            .{ .delimiter = operation_delimiter },
+        );
         operation_failure_indicator_size.* = 0;
         operation_error_size.* = 0;
 
@@ -128,6 +139,7 @@ export fn ls_cli_wait_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
+    operation_count: *u32,
     operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
@@ -174,9 +186,22 @@ export fn ls_cli_wait_operation(
                 else => @panic("attempting to access non cli result from cli type"),
             };
 
-            operation_input_size.* = dret.getInputLen();
-            operation_result_raw_size.* = dret.getResultRawLen();
-            operation_result_size.* = dret.getResultLen();
+            operation_count.* = @intCast(dret.results.items.len);
+
+            // TODO all of these would have to be the len + the len of inputs/results * the delim size i guess
+            //   that way py/go can differentiate mutli line input/results to break them into sub
+            //   inputs/results
+            // TODO how would we deal w/ splits? its just an int so we could pass a pointer to array
+            //   of them, but then we also have to return the count of results or w/e when we fetch
+            operation_input_size.* = dret.getInputLen(
+                .{ .delimiter = operation_delimiter },
+            );
+            operation_result_raw_size.* = dret.getResultRawLen(
+                .{ .delimiter = operation_delimiter },
+            );
+            operation_result_size.* = dret.getResultLen(
+                .{ .delimiter = operation_delimiter },
+            );
             operation_failure_indicator_size.* = 0;
             operation_error_size.* = 0;
 
@@ -196,7 +221,7 @@ export fn ls_cli_fetch_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_start_time: *u64,
-    operation_end_time: *u64,
+    operation_splits: *[]u64,
     operation_input: *[]u8,
     operation_result_raw: *[]u8,
     operation_result: *[]u8,
@@ -237,11 +262,12 @@ export fn ls_cli_fetch_operation(
 
         if (dret.splits_ns.items.len > 0) {
             operation_start_time.* = @intCast(dret.start_time_ns);
-            operation_end_time.* = @intCast(dret.splits_ns.items[dret.splits_ns.items.len - 1]);
+            for (0.., dret.splits_ns.items) |idx, split| {
+                operation_splits.*[idx] = @intCast(split);
+            }
         } else {
             // was a noop -- like enterMode but where mode didn't change
             operation_start_time.* = @intCast(dret.start_time_ns);
-            operation_end_time.* = @intCast(dret.start_time_ns);
         }
 
         // to avoid a pointless allocation since we are already copying from the result into the
@@ -255,8 +281,10 @@ export fn ls_cli_fetch_operation(
             cur += input.len;
 
             if (idx != dret.inputs.items.len - 1) {
-                operation_input.*[cur] = ascii.control_chars.lf;
-                cur += 1;
+                for (operation_delimiter) |delimiter_char| {
+                    operation_input.*[cur] = delimiter_char;
+                    cur += 1;
+                }
             }
         }
 
@@ -267,8 +295,10 @@ export fn ls_cli_fetch_operation(
             cur += result_raw.len;
 
             if (idx != dret.results_raw.items.len - 1) {
-                operation_result_raw.*[cur] = ascii.control_chars.lf;
-                cur += 1;
+                for (operation_delimiter) |delimiter_char| {
+                    operation_result_raw.*[cur] = delimiter_char;
+                    cur += 1;
+                }
             }
         }
 
@@ -279,8 +309,10 @@ export fn ls_cli_fetch_operation(
             cur += result.len;
 
             if (idx != dret.results.items.len - 1) {
-                operation_result.*[cur] = ascii.control_chars.lf;
-                cur += 1;
+                for (operation_delimiter) |delimiter_char| {
+                    operation_result.*[cur] = delimiter_char;
+                    cur += 1;
+                }
             }
         }
 

@@ -2365,6 +2365,9 @@ pub const Driver = struct {
     ) !*result.Result {
         var timer = try std.time.Timer.start();
 
+        // TODO this is the only reason that input can be null in a netconf result. eff that.
+        //   just refactor this such that we create the result w/ the input then make input
+        //   non-nullable
         var res = try self.NewResult(allocator, options.getKind());
         errdefer res.deinit();
 

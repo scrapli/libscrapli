@@ -330,7 +330,7 @@ pub const Result = struct {
         var out_size: usize = 0;
 
         for (0.., self.result_warning_messages.items) |idx, warning| {
-            out_size += warning.len + 1;
+            out_size += warning.len;
 
             if (idx != self.result_warning_messages.items.len - 1) {
                 // not last result, add char for newline
@@ -345,7 +345,7 @@ pub const Result = struct {
         var out_size: usize = 0;
 
         for (0.., self.result_error_messages.items) |idx, err| {
-            out_size += err.len + 1;
+            out_size += err.len;
 
             if (idx != self.result_error_messages.items.len - 1) {
                 // not last result, add char for newline
