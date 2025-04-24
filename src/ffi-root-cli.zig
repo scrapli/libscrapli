@@ -188,11 +188,6 @@ export fn ls_cli_wait_operation(
 
             operation_count.* = @intCast(dret.results.items.len);
 
-            // TODO all of these would have to be the len + the len of inputs/results * the delim size i guess
-            //   that way py/go can differentiate mutli line input/results to break them into sub
-            //   inputs/results
-            // TODO how would we deal w/ splits? its just an int so we could pass a pointer to array
-            //   of them, but then we also have to return the count of results or w/e when we fetch
             operation_input_size.* = dret.getInputLen(
                 .{ .delimiter = operation_delimiter },
             );
