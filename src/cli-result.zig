@@ -1,16 +1,6 @@
 const std = @import("std");
 const ascii = @import("ascii.zig");
-
-pub const OperationKind = enum {
-    open,
-    on_open,
-    on_close,
-    close,
-    enter_mode,
-    get_prompt,
-    send_input,
-    send_prompted_input,
-};
+const operation = @import("cli-operation.zig");
 
 pub const Result = struct {
     allocator: std.mem.Allocator,
@@ -18,7 +8,7 @@ pub const Result = struct {
     host: []const u8,
     port: u16,
 
-    operation_kind: OperationKind,
+    operation_kind: operation.Kind,
 
     failed_indicators: ?std.ArrayList([]const u8),
 
@@ -42,7 +32,7 @@ pub const Result = struct {
         allocator: std.mem.Allocator,
         host: []const u8,
         port: u16,
-        operation_kind: OperationKind,
+        operation_kind: operation.Kind,
         failed_indicators: ?std.ArrayList([]const u8),
     ) !*Result {
         const res = try allocator.create(Result);
