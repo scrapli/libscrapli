@@ -304,6 +304,9 @@ pub const Driver = struct {
         errdefer res.deinit();
 
         if (std.mem.eql(u8, self.current_mode, options.requested_mode)) {
+            // even though its a noop, record a result so we know how long it took and such
+            try res.record("", [2][]const u8{ "", "" });
+
             return res;
         }
 
