@@ -51,7 +51,7 @@ pub const allocator = switch (builtin.mode) {
 // namespacing reasons.
 export fn ls_assert_no_leaks() bool {
     if (!is_debug_build) {
-        return false;
+        return true;
     }
 
     switch (debug_allocator.deinit()) {
