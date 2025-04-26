@@ -445,10 +445,10 @@ export fn ls_cli_send_prompted_input(
     prompt: [*c]const u8,
     prompt_pattern: [*c]const u8,
     response: [*c]const u8,
-    hidden_response: bool,
     abort_input: [*c]const u8,
     requested_mode: [*c]const u8,
     input_handling: [*c]const u8,
+    hidden_response: bool,
     retain_trailing_prompt: bool,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
