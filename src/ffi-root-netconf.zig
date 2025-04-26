@@ -267,6 +267,21 @@ export fn ls_netconf_get_session_id(
     return 1;
 }
 
+export fn ls_netconf_has_notification_messages(
+    d_ptr: usize,
+) bool {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.netconf.notifications_lock.lock();
+    defer d.real_driver.netconf.notifications_lock.unlock();
+
+    if (d.real_driver.netconf.notifications.items.len > 0) {
+        return true;
+    }
+
+    return false;
+}
+
 export fn ls_netconf_raw_rpc(
     d_ptr: usize,
     operation_id: *u32,

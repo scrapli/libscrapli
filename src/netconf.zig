@@ -2607,12 +2607,24 @@ test "processFoundMessageIds" {
         input: []const u8,
         expected: struct {
             found: bool = false,
+            is_notification_message: bool = false,
             is_subscription_message: bool = false,
             found_id: usize = 0,
         },
     }{
         .{
-            .name = "simple-not-found",
+            .name = "simple-nothing-found",
+            .input =
+            \\#1097
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<zzzz xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></zzzz>
+            \\
+            \\##
+            ,
+            .expected = .{},
+        },
+        .{
+            .name = "simple-notification",
             .input =
             \\#1097
             \\<?xml version="1.0" encoding="UTF-8"?>
@@ -2620,7 +2632,10 @@ test "processFoundMessageIds" {
             \\
             \\##
             ,
-            .expected = .{},
+            .expected = .{
+                .found = true,
+                .is_notification_message = true,
+            },
         },
         .{
             .name = "simple-message-id",
@@ -2657,6 +2672,7 @@ test "processFoundMessageIds" {
     for (cases) |case| {
         const actual = try Driver.processFoundMessageIds(case.input);
         try std.testing.expectEqual(case.expected.found, actual.found);
+        try std.testing.expectEqual(case.expected.is_notification_message, actual.is_notification_message);
         try std.testing.expectEqual(case.expected.is_subscription_message, actual.is_subscription_message);
         try std.testing.expectEqual(case.expected.found_id, actual.found_id);
     }
