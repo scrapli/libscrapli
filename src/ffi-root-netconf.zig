@@ -267,7 +267,7 @@ export fn ls_netconf_get_session_id(
     return 1;
 }
 
-export fn ls_netconf_next_notification_message_sizes(
+export fn ls_netconf_next_notification_message_size(
     d_ptr: usize,
     size: *u64,
 ) void {
