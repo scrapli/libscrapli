@@ -65,6 +65,7 @@ const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-d
 
 const message_id_attribute_prefix = "message-id=\"";
 pub const subscription_id_attribute_prefix = "<subscription-id>";
+pub const notification_prefix = "<notification";
 
 const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
@@ -169,6 +170,9 @@ pub const Driver = struct {
     ),
     messages_lock: std.Thread.Mutex,
 
+    notifications: std.ArrayList([2][]const u8),
+    notifications_lock: std.Thread.Mutex,
+
     subscriptions: std.HashMap(
         u64,
         std.ArrayList([2][]const u8),
@@ -249,6 +253,9 @@ pub const Driver = struct {
             ).init(allocator),
             .messages_lock = std.Thread.Mutex{},
 
+            .notifications = std.ArrayList([2][]const u8).init(allocator),
+            .notifications_lock = std.Thread.Mutex{},
+
             .subscriptions = std.HashMap(
                 u64,
                 std.ArrayList([2][]const u8),
@@ -290,6 +297,13 @@ pub const Driver = struct {
         }
 
         self.messages.deinit();
+
+        for (self.notifications.items) |notif| {
+            self.allocator.free(notif[0]);
+            self.allocator.free(notif[1]);
+        }
+
+        self.notifications.deinit();
 
         // and then subscription messages
         var subscriptions_iterator = self.subscriptions.valueIterator();
@@ -888,7 +902,12 @@ pub const Driver = struct {
 
     fn processFoundMessageIds(
         message_view: []const u8,
-    ) !struct { found: bool = false, is_subscription_message: bool = false, found_id: usize = 0 } {
+    ) !struct {
+        found: bool = false,
+        is_subscription_message: bool = false,
+        is_notification_message: bool = false,
+        found_id: usize = 0,
+    } {
         const index_of_message_id = std.mem.indexOf(
             u8,
             message_view,
@@ -900,9 +919,22 @@ pub const Driver = struct {
             subscription_id_attribute_prefix,
         );
 
+        const index_of_notification = std.mem.indexOf(
+            u8,
+            message_view,
+            notification_prefix,
+        );
+
         if (index_of_message_id == null and
             index_of_subscription_id == null)
         {
+            if (index_of_notification != null) {
+                return .{
+                    .found = true,
+                    .is_notification_message = true,
+                };
+            }
+
             return .{};
         }
 
@@ -964,6 +996,11 @@ pub const Driver = struct {
             }
 
             try ret.value_ptr.*.append([2][]const u8{ raw_buf, processed_buf });
+        } else if (id_info.is_notification_message) {
+            self.notifications_lock.lock();
+            defer self.notifications_lock.unlock();
+
+            try self.notifications.append([2][]const u8{ raw_buf, processed_buf });
         } else {
             self.messages_lock.lock();
             defer self.messages_lock.unlock();
@@ -1121,6 +1158,7 @@ pub const Driver = struct {
         }
     }
 
+    // caller owns returned memory
     pub fn getSubscriptionMessages(
         self: *Driver,
         id: u64,
@@ -1135,7 +1173,17 @@ pub const Driver = struct {
         }
 
         const ret = self.subscriptions.get(id);
-        return ret.?.items;
+        return ret.?.toOwnedSlice();
+    }
+
+    // caller owns returned memory
+    pub fn getNotificationMessages(
+        self: *Driver,
+    ) ![][2][]const u8 {
+        self.notifications_lock.lock();
+        defer self.notifications_lock.unlock();
+
+        return self.notifications.toOwnedSlice();
     }
 
     fn processCancelAndTimeout(

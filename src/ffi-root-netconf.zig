@@ -3,6 +3,7 @@ const std = @import("std");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const ffi_args_to_options = @import("ffi-args-to-options-netconf.zig");
+const result = @import("netconf-result.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
@@ -10,6 +11,23 @@ const time = @import("time.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
+
+export fn ls_netconf_get_subscription_id(
+    operation_result: [*c]const u8,
+    subscription_id: *u64,
+) u8 {
+    const maybe_subscription_id = result.getSubscriptionId(std.mem.span(operation_result)) catch {
+        return 1;
+    };
+
+    if (maybe_subscription_id) |id| {
+        subscription_id.* = id;
+
+        return 0;
+    }
+
+    return 1;
+}
 
 export fn ls_netconf_poll_operation(
     d_ptr: usize,

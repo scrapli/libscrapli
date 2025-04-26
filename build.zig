@@ -17,7 +17,7 @@ const targets: []const std.Target.Query = &.{
 };
 
 const all_examples: []const []const u8 = &.{
-    "basic-driver-usage",
+    "basic-cli-usage",
     "basic-netconf-usage",
 };
 
