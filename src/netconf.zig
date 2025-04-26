@@ -170,12 +170,12 @@ pub const Driver = struct {
     ),
     messages_lock: std.Thread.Mutex,
 
-    notifications: std.ArrayList([2][]const u8),
+    notifications: std.ArrayList([]const u8),
     notifications_lock: std.Thread.Mutex,
 
     subscriptions: std.HashMap(
         u64,
-        std.ArrayList([2][]const u8),
+        std.ArrayList([]const u8),
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
@@ -253,12 +253,12 @@ pub const Driver = struct {
             ).init(allocator),
             .messages_lock = std.Thread.Mutex{},
 
-            .notifications = std.ArrayList([2][]const u8).init(allocator),
+            .notifications = std.ArrayList([]const u8).init(allocator),
             .notifications_lock = std.Thread.Mutex{},
 
             .subscriptions = std.HashMap(
                 u64,
-                std.ArrayList([2][]const u8),
+                std.ArrayList([]const u8),
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
@@ -299,8 +299,7 @@ pub const Driver = struct {
         self.messages.deinit();
 
         for (self.notifications.items) |notif| {
-            self.allocator.free(notif[0]);
-            self.allocator.free(notif[1]);
+            self.allocator.free(notif);
         }
 
         self.notifications.deinit();
@@ -309,8 +308,7 @@ pub const Driver = struct {
         var subscriptions_iterator = self.subscriptions.valueIterator();
         while (subscriptions_iterator.next()) |sl| {
             for (sl.items) |s| {
-                self.allocator.free(s[0]);
-                self.allocator.free(s[1]);
+                self.allocator.free(s);
             }
 
             sl.deinit();
@@ -987,20 +985,25 @@ pub const Driver = struct {
         }
 
         if (id_info.is_subscription_message) {
+            // we ignore raw buf of subscriptions/notifications
+            self.allocator.free(raw_buf);
+
             self.subscriptions_lock.lock();
             defer self.subscriptions_lock.unlock();
 
             const ret = try self.subscriptions.getOrPut(id_info.found_id);
             if (!ret.found_existing) {
-                ret.value_ptr.* = std.ArrayList([2][]const u8).init(self.allocator);
+                ret.value_ptr.* = std.ArrayList([]const u8).init(self.allocator);
             }
 
-            try ret.value_ptr.*.append([2][]const u8{ raw_buf, processed_buf });
+            try ret.value_ptr.*.append(processed_buf);
         } else if (id_info.is_notification_message) {
+            self.allocator.free(raw_buf);
+
             self.notifications_lock.lock();
             defer self.notifications_lock.unlock();
 
-            try self.notifications.append([2][]const u8{ raw_buf, processed_buf });
+            try self.notifications.append(processed_buf);
         } else {
             self.messages_lock.lock();
             defer self.messages_lock.unlock();
@@ -1162,14 +1165,14 @@ pub const Driver = struct {
     pub fn getSubscriptionMessages(
         self: *Driver,
         id: u64,
-    ) ![][2][]const u8 {
+    ) ![][]const u8 {
         // TODO obvikously this stuff, can we make it an iterator? seems nice? but does it lock
         //   the subscsripiotns the whole tiem?
         self.subscriptions_lock.lock();
         defer self.subscriptions_lock.unlock();
 
         if (!self.subscriptions.contains(id)) {
-            return &[_][2][]const u8{};
+            return &[_][]const u8{};
         }
 
         const ret = self.subscriptions.get(id);
@@ -1179,7 +1182,7 @@ pub const Driver = struct {
     // caller owns returned memory
     pub fn getNotificationMessages(
         self: *Driver,
-    ) ![][2][]const u8 {
+    ) ![][]const u8 {
         self.notifications_lock.lock();
         defer self.notifications_lock.unlock();
 

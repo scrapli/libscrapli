@@ -267,19 +267,40 @@ export fn ls_netconf_get_session_id(
     return 1;
 }
 
-export fn ls_netconf_has_notification_messages(
+export fn ls_netconf_next_notification_message_sizes(
     d_ptr: usize,
-) bool {
+    size: *u64,
+) void {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.real_driver.netconf.notifications_lock.lock();
     defer d.real_driver.netconf.notifications_lock.unlock();
 
     if (d.real_driver.netconf.notifications.items.len > 0) {
-        return true;
+        size.* = d.real_driver.netconf.notifications.items[0].len;
+    }
+}
+
+export fn ls_netconf_next_notification_message(
+    d_ptr: usize,
+    notification: *[]u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.netconf.notifications_lock.lock();
+    defer d.real_driver.netconf.notifications_lock.unlock();
+
+    if (d.real_driver.netconf.notifications.items.len == 0) {
+        // an error because they shoulda peeked at sizes first
+        // to know there was something to read
+        return 1;
     }
 
-    return false;
+    const notif = d.real_driver.netconf.notifications.orderedRemove(0);
+
+    @memcpy(notification.*, notif);
+
+    return 0;
 }
 
 export fn ls_netconf_raw_rpc(
