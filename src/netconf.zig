@@ -298,13 +298,14 @@ pub const Driver = struct {
 
         self.messages.deinit();
 
+        // annnnd notifications
         for (self.notifications.items) |notif| {
             self.allocator.free(notif);
         }
 
         self.notifications.deinit();
 
-        // and then subscription messages
+        // and then subscriptions
         var subscriptions_iterator = self.subscriptions.valueIterator();
         while (subscriptions_iterator.next()) |sl| {
             for (sl.items) |s| {
@@ -1161,13 +1162,11 @@ pub const Driver = struct {
         }
     }
 
-    // caller owns returned memory
+    // caller owns returned memory -- w/ the allocator the netconf object was created with!
     pub fn getSubscriptionMessages(
         self: *Driver,
         id: u64,
     ) ![][]const u8 {
-        // TODO obvikously this stuff, can we make it an iterator? seems nice? but does it lock
-        //   the subscsripiotns the whole tiem?
         self.subscriptions_lock.lock();
         defer self.subscriptions_lock.unlock();
 
@@ -1179,7 +1178,7 @@ pub const Driver = struct {
         return ret.?.toOwnedSlice();
     }
 
-    // caller owns returned memory
+    // caller owns returned memory -- w/ the allocator the netconf object was created with!
     pub fn getNotificationMessages(
         self: *Driver,
     ) ![][]const u8 {

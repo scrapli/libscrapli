@@ -300,6 +300,8 @@ export fn ls_netconf_next_notification_message(
 
     @memcpy(notification.*, notif);
 
+    d.real_driver.netconf.allocator.free(notif);
+
     return 0;
 }
 
