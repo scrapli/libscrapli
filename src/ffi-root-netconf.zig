@@ -305,6 +305,50 @@ export fn ls_netconf_next_notification_message(
     return 0;
 }
 
+export fn ls_netconf_next_subscription_message_size(
+    d_ptr: usize,
+    subscription_id: u64,
+    size: *u64,
+) void {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.netconf.subscriptions_lock.lock();
+    defer d.real_driver.netconf.subscriptions_lock.unlock();
+
+    if (!d.real_driver.netconf.subscriptions.contains(subscription_id)) {
+        return;
+    }
+
+    size.* = d.real_driver.netconf.subscriptions.get(subscription_id).?.items[0].len;
+}
+
+export fn ls_netconf_next_subscription_message(
+    d_ptr: usize,
+    subscription_id: u64,
+    subscription: *[]u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.netconf.subscriptions_lock.lock();
+    defer d.real_driver.netconf.subscriptions_lock.unlock();
+
+    var subs = d.real_driver.netconf.subscriptions.get(subscription_id);
+
+    if (subs == null or subs.?.items.len == 0) {
+        // an error because they shoulda peeked at sizes first
+        // to know there was something to read
+        return 1;
+    }
+
+    const sub = subs.?.orderedRemove(0);
+
+    @memcpy(subscription.*, sub);
+
+    d.real_driver.netconf.allocator.free(sub);
+
+    return 0;
+}
+
 export fn ls_netconf_raw_rpc(
     d_ptr: usize,
     operation_id: *u32,

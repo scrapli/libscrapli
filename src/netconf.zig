@@ -1174,8 +1174,9 @@ pub const Driver = struct {
             return &[_][]const u8{};
         }
 
-        const ret = self.subscriptions.get(id);
-        return ret.?.toOwnedSlice();
+        // we know key is present since we already checked
+        const ret = self.subscriptions.fetchRemove(id);
+        return ret.?.value.toOwnedSlice();
     }
 
     // caller owns returned memory -- w/ the allocator the netconf object was created with!
