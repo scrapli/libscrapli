@@ -346,6 +346,12 @@ export fn ls_netconf_next_subscription_message(
 
     d.real_driver.netconf.allocator.free(sub);
 
+    // we got a copy of the arraylist, so clobber/put back the updated copy that has our
+    // element removed; probably sohould have a pointer to it instead but for now this is ok
+    d.real_driver.netconf.subscriptions.put(subscription_id, subs.?) catch {
+        return 1;
+    };
+
     return 0;
 }
 

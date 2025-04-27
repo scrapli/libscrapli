@@ -1175,7 +1175,7 @@ pub const Driver = struct {
         }
 
         // we know key is present since we already checked
-        const ret = self.subscriptions.fetchRemove(id);
+        var ret = self.subscriptions.fetchRemove(id);
         return ret.?.value.toOwnedSlice();
     }
 
