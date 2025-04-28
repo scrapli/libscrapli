@@ -4,6 +4,7 @@
 const std = @import("std");
 
 const cli = @import("../../cli.zig");
+const auth = @import("../../auth.zig");
 const operation = @import("../../cli-operation.zig");
 const mode = @import("../../mode.zig");
 const flags = @import("../../flags.zig");
@@ -68,7 +69,10 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*cli.Driver {
             .port = 22022,
             .auth = .{
                 .username = "admin",
-                .password = "password",
+                .password = "admin",
+                .lookup_map = &.{
+                    .{ .key = "enable", .value = "libscrapli", },
+                },
             },
             .session = .{
                 .record_destination = .{
@@ -93,7 +97,7 @@ fn GetTestDriver(f: []const u8) !*cli.Driver {
             .port = 22022,
             .auth = .{
                 .username = "admin",
-                .password = "password",
+                .password = "admin",
             },
             .session = .{
                 .read_size = 1,

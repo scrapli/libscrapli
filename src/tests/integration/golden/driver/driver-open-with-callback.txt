@@ -2,7 +2,7 @@
 
 eos1>
 eos1>
-eos1#term len 0
+eos1term len 0
 Pagination disabled.
 eos1#
 eos1#term width 32767
