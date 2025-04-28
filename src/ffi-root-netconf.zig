@@ -2,7 +2,7 @@ const std = @import("std");
 
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
-const ffi_args_to_options = @import("ffi-args-to-options-netconf.zig");
+const ffi_args_to_options = @import("ffi-args-to-netconf-options.zig");
 const result = @import("netconf-result.zig");
 
 const logging = @import("logging.zig");
