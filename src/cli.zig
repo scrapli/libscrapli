@@ -3,7 +3,7 @@ const logging = @import("logging.zig");
 const session = @import("session.zig");
 const auth = @import("auth.zig");
 const transport = @import("transport.zig");
-const platform = @import("platform.zig");
+const platform = @import("cli-platform.zig");
 const operation = @import("cli-operation.zig");
 const mode = @import("mode.zig");
 const result = @import("cli-result.zig");
@@ -152,7 +152,7 @@ pub const Driver = struct {
     pub fn NewResult(
         self: *Driver,
         allocator: std.mem.Allocator,
-        operation_kind: result.OperationKind,
+        operation_kind: operation.Kind,
     ) !*result.Result {
         return result.Result.init(
             allocator,
@@ -170,7 +170,7 @@ pub const Driver = struct {
     ) !*result.Result {
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.open,
+            operation.Kind.open,
         );
         errdefer res.deinit();
 
@@ -230,7 +230,7 @@ pub const Driver = struct {
     ) !*result.Result {
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.open,
+            operation.Kind.open,
         );
         errdefer res.deinit();
 
@@ -275,7 +275,7 @@ pub const Driver = struct {
 
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.get_prompt,
+            operation.Kind.get_prompt,
         );
         errdefer res.deinit();
 
@@ -299,11 +299,14 @@ pub const Driver = struct {
 
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.enter_mode,
+            operation.Kind.enter_mode,
         );
         errdefer res.deinit();
 
         if (std.mem.eql(u8, self.current_mode, options.requested_mode)) {
+            // even though its a noop, record a result so we know how long it took and such
+            try res.record("", [2][]const u8{ "", "" });
+
             return res;
         }
 
@@ -444,7 +447,7 @@ pub const Driver = struct {
     ) !*result.Result {
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.send_input,
+            operation.Kind.send_input,
         );
         errdefer res.deinit();
 
@@ -497,7 +500,7 @@ pub const Driver = struct {
 
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.send_input,
+            operation.Kind.send_input,
         );
         errdefer res.deinit();
 
@@ -532,7 +535,7 @@ pub const Driver = struct {
     ) !*result.Result {
         var res = try self.NewResult(
             allocator,
-            result.OperationKind.send_prompted_input,
+            operation.Kind.send_prompted_input,
         );
         errdefer res.deinit();
 

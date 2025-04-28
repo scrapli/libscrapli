@@ -1,5 +1,16 @@
 const mode = @import("mode.zig");
 
+pub const Kind = enum {
+    open,
+    on_open,
+    on_close,
+    close,
+    enter_mode,
+    get_prompt,
+    send_input,
+    send_prompted_input,
+};
+
 pub const InputHandling = enum {
     exact,
     fuzzy,

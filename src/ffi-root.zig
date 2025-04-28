@@ -32,26 +32,30 @@ pub const std_options = std.Options{
     },
 };
 
-const is_debug_build = builtin.mode == .Debug;
+const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
+var debug_allocator = std.heap.DebugAllocator(.{}){};
 
-var debug_allocator = if (is_debug_build)
-    std.heap.DebugAllocator(.{}){}
-else
-    null;
+fn isDebugMode() bool {
+    if (builtin.mode == .Debug) {
+        return true;
+    }
 
-pub const allocator = switch (builtin.mode) {
-    .Debug,
-    => blk: {
-        break :blk debug_allocator.allocator();
-    },
-    .ReleaseSafe, .ReleaseFast, .ReleaseSmall => std.heap.page_allocator,
-};
+    return std.posix.getenv(libscrapli_ffi_debug_mode_env_var) != null;
+}
+
+pub fn getAllocator() std.mem.Allocator {
+    if (isDebugMode()) {
+        return debug_allocator.allocator();
+    } else {
+        return std.heap.c_allocator;
+    }
+}
 
 // all exported functions are named using c standard and prepended with "ls" for libscrapli for
 // namespacing reasons.
 export fn ls_assert_no_leaks() bool {
-    if (!is_debug_build) {
-        return false;
+    if (!isDebugMode()) {
+        return true;
     }
 
     switch (debug_allocator.deinit()) {
@@ -98,19 +102,19 @@ export fn ls_alloc_cli(
     transport_kind: [*c]const u8,
 ) usize {
     var log = logging.Logger{
-        .allocator = allocator,
+        .allocator = getAllocator(),
         .f = null,
     };
 
     if (logger_callback != null) {
         log = logging.Logger{
-            .allocator = allocator,
+            .allocator = getAllocator(),
             .f = logger_callback.?,
         };
     }
 
     const d = ffi_driver.FfiDriver.init(
-        allocator,
+        getAllocator(),
         std.mem.span(host),
         .{
             .definition = .{
@@ -141,19 +145,19 @@ export fn ls_alloc_netconf(
     transport_kind: [*c]const u8,
 ) usize {
     var log = logging.Logger{
-        .allocator = allocator,
+        .allocator = getAllocator(),
         .f = null,
     };
 
     if (logger_callback != null) {
         log = logging.Logger{
-            .allocator = allocator,
+            .allocator = getAllocator(),
             .f = logger_callback.?,
         };
     }
 
     const d = ffi_driver.FfiDriver.init_netconf(
-        allocator,
+        getAllocator(),
         std.mem.span(host),
         .{
             .logger = log,

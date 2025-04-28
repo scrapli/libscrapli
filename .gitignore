@@ -37,4 +37,4 @@ lib/pcre2/pcre2
 
 # ignore any "main.zig" in this repo, this would be used by `zig build --main` and is used to
 # quickly build a main.zig for testing during development
-main.zig
+/main.zig

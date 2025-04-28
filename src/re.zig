@@ -16,13 +16,21 @@ pub fn pcre2Compile(pattern: []const u8) ?*pcre2.pcre2_code_8 {
     // SAFETY: required for interop w/ C library
     var err_offset: pcre2.PCRE2_SIZE = undefined;
 
+    const compile_context = pcre2.pcre2_compile_context_create_8(null);
+    defer pcre2.pcre2_compile_context_free_8(compile_context);
+
+    const rc = pcre2.pcre2_set_newline_8(compile_context, pcre2.PCRE2_NEWLINE_ANYCRLF);
+    if (rc != 0) {
+        return null;
+    }
+
     const regex: ?*pcre2.pcre2_code_8 = pcre2.pcre2_compile_8(
         &pattern[0],
         pattern.len,
         pcre2.PCRE2_CASELESS | pcre2.PCRE2_MULTILINE,
         &err_number,
         &err_offset,
-        null,
+        compile_context,
     );
 
     if (regex == null) {

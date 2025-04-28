@@ -2,7 +2,7 @@ const std = @import("std");
 
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
-const ffi_args_to_options = @import("ffi-args-to-options.zig");
+const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
@@ -10,6 +10,8 @@ const time = @import("time.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
+
+const operation_delimiter = "__libscrapli__";
 
 /// writes the ntc template platform from the driver's definition into the character slice at
 /// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
@@ -73,6 +75,7 @@ export fn ls_cli_poll_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
+    operation_count: *u32,
     operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
@@ -110,9 +113,17 @@ export fn ls_cli_poll_operation(
             else => @panic("attempting to access non cli result from cli type"),
         };
 
-        operation_input_size.* = dret.getInputLen();
-        operation_result_raw_size.* = dret.getResultRawLen();
-        operation_result_size.* = dret.getResultLen();
+        operation_count.* = @intCast(dret.results.items.len);
+
+        operation_input_size.* = dret.getInputLen(
+            .{ .delimiter = operation_delimiter },
+        );
+        operation_result_raw_size.* = dret.getResultRawLen(
+            .{ .delimiter = operation_delimiter },
+        );
+        operation_result_size.* = dret.getResultLen(
+            .{ .delimiter = operation_delimiter },
+        );
         operation_failure_indicator_size.* = 0;
         operation_error_size.* = 0;
 
@@ -128,6 +139,7 @@ export fn ls_cli_wait_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_done: *bool,
+    operation_count: *u32,
     operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
@@ -174,9 +186,17 @@ export fn ls_cli_wait_operation(
                 else => @panic("attempting to access non cli result from cli type"),
             };
 
-            operation_input_size.* = dret.getInputLen();
-            operation_result_raw_size.* = dret.getResultRawLen();
-            operation_result_size.* = dret.getResultLen();
+            operation_count.* = @intCast(dret.results.items.len);
+
+            operation_input_size.* = dret.getInputLen(
+                .{ .delimiter = operation_delimiter },
+            );
+            operation_result_raw_size.* = dret.getResultRawLen(
+                .{ .delimiter = operation_delimiter },
+            );
+            operation_result_size.* = dret.getResultLen(
+                .{ .delimiter = operation_delimiter },
+            );
             operation_failure_indicator_size.* = 0;
             operation_error_size.* = 0;
 
@@ -196,7 +216,7 @@ export fn ls_cli_fetch_operation(
     d_ptr: usize,
     operation_id: u32,
     operation_start_time: *u64,
-    operation_end_time: *u64,
+    operation_splits: *[]u64,
     operation_input: *[]u8,
     operation_result_raw: *[]u8,
     operation_result: *[]u8,
@@ -237,11 +257,12 @@ export fn ls_cli_fetch_operation(
 
         if (dret.splits_ns.items.len > 0) {
             operation_start_time.* = @intCast(dret.start_time_ns);
-            operation_end_time.* = @intCast(dret.splits_ns.items[dret.splits_ns.items.len - 1]);
+            for (0.., dret.splits_ns.items) |idx, split| {
+                operation_splits.*[idx] = @intCast(split);
+            }
         } else {
             // was a noop -- like enterMode but where mode didn't change
             operation_start_time.* = @intCast(dret.start_time_ns);
-            operation_end_time.* = @intCast(dret.start_time_ns);
         }
 
         // to avoid a pointless allocation since we are already copying from the result into the
@@ -255,8 +276,10 @@ export fn ls_cli_fetch_operation(
             cur += input.len;
 
             if (idx != dret.inputs.items.len - 1) {
-                operation_input.*[cur] = ascii.control_chars.lf;
-                cur += 1;
+                for (operation_delimiter) |delimiter_char| {
+                    operation_input.*[cur] = delimiter_char;
+                    cur += 1;
+                }
             }
         }
 
@@ -267,8 +290,10 @@ export fn ls_cli_fetch_operation(
             cur += result_raw.len;
 
             if (idx != dret.results_raw.items.len - 1) {
-                operation_result_raw.*[cur] = ascii.control_chars.lf;
-                cur += 1;
+                for (operation_delimiter) |delimiter_char| {
+                    operation_result_raw.*[cur] = delimiter_char;
+                    cur += 1;
+                }
             }
         }
 
@@ -279,8 +304,10 @@ export fn ls_cli_fetch_operation(
             cur += result.len;
 
             if (idx != dret.results.items.len - 1) {
-                operation_result.*[cur] = ascii.control_chars.lf;
-                cur += 1;
+                for (operation_delimiter) |delimiter_char| {
+                    operation_result.*[cur] = delimiter_char;
+                    cur += 1;
+                }
             }
         }
 
@@ -418,10 +445,10 @@ export fn ls_cli_send_prompted_input(
     prompt: [*c]const u8,
     prompt_pattern: [*c]const u8,
     response: [*c]const u8,
-    hidden_response: bool,
     abort_input: [*c]const u8,
     requested_mode: [*c]const u8,
     input_handling: [*c]const u8,
+    hidden_response: bool,
     retain_trailing_prompt: bool,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);

@@ -103,17 +103,22 @@ pub const Transport = struct {
                     return errors.ScrapliError.OpenFailed;
                 };
             }
-        } else if (control_buf.items.len == 1 and
-            bytes.charIn(&control_chars_actionable, maybe_control_char))
-        {
-            control_buf.append(maybe_control_char) catch |err| {
-                self.log.critical(
-                    "failed to append control char to control char array list, err: {}",
-                    .{err},
-                );
+        } else if (control_buf.items.len == 1) {
+            if (bytes.charIn(&control_chars_actionable, maybe_control_char)) {
+                control_buf.append(maybe_control_char) catch |err| {
+                    self.log.critical(
+                        "failed to append control char to control char array list, err: {}",
+                        .{err},
+                    );
 
-                return errors.ScrapliError.OpenFailed;
-            };
+                    return errors.ScrapliError.OpenFailed;
+                };
+            } else {
+                // not 100% sure this is "correct" behavior, but have seen at least EOS devices
+                // send one last control char, then start sending non-actionable chars (like the
+                // start of the username prompt)
+                return true;
+            }
         } else if (control_buf.items.len == 2) {
             const cmd = control_buf.items[1..2][0];
 

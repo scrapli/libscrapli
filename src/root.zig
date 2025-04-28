@@ -1,8 +1,7 @@
 pub const logging = @import("logging.zig");
 pub const strings = @import("strings.zig");
 
-pub const platform = @import("platform.zig");
-
+pub const cli_platform = @import("cli-platform.zig");
 pub const cli = @import("cli.zig");
 pub const cli_operation = @import("cli-operation.zig");
 pub const cli_result = @import("cli-result.zig");

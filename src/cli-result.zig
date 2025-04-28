@@ -1,16 +1,6 @@
 const std = @import("std");
 const ascii = @import("ascii.zig");
-
-pub const OperationKind = enum {
-    open,
-    on_open,
-    on_close,
-    close,
-    enter_mode,
-    get_prompt,
-    send_input,
-    send_prompted_input,
-};
+const operation = @import("cli-operation.zig");
 
 pub const Result = struct {
     allocator: std.mem.Allocator,
@@ -18,7 +8,7 @@ pub const Result = struct {
     host: []const u8,
     port: u16,
 
-    operation_kind: OperationKind,
+    operation_kind: operation.Kind,
 
     failed_indicators: ?std.ArrayList([]const u8),
 
@@ -42,7 +32,7 @@ pub const Result = struct {
         allocator: std.mem.Allocator,
         host: []const u8,
         port: u16,
-        operation_kind: OperationKind,
+        operation_kind: operation.Kind,
         failed_indicators: ?std.ArrayList([]const u8),
     ) !*Result {
         const res = try allocator.create(Result);
@@ -171,42 +161,62 @@ pub const Result = struct {
         return secs_rounded;
     }
 
-    pub fn getInputLen(self: *Result) usize {
+    pub fn getInputLen(
+        self: *Result,
+        options: struct {
+            delimiter: []const u8 = "\n",
+        },
+    ) usize {
         var out_size: usize = 0;
 
         for (0.., self.inputs.items) |idx, input| {
-            out_size += input.len + 1;
+            out_size += input.len;
 
             if (idx != self.inputs.items.len - 1) {
-                // not last result, add char for newline
-                out_size += 1;
+                // not last result, add spacing for the delimiter
+                out_size += options.delimiter.len;
             }
         }
 
         return out_size;
     }
 
-    pub fn getResultRawLen(self: *Result) usize {
+    pub fn getResultRawLen(
+        self: *Result,
+        options: struct {
+            delimiter: []const u8 = "\n",
+        },
+    ) usize {
         var out_size: usize = 0;
 
         for (0.., self.results_raw.items) |idx, result_raw| {
-            out_size += result_raw.len + 1;
+            out_size += result_raw.len;
 
             if (idx != self.results_raw.items.len - 1) {
-                // not last result, add char for newline
-                out_size += 1;
+                // not last result, add spacing for the delimiter
+                out_size += options.delimiter.len;
             }
         }
 
         return out_size;
     }
 
-    /// Returns all raw results joined on a \n char, caller owns joined string.
+    /// Returns all raw results joined on a options.delim string, caller owns joined string.
     pub fn getResultRaw(
         self: *Result,
         allocator: std.mem.Allocator,
+        options: struct {
+            delimiter: []const u8 = "\n",
+        },
     ) ![]const u8 {
-        const out = try allocator.alloc(u8, self.getResultRawLen());
+        const out = try allocator.alloc(
+            u8,
+            self.getResultRawLen(
+                .{
+                    .delimiter = options.delimiter,
+                },
+            ),
+        );
 
         var cur: usize = 0;
         for (0.., self.results_raw.items) |idx, result_raw| {
@@ -214,35 +224,52 @@ pub const Result = struct {
             cur += result_raw.len;
 
             if (idx != self.results_raw.items.len - 1) {
-                out[cur] = ascii.control_chars.lf;
-                cur += 1;
+                for (options.delimiter) |delimiter_char| {
+                    out[cur] = delimiter_char;
+                    cur += 1;
+                }
             }
         }
 
         return out;
     }
 
-    pub fn getResultLen(self: *Result) usize {
+    pub fn getResultLen(
+        self: *Result,
+        options: struct {
+            delimiter: []const u8 = "\n",
+        },
+    ) usize {
         var out_size: usize = 0;
 
         for (0.., self.results.items) |idx, result| {
             out_size += result.len;
 
             if (idx != self.results.items.len - 1) {
-                // not last result, add char for newline
-                out_size += 1;
+                // not last result, add spacing for the delimiter
+                out_size += options.delimiter.len;
             }
         }
 
         return out_size;
     }
 
-    /// Returns all results joined on a \n char, caller owns joined string.
+    /// Returns all results joined on options.delim string, caller owns joined string.
     pub fn getResult(
         self: *Result,
         allocator: std.mem.Allocator,
+        options: struct {
+            delimiter: []const u8 = "\n",
+        },
     ) ![]const u8 {
-        const out = try allocator.alloc(u8, self.getResultLen());
+        const out = try allocator.alloc(
+            u8,
+            self.getResultLen(
+                .{
+                    .delimiter = options.delimiter,
+                },
+            ),
+        );
 
         var cur: usize = 0;
         for (0.., self.results.items) |idx, result| {
@@ -250,8 +277,10 @@ pub const Result = struct {
             cur += result.len;
 
             if (idx != self.results.items.len - 1) {
-                out[cur] = ascii.control_chars.lf;
-                cur += 1;
+                for (options.delimiter) |delimiter_char| {
+                    out[cur] = delimiter_char;
+                    cur += 1;
+                }
             }
         }
 

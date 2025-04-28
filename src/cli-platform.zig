@@ -5,6 +5,7 @@ const yaml = @import("yaml");
 const strings = @import("strings.zig");
 const result = @import("cli-result.zig");
 const file = @import("file.zig");
+const operation = @import("cli-operation.zig");
 
 pub const OnXCallback = *const fn (
     d: *cli.Driver,
@@ -40,12 +41,12 @@ pub const BoundOnXCallbackInstruction = union(enum) {
 
 pub const BoundOnXCallback = struct {
     allocator: std.mem.Allocator,
-    kind: result.OperationKind,
+    kind: operation.Kind,
     instructions: []BoundOnXCallbackInstruction,
 
     pub fn init(
         allocator: std.mem.Allocator,
-        kind: result.OperationKind,
+        kind: operation.Kind,
         instructions: []BoundOnXCallbackInstruction,
     ) !*BoundOnXCallback {
         const cb = try allocator.create(BoundOnXCallback);
@@ -400,14 +401,14 @@ pub const YamlDefinition = struct {
                 .bound_on_open_callback = if (parsed_definition.on_open_instructions) |instr|
                     try BoundOnXCallback.init(
                         allocator,
-                        result.OperationKind.on_open,
+                        operation.Kind.on_open,
                         instr,
                     )
                 else
                     null,
                 .bound_on_close_callback = if (parsed_definition.on_close_instructions) |instr| try BoundOnXCallback.init(
                     allocator,
-                    result.OperationKind.on_close,
+                    operation.Kind.on_close,
                     instr,
                 ) else null,
                 .ntc_templates_platform = parsed_definition.ntc_templates_platform,

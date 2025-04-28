@@ -59,9 +59,8 @@ jobs:
   functional:
     runs-on: ubuntu-latest
 
-# TODO uncomment when unfucked :P
     # run e2e on main or prs pointing to main
-#    if: (github.ref_name == 'main' || github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && inputs.debug_functional)
+    if: (github.ref_name == 'main' || github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && inputs.debug_functional)
 
     steps:
       - name: checkout

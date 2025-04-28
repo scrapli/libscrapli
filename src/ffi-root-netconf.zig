@@ -2,7 +2,8 @@ const std = @import("std");
 
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
-const ffi_args_to_options = @import("ffi-args-to-options-netconf.zig");
+const ffi_args_to_options = @import("ffi-args-to-netconf-options.zig");
+const result = @import("netconf-result.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
@@ -10,6 +11,23 @@ const time = @import("time.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
+
+export fn ls_netconf_get_subscription_id(
+    operation_result: [*c]const u8,
+    subscription_id: *u64,
+) u8 {
+    const maybe_subscription_id = result.getSubscriptionId(std.mem.span(operation_result)) catch {
+        return 1;
+    };
+
+    if (maybe_subscription_id) |id| {
+        subscription_id.* = id;
+
+        return 0;
+    }
+
+    return 1;
+}
 
 export fn ls_netconf_poll_operation(
     d_ptr: usize,
@@ -247,6 +265,94 @@ export fn ls_netconf_get_session_id(
     }
 
     return 1;
+}
+
+export fn ls_netconf_next_notification_message_size(
+    d_ptr: usize,
+    size: *u64,
+) void {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.netconf.notifications_lock.lock();
+    defer d.real_driver.netconf.notifications_lock.unlock();
+
+    if (d.real_driver.netconf.notifications.items.len > 0) {
+        size.* = d.real_driver.netconf.notifications.items[0].len;
+    }
+}
+
+export fn ls_netconf_next_notification_message(
+    d_ptr: usize,
+    notification: *[]u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.netconf.notifications_lock.lock();
+    defer d.real_driver.netconf.notifications_lock.unlock();
+
+    if (d.real_driver.netconf.notifications.items.len == 0) {
+        // an error because they shoulda peeked at sizes first
+        // to know there was something to read
+        return 1;
+    }
+
+    const notif = d.real_driver.netconf.notifications.orderedRemove(0);
+
+    @memcpy(notification.*, notif);
+
+    d.real_driver.netconf.allocator.free(notif);
+
+    return 0;
+}
+
+export fn ls_netconf_next_subscription_message_size(
+    d_ptr: usize,
+    subscription_id: u64,
+    size: *u64,
+) void {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.netconf.subscriptions_lock.lock();
+    defer d.real_driver.netconf.subscriptions_lock.unlock();
+
+    if (!d.real_driver.netconf.subscriptions.contains(subscription_id)) {
+        return;
+    }
+
+    size.* = d.real_driver.netconf.subscriptions.get(subscription_id).?.items[0].len;
+}
+
+export fn ls_netconf_next_subscription_message(
+    d_ptr: usize,
+    subscription_id: u64,
+    subscription: *[]u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.real_driver.netconf.subscriptions_lock.lock();
+    defer d.real_driver.netconf.subscriptions_lock.unlock();
+
+    var subs = d.real_driver.netconf.subscriptions.get(subscription_id);
+
+    if (subs == null or subs.?.items.len == 0) {
+        // an error because they shoulda peeked at sizes first
+        // to know there was something to read
+        return 1;
+    }
+
+    const sub = subs.?.orderedRemove(0);
+
+    @memcpy(subscription.*, sub);
+
+    d.real_driver.netconf.allocator.free(sub);
+
+    // we got a copy of the arraylist, so clobber/put back the updated copy that has our
+    // element removed; probably sohould have a pointer to it instead but for now this is ok
+    d.real_driver.netconf.subscriptions.put(subscription_id, subs.?) catch {
+        return 1;
+    };
+
+    return 0;
 }
 
 export fn ls_netconf_raw_rpc(

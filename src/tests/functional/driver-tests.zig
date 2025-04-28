@@ -238,7 +238,7 @@ test "driver open" {
             close_res.deinit();
         }
 
-        const actual = try actual_res.getResult(std.testing.allocator);
+        const actual = try actual_res.getResult(std.testing.allocator, .{});
         defer std.testing.allocator.free(actual);
 
         // rather than dealing w/ capturing exact banner/login/etc. (which is a PITA, esp w/ diff

@@ -65,6 +65,7 @@ const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-d
 
 const message_id_attribute_prefix = "message-id=\"";
 pub const subscription_id_attribute_prefix = "<subscription-id>";
+pub const notification_prefix = "<notification";
 
 const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
@@ -169,9 +170,12 @@ pub const Driver = struct {
     ),
     messages_lock: std.Thread.Mutex,
 
+    notifications: std.ArrayList([]const u8),
+    notifications_lock: std.Thread.Mutex,
+
     subscriptions: std.HashMap(
         u64,
-        std.ArrayList([2][]const u8),
+        std.ArrayList([]const u8),
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
@@ -249,9 +253,12 @@ pub const Driver = struct {
             ).init(allocator),
             .messages_lock = std.Thread.Mutex{},
 
+            .notifications = std.ArrayList([]const u8).init(allocator),
+            .notifications_lock = std.Thread.Mutex{},
+
             .subscriptions = std.HashMap(
                 u64,
-                std.ArrayList([2][]const u8),
+                std.ArrayList([]const u8),
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
@@ -291,12 +298,18 @@ pub const Driver = struct {
 
         self.messages.deinit();
 
-        // and then subscription messages
+        // annnnd notifications
+        for (self.notifications.items) |notif| {
+            self.allocator.free(notif);
+        }
+
+        self.notifications.deinit();
+
+        // and then subscriptions
         var subscriptions_iterator = self.subscriptions.valueIterator();
         while (subscriptions_iterator.next()) |sl| {
             for (sl.items) |s| {
-                self.allocator.free(s[0]);
-                self.allocator.free(s[1]);
+                self.allocator.free(s);
             }
 
             sl.deinit();
@@ -888,7 +901,12 @@ pub const Driver = struct {
 
     fn processFoundMessageIds(
         message_view: []const u8,
-    ) !struct { found: bool = false, is_subscription_message: bool = false, found_id: usize = 0 } {
+    ) !struct {
+        found: bool = false,
+        is_subscription_message: bool = false,
+        is_notification_message: bool = false,
+        found_id: usize = 0,
+    } {
         const index_of_message_id = std.mem.indexOf(
             u8,
             message_view,
@@ -900,9 +918,22 @@ pub const Driver = struct {
             subscription_id_attribute_prefix,
         );
 
+        const index_of_notification = std.mem.indexOf(
+            u8,
+            message_view,
+            notification_prefix,
+        );
+
         if (index_of_message_id == null and
             index_of_subscription_id == null)
         {
+            if (index_of_notification != null) {
+                return .{
+                    .found = true,
+                    .is_notification_message = true,
+                };
+            }
+
             return .{};
         }
 
@@ -955,15 +986,25 @@ pub const Driver = struct {
         }
 
         if (id_info.is_subscription_message) {
+            // we ignore raw buf of subscriptions/notifications
+            self.allocator.free(raw_buf);
+
             self.subscriptions_lock.lock();
             defer self.subscriptions_lock.unlock();
 
             const ret = try self.subscriptions.getOrPut(id_info.found_id);
             if (!ret.found_existing) {
-                ret.value_ptr.* = std.ArrayList([2][]const u8).init(self.allocator);
+                ret.value_ptr.* = std.ArrayList([]const u8).init(self.allocator);
             }
 
-            try ret.value_ptr.*.append([2][]const u8{ raw_buf, processed_buf });
+            try ret.value_ptr.*.append(processed_buf);
+        } else if (id_info.is_notification_message) {
+            self.allocator.free(raw_buf);
+
+            self.notifications_lock.lock();
+            defer self.notifications_lock.unlock();
+
+            try self.notifications.append(processed_buf);
         } else {
             self.messages_lock.lock();
             defer self.messages_lock.unlock();
@@ -1121,21 +1162,31 @@ pub const Driver = struct {
         }
     }
 
+    // caller owns returned memory -- w/ the allocator the netconf object was created with!
     pub fn getSubscriptionMessages(
         self: *Driver,
         id: u64,
-    ) ![][2][]const u8 {
-        // TODO obvikously this stuff, can we make it an iterator? seems nice? but does it lock
-        //   the subscsripiotns the whole tiem?
+    ) ![][]const u8 {
         self.subscriptions_lock.lock();
         defer self.subscriptions_lock.unlock();
 
         if (!self.subscriptions.contains(id)) {
-            return &[_][2][]const u8{};
+            return &[_][]const u8{};
         }
 
-        const ret = self.subscriptions.get(id);
-        return ret.?.items;
+        // we know key is present since we already checked
+        var ret = self.subscriptions.fetchRemove(id);
+        return ret.?.value.toOwnedSlice();
+    }
+
+    // caller owns returned memory -- w/ the allocator the netconf object was created with!
+    pub fn getNotificationMessages(
+        self: *Driver,
+    ) ![][]const u8 {
+        self.notifications_lock.lock();
+        defer self.notifications_lock.unlock();
+
+        return self.notifications.toOwnedSlice();
     }
 
     fn processCancelAndTimeout(
@@ -2365,6 +2416,9 @@ pub const Driver = struct {
     ) !*result.Result {
         var timer = try std.time.Timer.start();
 
+        // TODO this is the only reason that input can be null in a netconf result. eff that.
+        //   just refactor this such that we create the result w/ the input then make input
+        //   non-nullable
         var res = try self.NewResult(allocator, options.getKind());
         errdefer res.deinit();
 
@@ -2556,12 +2610,24 @@ test "processFoundMessageIds" {
         input: []const u8,
         expected: struct {
             found: bool = false,
+            is_notification_message: bool = false,
             is_subscription_message: bool = false,
             found_id: usize = 0,
         },
     }{
         .{
-            .name = "simple-not-found",
+            .name = "simple-nothing-found",
+            .input =
+            \\#1097
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<zzzz xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"></zzzz>
+            \\
+            \\##
+            ,
+            .expected = .{},
+        },
+        .{
+            .name = "simple-notification",
             .input =
             \\#1097
             \\<?xml version="1.0" encoding="UTF-8"?>
@@ -2569,7 +2635,10 @@ test "processFoundMessageIds" {
             \\
             \\##
             ,
-            .expected = .{},
+            .expected = .{
+                .found = true,
+                .is_notification_message = true,
+            },
         },
         .{
             .name = "simple-message-id",
@@ -2606,6 +2675,7 @@ test "processFoundMessageIds" {
     for (cases) |case| {
         const actual = try Driver.processFoundMessageIds(case.input);
         try std.testing.expectEqual(case.expected.found, actual.found);
+        try std.testing.expectEqual(case.expected.is_notification_message, actual.is_notification_message);
         try std.testing.expectEqual(case.expected.is_subscription_message, actual.is_subscription_message);
         try std.testing.expectEqual(case.expected.found_id, actual.found_id);
     }
