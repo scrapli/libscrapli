@@ -71,7 +71,10 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*cli.Driver {
                 .username = "admin",
                 .password = "admin",
                 .lookup_map = &.{
-                    .{ .key = "enable", .value = "libscrapli", },
+                    .{
+                        .key = "enable",
+                        .value = "libscrapli",
+                    },
                 },
             },
             .session = .{
