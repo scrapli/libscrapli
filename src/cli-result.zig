@@ -1,6 +1,7 @@
 const std = @import("std");
 const ascii = @import("ascii.zig");
 const operation = @import("cli-operation.zig");
+const bytes = @import("bytes.zig");
 
 pub const Result = struct {
     allocator: std.mem.Allocator,
@@ -33,6 +34,8 @@ pub const Result = struct {
         host: []const u8,
         port: u16,
         operation_kind: operation.Kind,
+        // TODO maybe just do a fixed array size of 32? cant imagine we'd ever have more than that
+        //   and that may remove some allocations/faffing around for platform/result things
         failed_indicators: ?std.ArrayList([]const u8),
     ) !*Result {
         const res = try allocator.create(Result);
@@ -92,6 +95,10 @@ pub const Result = struct {
             if (std.mem.indexOf(u8, rets[1], failed_when) != null) {
                 self.result_failure_indicated = true;
                 self.result_failure_indicator = @intCast(idx);
+
+                // this can be slow if rets[1] is v large, and theres no reason continuing if we
+                // failed, so we are done here.
+                break;
             }
         }
     }

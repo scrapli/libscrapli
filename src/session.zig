@@ -15,13 +15,15 @@ const pcre2 = @cImport({
     @cInclude("pcre2.h");
 });
 
-const default_read_size: u64 = 4_096;
-const default_read_delay_min_ns: u64 = 2_500;
-const default_read_delay_max_ns: u64 = 2_500_000;
-const default_read_delay_backoff_factor: u8 = 2;
-const default_return_char: []const u8 = "\n";
-const default_operation_timeout_ns: u64 = 10_000_000_000;
-const default_operation_max_search_depth: u64 = 512;
+const defaults = struct {
+    const read_size: u64 = 4_096;
+    const read_delay_min_ns: u64 = 5_000;
+    const read_delay_max_ns: u64 = 7_500_000;
+    const read_delay_backoff_factor: u8 = 2;
+    const return_char: []const u8 = "\n";
+    const operation_timeout_ns: u64 = 10_000_000_000;
+    const operation_max_search_depth: u64 = 512;
+};
 
 const ReadThreadState = enum(u8) {
     uninitialized,
@@ -88,13 +90,13 @@ pub const RecordDestination = union(enum) {
 };
 
 pub const OptionsInputs = struct {
-    read_size: u64 = default_read_size,
-    read_delay_min_ns: u64 = default_read_delay_min_ns,
-    read_delay_max_ns: u64 = default_read_delay_max_ns,
-    read_delay_backoff_factor: u8 = default_read_delay_backoff_factor,
-    return_char: []const u8 = default_return_char,
-    operation_timeout_ns: u64 = default_operation_timeout_ns,
-    operation_max_search_depth: u64 = default_operation_max_search_depth,
+    read_size: u64 = defaults.read_size,
+    read_delay_min_ns: u64 = defaults.read_delay_min_ns,
+    read_delay_max_ns: u64 = defaults.read_delay_max_ns,
+    read_delay_backoff_factor: u8 = defaults.read_delay_backoff_factor,
+    return_char: []const u8 = defaults.return_char,
+    operation_timeout_ns: u64 = defaults.operation_timeout_ns,
+    operation_max_search_depth: u64 = defaults.operation_max_search_depth,
     record_destination: ?RecordDestination = null,
 };
 
@@ -125,7 +127,7 @@ pub const Options = struct {
             .record_destination = opts.record_destination,
         };
 
-        if (&o.return_char[0] != &default_return_char[0]) {
+        if (&o.return_char[0] != &defaults.return_char[0]) {
             o.return_char = try o.allocator.dupe(u8, o.return_char);
         }
 
@@ -144,7 +146,7 @@ pub const Options = struct {
     }
 
     pub fn deinit(self: *Options) void {
-        if (&self.return_char[0] != &default_return_char[0]) {
+        if (&self.return_char[0] != &defaults.return_char[0]) {
             self.allocator.free(self.return_char);
         }
 
