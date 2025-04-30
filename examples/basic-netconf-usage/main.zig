@@ -35,7 +35,7 @@ pub const std_options = std.Options{
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa_allocator.allocator();
 
-fn get_port() !u16 {
+fn getPort() !u16 {
     const port_as_str_or_null = std.process.getEnvVarOwned(allocator, host_env_var_port) catch |err| switch (err) {
         error.EnvironmentVariableNotFound => null,
         else => return err,
@@ -50,7 +50,7 @@ fn get_port() !u16 {
     return try std.fmt.parseInt(u16, port_as_str_or_null.?, 10);
 }
 
-fn get_env_var_or_default(
+fn getEnvVarOrDefault(
     env_var_name: []const u8,
     default_value: []const u8,
 ) !strings.MaybeHeapString {
@@ -78,13 +78,13 @@ pub fn main() !void {
         std.log.info("leak check results >> {any}\n", .{gpa_allocator.deinit()});
     }
 
-    var host = try get_env_var_or_default(
+    var host = try getEnvVarOrDefault(
         host_env_var_name,
         default_host,
     );
     defer host.deinit();
 
-    var password = try get_env_var_or_default(
+    var password = try getEnvVarOrDefault(
         password_env_var_name,
         default_password,
     );
@@ -97,7 +97,7 @@ pub fn main() !void {
             // uncomment and import the logger package like: `const logging = scrapli.logging;`
             // for a simple logger setup
             // .logger = logging.Logger{ .allocator = allocator, .f = logging.stdLogf, },
-            .port = try get_port(),
+            .port = try getPort(),
             .auth = .{
                 .username = "admin",
                 .password = password.string,
