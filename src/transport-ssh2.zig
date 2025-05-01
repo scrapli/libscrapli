@@ -102,12 +102,14 @@ const AuthCallbackData = struct {
 };
 
 pub const OptionsInputs = struct {
+    known_hosts_path: ?[]const u8 = null,
     libssh2_trace: bool = false,
     netconf: bool = false,
 };
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
+    known_hosts_path: ?[]const u8,
     libssh2_trace: bool,
     netconf: bool,
 
@@ -117,6 +119,7 @@ pub const Options = struct {
 
         o.* = Options{
             .allocator = allocator,
+            .known_hosts_path = opts.known_hosts_path,
             .libssh2_trace = opts.libssh2_trace,
             .netconf = opts.netconf,
         };
@@ -209,9 +212,7 @@ pub const Transport = struct {
     ) !void {
         try self.initSocket(host, port);
         try self.initSession(timer, cancel, operation_timeout_ns);
-
-        // TODO known hosts things
-        // https://github.com/libssh2/libssh2/blob/master/example/ssh2_exec.c#L161-L197
+        try self.initKnownHost(host, port);
 
         try self.authenticate(
             timer,
@@ -226,7 +227,11 @@ pub const Transport = struct {
         if (!self.options.netconf) {
             // no pty for netconf, it causes inputs to be echoed (which we normally want, but not
             // in netconf), and disabling them via term mode only makes it echo once not twice :p
-            try self.requestPty(timer, cancel, operation_timeout_ns);
+            try self.requestPty(
+                timer,
+                cancel,
+                operation_timeout_ns,
+            );
         }
 
         try self.requestShell(timer, cancel, operation_timeout_ns);
@@ -246,7 +251,10 @@ pub const Transport = struct {
             host,
             port,
         ) catch |err| {
-            self.log.critical("failed initializing resolved addresses, err: {}", .{err});
+            self.log.critical(
+                "failed initializing resolved addresses, err: {}",
+                .{err},
+            );
 
             return errors.ScrapliError.OpenFailed;
         };
@@ -258,17 +266,32 @@ pub const Transport = struct {
             return errors.ScrapliError.OpenFailed;
         }
 
-        // TODO should try all address families/resolved addresses at some point -- we do this in
-        // og scrapli
-        self.socket = std.posix.socket(
-            resolved_addresses.addrs[0].un.family,
-            std.posix.SOCK.STREAM,
-            0,
-        ) catch |err| {
-            self.log.critical("failed initializing socket, err: {}", .{err});
+        for (resolved_addresses.addrs) |addr| {
+            const sock = std.posix.socket(
+                addr.un.family,
+                std.posix.SOCK.STREAM,
+                0,
+            ) catch |err| {
+                self.log.warn(
+                    "failed initializing socket for addr {any}, err: {}",
+                    .{ addr, err },
+                );
+
+                continue;
+            };
+
+            self.socket = sock;
+            break;
+        }
+
+        if (self.socket == null) {
+            self.log.critical(
+                "failed initializing socket, all resolved addresses failed",
+                .{},
+            );
 
             return errors.ScrapliError.OpenFailed;
-        };
+        }
 
         std.posix.connect(
             self.socket.?,
@@ -331,7 +354,10 @@ pub const Transport = struct {
                 return errors.ScrapliError.TimeoutExceeded;
             }
 
-            const rc = ssh2.libssh2_session_handshake(self.session, self.socket.?);
+            const rc = ssh2.libssh2_session_handshake(
+                self.session,
+                self.socket.?,
+            );
 
             if (rc == 0) {
                 break;
@@ -344,6 +370,107 @@ pub const Transport = struct {
             self.log.critical("failed session handshake", .{});
 
             return errors.ScrapliError.OpenFailed;
+        }
+    }
+
+    fn initKnownHost(
+        self: *Transport,
+        host: []const u8,
+        port: u16,
+    ) !void {
+        if (self.options.known_hosts_path == null) {
+            return;
+        }
+
+        const _host = self.allocator.dupeZ(u8, host) catch |err| {
+            self.log.critical("failed casting host to c string, err: {}", .{err});
+
+            return errors.ScrapliError.OpenFailed;
+        };
+        defer self.allocator.free(_host);
+
+        const _known_hosts_path = self.allocator.dupeZ(
+            u8,
+            self.options.known_hosts_path.?,
+        ) catch |err| {
+            self.log.critical(
+                "failed casting known hosts path to c string, err: {}",
+                .{err},
+            );
+
+            return errors.ScrapliError.OpenFailed;
+        };
+        defer self.allocator.free(_known_hosts_path);
+
+        const nh = ssh2.libssh2_knownhost_init(self.session.?);
+        if (nh == null) {
+            self.log.critical("failed libssh2 known hosts init", .{});
+
+            return errors.ScrapliError.OpenFailed;
+        }
+        defer ssh2.libssh2_knownhost_free(nh);
+
+        const read_rc = ssh2.libssh2_knownhost_readfile(
+            nh,
+            _known_hosts_path,
+            ssh2.LIBSSH2_KNOWNHOST_FILE_OPENSSH,
+        );
+        if (read_rc < 0) {
+            self.log.critical("failed to read known hosts file", .{});
+
+            return errors.ScrapliError.OpenFailed;
+        }
+
+        var len: usize = 0;
+        var key_type: c_int = 0;
+
+        const host_fingerprint = ssh2.libssh2_session_hostkey(
+            self.session.?,
+            &len,
+            &key_type,
+        );
+        if (host_fingerprint == null) {
+            self.log.critical("failed to fingerprint target host", .{});
+
+            return errors.ScrapliError.OpenFailed;
+        }
+
+        var known_host: ?*ssh2.libssh2_knownhost = null;
+
+        const check_rc = ssh2.libssh2_knownhost_checkp(
+            nh,
+            _host,
+            port,
+            host_fingerprint,
+            len,
+            ssh2.LIBSSH2_KNOWNHOST_TYPE_PLAIN | ssh2.LIBSSH2_KNOWNHOST_KEYENC_RAW,
+            &known_host,
+        );
+
+        switch (check_rc) {
+            ssh2.LIBSSH2_KNOWNHOST_CHECK_MATCH => {
+                return;
+            },
+            ssh2.LIBSSH2_KNOWNHOST_CHECK_MISMATCH => {
+                self.log.critical("known host check mismatch", .{});
+
+                return errors.ScrapliError.OpenFailed;
+            },
+            ssh2.LIBSSH2_KNOWNHOST_CHECK_NOTFOUND => {
+                self.log.critical("known host check not found", .{});
+
+                return errors.ScrapliError.OpenFailed;
+            },
+            ssh2.LIBSSH2_KNOWNHOST_CHECK_FAILURE => {
+                self.log.critical("known host check failure", .{});
+
+                return errors.ScrapliError.OpenFailed;
+            },
+            else => {
+                self.log.critical("known host unknown error", .{});
+
+                return errors.ScrapliError.OpenFailed;
+            },
         }
     }
 
@@ -409,12 +536,25 @@ pub const Transport = struct {
                 break :blk;
             };
 
-            if (try self.isAuthenticated(timer, cancel, operation_timeout_ns)) {
+            if (try self.isAuthenticated(
+                timer,
+                cancel,
+                operation_timeout_ns,
+            )) {
                 return;
             }
 
-            try self.handleKeyboardInteractiveAuth(timer, cancel, operation_timeout_ns, _username);
-            if (try self.isAuthenticated(timer, cancel, operation_timeout_ns)) {
+            try self.handleKeyboardInteractiveAuth(
+                timer,
+                cancel,
+                operation_timeout_ns,
+                _username,
+            );
+            if (try self.isAuthenticated(
+                timer,
+                cancel,
+                operation_timeout_ns,
+            )) {
                 return;
             }
         }

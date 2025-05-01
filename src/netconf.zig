@@ -325,6 +325,7 @@ pub const Driver = struct {
     fn NewResult(
         self: *Driver,
         allocator: std.mem.Allocator,
+        input: []const u8,
         operation_kind: operation.Kind,
     ) !*result.Result {
         return result.NewResult(
@@ -333,6 +334,7 @@ pub const Driver = struct {
             self.options.port.?,
             self.negotiated_version,
             self.options.error_tag,
+            input,
             operation_kind,
         );
     }
@@ -346,18 +348,19 @@ pub const Driver = struct {
 
         var res = try self.NewResult(
             allocator,
+            "",
             operation.Kind.open,
         );
         errdefer res.deinit();
 
-        const rets = try self.session.open(
-            allocator,
-            self.host,
-            self.options.port.?,
-            options,
+        try res.record(
+            try self.session.open(
+                allocator,
+                self.host,
+                self.options.port.?,
+                options,
+            ),
         );
-
-        try res.record([2][]const u8{ rets[0], rets[1] });
 
         // SAFETY: undefined now but will always be set before use (below) or we will have
         // errored out.
@@ -453,8 +456,13 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CloseOptions,
     ) !*result.Result {
-        // TODO send CloseSession rpc and then we will care about options for cancel
-        _ = options;
+        const res = try self.closeSession(
+            allocator,
+            .{
+                .cancel = options.cancel,
+            },
+        );
+        errdefer res.deinit();
 
         self.process_stop.store(
             ProcessThreadState.stop,
@@ -467,7 +475,7 @@ pub const Driver = struct {
 
         try self.session.close();
 
-        return self.NewResult(allocator, operation.Kind.close_session);
+        return res;
     }
 
     fn receiveServerCapabilities(
@@ -1330,6 +1338,8 @@ pub const Driver = struct {
         }
     }
 
+    // TODO https://github.com/scrapli/scrapligo/issues/67
+    // wildly annoying since then everything else would have to be prefixed too i think?
     fn buildRawRpcElement(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2416,143 +2426,147 @@ pub const Driver = struct {
     ) !*result.Result {
         var timer = try std.time.Timer.start();
 
-        // TODO this is the only reason that input can be null in a netconf result. eff that.
-        //   just refactor this such that we create the result w/ the input then make input
-        //   non-nullable
-        var res = try self.NewResult(allocator, options.getKind());
-        errdefer res.deinit();
-
         var cancel: ?*bool = null;
+
+        // SAFETY: will always be set or we will have errored
+        var input: []const u8 = undefined;
 
         switch (options) {
             .raw_rpc => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildRawRpcElement(
+                input = try self.buildRawRpcElement(
                     allocator,
                     o,
                 );
             },
             .get_config => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildGetConfigElem(
+                input = try self.buildGetConfigElem(
                     allocator,
                     o,
                 );
             },
             .edit_config => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildEditConfigElem(
+                input = try self.buildEditConfigElem(
                     allocator,
                     o,
                 );
             },
             .copy_config => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildCopyConfigElem(
+                input = try self.buildCopyConfigElem(
                     allocator,
                     o,
                 );
             },
             .delete_config => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildDeleteConfigElem(
+                input = try self.buildDeleteConfigElem(
                     allocator,
                     o,
                 );
             },
             .lock => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildLockElem(
+                input = try self.buildLockElem(
                     allocator,
                     o,
                 );
             },
             .unlock => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildUnlockElem(
+                input = try self.buildUnlockElem(
                     allocator,
                     o,
                 );
             },
             .get => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildGetElem(
+                input = try self.buildGetElem(
                     allocator,
                     o,
                 );
             },
             .close_session => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildCloseSessionElem(
+                input = try self.buildCloseSessionElem(
                     allocator,
                     o,
                 );
             },
             .kill_session => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildKillSessionElem(
+                input = try self.buildKillSessionElem(
                     allocator,
                     o,
                 );
             },
             .commit => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildCommitElem(
+                input = try self.buildCommitElem(
                     allocator,
                     o,
                 );
             },
             .discard => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildDiscardElem(
+                input = try self.buildDiscardElem(
                     allocator,
                     o,
                 );
             },
             .cancel_commit => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildCancelCommitElem(
+                input = try self.buildCancelCommitElem(
                     allocator,
                     o,
                 );
             },
             .validate => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildValidateElem(
+                input = try self.buildValidateElem(
                     allocator,
                     o,
                 );
             },
             .get_schema => |o| {
                 cancel = options.get_schema.cancel;
-                res.input = try self.buildGetSchemaElem(
+                input = try self.buildGetSchemaElem(
                     allocator,
                     o,
                 );
             },
             .get_data => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildGetDataElem(
+                input = try self.buildGetDataElem(
                     allocator,
                     o,
                 );
             },
             .edit_data => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildEditDataElem(
+                input = try self.buildEditDataElem(
                     allocator,
                     o,
                 );
             },
             .action => |o| {
                 cancel = o.cancel;
-                res.input = try self.buildActionElem(
+                input = try self.buildActionElem(
                     allocator,
                     o,
                 );
             },
             else => return errors.ScrapliError.UnsupportedOperation,
         }
+
+        var res = try self.NewResult(
+            allocator,
+            input,
+            options.getKind(),
+        );
+        errdefer res.deinit();
 
         // before sending increment, but remember that in sendRpc we need to check for the
         // *previous* message id!
@@ -2561,7 +2575,7 @@ pub const Driver = struct {
         const ret = try self.sendRpc(
             &timer,
             cancel,
-            res.input.?,
+            res.input,
             self.message_id - 1,
         );
 

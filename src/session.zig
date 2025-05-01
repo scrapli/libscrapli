@@ -364,7 +364,6 @@ pub const Session = struct {
 
         // check if we have auth bypass or the transport handles auth for us -- if yes we are done
         if (self.auth_options.in_session_auth_bypass or !is_in_session_auth) {
-            // TODO does trying to free this cause an issue?
             return [2][]const u8{ "", "" };
         }
 

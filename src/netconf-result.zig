@@ -92,6 +92,7 @@ pub fn NewResult(
     port: u16,
     version: netconf.Version,
     error_tag: []const u8,
+    input: []const u8,
     operation_kind: operation.Kind,
 ) !*Result {
     const r = try allocator.create(Result);
@@ -103,7 +104,7 @@ pub fn NewResult(
         .version = version,
         .error_tag = error_tag,
         .operation_kind = operation_kind,
-        .input = null,
+        .input = input,
         .result_raw = "",
         .result = "",
         .start_time_ns = std.time.nanoTimestamp(),
@@ -126,7 +127,7 @@ pub const Result = struct {
     error_tag: []const u8,
 
     operation_kind: operation.Kind,
-    input: ?[]const u8,
+    input: []const u8,
 
     result_raw: []const u8,
     result: []const u8,
@@ -142,9 +143,7 @@ pub const Result = struct {
     pub fn deinit(
         self: *Result,
     ) void {
-        if (self.input != null) {
-            self.allocator.free(self.input.?);
-        }
+        self.allocator.free(self.input);
 
         self.allocator.free(self.result_raw);
         self.allocator.free(self.result);
@@ -373,6 +372,10 @@ test "parseRpcErrors" {
                 830,
                 netconf.Version.version_1_0,
                 netconf.default_rpc_error_tag,
+                "", // important: this cant be a global const as itll panic when being freed
+                //  in normal cases a user would never be setting this directly as the element
+                //  will be being built by -- or even in the case of rawRpc at least wrapped in
+                //  the xml heap allocated magic
                 operation.Kind.get,
             ),
             .input =
@@ -395,6 +398,7 @@ test "parseRpcErrors" {
                 830,
                 netconf.Version.version_1_0,
                 netconf.default_rpc_error_tag,
+                "",
                 operation.Kind.get,
             ),
             .input =
@@ -431,6 +435,7 @@ test "parseRpcErrors" {
                 830,
                 netconf.Version.version_1_0,
                 netconf.default_rpc_error_tag,
+                "",
                 operation.Kind.get,
             ),
             .input =
@@ -468,6 +473,7 @@ test "parseRpcErrors" {
                 830,
                 netconf.Version.version_1_0,
                 netconf.default_rpc_error_tag,
+                "",
                 operation.Kind.get,
             ),
             .input =

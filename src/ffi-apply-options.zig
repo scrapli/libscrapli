@@ -759,6 +759,49 @@ export fn ls_option_transport_bin_term_width(
 // ssh2 transport options
 //
 
+export fn ls_option_transport_ssh2_known_hosts_path(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.known_hosts_path = rd.options.transport.bin.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+        .netconf => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.known_hosts_path = rd.options.transport.bin.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+    }
+
+    return 0;
+}
+
+
 export fn ls_option_transport_ssh2_libssh2trace(
     d_ptr: usize,
 ) u8 {

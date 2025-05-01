@@ -34,8 +34,6 @@ pub const Result = struct {
         host: []const u8,
         port: u16,
         operation_kind: operation.Kind,
-        // TODO maybe just do a fixed array size of 32? cant imagine we'd ever have more than that
-        //   and that may remove some allocations/faffing around for platform/result things
         failed_indicators: ?std.ArrayList([]const u8),
     ) !*Result {
         const res = try allocator.create(Result);

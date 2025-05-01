@@ -162,4 +162,14 @@ pub fn main() !void {
 
     const close_result = try d.close(allocator, .{});
     defer close_result.deinit();
+
+    std.debug.print(
+        "{s}\n{s}\n{s}\n Completed in {d}s\n",
+        .{
+            banner,
+            close_result.result,
+            banner,
+            close_result.elapsedTimeSeconds(),
+        },
+    );
 }
