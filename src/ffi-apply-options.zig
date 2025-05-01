@@ -801,7 +801,6 @@ export fn ls_option_transport_ssh2_known_hosts_path(
     return 0;
 }
 
-
 export fn ls_option_transport_ssh2_libssh2trace(
     d_ptr: usize,
 ) u8 {

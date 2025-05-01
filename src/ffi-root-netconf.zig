@@ -74,10 +74,7 @@ export fn ls_netconf_poll_operation(
             else => @panic("attempting to access non netconf result from netconf type"),
         };
 
-        if (dret.input) |i| {
-            operation_input_size.* = i.len;
-        }
-
+        operation_input_size.* = dret.input.len;
         operation_result_raw_size.* = dret.result_raw.len;
         operation_result_size.* = dret.result.len;
 
@@ -141,10 +138,7 @@ export fn ls_netconf_wait_operation(
                 else => @panic("attempting to access non netconf result from netconf type"),
             };
 
-            if (dret.input) |i| {
-                operation_input_size.* = i.len;
-            }
-
+            operation_input_size.* = dret.input.len;
             operation_result_raw_size.* = dret.result_raw.len;
             operation_result_size.* = dret.result.len;
 
@@ -214,10 +208,7 @@ export fn ls_netconf_fetch_operation(
             operation_end_time.* = @intCast(dret.start_time_ns);
         }
 
-        if (dret.input) |i| {
-            @memcpy(operation_input.*[0..i.len], i);
-        }
-
+        @memcpy(operation_input.*, dret.input);
         @memcpy(operation_result_raw.*, dret.result_raw);
         @memcpy(operation_result.*, dret.result);
 
