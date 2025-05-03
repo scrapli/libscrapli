@@ -23,6 +23,9 @@ pub const OpenOptions = struct {
 
 pub const CloseOptions = struct {
     cancel: ?*bool = null,
+    // force does *not* send a close-session rpc, just stops the process thread and closes the
+    // session and returns an empty result.
+    force: bool = false,
 };
 
 pub const GetPromptOptions = struct {

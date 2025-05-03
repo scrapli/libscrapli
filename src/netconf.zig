@@ -287,7 +287,7 @@ pub const Driver = struct {
         if (self.process_stop.load(std.builtin.AtomicOrder.acquire) == ProcessThreadState.run) {
             // same as session, for ignoring errors on close and just gracefully freeing things
             // zlint-disable suppressed-errors
-            const ret = self.close(self.allocator, .{}) catch null;
+            const ret = self.close(self.allocator, .{ .force = true }) catch null;
             if (ret) |r| {
                 r.deinit();
             }
@@ -466,19 +466,7 @@ pub const Driver = struct {
         return res;
     }
 
-    pub fn close(
-        self: *Driver,
-        allocator: std.mem.Allocator,
-        options: operation.CloseOptions,
-    ) !*result.Result {
-        const res = try self.closeSession(
-            allocator,
-            .{
-                .cancel = options.cancel,
-            },
-        );
-        errdefer res.deinit();
-
+    fn _close(self: *Driver) !void {
         self.process_stop.store(
             ProcessThreadState.stop,
             std.builtin.AtomicOrder.unordered,
@@ -489,8 +477,29 @@ pub const Driver = struct {
         }
 
         try self.session.close();
+    }
 
-        return res;
+    pub fn close(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: operation.CloseOptions,
+    ) !*result.Result {
+        if (!options.force) {
+            const res = try self.closeSession(
+                allocator,
+                .{
+                    .cancel = options.cancel,
+                },
+            );
+            errdefer res.deinit();
+
+            try self._close();
+
+            return res;
+        } else {
+            try self._close();
+            return self.NewResult(allocator, "", operation.Kind.close);
+        }
     }
 
     fn receiveServerCapabilities(
@@ -1382,6 +1391,29 @@ pub const Driver = struct {
         if (options.extra_namespaces) |extra_namespaces| {
             for (extra_namespaces) |namespace| {
                 try writer.bindNs(namespace[0], namespace[1]);
+            }
+        } else if (options._extra_namespaces_ffi) |extra_namespaces_str| {
+            var extra_namespaces_iterator = std.mem.splitSequence(
+                u8,
+                extra_namespaces_str,
+                "__libscrapli__",
+            );
+
+            var idx: usize = 0;
+
+            while (extra_namespaces_iterator.next()) |extra_namespace| {
+                defer idx += 1;
+
+                var namespace_parts_iterator = std.mem.splitSequence(
+                    u8,
+                    extra_namespace,
+                    "::",
+                );
+
+                try writer.bindNs(
+                    namespace_parts_iterator.first(),
+                    namespace_parts_iterator.rest(),
+                );
             }
         }
 
