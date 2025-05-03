@@ -1149,30 +1149,14 @@ pub const Driver = struct {
                 return errors.ScrapliError.ParsingError;
             }
 
-            var counted_chunk_iter: usize = 0;
-            var final_chunk_size: usize = chunk_size;
-
-            // TODO revisit this maybe this is no longer true after some of the fuckery that i did
-            // i despise this but it seems like we get lf+cr in both bin and ssh2 transports and
-            // at least srlinux only counts one of those, so... our chunk sizing is wrong if we
-            // dont account for that
-            while (counted_chunk_iter < chunk_size) {
-                defer counted_chunk_iter += 1;
-                if (buf[iter_idx + counted_chunk_iter] == ascii.control_chars.cr) {
-                    final_chunk_size += 1;
-
-                    continue;
-                }
-            }
-
             @memcpy(
-                _parsed[parsed_idx .. parsed_idx + final_chunk_size],
-                buf[iter_idx .. iter_idx + final_chunk_size],
+                _parsed[parsed_idx .. parsed_idx + chunk_size],
+                buf[iter_idx .. iter_idx + chunk_size],
             );
-            parsed_idx += final_chunk_size;
+            parsed_idx += chunk_size;
 
             // finally increment iter_idx past this chunk
-            iter_idx += final_chunk_size;
+            iter_idx += chunk_size;
         }
     }
 
@@ -2234,7 +2218,6 @@ pub const Driver = struct {
             ),
         );
 
-        // TODO clean these up
         try writer.elementStart("get-data");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-netconf-nmda");
         try writer.bindNs("ds", "urn:ietf:params:xml:ns:yang:ietf-datastores");
@@ -2344,7 +2327,6 @@ pub const Driver = struct {
             ),
         );
 
-        // TODO clean these up like getdata
         try writer.elementStart("edit-data");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-netconf-nmda");
         try writer.bindNs("ds", "urn:ietf:params:xml:ns:yang:ietf-datastores");
@@ -4370,7 +4352,6 @@ test "buildGetDataElem" {
 
         d.negotiated_version = case.version;
 
-        // TODO this and edit data have incorrect namespaces for now
         const actual = try d.buildGetDataElem(
             std.testing.allocator,
             case.options,
