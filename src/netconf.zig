@@ -125,12 +125,20 @@ pub const Options = struct {
             o.error_tag = try o.allocator.dupe(u8, o.error_tag);
         }
 
+        if (o.base_namespace_prefix.len > 0) {
+            o.base_namespace_prefix = try o.allocator.dupe(u8, o.base_namespace_prefix);
+        }
+
         return o;
     }
 
     pub fn deinit(self: *Options) void {
         if (&self.error_tag[0] != &default_rpc_error_tag[0]) {
             self.allocator.free(self.error_tag);
+        }
+
+        if (self.base_namespace_prefix.len > 0) {
+            self.allocator.free(self.base_namespace_prefix);
         }
 
         self.auth.deinit();

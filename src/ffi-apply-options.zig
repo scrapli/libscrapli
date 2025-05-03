@@ -1,4 +1,5 @@
 const std = @import("std");
+const netconf = @import("netconf.zig");
 const ffi_driver = @import("ffi-driver.zig");
 
 // for forcing inclusion in the ffi.zig entrypoint we use for the ffi layer
@@ -872,6 +873,108 @@ export fn ls_option_transport_test_f(
                     return 1;
                 },
             }
+        },
+    }
+
+    return 0;
+}
+
+//
+// netconf options
+//
+
+export fn ls_option_netconf_error_tag(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => {
+            return 1;
+        },
+        .netconf => |rd| {
+            rd.options.error_tag = rd.options.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                return 1;
+            };
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_netconf_preferred_version(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => {
+            return 1;
+        },
+        .netconf => |rd| {
+            const preferred_version = std.mem.span(value);
+
+            if (std.mem.eql(
+                u8,
+                @tagName(netconf.Version.version_1_0),
+                preferred_version,
+            )) {
+                rd.options.preferred_version = netconf.Version.version_1_0;
+            } else if (std.mem.eql(
+                u8,
+                @tagName(netconf.Version.version_1_1),
+                preferred_version,
+            )) {
+                rd.options.preferred_version = netconf.Version.version_1_1;
+            } else {
+                return 1;
+            }
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_netconf_message_poll_interval(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => {
+            return 1;
+        },
+        .netconf => |rd| {
+            rd.options.message_poll_interval_ns = value;
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_netconf_base_namespace_prefix(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => {
+            return 1;
+        },
+        .netconf => |rd| {
+            rd.options.base_namespace_prefix = rd.options.allocator.dupe(
+                u8,
+                std.mem.span(value),
+            ) catch {
+                return 1;
+            };
         },
     }
 
