@@ -717,11 +717,6 @@ pub const Session = struct {
             } else {
                 cur_read_delay_ns = self.options.read_delay_min_ns;
             }
-            // TODO -- could experiment w/ *not* doing the processing/check on every single read
-            //  -- basically an inverse backoff where we check less times in the start of an op
-            //  then more, maybe up till every time after some duration/amount of checks? the idea
-            //  would be that every time we search we do a re and that is expensive/slow, so if we
-            //  can save on that that would be a win
 
             try bufs.appendSliceBoth(buf[0..n]);
 

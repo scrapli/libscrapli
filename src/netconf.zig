@@ -61,7 +61,10 @@ const version_1_1_capability =
 
 pub const default_rpc_error_tag = "rpc-error>";
 
+const base_capability_name = "urn:ietf:params:xml:ns:netconf:base:1.0";
 const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-defaults:1.0";
+const validate_capability_name = "urn:ietf:params:xml:ns:netconf:capability:validate:1.0";
+const get_schema_capability_name = "urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring";
 
 const message_id_attribute_prefix = "message-id=\"";
 pub const subscription_id_attribute_prefix = "<subscription-id>";
@@ -80,6 +83,7 @@ pub const Config = struct {
     error_tag: []const u8 = default_rpc_error_tag,
     preferred_version: ?Version = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
+    base_namespace_prefix: []const u8 = "",
 };
 
 pub const Options = struct {
@@ -93,6 +97,7 @@ pub const Options = struct {
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
+    base_namespace_prefix: []const u8,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
         const o = try allocator.create(Options);
@@ -111,6 +116,7 @@ pub const Options = struct {
             .error_tag = config.error_tag,
             .preferred_version = config.preferred_version,
             .message_poll_interval_ns = config.message_poll_interval_ns,
+            .base_namespace_prefix = config.base_namespace_prefix,
         };
 
         o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
@@ -1221,6 +1227,22 @@ pub const Driver = struct {
         }
     }
 
+    fn rpcStart(
+        self: *Driver,
+        writer: *xml.GenericWriter(error{OutOfMemory}),
+    ) !void {
+        if (self.options.base_namespace_prefix.len > 0) {
+            try writer.bindNs(
+                self.options.base_namespace_prefix,
+                base_capability_name,
+            );
+            try writer.elementStartNs(base_capability_name, "rpc");
+        } else {
+            try writer.elementStart("rpc");
+            try writer.bindNs("", base_capability_name);
+        }
+    }
+
     fn addFilterElem(
         writer: *xml.GenericWriter(error{OutOfMemory}),
         filter: []const u8,
@@ -1228,7 +1250,7 @@ pub const Driver = struct {
         filter_namespace_prefix: ?[]const u8,
         filter_namespace: ?[]const u8,
     ) !void {
-        try writer.elementStart("filter");
+        try writer.elementStartNs(base_capability_name, "filter");
         try writer.attribute("type", filter_type.toString());
 
         if (filter_namespace != null and filter_namespace.?.len > 0) {
@@ -1258,7 +1280,7 @@ pub const Driver = struct {
         filter_namespace: ?[]const u8,
     ) !void {
         if (filter_type == operation.FilterType.subtree) {
-            try writer.elementStart("subtree-filter");
+            try writer.elementStartNs(base_capability_name, "subtree-filter");
 
             if (filter_namespace != null and filter_namespace.?.len > 0) {
                 try writer.bindNs(
@@ -1267,7 +1289,7 @@ pub const Driver = struct {
                 );
             }
         } else {
-            try writer.elementStart("xpath-filter");
+            try writer.elementStartNs(base_capability_name, "xpath-filter");
 
             if (filter_namespace != null and filter_namespace.?.len > 0) {
                 try writer.bindNs(
@@ -1287,8 +1309,8 @@ pub const Driver = struct {
         writer: *xml.GenericWriter(error{OutOfMemory}),
         target: []const u8,
     ) !void {
-        try writer.elementStart("target");
-        try writer.elementStart(target);
+        try writer.elementStartNs(base_capability_name, "target");
+        try writer.elementStartNs(base_capability_name, target);
         try writer.elementEnd();
         try writer.elementEnd();
     }
@@ -1297,8 +1319,8 @@ pub const Driver = struct {
         writer: *xml.GenericWriter(error{OutOfMemory}),
         source: []const u8,
     ) !void {
-        try writer.elementStart("source");
-        try writer.elementStart(source);
+        try writer.elementStartNs(base_capability_name, "source");
+        try writer.elementStartNs(base_capability_name, source);
         try writer.elementEnd();
         try writer.elementEnd();
     }
@@ -1359,8 +1381,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1369,6 +1390,13 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
+
+        if (options.extra_namespaces) |extra_namespaces| {
+            for (extra_namespaces) |namespace| {
+                try writer.bindNs(namespace[0], namespace[1]);
+            }
+        }
+
         try writer.embed(options.payload);
         try writer.elementEnd();
         try writer.eof();
@@ -1408,8 +1436,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1418,11 +1445,9 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("get-config");
-        try writer.elementStart("source");
-        try writer.elementStart(options.source.toString());
-        try writer.elementEnd();
-        try writer.elementEnd();
+
+        try writer.elementStartNs(base_capability_name, "get-config");
+        try Driver.addSourceElem(&writer, options.source.toString());
 
         if (options.filter != null and options.filter.?.len > 0) {
             try Driver.addFilterElem(
@@ -1480,8 +1505,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1490,10 +1514,12 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("edit-config");
+
+        try writer.elementStartNs(base_capability_name, "edit-config");
 
         try Driver.addTargetElem(&writer, options.target.toString());
-        try writer.elementStart("config");
+
+        try writer.elementStartNs(base_capability_name, "config");
         try writer.embed(options.config);
 
         try writer.elementEnd();
@@ -1536,8 +1562,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1546,7 +1571,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("copy-config");
+        try writer.elementStartNs(base_capability_name, "copy-config");
 
         try Driver.addSourceElem(&writer, options.source.toString());
         try Driver.addTargetElem(&writer, options.target.toString());
@@ -1590,8 +1615,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1600,7 +1624,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("delete-config");
+        try writer.elementStartNs(base_capability_name, "delete-config");
 
         try Driver.addTargetElem(&writer, options.target.toString());
 
@@ -1643,8 +1667,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1653,7 +1676,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("lock");
+        try writer.elementStartNs(base_capability_name, "lock");
 
         try Driver.addTargetElem(&writer, options.target.toString());
 
@@ -1696,8 +1719,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1706,7 +1728,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("unlock");
+        try writer.elementStartNs(base_capability_name, "unlock");
 
         try Driver.addTargetElem(&writer, options.target.toString());
 
@@ -1749,8 +1771,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1759,7 +1780,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("get");
+        try writer.elementStartNs(base_capability_name, "get");
 
         if (options.filter != null and options.filter.?.len > 0) {
             try Driver.addFilterElem(
@@ -1820,8 +1841,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1830,7 +1850,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("close-session");
+        try writer.elementStartNs(base_capability_name, "close-session");
         try writer.elementEnd();
         try writer.elementEnd();
         try writer.eof();
@@ -1870,8 +1890,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1880,9 +1899,9 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("kill-session");
+        try writer.elementStartNs(base_capability_name, "kill-session");
 
-        try writer.elementStart("session-id");
+        try writer.elementStartNs(base_capability_name, "session-id");
 
         // see also getMessageId, same situation
         var session_id_buf: [20]u8 = undefined;
@@ -1934,8 +1953,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1944,7 +1962,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("commit");
+        try writer.elementStartNs(base_capability_name, "commit");
         try writer.elementEnd();
         try writer.elementEnd();
         try writer.eof();
@@ -1986,8 +2004,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1996,7 +2013,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("discard-changes");
+        try writer.elementStartNs(base_capability_name, "discard-changes");
         try writer.elementEnd();
         try writer.elementEnd();
         try writer.eof();
@@ -2038,8 +2055,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2048,7 +2064,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("cancel-commit");
+        try writer.elementStartNs(base_capability_name, "cancel-commit");
         try writer.elementEnd();
         try writer.elementEnd();
         try writer.eof();
@@ -2088,8 +2104,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2098,7 +2113,9 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
+
         try writer.elementStart("validate");
+        try writer.bindNs("", validate_capability_name);
 
         try Driver.addSourceElem(&writer, options.source.toString());
 
@@ -2141,8 +2158,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2151,20 +2167,21 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
-        try writer.elementStart("get-schema");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring");
 
-        try writer.elementStart("identifier");
+        try writer.elementStart("get-schema");
+        try writer.bindNs("", get_schema_capability_name);
+
+        try writer.elementStartNs(get_schema_capability_name, "identifier");
         try writer.text(options.identifier);
         try writer.elementEnd();
 
         if (options.version != null and options.version.?.len > 0) {
-            try writer.elementStart("version");
+            try writer.elementStartNs(get_schema_capability_name, "version");
             try writer.text(options.version.?);
             try writer.elementEnd();
         }
 
-        try writer.elementStart("format");
+        try writer.elementStartNs(get_schema_capability_name, "format");
         try writer.text(options.format.toString());
         try writer.elementEnd();
 
@@ -2207,8 +2224,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2217,6 +2233,8 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
+
+        // TODO clean these up
         try writer.elementStart("get-data");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-netconf-nmda");
         try writer.bindNs("ds", "urn:ietf:params:xml:ns:yang:ietf-datastores");
@@ -2316,8 +2334,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2326,6 +2343,8 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
+
+        // TODO clean these up like getdata
         try writer.elementStart("edit-data");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:ietf-netconf-nmda");
         try writer.bindNs("ds", "urn:ietf:params:xml:ns:yang:ietf-datastores");
@@ -2384,8 +2403,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try writer.elementStart("rpc");
-        try writer.bindNs("", "urn:ietf:params:xml:ns:netconf:base:1.0");
+        try self.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2394,6 +2412,7 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
+
         try writer.elementStart("action");
         try writer.bindNs("", "urn:ietf:params:xml:ns:yang:1");
 
@@ -2838,12 +2857,14 @@ test "buildRawRpcElement" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.RawRpcOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -2857,6 +2878,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -2868,13 +2890,120 @@ test "buildRawRpcElement" {
             \\##
             ,
         },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+            },
+            .expected =
+            \\#187
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></foo:rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-extra-namespaces",
+            .version = Version.version_1_0,
+            .driver_config = .{},
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+                .extra_namespaces = &[1][2][]const u8{
+                    [2][]const u8{ "bar", "urn:example:bar" },
+                },
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101" xmlns:bar="urn:example:bar"><get-config><source><running></running></source></get-config></rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-extra-namespaces",
+            .version = Version.version_1_1,
+            .driver_config = .{},
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+                .extra_namespaces = &[1][2][]const u8{
+                    [2][]const u8{ "bar", "urn:example:bar" },
+                },
+            },
+            .expected =
+            \\#203
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101" xmlns:bar="urn:example:bar"><get-config><source><running></running></source></get-config></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix-and-extra-namespaces",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+                .extra_namespaces = &[1][2][]const u8{
+                    [2][]const u8{ "bar", "urn:example:bar" },
+                },
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101" xmlns:bar="urn:example:bar"><get-config><source><running></running></source></get-config></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix-and-extra-namespaces",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .payload =
+                \\<get-config><source><running></running></source></get-config>
+                ,
+                .extra_namespaces = &[1][2][]const u8{
+                    [2][]const u8{ "bar", "urn:example:bar" },
+                },
+            },
+            .expected =
+            \\#215
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101" xmlns:bar="urn:example:bar"><get-config><source><running></running></source></get-config></foo:rpc>
+            \\##
+            ,
+        },
     };
 
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -2902,12 +3031,14 @@ test "buildGetConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.GetConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
@@ -2917,10 +3048,100 @@ test "buildGetConfigElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#175
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source></foo:get-config></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#211
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source></foo:get-config></foo:rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "filtered-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .filter = "<foo:interface/>",
+                .filter_type = operation.FilterType.subtree,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source><foo:filter type="subtree"><foo:interface/></foo:filter></foo:get-config></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "filtered-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .filter = "<foo:interface/>",
+                .filter_type = operation.FilterType.subtree,
+            },
+            .expected =
+            \\#267
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source><foo:filter type="subtree"><foo:interface/></foo:filter></foo:get-config></foo:rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "filtered-1.0-with-prefix-and-defaults",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .filter = "<foo:interface/>",
+                .filter_type = operation.FilterType.subtree,
+                .defaults_type = operation.DefaultsType.report_all,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source><foo:filter type="subtree"><foo:interface/></foo:filter><with-defaults xmlns="urn:ietf:params:netconf:capability:with-defaults:1.0">report-all</with-defaults></foo:get-config></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "filtered-1.1-with-prefix-and-defaults",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .filter = "<foo:interface/>",
+                .filter_type = operation.FilterType.subtree,
+                .defaults_type = operation.DefaultsType.report_all,
+            },
+            .expected =
+            \\#369
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source><foo:filter type="subtree"><foo:interface/></foo:filter><with-defaults xmlns="urn:ietf:params:netconf:capability:with-defaults:1.0">report-all</with-defaults></foo:get-config></foo:rpc>
             \\##
             ,
         },
@@ -2930,7 +3151,7 @@ test "buildGetConfigElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -2958,12 +3179,14 @@ test "builEditConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.EditConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = Config{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -2977,6 +3200,7 @@ test "builEditConfigElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = Config{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -2988,13 +3212,46 @@ test "builEditConfigElem" {
             \\##
             ,
         },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
+                .target = operation.DatastoreType.running,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:edit-config><foo:target><foo:running></foo:running></foo:target><foo:config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></foo:config></foo:edit-config></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
+                .target = operation.DatastoreType.running,
+            },
+            .expected =
+            \\#341
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:edit-config><foo:target><foo:running></foo:running></foo:target><foo:config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></foo:config></foo:edit-config></foo:rpc>
+            \\##
+            ,
+        },
     };
 
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3022,12 +3279,14 @@ test "builCopyConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.CopyConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><copy-config><source><running></running></source><target><startup></startup></target></copy-config></rpc>
@@ -3037,10 +3296,36 @@ test "builCopyConfigElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#213
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><copy-config><source><running></running></source><target><startup></startup></target></copy-config></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:copy-config><foo:source><foo:running></foo:running></foo:source><foo:target><foo:startup></foo:startup></foo:target></foo:copy-config></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#265
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:copy-config><foo:source><foo:running></foo:running></foo:source><foo:target><foo:startup></foo:startup></foo:target></foo:copy-config></foo:rpc>
             \\##
             ,
         },
@@ -3050,7 +3335,7 @@ test "builCopyConfigElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3078,12 +3363,14 @@ test "builDeleteConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.DeleteConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-config><target><running></running></target></delete-config></rpc>
@@ -3093,10 +3380,36 @@ test "builDeleteConfigElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#181
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-config><target><running></running></target></delete-config></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:delete-config><foo:target><foo:running></foo:running></foo:target></foo:delete-config></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#217
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:delete-config><foo:target><foo:running></foo:running></foo:target></foo:delete-config></foo:rpc>
             \\##
             ,
         },
@@ -3106,7 +3419,7 @@ test "builDeleteConfigElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3134,12 +3447,14 @@ test "buildLockElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.LockUnlockOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><lock><target><running></running></target></lock></rpc>
@@ -3149,10 +3464,36 @@ test "buildLockElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#163
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><lock><target><running></running></target></lock></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:lock><foo:target><foo:running></foo:running></foo:target></foo:lock></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#199
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:lock><foo:target><foo:running></foo:running></foo:target></foo:lock></foo:rpc>
             \\##
             ,
         },
@@ -3162,7 +3503,7 @@ test "buildLockElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3190,12 +3531,14 @@ test "buildUnlockElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.LockUnlockOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><unlock><target><running></running></target></unlock></rpc>
@@ -3205,10 +3548,36 @@ test "buildUnlockElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#167
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><unlock><target><running></running></target></unlock></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:unlock><foo:target><foo:running></foo:running></foo:target></foo:unlock></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#203
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:unlock><foo:target><foo:running></foo:running></foo:target></foo:unlock></foo:rpc>
             \\##
             ,
         },
@@ -3218,7 +3587,7 @@ test "buildUnlockElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3246,12 +3615,14 @@ test "buildGetElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.GetOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get></get></rpc>
@@ -3261,10 +3632,36 @@ test "buildGetElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#125
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get></get></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get></foo:get></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#145
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get></foo:get></foo:rpc>
             \\##
             ,
         },
@@ -3274,7 +3671,7 @@ test "buildGetElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3302,12 +3699,14 @@ test "buildCloseSessionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.CloseSessionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><close-session></close-session></rpc>
@@ -3317,10 +3716,36 @@ test "buildCloseSessionElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#145
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><close-session></close-session></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:close-session></foo:close-session></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#165
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:close-session></foo:close-session></foo:rpc>
             \\##
             ,
         },
@@ -3330,7 +3755,7 @@ test "buildCloseSessionElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3358,12 +3783,14 @@ test "buildKillSessionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.KillSessionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -3376,6 +3803,7 @@ test "buildKillSessionElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -3386,13 +3814,44 @@ test "buildKillSessionElem" {
             \\##
             ,
         },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = operation.KillSessionOptions{
+                .cancel = null,
+                .session_id = 1234,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:kill-session><foo:session-id>1234</foo:session-id></foo:kill-session></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = operation.KillSessionOptions{
+                .cancel = null,
+                .session_id = 1234,
+            },
+            .expected =
+            \\#200
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:kill-session><foo:session-id>1234</foo:session-id></foo:kill-session></foo:rpc>
+            \\##
+            ,
+        },
     };
 
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3420,12 +3879,14 @@ test "buildCommitElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.CommitOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><commit></commit></rpc>
@@ -3435,10 +3896,36 @@ test "buildCommitElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#131
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><commit></commit></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:commit></foo:commit></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#151
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:commit></foo:commit></foo:rpc>
             \\##
             ,
         },
@@ -3448,7 +3935,7 @@ test "buildCommitElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3476,12 +3963,14 @@ test "buildDiscardElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.DiscardOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><discard-changes></discard-changes></rpc>
@@ -3491,10 +3980,36 @@ test "buildDiscardElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#149
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><discard-changes></discard-changes></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:discard-changes></foo:discard-changes></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#169
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:discard-changes></foo:discard-changes></foo:rpc>
             \\##
             ,
         },
@@ -3504,7 +4019,7 @@ test "buildDiscardElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3532,12 +4047,14 @@ test "buildCancelCommitElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.CancelCommitOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><cancel-commit></cancel-commit></rpc>
@@ -3547,10 +4064,36 @@ test "buildCancelCommitElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#145
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><cancel-commit></cancel-commit></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:cancel-commit></foo:cancel-commit></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#165
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:cancel-commit></foo:cancel-commit></foo:rpc>
             \\##
             ,
         },
@@ -3560,7 +4103,7 @@ test "buildCancelCommitElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3588,25 +4131,53 @@ test "buildValidateElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.ValidateOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate><source><running></running></source></validate></rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><source><running></running></source></validate></rpc>
             \\]]>]]>
             ,
         },
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
-            \\#171
-            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate><source><running></running></source></validate></rpc>
+            \\#234
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><source><running></running></source></validate></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><foo:source><foo:running></foo:running></foo:source></validate></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#262
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><foo:source><foo:running></foo:running></foo:source></validate></foo:rpc>
             \\##
             ,
         },
@@ -3616,7 +4187,7 @@ test "buildValidateElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3644,12 +4215,14 @@ test "buildGetSchemaElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.GetSchemaOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{
                 .identifier = "foo",
             },
@@ -3661,6 +4234,7 @@ test "buildGetSchemaElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{
                 .identifier = "foo",
             },
@@ -3670,13 +4244,42 @@ test "buildGetSchemaElem" {
             \\##
             ,
         },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .identifier = "foo",
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier>foo</identifier><format>yang</format></get-schema></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .identifier = "foo",
+            },
+            .expected =
+            \\#260
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier>foo</identifier><format>yang</format></get-schema></foo:rpc>
+            \\##
+            ,
+        },
     };
 
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3704,12 +4307,14 @@ test "buildGetDataElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.GetDataOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></rpc>
@@ -3719,10 +4324,36 @@ test "buildGetDataElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
+            .driver_config = .{},
             .options = .{},
             .expected =
             \\#328
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{},
+            .expected =
+            \\#340
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></foo:rpc>
             \\##
             ,
         },
@@ -3732,13 +4363,14 @@ test "buildGetDataElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
 
         d.negotiated_version = case.version;
 
+        // TODO this and edit data have incorrect namespaces for now
         const actual = try d.buildGetDataElem(
             std.testing.allocator,
             case.options,
@@ -3760,13 +4392,17 @@ test "builEditDataElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.EditDataOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
-            .options = .{ .edit_content = "foo" },
+            .driver_config = .{},
+            .options = .{
+                .edit_content = "foo",
+            },
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></rpc>
             \\]]>]]>
@@ -3775,10 +4411,42 @@ test "builEditDataElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
-            .options = .{ .edit_content = "foo" },
+            .driver_config = .{},
+            .options = .{
+                .edit_content = "foo",
+            },
             .expected =
             \\#299
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .edit_content = "foo",
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .edit_content = "foo",
+            },
+            .expected =
+            \\#311
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></foo:rpc>
             \\##
             ,
         },
@@ -3788,7 +4456,7 @@ test "builEditDataElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();
@@ -3816,13 +4484,17 @@ test "builActionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: Version,
+        driver_config: Config,
         options: operation.ActionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = Version.version_1_0,
-            .options = .{ .action = "foo" },
+            .driver_config = .{},
+            .options = .{
+                .action = "foo",
+            },
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></rpc>
             \\]]>]]>
@@ -3831,10 +4503,42 @@ test "builActionElem" {
         .{
             .name = "simple-1.1",
             .version = Version.version_1_1,
-            .options = .{ .action = "foo" },
+            .driver_config = .{},
+            .options = .{
+                .action = "foo",
+            },
             .expected =
             \\#172
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "simple-1.0-with-prefix",
+            .version = Version.version_1_0,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .action = "foo",
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></foo:rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1-with-prefix",
+            .version = Version.version_1_1,
+            .driver_config = .{
+                .base_namespace_prefix = "foo",
+            },
+            .options = .{
+                .action = "foo",
+            },
+            .expected =
+            \\#184
+            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></foo:rpc>
             \\##
             ,
         },
@@ -3844,7 +4548,7 @@ test "builActionElem" {
         const d = try Driver.init(
             std.testing.allocator,
             "localhost",
-            .{},
+            case.driver_config,
         );
 
         defer d.deinit();

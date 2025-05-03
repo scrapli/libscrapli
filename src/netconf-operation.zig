@@ -183,6 +183,9 @@ pub const RawRpcOptions = struct {
     cancel: ?*bool = null,
     // the inner payload, we wrap this with the outer rpc tag w/ appropriate message id
     payload: []const u8,
+    // list of prefix:namespace pairs being prefix/namespace, for things like nxos that
+    // wants to be annoying: https://github.com/scrapli/scrapligo/issues/67
+    extra_namespaces: ?[]const [2][]const u8 = null,
 };
 
 pub const GetConfigOptions = struct {
