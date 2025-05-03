@@ -177,6 +177,7 @@ pub const Session = struct {
         u8,
         std.fifo.LinearFifoBufferType.Dynamic,
     ),
+    read_thread_errored: bool = false,
 
     recorder: ?std.fs.File.Writer,
 
@@ -420,6 +421,8 @@ pub const Session = struct {
 
     fn readLoop(self: *Session) !void {
         self.log.info("read thread started", .{});
+
+        errdefer self.read_thread_errored = true;
 
         var buf = try self.allocator.alloc(u8, self.options.read_size);
         defer self.allocator.free(buf);
@@ -688,6 +691,10 @@ pub const Session = struct {
                 self.log.critical("operation cancelled", .{});
 
                 return errors.ScrapliError.Cancelled;
+            }
+
+            if (self.read_thread_errored) {
+                return errors.ScrapliError.BackgroundThreadError;
             }
 
             const elapsed_time = timer.read();

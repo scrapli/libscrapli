@@ -165,6 +165,7 @@ pub const Driver = struct {
 
     process_thread: ?std.Thread,
     process_stop: std.atomic.Value(ProcessThreadState),
+    process_thread_errored: bool = false,
 
     message_id: u64,
 
@@ -813,12 +814,9 @@ pub const Driver = struct {
     fn processLoop(
         self: *Driver,
     ) !void {
-        // TODO what happens when this fails (same for session... somehow that error needs to
-        // be propogated up) -- can a field be an error? if yeah we can just set that ?error and
-        // then set it and we just always check that before doing anything in the netconf driver
-        // and the session, once that change is in place this and the readLoop return value would
-        // change to `void` instead and we just have to catch everything and set the error'd field
         self.log.info("message processing thread started", .{});
+
+        errdefer self.process_thread_errored = true;
 
         const buf = try self.allocator.alloc(u8, self.session.options.read_size);
         defer self.allocator.free(buf);
@@ -1344,8 +1342,6 @@ pub const Driver = struct {
         }
     }
 
-    // TODO https://github.com/scrapli/scrapligo/issues/67
-    // wildly annoying since then everything else would have to be prefixed too i think?
     fn buildRawRpcElement(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2600,6 +2596,10 @@ pub const Driver = struct {
 
         while (true) {
             try self.processCancelAndTimeout(timer, cancel);
+
+            if (self.process_thread_errored) {
+                return errors.ScrapliError.BackgroundThreadError;
+            }
 
             self.messages_lock.lock();
 

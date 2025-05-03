@@ -16,4 +16,5 @@ pub const ScrapliError = error{
     PtyError,
     SetNonBlockingFailed,
     BadOperationId,
+    BackgroundThreadError,
 };
