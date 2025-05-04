@@ -83,7 +83,6 @@ pub const Config = struct {
     error_tag: []const u8 = default_rpc_error_tag,
     preferred_version: ?Version = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
-    base_namespace_prefix: []const u8 = "",
 };
 
 pub const Options = struct {
@@ -97,7 +96,6 @@ pub const Options = struct {
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
-    base_namespace_prefix: []const u8,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
         const o = try allocator.create(Options);
@@ -116,7 +114,6 @@ pub const Options = struct {
             .error_tag = config.error_tag,
             .preferred_version = config.preferred_version,
             .message_poll_interval_ns = config.message_poll_interval_ns,
-            .base_namespace_prefix = config.base_namespace_prefix,
         };
 
         o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
@@ -125,20 +122,12 @@ pub const Options = struct {
             o.error_tag = try o.allocator.dupe(u8, o.error_tag);
         }
 
-        if (o.base_namespace_prefix.len > 0) {
-            o.base_namespace_prefix = try o.allocator.dupe(u8, o.base_namespace_prefix);
-        }
-
         return o;
     }
 
     pub fn deinit(self: *Options) void {
         if (&self.error_tag[0] != &default_rpc_error_tag[0]) {
             self.allocator.free(self.error_tag);
-        }
-
-        if (self.base_namespace_prefix.len > 0) {
-            self.allocator.free(self.base_namespace_prefix);
         }
 
         self.auth.deinit();
@@ -1227,19 +1216,10 @@ pub const Driver = struct {
     }
 
     fn rpcStart(
-        self: *Driver,
         writer: *xml.GenericWriter(error{OutOfMemory}),
     ) !void {
-        if (self.options.base_namespace_prefix.len > 0) {
-            try writer.bindNs(
-                self.options.base_namespace_prefix,
-                base_capability_name,
-            );
-            try writer.elementStartNs(base_capability_name, "rpc");
-        } else {
-            try writer.elementStart("rpc");
-            try writer.bindNs("", base_capability_name);
-        }
+        try writer.elementStart("rpc");
+        try writer.bindNs("", base_capability_name);
     }
 
     fn addFilterElem(
@@ -1378,7 +1358,17 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+
+        if (options.base_namespace_prefix) |prefix| {
+            try writer.bindNs(
+                prefix,
+                base_capability_name,
+            );
+            try writer.elementStartNs(base_capability_name, "rpc");
+        } else {
+            try Driver.rpcStart(&writer);
+        }
+
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1456,7 +1446,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1525,7 +1515,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1582,7 +1572,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1635,7 +1625,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1687,7 +1677,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1739,7 +1729,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1791,7 +1781,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1861,7 +1851,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1910,7 +1900,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -1973,7 +1963,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2024,7 +2014,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2075,7 +2065,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2124,7 +2114,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2178,7 +2168,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2244,7 +2234,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2353,7 +2343,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2421,7 +2411,7 @@ pub const Driver = struct {
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
-        try self.rpcStart(&writer);
+        try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
             try std.fmt.bufPrint(
@@ -2913,39 +2903,6 @@ test "buildRawRpcElement" {
             ,
         },
         .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{
-                .payload =
-                \\<get-config><source><running></running></source></get-config>
-                ,
-            },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{
-                .payload =
-                \\<get-config><source><running></running></source></get-config>
-                ,
-            },
-            .expected =
-            \\#187
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></foo:rpc>
-            \\##
-            ,
-        },
-        .{
             .name = "simple-1.0-with-extra-namespaces",
             .version = Version.version_1_0,
             .driver_config = .{},
@@ -2983,13 +2940,12 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.0-with-prefix-and-extra-namespaces",
             .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
+            .driver_config = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
                 ,
+                .base_namespace_prefix = "foo",
                 .extra_namespaces = &[1][2][]const u8{
                     [2][]const u8{ "bar", "urn:example:bar" },
                 },
@@ -3002,13 +2958,12 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.1-with-prefix-and-extra-namespaces",
             .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
+            .driver_config = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
                 ,
+                .base_namespace_prefix = "foo",
                 .extra_namespaces = &[1][2][]const u8{
                     [2][]const u8{ "bar", "urn:example:bar" },
                 },
@@ -3079,91 +3034,58 @@ test "buildGetConfigElem" {
             ,
         },
         .{
-            .name = "simple-1.0-with-prefix",
+            .name = "filtered-1.0",
             .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source></foo:get-config></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#211
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source></foo:get-config></foo:rpc>
-            \\##
-            ,
-        },
-        .{
-            .name = "filtered-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
+            .driver_config = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
             },
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source><foo:filter type="subtree"><foo:interface/></foo:filter></foo:get-config></foo:rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source><filter type="subtree"><foo:interface/></filter></get-config></rpc>
             \\]]>]]>
             ,
         },
         .{
-            .name = "filtered-1.1-with-prefix",
+            .name = "filtered-1.1",
             .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
+            .driver_config = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
             },
             .expected =
-            \\#267
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source><foo:filter type="subtree"><foo:interface/></foo:filter></foo:get-config></foo:rpc>
+            \\#223
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source><filter type="subtree"><foo:interface/></filter></get-config></rpc>
             \\##
             ,
         },
         .{
-            .name = "filtered-1.0-with-prefix-and-defaults",
+            .name = "filtered-1.0-with-defaults",
             .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
+            .driver_config = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
                 .defaults_type = operation.DefaultsType.report_all,
             },
             .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source><foo:filter type="subtree"><foo:interface/></foo:filter><with-defaults xmlns="urn:ietf:params:netconf:capability:with-defaults:1.0">report-all</with-defaults></foo:get-config></foo:rpc>
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source><filter type="subtree"><foo:interface/></filter><with-defaults xmlns="urn:ietf:params:netconf:capability:with-defaults:1.0">report-all</with-defaults></get-config></rpc>
             \\]]>]]>
             ,
         },
         .{
-            .name = "filtered-1.1-with-prefix-and-defaults",
+            .name = "filtered-1.1-with-defaults",
             .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
+            .driver_config = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
                 .defaults_type = operation.DefaultsType.report_all,
             },
             .expected =
-            \\#369
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get-config><foo:source><foo:running></foo:running></foo:source><foo:filter type="subtree"><foo:interface/></foo:filter><with-defaults xmlns="urn:ietf:params:netconf:capability:with-defaults:1.0">report-all</with-defaults></foo:get-config></foo:rpc>
+            \\#325
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source><filter type="subtree"><foo:interface/></filter><with-defaults xmlns="urn:ietf:params:netconf:capability:with-defaults:1.0">report-all</with-defaults></get-config></rpc>
             \\##
             ,
         },
@@ -3234,39 +3156,6 @@ test "builEditConfigElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = operation.EditConfigOptions{
-                .cancel = null,
-                .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
-                .target = operation.DatastoreType.running,
-            },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:edit-config><foo:target><foo:running></foo:running></foo:target><foo:config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></foo:config></foo:edit-config></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = operation.EditConfigOptions{
-                .cancel = null,
-                .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
-                .target = operation.DatastoreType.running,
-            },
-            .expected =
-            \\#341
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:edit-config><foo:target><foo:running></foo:running></foo:target><foo:config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></foo:config></foo:edit-config></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -3323,31 +3212,6 @@ test "builCopyConfigElem" {
             .expected =
             \\#213
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><copy-config><source><running></running></source><target><startup></startup></target></copy-config></rpc>
-            \\##
-            ,
-        },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:copy-config><foo:source><foo:running></foo:running></foo:source><foo:target><foo:startup></foo:startup></foo:target></foo:copy-config></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#265
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:copy-config><foo:source><foo:running></foo:running></foo:source><foo:target><foo:startup></foo:startup></foo:target></foo:copy-config></foo:rpc>
             \\##
             ,
         },
@@ -3410,31 +3274,6 @@ test "builDeleteConfigElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:delete-config><foo:target><foo:running></foo:running></foo:target></foo:delete-config></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#217
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:delete-config><foo:target><foo:running></foo:running></foo:target></foo:delete-config></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -3491,31 +3330,6 @@ test "buildLockElem" {
             .expected =
             \\#163
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><lock><target><running></running></target></lock></rpc>
-            \\##
-            ,
-        },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:lock><foo:target><foo:running></foo:running></foo:target></foo:lock></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#199
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:lock><foo:target><foo:running></foo:running></foo:target></foo:lock></foo:rpc>
             \\##
             ,
         },
@@ -3578,31 +3392,6 @@ test "buildUnlockElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:unlock><foo:target><foo:running></foo:running></foo:target></foo:unlock></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#203
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:unlock><foo:target><foo:running></foo:running></foo:target></foo:unlock></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -3662,31 +3451,6 @@ test "buildGetElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get></foo:get></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#145
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:get></foo:get></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -3743,31 +3507,6 @@ test "buildCloseSessionElem" {
             .expected =
             \\#145
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><close-session></close-session></rpc>
-            \\##
-            ,
-        },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:close-session></foo:close-session></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#165
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:close-session></foo:close-session></foo:rpc>
             \\##
             ,
         },
@@ -3836,37 +3575,6 @@ test "buildKillSessionElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = operation.KillSessionOptions{
-                .cancel = null,
-                .session_id = 1234,
-            },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:kill-session><foo:session-id>1234</foo:session-id></foo:kill-session></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = operation.KillSessionOptions{
-                .cancel = null,
-                .session_id = 1234,
-            },
-            .expected =
-            \\#200
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:kill-session><foo:session-id>1234</foo:session-id></foo:kill-session></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -3923,31 +3631,6 @@ test "buildCommitElem" {
             .expected =
             \\#131
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><commit></commit></rpc>
-            \\##
-            ,
-        },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:commit></foo:commit></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#151
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:commit></foo:commit></foo:rpc>
             \\##
             ,
         },
@@ -4010,31 +3693,6 @@ test "buildDiscardElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:discard-changes></foo:discard-changes></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#169
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:discard-changes></foo:discard-changes></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -4094,31 +3752,6 @@ test "buildCancelCommitElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:cancel-commit></foo:cancel-commit></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#165
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><foo:cancel-commit></foo:cancel-commit></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -4175,31 +3808,6 @@ test "buildValidateElem" {
             .expected =
             \\#234
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><source><running></running></source></validate></rpc>
-            \\##
-            ,
-        },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><foo:source><foo:running></foo:running></foo:source></validate></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#262
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><foo:source><foo:running></foo:running></foo:source></validate></foo:rpc>
             \\##
             ,
         },
@@ -4266,35 +3874,6 @@ test "buildGetSchemaElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{
-                .identifier = "foo",
-            },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier>foo</identifier><format>yang</format></get-schema></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{
-                .identifier = "foo",
-            },
-            .expected =
-            \\#260
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-schema xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><identifier>foo</identifier><format>yang</format></get-schema></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -4351,31 +3930,6 @@ test "buildGetDataElem" {
             .expected =
             \\#328
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></rpc>
-            \\##
-            ,
-        },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{},
-            .expected =
-            \\#340
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></foo:rpc>
             \\##
             ,
         },
@@ -4442,35 +3996,6 @@ test "builEditDataElem" {
             \\##
             ,
         },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{
-                .edit_content = "foo",
-            },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{
-                .edit_content = "foo",
-            },
-            .expected =
-            \\#311
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></foo:rpc>
-            \\##
-            ,
-        },
     };
 
     for (cases) |case| {
@@ -4531,35 +4056,6 @@ test "builActionElem" {
             .expected =
             \\#172
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></rpc>
-            \\##
-            ,
-        },
-        .{
-            .name = "simple-1.0-with-prefix",
-            .version = Version.version_1_0,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{
-                .action = "foo",
-            },
-            .expected =
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></foo:rpc>
-            \\]]>]]>
-            ,
-        },
-        .{
-            .name = "simple-1.1-with-prefix",
-            .version = Version.version_1_1,
-            .driver_config = .{
-                .base_namespace_prefix = "foo",
-            },
-            .options = .{
-                .action = "foo",
-            },
-            .expected =
-            \\#184
-            \\<?xml version="1.0" encoding="UTF-8"?><foo:rpc xmlns:foo="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><action xmlns="urn:ietf:params:xml:ns:yang:1">foo</action></foo:rpc>
             \\##
             ,
         },

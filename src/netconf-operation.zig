@@ -183,6 +183,9 @@ pub const RawRpcOptions = struct {
     cancel: ?*bool = null,
     // the inner payload, we wrap this with the outer rpc tag w/ appropriate message id
     payload: []const u8,
+    // prefix the base namespace with this prefix if set -- useful when/if a device expects the
+    // non-prefixed namespace to be something device specific, see next field as well.
+    base_namespace_prefix: ?[]const u8 = null,
     // list of prefix:namespace pairs being prefix/namespace, for things like nxos that
     // wants to be annoying: https://github.com/scrapli/scrapligo/issues/67
     extra_namespaces: ?[]const [2][]const u8 = null,

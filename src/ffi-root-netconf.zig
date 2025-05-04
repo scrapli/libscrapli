@@ -351,6 +351,7 @@ export fn ls_netconf_raw_rpc(
     operation_id: *u32,
     cancel: *bool,
     payload: [*c]const u8,
+    base_namespace_prefix: [*c]const u8,
     extra_namespaces: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
@@ -360,11 +361,12 @@ export fn ls_netconf_raw_rpc(
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .raw_rpc = .{
-                        .cancel = cancel,
-                        .payload = std.mem.span(payload),
-                        ._extra_namespaces_ffi = std.mem.span(extra_namespaces),
-                    },
+                    .raw_rpc = ffi_args_to_options.RawRpcOptionsFromArgs(
+                        cancel,
+                        payload,
+                        base_namespace_prefix,
+                        extra_namespaces,
+                    ),
                 },
             },
         },

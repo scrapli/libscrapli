@@ -164,6 +164,26 @@ fn getConfigFilter(config_filter: [*c]const u8) ?bool {
     return null;
 }
 
+pub fn RawRpcOptionsFromArgs(
+    cancel: *bool,
+    payload: [*c]const u8,
+    base_namespace_prefix: [*c]const u8,
+    extra_namespaces: [*c]const u8,
+) operation.RawRpcOptions {
+    var options = operation.RawRpcOptions{
+        .cancel = cancel,
+        .payload = std.mem.span(payload),
+        ._extra_namespaces_ffi = std.mem.span(extra_namespaces),
+    };
+
+    const _base_namespace_prefix = std.mem.span(base_namespace_prefix);
+    if (_base_namespace_prefix.len > 0) {
+        options.base_namespace_prefix = _base_namespace_prefix;
+    }
+
+    return options;
+}
+
 pub fn GetConfigOptionsFromArgs(
     cancel: *bool,
     source: [*c]const u8,

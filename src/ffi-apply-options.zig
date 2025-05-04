@@ -957,26 +957,3 @@ export fn ls_option_netconf_message_poll_interval(
 
     return 0;
 }
-
-export fn ls_option_netconf_base_namespace_prefix(
-    d_ptr: usize,
-    value: [*c]const u8,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    switch (d.real_driver) {
-        .cli => {
-            return 1;
-        },
-        .netconf => |rd| {
-            rd.options.base_namespace_prefix = rd.options.allocator.dupe(
-                u8,
-                std.mem.span(value),
-            ) catch {
-                return 1;
-            };
-        },
-    }
-
-    return 0;
-}
