@@ -329,7 +329,7 @@ pub const Session = struct {
         allocator: std.mem.Allocator,
         host: []const u8,
         port: u16,
-        options: operation.OpenOptions,
+        cancel: ?*bool,
     ) ![2][]const u8 {
         var timer = std.time.Timer.start() catch |err| {
             self.log.critical(
@@ -342,7 +342,7 @@ pub const Session = struct {
 
         try self.transport.open(
             &timer,
-            options.cancel,
+            cancel,
             self.options.operation_timeout_ns,
             host,
             port,
@@ -371,7 +371,7 @@ pub const Session = struct {
         return self.authenticate(
             allocator,
             &timer,
-            options.cancel,
+            cancel,
         );
     }
 

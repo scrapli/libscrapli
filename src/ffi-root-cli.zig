@@ -69,6 +69,119 @@ export fn ls_cli_get_genie_platform(
     return 0;
 }
 
+export fn ls_cli_open(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.open() catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during driver open {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    switch (d.real_driver) {
+        .cli => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .id = 0,
+                    .operation = .{
+                        .cli = .{
+                            .open = .{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue open {any}",
+                    .{err},
+                );
+
+                return 1;
+            };
+        },
+        .netconf => {
+            d.log(
+                logging.LogLevel.critical,
+                "attempting to open non cli driver",
+                .{},
+            );
+
+            return 1;
+        },
+    }
+
+    while (true) {
+        // weve already waited for the operation loop to start in the queue operation function,
+        // but we also need to ensure we wait for the open operation to actually get put into
+        // the queue before continuing
+        d.operation_lock.lock();
+        defer d.operation_lock.unlock();
+
+        const op = d.operation_results.get(operation_id.*);
+        if (op != null) {
+            break;
+        }
+
+        std.time.sleep(ffi_driver.operation_thread_ready_sleep);
+    }
+
+    return 0;
+}
+
+export fn ls_cli_close(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .id = 0,
+                    .operation = .{
+                        .cli = .{
+                            .close = .{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue close {any}",
+                    .{err},
+                );
+
+                return 1;
+            };
+        },
+        .netconf => {
+            d.log(
+                logging.LogLevel.critical,
+                "attempting to close non cli driver",
+                .{},
+            );
+
+            return 1;
+        },
+    }
+
+    return 0;
+}
+
 /// Poll a given operation id, if the operation is completed fill a result and error u64 pointer
 /// so the caller can subsequenty call fetch with appropriately sized buffers.
 export fn ls_cli_poll_operation(

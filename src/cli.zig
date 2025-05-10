@@ -180,7 +180,7 @@ pub const Driver = struct {
                 allocator,
                 self.host,
                 self.port,
-                options,
+                options.cancel,
             ),
         );
 

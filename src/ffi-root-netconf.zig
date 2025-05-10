@@ -12,6 +12,123 @@ const time = @import("time.zig");
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
 
+export fn ls_netconf_open(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    d.open() catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during driver open {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    switch (d.real_driver) {
+        .cli => {
+            d.log(
+                logging.LogLevel.critical,
+                "attempting to open non netconf driver",
+                .{},
+            );
+
+            return 1;
+        },
+        .netconf => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .id = 0,
+                    .operation = .{
+                        .netconf = .{
+                            .open = .{
+                                .cancel = cancel,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue open {any}",
+                    .{err},
+                );
+
+                return 1;
+            };
+        },
+    }
+
+    while (true) {
+        // weve already waited for the operation loop to start in the queue operation function,
+        // but we also need to ensure we wait for the open operation to actually get put into
+        // the queue before continuing
+        d.operation_lock.lock();
+        defer d.operation_lock.unlock();
+
+        const op = d.operation_results.get(operation_id.*);
+        if (op != null) {
+            break;
+        }
+
+        std.time.sleep(ffi_driver.operation_thread_ready_sleep);
+    }
+
+    return 0;
+}
+
+export fn ls_netconf_close(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    expect_no_reply: bool,
+    force: bool,
+) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => {
+            d.log(
+                logging.LogLevel.critical,
+                "attempting to close non netconf driver",
+                .{},
+            );
+
+            return 1;
+        },
+        .netconf => {
+            operation_id.* = d.queueOperation(
+                ffi_operations.OperationOptions{
+                    .id = 0,
+                    .operation = .{
+                        .netconf = .{
+                            .close = .{
+                                .cancel = cancel,
+                                .expect_no_reply = expect_no_reply,
+                                .force = force,
+                            },
+                        },
+                    },
+                },
+            ) catch |err| {
+                d.log(
+                    logging.LogLevel.critical,
+                    "error during queue close {any}",
+                    .{err},
+                );
+
+                return 1;
+            };
+        },
+    }
+
+    return 0;
+}
+
 export fn ls_netconf_get_subscription_id(
     operation_result: [*c]const u8,
     subscription_id: *u64,
