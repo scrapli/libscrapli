@@ -305,7 +305,8 @@ pub const Driver = struct {
 
         if (std.mem.eql(u8, self.current_mode, options.requested_mode)) {
             // even though its a noop, record a result so we know how long it took and such
-            try res.record("", [2][]const u8{ "", "" });
+            // try res.record("", [2][]const u8{ "", "" });
+            // std.debug.print("res start/end > {d} {d}\n", .{ res.start_time_ns, res.splits_ns.items[0] });
 
             return res;
         }

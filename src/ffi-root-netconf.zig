@@ -316,13 +316,15 @@ export fn ls_netconf_fetch_operation(
             else => @panic("attempting to access non netconf result from netconf type"),
         };
 
-        if (dret.splits_ns.items.len > 0) {
-            operation_start_time.* = @intCast(dret.start_time_ns);
-            operation_end_time.* = @intCast(dret.splits_ns.items[dret.splits_ns.items.len - 1]);
+        operation_start_time.* = @intCast(dret.start_time_ns);
+
+        if (dret.end_time_ns == 0 or (dret.start_time_ns == dret.end_time_ns)) {
+            // close for example can be a noop if force is set, altenratively sometimes in testing
+            // this may end up being so fast its somehow the same ns (in ns??? wild right?), so lets
+            // just say the op took 1ns
+            operation_end_time.* = @intCast(dret.start_time_ns + 1);
         } else {
-            // was a noop -- like enterMode but where mode didn't change
-            operation_start_time.* = @intCast(dret.start_time_ns);
-            operation_end_time.* = @intCast(dret.start_time_ns);
+            operation_end_time.* = @intCast(dret.end_time_ns);
         }
 
         @memcpy(operation_input.*, dret.input);

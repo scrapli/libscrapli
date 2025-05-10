@@ -108,7 +108,7 @@ pub fn NewResult(
         .result_raw = "",
         .result = "",
         .start_time_ns = std.time.nanoTimestamp(),
-        .splits_ns = std.ArrayList(i128).init(allocator),
+        .end_time_ns = 0,
         .result_failure_indicated = false,
         .result_warning_messages = std.ArrayList([]const u8).init(allocator),
         .result_error_messages = std.ArrayList([]const u8).init(allocator),
@@ -133,7 +133,7 @@ pub const Result = struct {
     result: []const u8,
 
     start_time_ns: i128,
-    splits_ns: std.ArrayList(i128),
+    end_time_ns: i128,
 
     // set to true at first failure indication
     result_failure_indicated: bool,
@@ -155,8 +155,6 @@ pub const Result = struct {
 
         self.result_warning_messages.deinit();
         self.result_error_messages.deinit();
-
-        self.splits_ns.deinit();
 
         self.allocator.destroy(self);
     }
@@ -280,7 +278,7 @@ pub const Result = struct {
         self: *Result,
         ret: [2][]const u8,
     ) !void {
-        try self.splits_ns.append(std.time.nanoTimestamp());
+        self.end_time_ns = std.time.nanoTimestamp();
         self.result_raw = ret[0];
         self.result = ret[1];
 
@@ -294,7 +292,7 @@ pub const Result = struct {
     pub fn elapsedTimeSeconds(
         self: *Result,
     ) f64 {
-        const elapsed_time_ns = self.splits_ns.items[self.splits_ns.items.len - 1] - self.start_time_ns;
+        const elapsed_time_ns = self.end_time_ns - self.start_time_ns;
 
         // so we get two decimal places, if the result would be 0.00, we'll manually change it
         // to 0.01 and we'll have just lost precision, no biggie, can always look at elapsed ns
