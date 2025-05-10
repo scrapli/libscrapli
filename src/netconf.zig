@@ -139,6 +139,7 @@ pub const Options = struct {
 };
 
 const RelevantCapabilities = struct {
+    // TOOD "candidate" capablility (requried for at least commit) https://www.rfc-editor.org/rfc/rfc6241.html
     // TODO datastores, with defaults, etc. etc. and actually maybe ingore these onse since i gave
     // up on dealing w/ supporting all the stuff for them
     rfc5277_event_notifications: bool = false,
@@ -362,7 +363,7 @@ pub const Driver = struct {
                 allocator,
                 self.host,
                 self.options.port.?,
-                options,
+                options.cancel,
             ),
         );
 
@@ -473,7 +474,21 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CloseOptions,
     ) !*result.Result {
-        if (!options.force) {
+        if (!options.force and options.expect_no_reply) {
+            try self.session.writeAndReturn(
+                try self.buildCloseSessionElem(
+                    allocator,
+                    .{
+                        .cancel = options.cancel,
+                    },
+                ),
+                false,
+            );
+
+            if (self.negotiated_version == Version.version_1_1) {
+                try self.session.writeReturn();
+            }
+        } else if (!options.force) {
             const res = try self.closeSession(
                 allocator,
                 .{
@@ -487,8 +502,9 @@ pub const Driver = struct {
             return res;
         } else {
             try self._close();
-            return self.NewResult(allocator, "", operation.Kind.close);
         }
+
+        return self.NewResult(allocator, "", operation.Kind.close);
     }
 
     fn receiveServerCapabilities(

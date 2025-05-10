@@ -27,8 +27,8 @@ pub const OperationOptions = struct {
             send_prompted_input: operation.SendPromptedInputOptions,
         },
         netconf: union(enum) {
-            open: operation.OpenOptions,
-            close: operation.CloseOptions,
+            open: operation_netconf.OpenOptions,
+            close: operation_netconf.CloseOptions,
             raw_rpc: operation_netconf.RawRpcOptions,
             get_config: operation_netconf.GetConfigOptions,
             edit_config: operation_netconf.EditConfigOptions,

@@ -94,7 +94,7 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
     }
 }
 
-export fn ls_alloc_cli(
+export fn ls_cli_alloc(
     definition_string: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
@@ -138,7 +138,7 @@ export fn ls_alloc_cli(
     return @intFromPtr(d);
 }
 
-export fn ls_alloc_netconf(
+export fn ls_netconf_alloc(
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
     host: [*c]const u8,
     port: u16,
@@ -181,7 +181,7 @@ export fn ls_alloc_netconf(
     return @intFromPtr(d);
 }
 
-export fn ls_free(
+export fn ls_shared_free(
     d_ptr: usize,
 ) void {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
@@ -189,149 +189,9 @@ export fn ls_free(
     d.deinit();
 }
 
-export fn ls_open(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    d.open() catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during driver open {any}",
-            .{err},
-        );
-
-        return 1;
-    };
-
-    switch (d.real_driver) {
-        .cli => {
-            operation_id.* = d.queueOperation(
-                ffi_operations.OperationOptions{
-                    .id = 0,
-                    .operation = .{
-                        .cli = .{
-                            .open = .{
-                                .cancel = cancel,
-                            },
-                        },
-                    },
-                },
-            ) catch |err| {
-                d.log(
-                    logging.LogLevel.critical,
-                    "error during queue open {any}",
-                    .{err},
-                );
-
-                return 1;
-            };
-        },
-        .netconf => {
-            operation_id.* = d.queueOperation(
-                ffi_operations.OperationOptions{
-                    .id = 0,
-                    .operation = .{
-                        .netconf = .{
-                            .open = .{
-                                .cancel = cancel,
-                            },
-                        },
-                    },
-                },
-            ) catch |err| {
-                d.log(
-                    logging.LogLevel.critical,
-                    "error during queue open {any}",
-                    .{err},
-                );
-
-                return 1;
-            };
-        },
-    }
-
-    while (true) {
-        // weve already waited for the operation loop to start in the queue operation function,
-        // but we also need to ensure we wait for the open operation to actually get put into
-        // the queue before continuing
-        d.operation_lock.lock();
-        defer d.operation_lock.unlock();
-
-        const op = d.operation_results.get(operation_id.*);
-        if (op != null) {
-            break;
-        }
-
-        std.time.sleep(ffi_driver.operation_thread_ready_sleep);
-    }
-
-    return 0;
-}
-
-/// Closes the cli/netconf driver, does *not* free/deinit.
-export fn ls_close(
-    d_ptr: usize,
-    operation_id: *u32,
-    cancel: *bool,
-) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    switch (d.real_driver) {
-        .cli => {
-            operation_id.* = d.queueOperation(
-                ffi_operations.OperationOptions{
-                    .id = 0,
-                    .operation = .{
-                        .cli = .{
-                            .close = .{
-                                .cancel = cancel,
-                            },
-                        },
-                    },
-                },
-            ) catch |err| {
-                d.log(
-                    logging.LogLevel.critical,
-                    "error during queue close {any}",
-                    .{err},
-                );
-
-                return 1;
-            };
-        },
-        .netconf => {
-            operation_id.* = d.queueOperation(
-                ffi_operations.OperationOptions{
-                    .id = 0,
-                    .operation = .{
-                        .netconf = .{
-                            .close = .{
-                                .cancel = cancel,
-                            },
-                        },
-                    },
-                },
-            ) catch |err| {
-                d.log(
-                    logging.LogLevel.critical,
-                    "error during queue close {any}",
-                    .{err},
-                );
-
-                return 1;
-            };
-        },
-    }
-
-    return 0;
-}
-
 /// Reads from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
 /// ffi-driver operation loop entirely.
-export fn ls_read_session(
+export fn ls_shared_read_session(
     d_ptr: usize,
     buf: *[]u8,
     read_n: *u64,
@@ -359,7 +219,7 @@ export fn ls_read_session(
 
 /// Writes from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
 /// ffi-driver operation loop entirely.
-export fn ls_write_session(
+export fn ls_shared_write_session(
     d_ptr: usize,
     buf: [*c]const u8,
     redacted: bool,
