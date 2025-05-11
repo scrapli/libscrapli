@@ -432,7 +432,11 @@ pub const Session = struct {
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
             defer std.time.sleep(cur_read_delay_ns);
 
-            const n = try self.transport.read(buf);
+            const n = self.transport.read(buf) catch {
+                self.read_thread_errored = true;
+
+                return;
+            };
 
             if (n == 0) {
                 cur_read_delay_ns = time.getBackoffValue(
@@ -513,6 +517,10 @@ pub const Session = struct {
                 self.log.critical("operation cancelled", .{});
 
                 return errors.ScrapliError.Cancelled;
+            }
+
+            if (self.read_thread_errored) {
+                return errors.ScrapliError.BackgroundThreadError;
             }
 
             const elapsed_time = timer.read();

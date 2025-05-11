@@ -838,8 +838,6 @@ pub const Driver = struct {
     ) !void {
         self.log.info("message processing thread started", .{});
 
-        errdefer self.process_thread_errored = true;
-
         const buf = try self.allocator.alloc(u8, self.session.options.read_size);
         defer self.allocator.free(buf);
 
@@ -865,6 +863,30 @@ pub const Driver = struct {
             var n = self.session.read(buf);
 
             if (n == 0) {
+                // we only check for the read thread being errored/stopped here so that we have had
+                // the opportunity to drain the read buf completely, thus handling any remaining
+                // messages/subscriptions/notifications
+                if (self.session.read_thread_errored) {
+                    const owned_buf = try message_buf.toOwnedSlice();
+                    defer self.allocator.free(owned_buf);
+
+                    switch (self.negotiated_version) {
+                        .version_1_0 => {
+                            try self.processFoundMessageVersion1_0(owned_buf);
+                        },
+                        .version_1_1 => {
+                            try self.processFoundMessageVersion1_1(owned_buf);
+                        },
+                    }
+
+                    self.log.critical(
+                        "message processing thread stopping, session read loop errored",
+                        .{},
+                    );
+
+                    return;
+                }
+
                 cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
 
                 continue;
@@ -1103,8 +1125,8 @@ pub const Driver = struct {
 
             if (buf[iter_idx] != ascii.control_chars.hash_char) {
                 // we *must* have found a hash indicating a chunk size, but we didn't something
-                // is wrong
-                return errors.ScrapliError.ParsingError;
+                // is wrong and/or we have trailing data like "Connection closed" kind of stuff
+                return;
             }
 
             iter_idx += 1;
@@ -2643,10 +2665,6 @@ pub const Driver = struct {
         while (true) {
             try self.processCancelAndTimeout(timer, cancel);
 
-            if (self.process_thread_errored) {
-                return errors.ScrapliError.BackgroundThreadError;
-            }
-
             self.messages_lock.lock();
 
             if (!self.messages.contains(message_id)) {
@@ -2854,6 +2872,18 @@ test "processFoundMessageVersion1_1" {
             \\ </data>
             \\</rpc-reply>
             \\
+            ,
+        },
+        .{
+            .name = "erroneous-trailing-data",
+            .input =
+            \\#93
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><ok/></rpc-reply>
+            \\##
+            \\Connection to localhost closed by remote host.
+            ,
+            .expected =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><ok/></rpc-reply>
             ,
         },
     };
