@@ -175,9 +175,16 @@ pub const SchemaFormat = enum {
     }
 };
 
-pub const OpenOptions = operation.OpenOptions;
+pub const OpenOptions = struct {
+    cancel: ?*bool = null,
+};
 
-pub const CloseOptions = operation.CloseOptions;
+pub const CloseOptions = struct {
+    cancel: ?*bool = null,
+    // force does *not* send a close-session rpc, just stops the process thread and closes the
+    // session and returns an empty result.
+    force: bool = false,
+};
 
 pub const RawRpcOptions = struct {
     cancel: ?*bool = null,
