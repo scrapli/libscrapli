@@ -474,21 +474,7 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CloseOptions,
     ) !*result.Result {
-        if (!options.force and options.expect_no_reply) {
-            try self.session.writeAndReturn(
-                try self.buildCloseSessionElem(
-                    allocator,
-                    .{
-                        .cancel = options.cancel,
-                    },
-                ),
-                false,
-            );
-
-            if (self.negotiated_version == Version.version_1_1) {
-                try self.session.writeReturn();
-            }
-        } else if (!options.force) {
+        if (!options.force) {
             const res = try self.closeSession(
                 allocator,
                 .{

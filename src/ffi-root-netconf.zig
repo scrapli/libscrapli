@@ -85,7 +85,6 @@ export fn ls_netconf_close(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
-    expect_no_reply: bool,
     force: bool,
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
@@ -108,7 +107,6 @@ export fn ls_netconf_close(
                         .netconf = .{
                             .close = .{
                                 .cancel = cancel,
-                                .expect_no_reply = expect_no_reply,
                                 .force = force,
                             },
                         },

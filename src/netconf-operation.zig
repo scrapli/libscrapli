@@ -181,9 +181,6 @@ pub const OpenOptions = struct {
 
 pub const CloseOptions = struct {
     cancel: ?*bool = null,
-    // when true, send the close-session rpc but dont wait/expect a reply -- useful if the device
-    // simply receives the rpc and immediately terminates the connection.
-    expect_no_reply: bool = false,
     // force does *not* send a close-session rpc, just stops the process thread and closes the
     // session and returns an empty result.
     force: bool = false,
