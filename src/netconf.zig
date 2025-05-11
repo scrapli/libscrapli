@@ -2810,6 +2810,18 @@ test "processFoundMessageVersion1_0" {
             \\</rpc-reply>
             ,
         },
+        .{
+            .name = "erroneous-trailing-data",
+            .input =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><ok/></rpc-reply>
+            \\]]>]]>
+            \\Connection to localhost closed by remote host.
+            ,
+            .expected =
+            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><ok/></rpc-reply>
+            \\
+            ,
+        },
     };
 
     for (cases) |case| {
