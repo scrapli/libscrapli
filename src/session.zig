@@ -437,6 +437,7 @@ pub const Session = struct {
 
                 return;
             };
+            std.debug.print("READ > {s}\n", .{buf[0..n]});
 
             if (n == 0) {
                 cur_read_delay_ns = time.getBackoffValue(
@@ -462,9 +463,15 @@ pub const Session = struct {
         self.log.info("read thread stopped", .{});
     }
 
-    pub fn read(self: *Session, buf: []u8) usize {
+    pub fn read(self: *Session, buf: []u8) !usize {
         self.read_lock.lock();
         defer self.read_lock.unlock();
+
+        if (self.read_thread_errored and self.read_queue.readableLength() == 0) {
+            // once the read thread is errored out and there is nothing else to
+            // read
+            return errors.ScrapliError.EOF;
+        }
 
         return self.read_queue.read(buf);
     }
@@ -535,7 +542,7 @@ pub const Session = struct {
 
             defer std.time.sleep(cur_read_delay_ns);
 
-            const n = self.read(buf);
+            const n = try self.read(buf);
 
             if (n == 0) {
                 cur_read_delay_ns = time.getBackoffValue(
@@ -701,10 +708,6 @@ pub const Session = struct {
                 return errors.ScrapliError.Cancelled;
             }
 
-            if (self.read_thread_errored) {
-                return errors.ScrapliError.BackgroundThreadError;
-            }
-
             const elapsed_time = timer.read();
 
             // if timeout is 0 we dont timeout -- we do this to let users 1) disable it but also
@@ -719,7 +722,7 @@ pub const Session = struct {
 
             defer std.time.sleep(cur_read_delay_ns);
 
-            const n = self.read(buf);
+            const n = try self.read(buf);
 
             if (n == 0) {
                 cur_read_delay_ns = time.getBackoffValue(
