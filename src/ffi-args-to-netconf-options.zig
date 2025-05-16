@@ -173,8 +173,12 @@ pub fn RawRpcOptionsFromArgs(
     var options = operation.RawRpcOptions{
         .cancel = cancel,
         .payload = std.mem.span(payload),
-        ._extra_namespaces_ffi = std.mem.span(extra_namespaces),
     };
+
+    const _extra_namespaces = std.mem.span(extra_namespaces);
+    if (_extra_namespaces.len > 0) {
+        options._extra_namespaces_ffi = _extra_namespaces;
+    }
 
     const _base_namespace_prefix = std.mem.span(base_namespace_prefix);
     if (_base_namespace_prefix.len > 0) {
