@@ -482,22 +482,12 @@ pub const Driver = struct {
 
         // some janky dancing around as ssh2 may never read an OK from a close-session
         // i think due to us running it in non block mode
-        const res = self.closeSession(
+        const res = try self.closeSession(
             allocator,
             .{
                 .cancel = options.cancel,
             },
-        ) catch |err| {
-            switch (err) {
-                errors.ScrapliError.EOF => {
-                    return try self.NewResult(allocator, "", operation.Kind.close);
-                },
-                else => {
-                    return err;
-                },
-            }
-        };
-
+        );
         errdefer res.deinit();
 
         try self._close();
@@ -834,7 +824,7 @@ pub const Driver = struct {
     fn processLoop(
         self: *Driver,
     ) !void {
-        self.log.info("message processing thread started", .{});
+        self.log.info("mssage processing thread started", .{});
 
         const buf = try self.allocator.alloc(u8, self.session.options.read_size);
         defer self.allocator.free(buf);
@@ -859,8 +849,6 @@ pub const Driver = struct {
             defer std.time.sleep(cur_read_delay_ns);
 
             var n = self.session.read(buf) catch |err| {
-                self.process_thread_exited = true;
-
                 switch (err) {
                     errors.ScrapliError.EOF => {
                         // the session read thread has errored/closed and there is nothing remaining
@@ -883,9 +871,16 @@ pub const Driver = struct {
                             .{},
                         );
 
+                        // dont set this to true till we processed any remaining messages
+                        // otherwise we may bail out of dispatch rpc without seeing a close
+                        // session response
+                        self.process_thread_exited = true;
+
                         return;
                     },
                     else => {
+                        self.process_thread_exited = true;
+
                         return err;
                     },
                 }
@@ -1921,7 +1916,16 @@ pub const Driver = struct {
             operation.RpcOptions{
                 .close_session = options,
             },
-        );
+        ) catch |err| {
+            switch (err) {
+                errors.ScrapliError.EOF => {
+                    return try self.NewResult(allocator, "", operation.Kind.close);
+                },
+                else => {
+                    return err;
+                },
+            }
+        };
     }
 
     fn buildKillSessionElem(
@@ -2670,13 +2674,13 @@ pub const Driver = struct {
         while (true) {
             try self.processCancelAndTimeout(timer, cancel);
 
-            if (self.process_thread_exited) {
-                return errors.ScrapliError.EOF;
-            }
-
             self.messages_lock.lock();
 
             if (!self.messages.contains(message_id)) {
+                if (self.process_thread_exited) {
+                    return errors.ScrapliError.EOF;
+                }
+
                 self.messages_lock.unlock();
                 std.time.sleep(self.options.message_poll_interval_ns);
 
