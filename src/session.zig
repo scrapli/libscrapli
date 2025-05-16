@@ -437,7 +437,6 @@ pub const Session = struct {
 
                 return;
             };
-            std.debug.print("READ > {s}\n", .{buf[0..n]});
 
             if (n == 0) {
                 cur_read_delay_ns = time.getBackoffValue(

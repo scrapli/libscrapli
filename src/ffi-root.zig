@@ -210,7 +210,9 @@ export fn ls_shared_read_session(
         },
     }
 
-    const n = s.read(buf.*);
+    const n = s.read(buf.*) catch {
+        return 1;
+    };
 
     read_n.* = n;
 

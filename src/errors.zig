@@ -17,4 +17,5 @@ pub const ScrapliError = error{
     SetNonBlockingFailed,
     BadOperationId,
     BackgroundThreadError,
+    EOF,
 };
