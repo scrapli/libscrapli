@@ -163,7 +163,7 @@ pub const Driver = struct {
 
     process_thread: ?std.Thread,
     process_stop: std.atomic.Value(ProcessThreadState),
-    process_thread_errored: bool = false,
+    process_thread_exited: bool = false,
 
     message_id: u64,
 
@@ -474,23 +474,35 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CloseOptions,
     ) !*result.Result {
-        if (!options.force) {
-            const res = try self.closeSession(
-                allocator,
-                .{
-                    .cancel = options.cancel,
-                },
-            );
-            errdefer res.deinit();
-
+        if (options.force) {
             try self._close();
 
-            return res;
-        } else {
-            try self._close();
+            return self.NewResult(allocator, "", operation.Kind.close);
         }
 
-        return self.NewResult(allocator, "", operation.Kind.close);
+        // some janky dancing around as ssh2 may never read an OK from a close-session
+        // i think due to us running it in non block mode
+        const res = self.closeSession(
+            allocator,
+            .{
+                .cancel = options.cancel,
+            },
+        ) catch |err| {
+            switch (err) {
+                errors.ScrapliError.EOF => {
+                    return try self.NewResult(allocator, "", operation.Kind.close);
+                },
+                else => {
+                    return err;
+                },
+            }
+        };
+
+        errdefer res.deinit();
+
+        try self._close();
+
+        return res;
     }
 
     fn receiveServerCapabilities(
@@ -532,7 +544,7 @@ pub const Driver = struct {
                 return errors.ScrapliError.TimeoutExceeded;
             }
 
-            const n = self.session.read(_read_cap_buf);
+            const n = try self.session.read(_read_cap_buf);
 
             if (n == 0) {
                 cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
@@ -846,33 +858,40 @@ pub const Driver = struct {
         while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
             defer std.time.sleep(cur_read_delay_ns);
 
-            var n = self.session.read(buf);
+            var n = self.session.read(buf) catch |err| {
+                self.process_thread_exited = true;
+
+                switch (err) {
+                    errors.ScrapliError.EOF => {
+                        // the session read thread has errored/closed and there is nothing remaining
+                        // in the read queue, try one last time to parse out any remaining message(s)
+                        const owned_buf = try message_buf.toOwnedSlice();
+                        defer self.allocator.free(owned_buf);
+
+                        switch (self.negotiated_version) {
+                            .version_1_0 => {
+                                try self.processFoundMessageVersion1_0(owned_buf);
+                            },
+                            .version_1_1 => {
+                                try self.processFoundMessageVersion1_1(owned_buf);
+                            },
+                        }
+
+                        self.log.critical(
+                            "message processing thread stopping, " ++
+                                "session read queue drained and read thread stopped",
+                            .{},
+                        );
+
+                        return;
+                    },
+                    else => {
+                        return err;
+                    },
+                }
+            };
 
             if (n == 0) {
-                // we only check for the read thread being errored/stopped here so that we have had
-                // the opportunity to drain the read buf completely, thus handling any remaining
-                // messages/subscriptions/notifications
-                if (self.session.read_thread_errored) {
-                    const owned_buf = try message_buf.toOwnedSlice();
-                    defer self.allocator.free(owned_buf);
-
-                    switch (self.negotiated_version) {
-                        .version_1_0 => {
-                            try self.processFoundMessageVersion1_0(owned_buf);
-                        },
-                        .version_1_1 => {
-                            try self.processFoundMessageVersion1_1(owned_buf);
-                        },
-                    }
-
-                    self.log.critical(
-                        "message processing thread stopping, session read loop errored",
-                        .{},
-                    );
-
-                    return;
-                }
-
                 cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
 
                 continue;
@@ -2650,6 +2669,10 @@ pub const Driver = struct {
 
         while (true) {
             try self.processCancelAndTimeout(timer, cancel);
+
+            if (self.process_thread_exited) {
+                return errors.ScrapliError.EOF;
+            }
 
             self.messages_lock.lock();
 
