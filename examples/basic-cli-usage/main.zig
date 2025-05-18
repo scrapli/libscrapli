@@ -23,15 +23,14 @@ const definition =
     \\              input: 'enter candidate private'
     \\  - name: 'configuration'
     \\    # https://regex101.com/r/JsaUZy/1
-    \\    prompt_pattern: '^--{(\s\[[\w\s]+\]){0,5}[\+\*\!\s]{1,}candidate[\-\w\s]+}--\[.+?\]--\s*\n[\\abcd]:\S+#\s*$'
+    \\    prompt_pattern: '^--{(\s\[[\w\s]+\]){0,5}[\+\*\!\s]{1,}candidate[\-\w\s]+}--\[.+?\]--\s*\n[abcd]:\S+#\s*$'
     \\    accessible_modes:
     \\      - name: 'exec'
     \\        instructions:
     \\          - send_input:
     \\              input: 'discard now'
     \\failure_indicators:
-    \\  - "Error:"
-    \\  - "error:" # wildcard catch for errors like `Validation error:`, `Parsing error:`
+    \\  - 'Error:'
     \\on_open_instructions:
     \\  - enter_mode:
     \\      requested_mode: 'exec'

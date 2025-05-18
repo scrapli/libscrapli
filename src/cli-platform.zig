@@ -13,6 +13,8 @@ pub const OnXCallback = *const fn (
     cancel: ?*bool,
 ) anyerror!*result.Result;
 
+// this is uniquely its own thing because modes (which have similar things) dont support
+// "enter-mode" because duh.
 pub const BoundOnXCallbackInstruction = union(enum) {
     write: struct {
         write: struct {
@@ -32,7 +34,6 @@ pub const BoundOnXCallbackInstruction = union(enum) {
     send_prompted_input: struct {
         send_prompted_input: struct {
             input: []const u8,
-            // TODO should be prompt_exact and also can we reuse things from mode here or visa versa
             prompt_exact: ?[]const u8 = null,
             prompt_pattern: ?[]const u8 = null,
             response: []const u8,
