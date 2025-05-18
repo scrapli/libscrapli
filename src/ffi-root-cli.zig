@@ -555,7 +555,7 @@ export fn ls_cli_send_prompted_input(
     operation_id: *u32,
     cancel: *bool,
     input: [*c]const u8,
-    prompt: [*c]const u8,
+    prompt_exact: [*c]const u8,
     prompt_pattern: [*c]const u8,
     response: [*c]const u8,
     abort_input: [*c]const u8,
@@ -569,7 +569,7 @@ export fn ls_cli_send_prompted_input(
     const options = ffi_args_to_options.SendPromptedInputOptionsFromArgs(
         cancel,
         input,
-        prompt,
+        prompt_exact,
         prompt_pattern,
         response,
         hidden_response,

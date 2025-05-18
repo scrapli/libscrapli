@@ -979,7 +979,7 @@ pub const Session = struct {
         );
 
         var args = ReadArgs{
-            .actual = options.prompt,
+            .actual = options.prompt_exact,
         };
 
         if (compiled_pattern) |cp| {

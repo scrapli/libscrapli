@@ -1,4 +1,4 @@
-const mode = @import("mode.zig");
+const mode = @import("cli-mode.zig");
 
 pub const Kind = enum {
     open,
@@ -66,7 +66,7 @@ pub const SendInputsOptions = struct {
 pub const SendPromptedInputOptions = struct {
     cancel: ?*bool = null,
     input: []const u8,
-    prompt: ?[]const u8 = null,
+    prompt_exact: ?[]const u8 = null,
     prompt_pattern: ?[]const u8 = null,
     response: []const u8,
     // the mode (formerly "privilege level") to send the input at

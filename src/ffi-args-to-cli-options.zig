@@ -54,7 +54,7 @@ pub fn SendInputOptionsFromArgs(
 pub fn SendPromptedInputOptionsFromArgs(
     cancel: *bool,
     input: [*c]const u8,
-    prompt: [*c]const u8,
+    prompt_exact: [*c]const u8,
     prompt_pattern: [*c]const u8,
     response: [*c]const u8,
     hidden_response: bool,
@@ -66,7 +66,7 @@ pub fn SendPromptedInputOptionsFromArgs(
     var options = operation.SendPromptedInputOptions{
         .cancel = cancel,
         .input = std.mem.span(input),
-        .prompt = std.mem.span(prompt),
+        .prompt_exact = std.mem.span(prompt_exact),
         .prompt_pattern = std.mem.span(prompt_pattern),
         .response = std.mem.span(response),
         .input_handling = getInputHandling(input_handling),

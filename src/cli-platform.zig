@@ -1,6 +1,6 @@
 const std = @import("std");
 const cli = @import("cli.zig");
-const mode = @import("mode.zig");
+const mode = @import("cli-mode.zig");
 const yaml = @import("yaml");
 const strings = @import("strings.zig");
 const result = @import("cli-result.zig");
@@ -32,7 +32,8 @@ pub const BoundOnXCallbackInstruction = union(enum) {
     send_prompted_input: struct {
         send_prompted_input: struct {
             input: []const u8,
-            prompt: ?[]const u8 = null,
+            // TODO should be prompt_exact and also can we reuse things from mode here or visa versa
+            prompt_exact: ?[]const u8 = null,
             prompt_pattern: ?[]const u8 = null,
             response: []const u8,
         },
@@ -114,8 +115,8 @@ pub const BoundOnXCallback = struct {
                         },
                     };
 
-                    if (instr.send_prompted_input.send_prompted_input.prompt) |prompt| {
-                        o.send_prompted_input.send_prompted_input.prompt = try allocator.dupe(
+                    if (instr.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
+                        o.send_prompted_input.send_prompted_input.prompt_exact = try allocator.dupe(
                             u8,
                             prompt,
                         );
@@ -151,7 +152,7 @@ pub const BoundOnXCallback = struct {
                 .send_prompted_input => {
                     self.allocator.free(instr.send_prompted_input.send_prompted_input.input);
 
-                    if (instr.send_prompted_input.send_prompted_input.prompt) |prompt| {
+                    if (instr.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
                         self.allocator.free(prompt);
                     }
 
@@ -214,7 +215,7 @@ pub const BoundOnXCallback = struct {
                             .{
                                 .cancel = cancel,
                                 .input = instr.send_prompted_input.send_prompted_input.input,
-                                .prompt = instr.send_prompted_input.send_prompted_input.prompt,
+                                .prompt_exact = instr.send_prompted_input.send_prompted_input.prompt_exact,
                                 .prompt_pattern = instr.send_prompted_input.send_prompted_input.prompt_pattern,
                                 .response = instr.send_prompted_input.send_prompted_input.response,
                             },

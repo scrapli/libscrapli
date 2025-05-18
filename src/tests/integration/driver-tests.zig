@@ -6,7 +6,7 @@ const std = @import("std");
 const cli = @import("../../cli.zig");
 const auth = @import("../../auth.zig");
 const operation = @import("../../cli-operation.zig");
-const mode = @import("../../mode.zig");
+const mode = @import("../../cli-mode.zig");
 const flags = @import("../../flags.zig");
 const ascii = @import("../../ascii.zig");
 const file = @import("../../file.zig");
@@ -1413,7 +1413,7 @@ test "driver send-prompted-input" {
             std.testing.allocator,
             .{
                 .input = case.input,
-                .prompt = case.prompt,
+                .prompt_exact = case.prompt,
                 .response = case.response,
                 .retain_trailing_prompt = case.retain_trailing_prompt,
                 .requested_mode = case.requested_mode,
@@ -1490,7 +1490,7 @@ test "driver send-prompted-input-timeout" {
                 operation.SendPromptedInputOptions{
                     .cancel = cancel_ptr,
                     .input = "write erase",
-                    .prompt = "Proceed with erasing startup configuration? [confirm]",
+                    .prompt_exact = "Proceed with erasing startup configuration? [confirm]",
                     .response = "",
                 },
             },
@@ -1555,7 +1555,7 @@ test "driver send-prompted-input-cancellation" {
                 std.testing.allocator,
                 .{
                     .input = "clear logging",
-                    .prompt = "Clear logging buffer [confirm]",
+                    .prompt_exact = "Clear logging buffer [confirm]",
                     .response = "",
                 },
             ),

@@ -20,7 +20,7 @@ pub const Operation = union(enum) {
     send_prompted_input: struct {
         send_prompted_input: struct {
             input: []const u8,
-            prompt: ?[]const u8 = null,
+            prompt_exact: ?[]const u8 = null,
             prompt_pattern: ?[]const u8 = null,
             response: []const u8,
         },
@@ -117,8 +117,8 @@ pub const Mode = struct {
                                 },
                             };
 
-                            if (instr.send_prompted_input.send_prompted_input.prompt) |prompt| {
-                                o.send_prompted_input.send_prompted_input.prompt = try allocator.dupe(
+                            if (instr.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
+                                o.send_prompted_input.send_prompted_input.prompt_exact = try allocator.dupe(
                                     u8,
                                     prompt,
                                 );
@@ -170,7 +170,7 @@ pub const Mode = struct {
                     .send_prompted_input => |op| {
                         self.allocator.free(op.send_prompted_input.input);
 
-                        if (op.send_prompted_input.prompt) |prompt| {
+                        if (op.send_prompted_input.prompt_exact) |prompt| {
                             self.allocator.free(prompt);
                         }
 
@@ -475,7 +475,7 @@ test "getPathToMode" {
                         .send_prompted_input = .{
                             .send_prompted_input = .{
                                 .input = "enable",
-                                .prompt = "Password:",
+                                .prompt_exact = "Password:",
                                 .response = "password",
                             },
                         },

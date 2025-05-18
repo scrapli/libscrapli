@@ -5,7 +5,7 @@ const auth = @import("auth.zig");
 const transport = @import("transport.zig");
 const platform = @import("cli-platform.zig");
 const operation = @import("cli-operation.zig");
-const mode = @import("mode.zig");
+const mode = @import("cli-mode.zig");
 const result = @import("cli-result.zig");
 const errors = @import("errors.zig");
 
@@ -422,7 +422,7 @@ pub const Driver = struct {
                                     .{
                                         .cancel = options.cancel,
                                         .input = op.send_prompted_input.send_prompted_input.input,
-                                        .prompt = op.send_prompted_input.send_prompted_input.prompt,
+                                        .prompt_exact = op.send_prompted_input.send_prompted_input.prompt_exact,
                                         .prompt_pattern = op.send_prompted_input.send_prompted_input.prompt_pattern,
                                         .response = response,
                                         .requested_mode = self.current_mode,
