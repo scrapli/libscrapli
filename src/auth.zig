@@ -210,14 +210,12 @@ pub const Options = struct {
 };
 
 pub fn processSearchableAuthBuf(
-    allocator: std.mem.Allocator,
     searchable_buf: []const u8,
     compiled_prompt_pattern: ?*pcre2.pcre2_code_8,
     compiled_username_pattern: ?*pcre2.pcre2_code_8,
     compiled_password_pattern: ?*pcre2.pcre2_code_8,
     compiled_passphrase_pattern: ?*pcre2.pcre2_code_8,
 ) !State {
-    try openMessageHandler(allocator, searchable_buf);
     const prompt_match = try re.pcre2Find(
         compiled_prompt_pattern.?,
         searchable_buf,
@@ -266,12 +264,11 @@ const openMessageErrorSubstrings = [_][]const u8{
     "permission denied",
     "unprotected private key file",
     "too many authentication failures",
+    "connection refused",
 };
 
-pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
-    const copied_buf = allocator.alloc(u8, buf.len) catch {
-        return errors.ScrapliError.OpenFailed;
-    };
+pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !?[]const u8 {
+    const copied_buf = try allocator.alloc(u8, buf.len);
     defer allocator.free(copied_buf);
 
     @memcpy(copied_buf, buf);
@@ -280,95 +277,93 @@ pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !void {
 
     for (openMessageErrorSubstrings) |needle| {
         if (std.mem.indexOf(u8, copied_buf, needle) != null) {
-            return errors.ScrapliError.OpenFailed;
+            return needle;
         }
     }
+
+    return null;
 }
 
 test "openMessageHandler" {
     const cases = [_]struct {
         name: []const u8,
         haystack: []const u8,
-        expect_error: bool,
+        expected: ?[]const u8,
     }{
         .{
             .name = "no error",
             .haystack = "",
-            .expect_error = false,
+            .expected = null,
         },
         .{
             .name = "host key verification failed",
             .haystack = "blah: host key verification failed",
-            .expect_error = true,
+            .expected = "host key verification failed",
         },
         .{
             .name = "no matching key exchange",
             .haystack = "blah: no matching key exchange",
-            .expect_error = true,
+            .expected = "no matching key exchange",
         },
         .{
             .name = "no matching host key",
             .haystack = "blah: no matching host key",
-            .expect_error = true,
+            .expected = "no matching host key",
         },
         .{
             .name = "no matching cipher",
             .haystack = "blah: no matching cipher",
-            .expect_error = true,
+            .expected = "no matching cipher",
         },
         .{
             .name = "operation timed out",
             .haystack = "blah: operation timed out",
-            .expect_error = true,
+            .expected = "operation timed out",
         },
         .{
             .name = "connection timed out",
             .haystack = "blah: connection timed out",
-            .expect_error = true,
+            .expected = "connection timed out",
         },
         .{
             .name = "no route to host",
             .haystack = "blah: no route to host",
-            .expect_error = true,
+            .expected = "no route to host",
         },
         .{
             .name = "bad configuration",
             .haystack = "blah: bad configuration",
-            .expect_error = true,
+            .expected = "bad configuration",
         },
         .{
             .name = "could not resolve hostname",
             .haystack = "blah: could not resolve hostname",
-            .expect_error = true,
+            .expected = "could not resolve hostname",
         },
         .{
             .name = "permission denied",
             .haystack = "blah: permission denied",
-            .expect_error = true,
+            .expected = "permission denied",
         },
         .{
             .name = "unprotected private key file",
             .haystack = "blah: unprotected private key file",
-            .expect_error = true,
+            .expected = "unprotected private key file",
         },
         .{
             .name = "too many auth failures",
             .haystack = "blah: Too many authentication failures",
-            .expect_error = true,
+            .expected = "too many authentication failures",
         },
     };
 
     for (cases) |case| {
-        if (case.expect_error) {
-            try std.testing.expectError(
-                errors.ScrapliError.OpenFailed,
-                openMessageHandler(
-                    std.testing.allocator,
-                    case.haystack,
-                ),
-            );
+        const actual = try openMessageHandler(std.testing.allocator, case.haystack);
+
+        if (case.expected == null) {
+            try std.testing.expect(actual == null);
         } else {
-            try openMessageHandler(std.testing.allocator, case.haystack);
+            try std.testing.expectEqualStrings(case.expected.?, actual.?);
         }
     }
 }

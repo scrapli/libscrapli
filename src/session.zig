@@ -525,10 +525,6 @@ pub const Session = struct {
                 return errors.ScrapliError.Cancelled;
             }
 
-            if (self.read_thread_errored) {
-                return errors.ScrapliError.BackgroundThreadError;
-            }
-
             const elapsed_time = timer.read();
 
             if (self.options.operation_timeout_ns != 0 and
@@ -541,7 +537,28 @@ pub const Session = struct {
 
             defer std.time.sleep(cur_read_delay_ns);
 
-            const n = try self.read(buf);
+            const n = self.read(buf) catch |err| {
+                switch (err) {
+                    errors.ScrapliError.EOF => {
+                        // hitting eof in auth/open means we likely got a connection refused or
+                        // something similar. we gotta slurp up the buffer to read it and check so
+                        // we can *hopefully* return a decent error message to the user
+                        const error_message = try auth.openMessageHandler(
+                            allocator,
+                            bufs.processed.items,
+                        );
+
+                        if (error_message) |msg| {
+                            self.log.critical("open failed, error: '{s}'", .{msg});
+                        }
+
+                        return errors.ScrapliError.OpenFailed;
+                    },
+                    else => {
+                        return err;
+                    },
+                }
+            };
 
             if (n == 0) {
                 cur_read_delay_ns = time.getBackoffValue(
@@ -565,8 +582,6 @@ pub const Session = struct {
                     bufs.processed.items.len - n,
                 );
                 try bufs.processed.resize(new_size);
-
-                try auth.openMessageHandler(allocator, bufs.processed.items);
             }
 
             const searchable_buf = bytes.getBufSearchView(
@@ -574,8 +589,18 @@ pub const Session = struct {
                 self.options.operation_max_search_depth,
             );
 
+            const error_message = try auth.openMessageHandler(
+                allocator,
+                bufs.processed.items,
+            );
+
+            if (error_message) |msg| {
+                self.log.critical("open failed, error: '{s}'", .{msg});
+
+                return errors.ScrapliError.OpenFailed;
+            }
+
             const state = try auth.processSearchableAuthBuf(
-                self.allocator,
                 searchable_buf,
                 self.compiled_prompt_pattern,
                 self.compiled_username_pattern,
