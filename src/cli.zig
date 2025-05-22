@@ -297,6 +297,15 @@ pub const Driver = struct {
             .{ options.requested_mode, self.current_mode },
         );
 
+        if (!self.definition.modes.contains(options.requested_mode)) {
+            self.log.info(
+                "no mode '{s}' in definition",
+                .{self.current_mode},
+            );
+
+            return errors.ScrapliError.UnsupportedOperation;
+        }
+
         var res = try self.NewResult(
             allocator,
             operation.Kind.enter_mode,
