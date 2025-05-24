@@ -361,10 +361,8 @@ pub const Session = struct {
             return errors.ScrapliError.OpenFailed;
         };
 
-        const is_in_session_auth = self.transport.isInSessionAuth();
-
         // check if we have auth bypass or the transport handles auth for us -- if yes we are done
-        if (self.auth_options.in_session_auth_bypass or !is_in_session_auth) {
+        if (self.auth_options.in_session_auth_bypass or !self.transport.isInSessionAuth()) {
             return [2][]const u8{ "", "" };
         }
 

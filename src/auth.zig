@@ -251,20 +251,22 @@ pub fn processSearchableAuthBuf(
     return State._continue;
 }
 
-const openMessageErrorSubstrings = [_][]const u8{
-    "host key verification failed",
-    "no matching key exchange",
-    "no matching host key",
-    "no matching cipher",
-    "operation timed out",
-    "connection timed out",
-    "no route to host",
-    "bad configuration",
-    "could not resolve hostname",
-    "permission denied",
-    "unprotected private key file",
-    "too many authentication failures",
-    "connection refused",
+const open_error_message_substrings = [_][2][]const u8{
+    [2][]const u8{ "host key verification failed", "" },
+    [2][]const u8{ "no matching key exchange", "" },
+    [2][]const u8{ "no matching host key", "" },
+    [2][]const u8{ "no matching cipher", "" },
+    [2][]const u8{ "operation timed out", "" },
+    [2][]const u8{ "connection timed out", "" },
+    [2][]const u8{ "no route to host", "" },
+    [2][]const u8{ "bad configuration", "" },
+    [2][]const u8{ "could not resolve hostname", "" },
+    [2][]const u8{ "permission denied", "" },
+    [2][]const u8{ "unprotected private key file", "" },
+    [2][]const u8{ "too many authentication failures", "" },
+    [2][]const u8{ "connection refused", "" },
+    [2][]const u8{ "escape character is '^]'.", "are you telnet'ing to an ssh port?" },
+    [2][]const u8{ "ssh-2.0-openssh_", "are you telnet'ing to an ssh port?" },
 };
 
 pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !?[]const u8 {
@@ -275,9 +277,13 @@ pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !?[]con
 
     bytes.toLower(copied_buf);
 
-    for (openMessageErrorSubstrings) |needle| {
-        if (std.mem.indexOf(u8, copied_buf, needle) != null) {
-            return needle;
+    for (open_error_message_substrings) |error_substring| {
+        if (std.mem.indexOf(u8, copied_buf, error_substring[0]) != null) {
+            if (error_substring[1].len > 0) {
+                return error_substring[1];
+            }
+
+            return error_substring[0];
         }
     }
 
@@ -354,6 +360,21 @@ test "openMessageHandler" {
             .name = "too many auth failures",
             .haystack = "blah: Too many authentication failures",
             .expected = "too many authentication failures",
+        },
+        .{
+            .name = "connection refused",
+            .haystack = "blah: connection refused",
+            .expected = "connection refused",
+        },
+        .{
+            .name = "sshing to telnet port",
+            .haystack = "Escape character is '^]'.",
+            .expected = "are you telnet'ing to an ssh port?",
+        },
+        .{
+            .name = "sshing to telnet port",
+            .haystack = "blah SSH-2.0-OpenSSH_ blah blah",
+            .expected = "are you telnet'ing to an ssh port?",
         },
     };
 
