@@ -480,8 +480,6 @@ pub const Driver = struct {
             return self.NewResult(allocator, "", operation.Kind.close);
         }
 
-        // some janky dancing around as ssh2 may never read an OK from a close-session
-        // i think due to us running it in non block mode
         const res = try self.closeSession(
             allocator,
             .{
@@ -1919,7 +1917,33 @@ pub const Driver = struct {
         ) catch |err| {
             switch (err) {
                 errors.ScrapliError.EOF => {
-                    return try self.NewResult(allocator, "", operation.Kind.close);
+                    // we may read an EOF and miss the reply when using ssh2 transport (due i think
+                    // in part or whole to being in non blocking mode). so... we lie. if we hit eof
+                    // we did indeed close the session... good enough format up and send an
+                    // appropriate response, allocate it and everything so normal deinit flow is
+                    // as expected
+                    const res = try self.NewResult(
+                        allocator,
+                        "",
+                        operation.Kind.close,
+                    );
+
+                    try res.record([2][]const u8{
+                        try std.fmt.allocPrint(
+                            allocator,
+                            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
+                        ,
+                            .{self.message_id - 1},
+                        ),
+                        try std.fmt.allocPrint(
+                            allocator,
+                            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
+                        ,
+                            .{self.message_id - 1},
+                        ),
+                    });
+
+                    return res;
                 },
                 else => {
                     return err;
