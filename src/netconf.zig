@@ -966,6 +966,7 @@ pub const Driver = struct {
             message_view,
             message_id_attribute_prefix,
         );
+
         const index_of_subscription_id = std.mem.indexOf(
             u8,
             message_view,
@@ -1168,6 +1169,10 @@ pub const Driver = struct {
                 chunk_size = chunk_size * 10 + (buf[chunk_idx] - '0');
             }
 
+            if (chunk_size == 0) {
+                return errors.ScrapliError.ParsingError;
+            }
+
             // now that we processed the size, consume any whitespace up to the chunk to read;
             // first move the iter_idx past the chunk size marker, then consume cr/lf before the
             // actual chunk content (whitespace like an actual space is valid for chunks!)
@@ -1183,10 +1188,6 @@ pub const Driver = struct {
                 }
 
                 break;
-            }
-
-            if (chunk_size == 0) {
-                return errors.ScrapliError.ParsingError;
             }
 
             @memcpy(
