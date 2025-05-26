@@ -7,7 +7,6 @@ const result = @import("netconf-result.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
-const time = @import("time.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -215,7 +214,7 @@ export fn ls_netconf_wait_operation(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    var cur_read_delay_ns: u64 = d.real_driver.netconf.session.options.read_delay_min_ns;
+    var cur_read_delay_ns: u64 = d.wait_poll_delay_min_ns;
 
     while (true) {
         const ret = d.pollOperation(operation_id, false) catch |err| {
@@ -229,10 +228,8 @@ export fn ls_netconf_wait_operation(
         };
 
         if (!ret.done) {
-            cur_read_delay_ns = time.getBackoffValue(
+            cur_read_delay_ns = d.getWaitBackoffValue(
                 cur_read_delay_ns,
-                d.real_driver.netconf.session.options.read_delay_max_ns,
-                d.real_driver.netconf.session.options.read_delay_backoff_factor,
             );
 
             std.time.sleep(cur_read_delay_ns);

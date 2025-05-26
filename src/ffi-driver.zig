@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const cli = @import("cli.zig");
 const netconf = @import("netconf.zig");
@@ -20,6 +21,13 @@ pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
 
     real_driver: RealDriver,
+
+    poll_fds: [2]std.posix.fd_t,
+
+    // settings configuring sleep for wait operations on ffi things
+    wait_poll_delay_min_ns: u64 = 5_000,
+    wait_poll_delay_max_ns: u64 = 7_500_000,
+    wait_poll_delay_backoff_factor: u8 = 2,
 
     operation_id_counter: u32,
     operation_thread: ?std.Thread,
@@ -44,6 +52,14 @@ pub const FfiDriver = struct {
     ) !*FfiDriver {
         const ffi_driver = try allocator.create(FfiDriver);
 
+        var poll_fds: [2]std.posix.fd_t = undefined;
+
+        if (builtin.target.os.tag == .linux) {
+            poll_fds = [2]std.posix.fd_t{ 0, try std.os.eventfd(0, 0) };
+        } else if (builtin.target.os.tag == .macos) {
+            poll_fds = try std.posix.pipe();
+        }
+
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .real_driver = RealDriver{
@@ -53,6 +69,7 @@ pub const FfiDriver = struct {
                     config,
                 ),
             },
+            .poll_fds = poll_fds,
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -80,6 +97,14 @@ pub const FfiDriver = struct {
     ) !*FfiDriver {
         const ffi_driver = try allocator.create(FfiDriver);
 
+        var poll_fds: [2]std.posix.fd_t = undefined;
+
+        if (builtin.target.os.tag == .linux) {
+            poll_fds = [2]std.posix.fd_t{ 0, try std.os.eventfd(0, 0) };
+        } else if (builtin.target.os.tag == .macos) {
+            poll_fds = try std.posix.pipe();
+        }
+
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .real_driver = RealDriver{
@@ -89,6 +114,7 @@ pub const FfiDriver = struct {
                     config,
                 ),
             },
+            .poll_fds = poll_fds,
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -132,6 +158,13 @@ pub const FfiDriver = struct {
             .netconf => |d| {
                 d.deinit();
             },
+        }
+
+        // close the ffi layer poll fd(s)
+        std.posix.close(self.poll_fds[0]);
+
+        if (self.poll_fds[1] != 0) {
+            std.posix.close(self.poll_fds[1]);
         }
 
         self.allocator.destroy(self);
@@ -209,6 +242,31 @@ pub const FfiDriver = struct {
             }
 
             std.time.sleep(operation_thread_ready_sleep);
+        }
+    }
+
+    pub fn getWaitBackoffValue(
+        self: *FfiDriver,
+        cur_val: u64,
+    ) u64 {
+        var new_val: u64 = cur_val;
+
+        new_val *= self.wait_poll_delay_backoff_factor;
+        if (new_val > self.wait_poll_delay_max_ns) {
+            new_val = self.wait_poll_delay_max_ns;
+        }
+
+        return new_val;
+    }
+
+    fn writePollWakeUp(self: *FfiDriver) !void {
+        if (self.poll_fds[1] != 0) {
+            // we have read and write side -- darwin, so write one byte
+            const wakeup_fd = self.poll_fds[1];
+            _ = try std.posix.write(wakeup_fd, "x");
+        } else {
+            const wakeup_fd = self.poll_fds[1];
+            _ = try std.posix.write(wakeup_fd, "x");
         }
     }
 
@@ -345,6 +403,13 @@ pub const FfiDriver = struct {
             }
 
             self.operation_lock.unlock();
+
+            // TODO here is where we write a wakeup signal to the poll fd that py/go reads from
+            // update hte netconf one too fi i cahnge stuff here
+            self.writePollWakeUp() catch {
+                std.debug.print("FOOOOOOOP\n", .{});
+                @panic("failed writing to wakeup fd");
+            };
         }
 
         self.log(logging.LogLevel.info, "operation thread stopped", .{});
@@ -600,6 +665,10 @@ pub const FfiDriver = struct {
             }
 
             self.operation_lock.unlock();
+
+            self.writePollWakeUp() catch {
+                @panic("failed writing to wakeup fd");
+            };
         }
 
         self.log(logging.LogLevel.info, "operation thread stopped", .{});

@@ -104,9 +104,6 @@ fn GetTestDriver(f: []const u8) !*cli.Driver {
             },
             .session = .{
                 .read_size = 1,
-                .read_delay_backoff_factor = 1,
-                .read_delay_min_ns = 1,
-                .read_delay_max_ns = 1,
             },
             .transport = .{
                 .test_ = .{

@@ -33,14 +33,7 @@ export fn ls_option_session_read_delay_min_ns(
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    switch (d.real_driver) {
-        .cli => |rd| {
-            rd.session.options.read_delay_min_ns = value;
-        },
-        .netconf => |rd| {
-            rd.session.options.read_delay_min_ns = value;
-        },
-    }
+    d.wait_poll_delay_min_ns = value;
 
     return 0;
 }
@@ -51,14 +44,7 @@ export fn ls_option_session_read_delay_max_ns(
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    switch (d.real_driver) {
-        .cli => |rd| {
-            rd.session.options.read_delay_max_ns = value;
-        },
-        .netconf => |rd| {
-            rd.session.options.read_delay_max_ns = value;
-        },
-    }
+    d.wait_poll_delay_max_ns = value;
 
     return 0;
 }
@@ -69,14 +55,7 @@ export fn ls_option_session_read_delay_backoff_factor(
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    switch (d.real_driver) {
-        .cli => |rd| {
-            rd.session.options.read_delay_backoff_factor = value;
-        },
-        .netconf => |rd| {
-            rd.session.options.read_delay_backoff_factor = value;
-        },
-    }
+    d.wait_poll_delay_backoff_factor = value;
 
     return 0;
 }

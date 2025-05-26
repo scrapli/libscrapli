@@ -3,6 +3,7 @@ const file = @import("file.zig");
 const bytes = @import("bytes.zig");
 const logging = @import("logging.zig");
 const errors = @import("errors.zig");
+const transport_waiter = @import("transport-waiter.zig");
 
 const control_char_iac: u8 = 255;
 const control_char_do: u8 = 253;
@@ -192,7 +193,7 @@ pub const Transport = struct {
 
             var control_char_buf: [1]u8 = undefined;
 
-            const n = try self.read(&control_char_buf);
+            const n = try self.read(null, &control_char_buf);
 
             if (n == 0) {
                 // we may get 0 bytes while the server is figuring its life out
@@ -269,7 +270,7 @@ pub const Transport = struct {
         };
     }
 
-    pub fn read(self: *Transport, buf: []u8) !usize {
+    pub fn read(self: *Transport, w: ?transport_waiter.Waiter, buf: []u8) !usize {
         if (self.stream == null) {
             return errors.ScrapliError.NotOpened;
         }
@@ -288,6 +289,12 @@ pub const Transport = struct {
         const n = self.stream.?.read(buf) catch |err| {
             switch (err) {
                 error.WouldBlock => {
+                    if (w) |waiter| {
+                        waiter.wait(self.stream.?.handle) catch |wait_err| {
+                            return wait_err;
+                        };
+                    }
+
                     return 0;
                 },
                 else => {

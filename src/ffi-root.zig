@@ -181,6 +181,15 @@ export fn ls_netconf_alloc(
     return @intFromPtr(d);
 }
 
+export fn ls_shared_get_poll_fd(
+    d_ptr: usize,
+    fd: *u32,
+) void {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    fd.* = @intCast(d.poll_fds[0]);
+}
+
 export fn ls_shared_free(
     d_ptr: usize,
 ) void {
