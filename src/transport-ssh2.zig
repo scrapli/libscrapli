@@ -937,9 +937,7 @@ pub const Transport = struct {
         self.session_lock.unlock();
 
         if (n == LIBSSH2_ERROR_EAGAIN) {
-            w.wait(self.socket.?) catch |err| {
-                return err;
-            };
+            try w.wait(self.socket.?);
 
             return 0;
         }

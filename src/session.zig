@@ -222,7 +222,7 @@ pub const Session = struct {
             .log = log,
             .options = options,
             .auth_options = auth_options,
-            .waiter = try transport_waiter.Waiter.init(),
+            .waiter = try transport_waiter.Waiter.init(allocator),
             .transport = t,
             .read_thread = null,
             .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.uninitialized),
@@ -311,6 +311,7 @@ pub const Session = struct {
             re.pcre2Free(self.compiled_prompt_pattern.?);
         }
 
+        self.waiter.deinit();
         self.transport.deinit();
         self.read_queue.deinit();
 

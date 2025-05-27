@@ -8,10 +8,13 @@ const c = @cImport({
 });
 
 pub const EpollWaiter = struct {
+    allocator: std.mem.Allocator,
     ep: std.posix.fd_t,
     ev: std.posix.fd_t,
 
-    pub fn init() !EpollWaiter {
+    pub fn init(allocator: std.mem.Allocator) !*EpollWaiter {
+        const w = try allocator.create(EpollWaiter);
+
         const epoll_fd = std.os.linux.epoll_create1(0);
 
         const event_fd = c.eventfd(0, 0);
@@ -23,7 +26,17 @@ pub const EpollWaiter = struct {
 
         _ = c.epoll_ctl(@intCast(epoll_fd), c.EPOLL_CTL_ADD, event_fd, &event);
 
-        return EpollWaiter{ .ep = @intCast(epoll_fd), .ev = event_fd };
+        w.* = EpollWaiter{
+            .allocator = allocator,
+            .ep = @intCast(epoll_fd),
+            .ev = event_fd,
+        };
+
+        return w;
+    }
+
+    pub fn deinit(self: *EpollWaiter) void {
+        self.allocator.destroy(self);
     }
 
     pub fn wait(self: EpollWaiter, fd: std.posix.fd_t) !void {

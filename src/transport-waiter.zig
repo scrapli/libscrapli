@@ -3,12 +3,16 @@ const builtin = @import("builtin");
 
 pub const Waiter = switch (builtin.target.os.tag) {
     .linux => struct {
-        w: @import("transport-waiter-epoll.zig").EpollWaiter,
+        w: *@import("transport-waiter-epoll.zig").EpollWaiter,
 
-        pub fn init() !Waiter {
+        pub fn init(allocator: std.mem.Allocator) !Waiter {
             return Waiter{
-                .w = try @import("transport-waiter-epoll.zig").EpollWaiter.init(),
+                .w = try @import("transport-waiter-epoll.zig").EpollWaiter.init(allocator),
             };
+        }
+
+        pub fn deinit(self: Waiter) void {
+            self.w.deinit();
         }
 
         pub fn wait(self: Waiter, fd: std.posix.fd_t) !void {
@@ -20,12 +24,16 @@ pub const Waiter = switch (builtin.target.os.tag) {
         }
     },
     .macos => struct {
-        w: @import("transport-waiter-kqueue.zig").KqueueWaiter,
+        w: *@import("transport-waiter-kqueue.zig").KqueueWaiter,
 
-        pub fn init() !Waiter {
+        pub fn init(allocator: std.mem.Allocator) !Waiter {
             return Waiter{
-                .w = try @import("transport-waiter-kqueue.zig").KqueueWaiter.init(),
+                .w = try @import("transport-waiter-kqueue.zig").KqueueWaiter.init(allocator),
             };
+        }
+
+        pub fn deinit(self: Waiter) void {
+            self.w.deinit();
         }
 
         pub fn wait(self: Waiter, fd: std.posix.fd_t) !void {
@@ -33,7 +41,7 @@ pub const Waiter = switch (builtin.target.os.tag) {
         }
 
         pub fn unblock(self: Waiter) !void {
-            return self.w.unblock();
+            try self.w.unblock();
         }
     },
     else => @compileError("unsupported platform"),
