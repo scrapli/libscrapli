@@ -530,8 +530,6 @@ pub const Driver = struct {
                 return errors.ScrapliError.TimeoutExceeded;
             }
 
-            defer std.time.sleep(session.read_loop_delay_ns);
-
             const n = try self.session.read(_read_cap_buf);
 
             if (n == 0) {

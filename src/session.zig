@@ -15,7 +15,8 @@ const pcre2 = @cImport({
     @cInclude("pcre2.h");
 });
 
-pub const read_loop_delay_ns: u64 = 5_000;
+const min_read_delay_ns: u64 = 5_000;
+const max_read_delay_ns: u64 = 7_500_000;
 
 const defaults = struct {
     const read_size: u64 = 4_096;
@@ -371,7 +372,7 @@ pub const Session = struct {
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            std.time.sleep(read_loop_delay_ns);
+            std.time.sleep(min_read_delay_ns);
         }
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
@@ -424,8 +425,6 @@ pub const Session = struct {
         defer self.allocator.free(buf);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            defer std.time.sleep(read_loop_delay_ns);
-
             const n = self.transport.read(self.waiter, buf) catch {
                 self.read_thread_errored = true;
 
@@ -518,8 +517,6 @@ pub const Session = struct {
 
                 return errors.ScrapliError.TimeoutExceeded;
             }
-
-            defer std.time.sleep(read_loop_delay_ns);
 
             const n = self.read(buf) catch |err| {
                 switch (err) {
@@ -688,8 +685,8 @@ pub const Session = struct {
         var new_val: u64 = cur_val;
 
         new_val *= 2;
-        if (new_val > 7_500_000) {
-            new_val = 7_500_000;
+        if (new_val > max_read_delay_ns) {
+            new_val = max_read_delay_ns;
         }
 
         return new_val;
@@ -703,7 +700,7 @@ pub const Session = struct {
         args: ReadArgs,
         bufs: *ReadBufs,
     ) !MatchPositions {
-        var cur_read_delay_ns: u64 = 5_000;
+        var cur_read_delay_ns: u64 = min_read_delay_ns;
 
         // to ensure the check_read_operation_done function doesnt think we are done "early" by
         // finding a match from an earlier prompt we snag the len of the processed buf then we
@@ -744,7 +741,7 @@ pub const Session = struct {
 
                 continue;
             } else {
-                cur_read_delay_ns = 5_000;
+                cur_read_delay_ns = min_read_delay_ns;
             }
 
             try bufs.appendSliceBoth(buf[0..n]);
