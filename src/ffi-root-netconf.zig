@@ -7,7 +7,6 @@ const result = @import("netconf-result.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
-const time = @import("time.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -144,10 +143,9 @@ export fn ls_netconf_get_subscription_id(
     return 1;
 }
 
-export fn ls_netconf_poll_operation(
+export fn ls_netconf_fetch_operation_sizes(
     d_ptr: usize,
     operation_id: u32,
-    operation_done: *bool,
     operation_input_size: *u64,
     operation_result_raw_size: *u64,
     operation_result_size: *u64,
@@ -157,10 +155,7 @@ export fn ls_netconf_poll_operation(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const ret = d.pollOperation(
-        operation_id,
-        false,
-    ) catch |err| {
+    const ret = d.dequeueOperation(operation_id, false) catch |err| {
         d.log(
             logging.LogLevel.critical,
             "error during poll operation {any}",
@@ -169,14 +164,6 @@ export fn ls_netconf_poll_operation(
 
         return 1;
     };
-
-    if (!ret.done) {
-        operation_done.* = false;
-
-        return 0;
-    }
-
-    operation_done.* = true;
 
     if (ret.err != null) {
         const err_name = @errorName(ret.err.?);
@@ -202,71 +189,6 @@ export fn ls_netconf_poll_operation(
     return 0;
 }
 
-export fn ls_netconf_wait_operation(
-    d_ptr: usize,
-    operation_id: u32,
-    operation_done: *bool,
-    operation_input_size: *u64,
-    operation_result_raw_size: *u64,
-    operation_result_size: *u64,
-    operation_rpc_warnings_size: *u64,
-    operation_rpc_errors_size: *u64,
-    operation_error_size: *u64,
-) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    var cur_read_delay_ns: u64 = d.real_driver.netconf.session.options.read_delay_min_ns;
-
-    while (true) {
-        const ret = d.pollOperation(operation_id, false) catch |err| {
-            d.log(
-                logging.LogLevel.critical,
-                "error during poll operation {any}",
-                .{err},
-            );
-
-            return 1;
-        };
-
-        if (!ret.done) {
-            cur_read_delay_ns = time.getBackoffValue(
-                cur_read_delay_ns,
-                d.real_driver.netconf.session.options.read_delay_max_ns,
-                d.real_driver.netconf.session.options.read_delay_backoff_factor,
-            );
-
-            std.time.sleep(cur_read_delay_ns);
-
-            continue;
-        }
-
-        operation_done.* = true;
-
-        if (ret.err != null) {
-            const err_name = @errorName(ret.err.?);
-
-            operation_result_size.* = 0;
-            operation_error_size.* = err_name.len;
-        } else {
-            const dret = switch (ret.result) {
-                .netconf => |r| r.?,
-                else => @panic("attempting to access non netconf result from netconf type"),
-            };
-
-            operation_input_size.* = dret.input.len;
-            operation_result_raw_size.* = dret.result_raw.len;
-            operation_result_size.* = dret.result.len;
-
-            if (dret.result_failure_indicated) {
-                operation_rpc_warnings_size.* = dret.getWarningsLen();
-                operation_rpc_errors_size.* = dret.getErrorsLen();
-            }
-        }
-
-        return 0;
-    }
-}
-
 export fn ls_netconf_fetch_operation(
     d_ptr: usize,
     operation_id: u32,
@@ -281,7 +203,7 @@ export fn ls_netconf_fetch_operation(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const ret = d.pollOperation(
+    const ret = d.dequeueOperation(
         operation_id,
         true,
     ) catch |err| {

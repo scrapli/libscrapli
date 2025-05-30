@@ -27,60 +27,6 @@ export fn ls_option_session_read_size(
     return 0;
 }
 
-export fn ls_option_session_read_delay_min_ns(
-    d_ptr: usize,
-    value: u64,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    switch (d.real_driver) {
-        .cli => |rd| {
-            rd.session.options.read_delay_min_ns = value;
-        },
-        .netconf => |rd| {
-            rd.session.options.read_delay_min_ns = value;
-        },
-    }
-
-    return 0;
-}
-
-export fn ls_option_session_read_delay_max_ns(
-    d_ptr: usize,
-    value: u64,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    switch (d.real_driver) {
-        .cli => |rd| {
-            rd.session.options.read_delay_max_ns = value;
-        },
-        .netconf => |rd| {
-            rd.session.options.read_delay_max_ns = value;
-        },
-    }
-
-    return 0;
-}
-
-export fn ls_option_session_read_delay_backoff_factor(
-    d_ptr: usize,
-    value: u8,
-) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    switch (d.real_driver) {
-        .cli => |rd| {
-            rd.session.options.read_delay_backoff_factor = value;
-        },
-        .netconf => |rd| {
-            rd.session.options.read_delay_backoff_factor = value;
-        },
-    }
-
-    return 0;
-}
-
 export fn ls_option_session_return_char(
     d_ptr: usize,
     value: [*c]const u8,

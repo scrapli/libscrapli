@@ -1,11 +1,11 @@
 const std = @import("std");
 const transport = @import("transport.zig");
+const transport_waiter = @import("transport-waiter.zig");
 const re = @import("re.zig");
 const bytes = @import("bytes.zig");
 const operation = @import("cli-operation.zig");
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
-const time = @import("time.zig");
 const auth = @import("auth.zig");
 const file = @import("file.zig");
 const errors = @import("errors.zig");
@@ -15,11 +15,11 @@ const pcre2 = @cImport({
     @cInclude("pcre2.h");
 });
 
+const min_read_delay_ns: u64 = 5_000;
+const max_read_delay_ns: u64 = 7_500_000;
+
 const defaults = struct {
     const read_size: u64 = 4_096;
-    const read_delay_min_ns: u64 = 5_000;
-    const read_delay_max_ns: u64 = 7_500_000;
-    const read_delay_backoff_factor: u8 = 2;
     const return_char: []const u8 = "\n";
     const operation_timeout_ns: u64 = 10_000_000_000;
     const operation_max_search_depth: u64 = 512;
@@ -91,9 +91,6 @@ pub const RecordDestination = union(enum) {
 
 pub const OptionsInputs = struct {
     read_size: u64 = defaults.read_size,
-    read_delay_min_ns: u64 = defaults.read_delay_min_ns,
-    read_delay_max_ns: u64 = defaults.read_delay_max_ns,
-    read_delay_backoff_factor: u8 = defaults.read_delay_backoff_factor,
     return_char: []const u8 = defaults.return_char,
     operation_timeout_ns: u64 = defaults.operation_timeout_ns,
     operation_max_search_depth: u64 = defaults.operation_max_search_depth,
@@ -103,9 +100,6 @@ pub const OptionsInputs = struct {
 pub const Options = struct {
     allocator: std.mem.Allocator,
     read_size: u64,
-    read_delay_min_ns: u64,
-    read_delay_max_ns: u64,
-    read_delay_backoff_factor: u8,
     return_char: []const u8,
     operation_timeout_ns: u64,
     operation_max_search_depth: u64,
@@ -118,9 +112,6 @@ pub const Options = struct {
         o.* = Options{
             .allocator = allocator,
             .read_size = opts.read_size,
-            .read_delay_min_ns = opts.read_delay_min_ns,
-            .read_delay_max_ns = opts.read_delay_max_ns,
-            .read_delay_backoff_factor = opts.read_delay_backoff_factor,
             .return_char = opts.return_char,
             .operation_timeout_ns = opts.operation_timeout_ns,
             .operation_max_search_depth = opts.operation_max_search_depth,
@@ -168,6 +159,8 @@ pub const Session = struct {
     log: logging.Logger,
     options: *Options,
     auth_options: *auth.Options,
+
+    waiter: transport_waiter.Waiter,
     transport: *transport.Transport,
 
     read_thread: ?std.Thread,
@@ -230,6 +223,7 @@ pub const Session = struct {
             .log = log,
             .options = options,
             .auth_options = auth_options,
+            .waiter = try transport_waiter.Waiter.init(allocator),
             .transport = t,
             .read_thread = null,
             .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.uninitialized),
@@ -296,7 +290,7 @@ pub const Session = struct {
             // close to *not* trigger) the session didnt get "closed", ensure we do that...
             // but... we ignore errors here since we want deinit to return void and it really
             // shouldn't matter if something errors during close
-            // zlint-disable suppressed-errors
+            // zlint-disable-next-line suppressed-errors
             self.close() catch {};
         }
 
@@ -318,6 +312,7 @@ pub const Session = struct {
             re.pcre2Free(self.compiled_prompt_pattern.?);
         }
 
+        self.waiter.deinit();
         self.transport.deinit();
         self.read_queue.deinit();
 
@@ -377,8 +372,12 @@ pub const Session = struct {
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            std.time.sleep(self.options.read_delay_min_ns);
+            std.time.sleep(min_read_delay_ns);
         }
+
+        // need to unblock the transport waiter after signaling the read thread to stop, this will
+        // break any blocking read, then the readloop can nicely exit
+        try self.waiter.unblock();
 
         if (self.read_thread) |t| {
             t.join();
@@ -425,27 +424,15 @@ pub const Session = struct {
         var buf = try self.allocator.alloc(u8, self.options.read_size);
         defer self.allocator.free(buf);
 
-        var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
-
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            defer std.time.sleep(cur_read_delay_ns);
-
-            const n = self.transport.read(buf) catch {
+            const n = self.transport.read(self.waiter, buf) catch {
                 self.read_thread_errored = true;
 
                 return;
             };
 
             if (n == 0) {
-                cur_read_delay_ns = time.getBackoffValue(
-                    cur_read_delay_ns,
-                    self.options.read_delay_max_ns,
-                    self.options.read_delay_backoff_factor,
-                );
-
                 continue;
-            } else {
-                cur_read_delay_ns = self.options.read_delay_min_ns;
             }
 
             if (self.recorder) |recorder| {
@@ -478,7 +465,7 @@ pub const Session = struct {
             self.log.debug("write: '{s}'", .{std.fmt.fmtSliceEscapeLower(buf)});
         }
 
-        try self.transport.write(buf);
+        try self.transport.write(self.waiter, buf);
     }
 
     pub fn writeReturn(self: *Session) !void {
@@ -502,8 +489,6 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("in session authentication starting...", .{});
 
-        var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
-
         var bufs = ReadBufs.init(allocator);
         defer bufs.deinit();
 
@@ -526,14 +511,12 @@ pub const Session = struct {
             const elapsed_time = timer.read();
 
             if (self.options.operation_timeout_ns != 0 and
-                (elapsed_time + cur_read_delay_ns) > self.options.operation_timeout_ns)
+                elapsed_time >= self.options.operation_timeout_ns)
             {
                 self.log.critical("op timeout exceeded", .{});
 
                 return errors.ScrapliError.TimeoutExceeded;
             }
-
-            defer std.time.sleep(cur_read_delay_ns);
 
             const n = self.read(buf) catch |err| {
                 switch (err) {
@@ -559,15 +542,7 @@ pub const Session = struct {
             };
 
             if (n == 0) {
-                cur_read_delay_ns = time.getBackoffValue(
-                    cur_read_delay_ns,
-                    self.options.read_delay_max_ns,
-                    self.options.read_delay_backoff_factor,
-                );
-
                 continue;
-            } else {
-                cur_read_delay_ns = self.options.read_delay_min_ns;
             }
 
             try bufs.appendSliceBoth(buf[0..n]);
@@ -704,6 +679,19 @@ pub const Session = struct {
         }
     }
 
+    pub fn getReadBackoff(
+        cur_val: u64,
+    ) u64 {
+        var new_val: u64 = cur_val;
+
+        new_val *= 2;
+        if (new_val > max_read_delay_ns) {
+            new_val = max_read_delay_ns;
+        }
+
+        return new_val;
+    }
+
     fn readTimeout(
         self: *Session,
         timer: *std.time.Timer,
@@ -712,7 +700,7 @@ pub const Session = struct {
         args: ReadArgs,
         bufs: *ReadBufs,
     ) !MatchPositions {
-        var cur_read_delay_ns: u64 = self.options.read_delay_min_ns;
+        var cur_read_delay_ns: u64 = min_read_delay_ns;
 
         // to ensure the check_read_operation_done function doesnt think we are done "early" by
         // finding a match from an earlier prompt we snag the len of the processed buf then we
@@ -735,7 +723,7 @@ pub const Session = struct {
             // if timeout is 0 we dont timeout -- we do this to let users 1) disable it but also
             // 2) to let the ffi layer via (go) context control it for example
             if (self.options.operation_timeout_ns != 0 and
-                (elapsed_time + cur_read_delay_ns) > self.options.operation_timeout_ns)
+                (elapsed_time + cur_read_delay_ns) >= self.options.operation_timeout_ns)
             {
                 self.log.critical("op timeout exceeded", .{});
 
@@ -747,15 +735,13 @@ pub const Session = struct {
             const n = try self.read(buf);
 
             if (n == 0) {
-                cur_read_delay_ns = time.getBackoffValue(
+                cur_read_delay_ns = Session.getReadBackoff(
                     cur_read_delay_ns,
-                    self.options.read_delay_max_ns,
-                    self.options.read_delay_backoff_factor,
                 );
 
                 continue;
             } else {
-                cur_read_delay_ns = self.options.read_delay_min_ns;
+                cur_read_delay_ns = min_read_delay_ns;
             }
 
             try bufs.appendSliceBoth(buf[0..n]);

@@ -21,6 +21,8 @@ pub const FfiDriver = struct {
 
     real_driver: RealDriver,
 
+    poll_fds: [2]std.posix.fd_t,
+
     operation_id_counter: u32,
     operation_thread: ?std.Thread,
     operation_ready: std.atomic.Value(bool),
@@ -53,6 +55,7 @@ pub const FfiDriver = struct {
                     config,
                 ),
             },
+            .poll_fds = try std.posix.pipe(),
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -89,6 +92,7 @@ pub const FfiDriver = struct {
                     config,
                 ),
             },
+            .poll_fds = try std.posix.pipe(),
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -133,6 +137,10 @@ pub const FfiDriver = struct {
                 d.deinit();
             },
         }
+
+        // close the ffi layer poll fds
+        std.posix.close(self.poll_fds[0]);
+        std.posix.close(self.poll_fds[1]);
 
         self.allocator.destroy(self);
     }
@@ -210,6 +218,13 @@ pub const FfiDriver = struct {
 
             std.time.sleep(operation_thread_ready_sleep);
         }
+    }
+
+    fn writePollWakeUp(self: *FfiDriver) !void {
+        // TODO we should probably either make this conditional -- as in only use fd for wakeup
+        // when doing async polling, -- or -- just always do this and remove the wait backoff
+        // and wait method
+        _ = try std.posix.write(self.poll_fds[1], "x");
     }
 
     /// The operation loop is the "thing" that actually invokes user requested functions by popping
@@ -345,6 +360,10 @@ pub const FfiDriver = struct {
             }
 
             self.operation_lock.unlock();
+
+            self.writePollWakeUp() catch {
+                @panic("failed writing to wakeup fd, cannot proceed");
+            };
         }
 
         self.log(logging.LogLevel.info, "operation thread stopped", .{});
@@ -600,36 +619,13 @@ pub const FfiDriver = struct {
             }
 
             self.operation_lock.unlock();
+
+            self.writePollWakeUp() catch {
+                @panic("failed writing to wakeup fd, cannot proceed");
+            };
         }
 
         self.log(logging.LogLevel.info, "operation thread stopped", .{});
-    }
-
-    /// Poll the result hash for the presence of a "done" result for the given operation id.
-    pub fn pollOperation(
-        self: *FfiDriver,
-        operation_id: u32,
-        remove: bool,
-    ) !ffi_operations.OperationResult {
-        self.operation_lock.lock();
-        defer self.operation_lock.unlock();
-
-        if (!self.operation_results.contains(operation_id)) {
-            return errors.ScrapliError.BadOperationId;
-        }
-
-        const ret = self.operation_results.get(operation_id);
-        if (ret == null) {
-            // unreachable because we already checked if the id is present
-            unreachable;
-        }
-
-        if (remove) {
-            // clean it up
-            _ = self.operation_results.remove(operation_id);
-        }
-
-        return ret.?;
     }
 
     pub fn queueOperation(
@@ -680,5 +676,31 @@ pub const FfiDriver = struct {
         self.operation_condition.signal();
 
         return operation_id;
+    }
+
+    pub fn dequeueOperation(
+        self: *FfiDriver,
+        operation_id: u32,
+        remove: bool,
+    ) !ffi_operations.OperationResult {
+        self.operation_lock.lock();
+        defer self.operation_lock.unlock();
+
+        if (!self.operation_results.contains(operation_id)) {
+            return errors.ScrapliError.BadOperationId;
+        }
+
+        const ret = self.operation_results.get(operation_id);
+        if (ret == null) {
+            // unreachable because we already checked if the id is present
+            unreachable;
+        }
+
+        if (remove) {
+            // clean it up
+            _ = self.operation_results.remove(operation_id);
+        }
+
+        return ret.?;
     }
 };

@@ -499,8 +499,6 @@ pub const Driver = struct {
         options: operation.OpenOptions,
         timer: *std.time.Timer,
     ) ![]u8 {
-        var cur_read_delay_ns: u64 = self.session.options.read_delay_min_ns;
-
         var _cap_buf = std.ArrayList([]u8).init(allocator);
         defer {
             for (_cap_buf.items) |cap| {
@@ -525,7 +523,7 @@ pub const Driver = struct {
             const elapsed_time = timer.read();
 
             if (self.session.options.operation_timeout_ns != 0 and
-                (elapsed_time + cur_read_delay_ns) > self.session.options.operation_timeout_ns)
+                elapsed_time >= self.session.options.operation_timeout_ns)
             {
                 self.log.critical("op timeout exceeded", .{});
 
@@ -535,11 +533,7 @@ pub const Driver = struct {
             const n = try self.session.read(_read_cap_buf);
 
             if (n == 0) {
-                cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
-
                 continue;
-            } else {
-                cur_read_delay_ns = self.session.options.read_delay_min_ns;
             }
 
             if (!found_cap_start) {
@@ -808,17 +802,6 @@ pub const Driver = struct {
         try self.session.writeAndReturn(caps, false);
     }
 
-    fn getReadDelay(self: *Driver, cur_read_delay_ns: u64) u64 {
-        var new_read_delay_ns: u64 = cur_read_delay_ns;
-
-        new_read_delay_ns *= self.session.options.read_delay_backoff_factor;
-        if (new_read_delay_ns > self.session.options.read_delay_max_ns) {
-            new_read_delay_ns = self.session.options.read_delay_max_ns;
-        }
-
-        return new_read_delay_ns;
-    }
-
     fn processLoop(
         self: *Driver,
     ) !void {
@@ -829,8 +812,6 @@ pub const Driver = struct {
 
         var message_buf = std.ArrayList(u8).init(self.allocator);
         defer message_buf.deinit();
-
-        var cur_read_delay_ns: u64 = self.session.options.read_delay_min_ns;
 
         // SAFETY: will always be set in switch
         var message_complete_delim: []const u8 = undefined;
@@ -844,8 +825,6 @@ pub const Driver = struct {
         }
 
         while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
-            defer std.time.sleep(cur_read_delay_ns);
-
             var n = self.session.read(buf) catch |err| {
                 switch (err) {
                     errors.ScrapliError.EOF => {
@@ -885,11 +864,7 @@ pub const Driver = struct {
             };
 
             if (n == 0) {
-                cur_read_delay_ns = self.getReadDelay(cur_read_delay_ns);
-
                 continue;
-            } else {
-                cur_read_delay_ns = self.session.options.read_delay_min_ns;
             }
 
             try message_buf.appendSlice(buf[0..n]);

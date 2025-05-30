@@ -4,7 +4,6 @@
 const std = @import("std");
 
 const cli = @import("../../cli.zig");
-const auth = @import("../../auth.zig");
 const operation = @import("../../cli-operation.zig");
 const mode = @import("../../cli-mode.zig");
 const flags = @import("../../flags.zig");
@@ -104,9 +103,6 @@ fn GetTestDriver(f: []const u8) !*cli.Driver {
             },
             .session = .{
                 .read_size = 1,
-                .read_delay_backoff_factor = 1,
-                .read_delay_min_ns = 1,
-                .read_delay_max_ns = 1,
             },
             .transport = .{
                 .test_ = .{

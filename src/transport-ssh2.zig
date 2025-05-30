@@ -2,6 +2,7 @@ const std = @import("std");
 const auth = @import("auth.zig");
 const logging = @import("logging.zig");
 const errors = @import("errors.zig");
+const transport_waiter = @import("transport-waiter.zig");
 
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
@@ -898,7 +899,7 @@ pub const Transport = struct {
         }
     }
 
-    pub fn write(self: *Transport, buf: []const u8) !void {
+    pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
@@ -906,7 +907,7 @@ pub const Transport = struct {
 
         if (n == LIBSSH2_ERROR_EAGAIN) {
             // would block
-            return self.write(buf);
+            return self.write(w, buf);
         }
 
         if (n < 0) {
@@ -920,10 +921,10 @@ pub const Transport = struct {
         }
     }
 
-    pub fn read(self: *Transport, buf: []u8) !usize {
+    pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
         self.session_lock.lock();
-        defer self.session_lock.unlock();
 
+        // only lock around the actual read, not waiting on kqueue/epoll stuff
         const n = ssh2.libssh2_channel_read_ex(
             self.channel.?,
             @as(c_int, 0),
@@ -931,8 +932,11 @@ pub const Transport = struct {
             @intCast(buf.len),
         );
 
+        self.session_lock.unlock();
+
         if (n == LIBSSH2_ERROR_EAGAIN) {
-            // would block
+            try w.wait(self.socket.?);
+
             return 0;
         }
 

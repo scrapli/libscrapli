@@ -4,6 +4,7 @@ const file = @import("file.zig");
 const logging = @import("logging.zig");
 const strings = @import("strings.zig");
 const errors = @import("errors.zig");
+const transport_waiter = @import("transport-waiter.zig");
 
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
@@ -430,7 +431,7 @@ pub const Transport = struct {
         };
     }
 
-    pub fn read(self: *Transport, buf: []u8) !usize {
+    pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
         if (self.reader == null) {
             return errors.ScrapliError.NotOpened;
         }
@@ -438,6 +439,8 @@ pub const Transport = struct {
         const n = self.reader.?.read(buf) catch |err| {
             switch (err) {
                 error.WouldBlock => {
+                    try w.wait(self.f.?.handle);
+
                     return 0;
                 },
                 else => {

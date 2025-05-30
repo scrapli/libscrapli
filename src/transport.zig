@@ -4,6 +4,7 @@ const transport_bin = @import("transport-bin.zig");
 const transport_telnet = @import("transport-telnet.zig");
 const transport_ssh2 = @import("transport-ssh2.zig");
 const transport_test = @import("transport-test.zig");
+const transport_waiter = @import("transport-waiter.zig");
 const logging = @import("logging.zig");
 
 pub const Kind = enum {
@@ -287,7 +288,7 @@ pub const Transport = struct {
         self.log.debug("transport close successful...", .{});
     }
 
-    pub fn write(self: *Transport, buf: []const u8) !void {
+    pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
         switch (self.implementation) {
             Kind.bin => |t| {
                 try t.write(buf);
@@ -296,7 +297,7 @@ pub const Transport = struct {
                 try t.write(buf);
             },
             Kind.ssh2 => |t| {
-                try t.write(buf);
+                try t.write(w, buf);
             },
             Kind.test_ => |t| {
                 try t.write(buf);
@@ -304,18 +305,18 @@ pub const Transport = struct {
         }
     }
 
-    pub fn read(self: *Transport, buf: []u8) !usize {
+    pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
         var n: usize = 0;
 
         switch (self.implementation) {
             Kind.bin => |t| {
-                n = try t.read(buf);
+                n = try t.read(w, buf);
             },
             Kind.telnet => |t| {
-                n = try t.read(buf);
+                n = try t.read(w, buf);
             },
             Kind.ssh2 => |t| {
-                n = try t.read(buf);
+                n = try t.read(w, buf);
             },
             Kind.test_ => |t| {
                 n = try t.read(buf);

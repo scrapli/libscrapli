@@ -7,7 +7,7 @@ fmt: ## Format all zig files
 	zig fmt ./
 
 lint: ## Lint all zig files
-	zlint -V ./src
+	zlint -V
 
 test: fmt ## Run unit tests
 	zig build test --summary all

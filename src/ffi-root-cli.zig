@@ -5,8 +5,6 @@ const ffi_operations = @import("ffi-operations.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
 
 const logging = @import("logging.zig");
-const ascii = @import("ascii.zig");
-const time = @import("time.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -182,12 +180,9 @@ export fn ls_cli_close(
     return 0;
 }
 
-/// Poll a given operation id, if the operation is completed fill a result and error u64 pointer
-/// so the caller can subsequenty call fetch with appropriately sized buffers.
-export fn ls_cli_poll_operation(
+export fn ls_cli_fetch_operation_sizes(
     d_ptr: usize,
     operation_id: u32,
-    operation_done: *bool,
     operation_count: *u32,
     operation_input_size: *u64,
     operation_result_raw_size: *u64,
@@ -197,7 +192,7 @@ export fn ls_cli_poll_operation(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const ret = d.pollOperation(operation_id, false) catch |err| {
+    const ret = d.dequeueOperation(operation_id, false) catch |err| {
         d.log(
             logging.LogLevel.critical,
             "error during poll operation {any}",
@@ -206,14 +201,6 @@ export fn ls_cli_poll_operation(
 
         return 1;
     };
-
-    if (!ret.done) {
-        operation_done.* = false;
-
-        return 0;
-    }
-
-    operation_done.* = true;
 
     if (ret.err != null) {
         const err_name = @errorName(ret.err.?);
@@ -248,83 +235,6 @@ export fn ls_cli_poll_operation(
     return 0;
 }
 
-export fn ls_cli_wait_operation(
-    d_ptr: usize,
-    operation_id: u32,
-    operation_done: *bool,
-    operation_count: *u32,
-    operation_input_size: *u64,
-    operation_result_raw_size: *u64,
-    operation_result_size: *u64,
-    operation_failure_indicator_size: *u64,
-    operation_error_size: *u64,
-) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    var cur_read_delay_ns: u64 = d.real_driver.cli.session.options.read_delay_min_ns;
-
-    while (true) {
-        const ret = d.pollOperation(operation_id, false) catch |err| {
-            d.log(
-                logging.LogLevel.critical,
-                "error during poll operation {any}",
-                .{err},
-            );
-
-            return 1;
-        };
-
-        if (!ret.done) {
-            cur_read_delay_ns = time.getBackoffValue(
-                cur_read_delay_ns,
-                d.real_driver.cli.session.options.read_delay_max_ns,
-                d.real_driver.cli.session.options.read_delay_backoff_factor,
-            );
-
-            std.time.sleep(cur_read_delay_ns);
-
-            continue;
-        }
-
-        operation_done.* = true;
-
-        if (ret.err != null) {
-            const err_name = @errorName(ret.err.?);
-
-            operation_result_size.* = 0;
-            operation_error_size.* = err_name.len;
-        } else {
-            const dret = switch (ret.result) {
-                .cli => |r| r.?,
-                else => @panic("attempting to access non cli result from cli type"),
-            };
-
-            operation_count.* = @intCast(dret.results.items.len);
-
-            operation_input_size.* = dret.getInputLen(
-                .{ .delimiter = operation_delimiter },
-            );
-            operation_result_raw_size.* = dret.getResultRawLen(
-                .{ .delimiter = operation_delimiter },
-            );
-            operation_result_size.* = dret.getResultLen(
-                .{ .delimiter = operation_delimiter },
-            );
-            operation_failure_indicator_size.* = 0;
-            operation_error_size.* = 0;
-
-            if (dret.result_failure_indicated) {
-                operation_failure_indicator_size.* = dret.failed_indicators.?.items[@intCast(dret.result_failure_indicator)].len;
-            }
-        }
-
-        return 0;
-    }
-}
-
-/// Fetches the result of the given operation id -- writing the result and error into the given
-/// buffers. Must be preceeded by a `pollOperation` or `waitOperation` in order to get the sizes
-/// of the result and error buffers.
 export fn ls_cli_fetch_operation(
     d_ptr: usize,
     operation_id: u32,
@@ -338,7 +248,7 @@ export fn ls_cli_fetch_operation(
 ) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const ret = d.pollOperation(operation_id, true) catch |err| {
+    const ret = d.dequeueOperation(operation_id, true) catch |err| {
         d.log(
             logging.LogLevel.critical,
             "error during fetch operation {any}",

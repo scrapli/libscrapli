@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const ffi_driver = @import("ffi-driver.zig");
-const ffi_operations = @import("ffi-operations.zig");
 const ffi_apply_options = @import("ffi-apply-options.zig");
 const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
@@ -167,8 +166,9 @@ export fn ls_netconf_alloc(
                 transport.Kind.ssh2 => .{ .ssh2 = .{} },
                 transport.Kind.test_ => .{ .test_ = .{} },
                 else => {
-                    // only for telnet in the case of netconf (obvs)
-                    unreachable;
+                    log.critical("telnet is not a valid transport for netconf", .{});
+
+                    return 0;
                 },
             },
         },
@@ -179,6 +179,14 @@ export fn ls_netconf_alloc(
     };
 
     return @intFromPtr(d);
+}
+
+export fn ls_shared_get_poll_fd(
+    d_ptr: usize,
+) u32 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    return @intCast(d.poll_fds[0]);
 }
 
 export fn ls_shared_free(

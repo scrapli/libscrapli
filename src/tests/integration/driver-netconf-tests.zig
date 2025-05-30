@@ -40,9 +40,6 @@ fn GetTestDriver(f: []const u8) !*netconf.Driver {
                 // by turning all the timeouts off and having the default netconf search
                 // depth be low we speed up the tests quite a bit
                 .read_size = 1,
-                .read_delay_backoff_factor = 0,
-                .read_delay_min_ns = 0,
-                .read_delay_max_ns = 0,
                 .operation_timeout_ns = std.time.ns_per_min * 1,
             },
             .transport = .{
