@@ -9,7 +9,7 @@ if [[ -z "$LIBSCRAPLI_TAG" ]]; then
     git clone --depth 1 https://github.com/scrapli/libscrapli
 
 elif [[ "$LIBSCRAPLI_TAG" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
-    git clone --depth 1 https://github.com/scrapli/libscrapli
+    git clone https://github.com/scrapli/libscrapli
     git -C ./libscrapli/ checkout "$LIBSCRAPLI_TAG"
 
 else
