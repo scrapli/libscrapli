@@ -19,7 +19,6 @@ jobs:
           source .github/vars.env
           echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
           echo "ZLINT_VERSION=$ZLINT_VERSION" >> "$GITHUB_ENV"
-          echo "KCOV_VERSION=$KCOV_VERSION" >> "$GITHUB_ENV"
 
       - name: setup zig
         uses: mlugg/setup-zig@v1
