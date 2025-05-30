@@ -35,7 +35,9 @@ pub const EpollWaiter = struct {
     }
 
     pub fn deinit(self: *EpollWaiter) void {
-        // TODO prolly close th eepoll and event fds
+        _ = std.os.linux.close(self.ep);
+        _ = std.os.linux.close(self.ev);
+
         self.allocator.destroy(self);
     }
 
@@ -45,8 +47,6 @@ pub const EpollWaiter = struct {
             .data = .{ .fd = fd },
         };
 
-        // TODO i assume this returns a normal error code style thing?
-        // Register once — you may want to cache this
         _ = std.os.linux.epoll_ctl(
             self.ep,
             std.os.linux.EPOLL.CTL_ADD,
@@ -56,8 +56,7 @@ pub const EpollWaiter = struct {
 
         var out: [1]std.os.linux.epoll_event = undefined;
 
-        const n = std.os.linux.epoll_wait(self.ep, &out, 1, -1);
-        if (n == 0) return error.Timeout;
+        _ = std.os.linux.epoll_wait(self.ep, &out, 1, -1);
     }
 
     pub fn unblock(self: EpollWaiter) !void {
