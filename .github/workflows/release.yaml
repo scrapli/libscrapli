@@ -53,7 +53,7 @@ jobs:
 
       - name: extract version number from files
         run: |
-          LIB_VERSION=$(basename $(ls zig-out/aarch64-linux) | grep -o -E "\d+\.\d+\.\d+(.*)?")
+          LIB_VERSION=$(basename $(ls zig-out/aarch64-linux-gnu) | grep -o -E "\d+\.\d+\.\d+(.*)?")
           echo "LIB_VERSION=$LIB_VERSION" >> "$GITHUB_ENV"
 
       # note, have to rename before uploading since libscrapli.so.VERSION is the same for all the
@@ -62,8 +62,11 @@ jobs:
         run: |
           gh release upload ${{ github.ref_name }} zig-out/checksums.txt
 
-          mv zig-out/aarch64-linux/libscrapli.so.${{ env.LIB_VERSION }} zig-out/aarch64-linux/libscrapli-aarch64-linux.so.${{ env.LIB_VERSION }}
-          gh release upload ${{ github.ref_name }} zig-out/aarch64-linux/libscrapli-aarch64-linux.so.${{ env.LIB_VERSION }}#libscrapli-aarch64-linux-${{ env.RELEASE_VERSION }}
+          mv zig-out/aarch64-linux-gnu/libscrapli.so.${{ env.LIB_VERSION }} zig-out/aarch64-linux-gnu/libscrapli-aarch64-linux-gnu.so.${{ env.LIB_VERSION }}
+          gh release upload ${{ github.ref_name }} zig-out/aarch64-linux-gnu/libscrapli-aarch64-linux-gnu.so.${{ env.LIB_VERSION }}#libscrapli-aarch64-linux-gnu-${{ env.RELEASE_VERSION }}
+
+          mv zig-out/aarch64-linux-musl/libscrapli.so.${{ env.LIB_VERSION }} zig-out/aarch64-linux-musl/libscrapli-aarch64-linux-musl.so.${{ env.LIB_VERSION }}
+          gh release upload ${{ github.ref_name }} zig-out/aarch64-linux-musl/libscrapli-aarch64-linux-musl.so.${{ env.LIB_VERSION }}#libscrapli-aarch64-linux-musl-${{ env.RELEASE_VERSION }}
 
           mv zig-out/aarch64-macos/libscrapli.${{ env.LIB_VERSION }}.dylib zig-out/aarch64-macos/libscrapli-aarch64-macos.dylib.${{ env.LIB_VERSION }}
           gh release upload ${{ github.ref_name }} zig-out/aarch64-macos/libscrapli-aarch64-macos.dylib.${{ env.LIB_VERSION }}#libscrapli-aarch64-macos-${{ env.RELEASE_VERSION }}
