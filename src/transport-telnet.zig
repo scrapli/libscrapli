@@ -290,9 +290,7 @@ pub const Transport = struct {
             switch (err) {
                 error.WouldBlock => {
                     if (w) |waiter| {
-                        waiter.wait(self.stream.?.handle) catch |wait_err| {
-                            return wait_err;
-                        };
+                        try waiter.wait(self.stream.?.handle);
                     }
 
                     return 0;

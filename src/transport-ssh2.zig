@@ -900,8 +900,6 @@ pub const Transport = struct {
     }
 
     pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
-        try w.unblock();
-
         self.session_lock.lock();
         defer self.session_lock.unlock();
 

@@ -1,7 +1,5 @@
 const std = @import("std");
-const ascii = @import("ascii.zig");
 const operation = @import("cli-operation.zig");
-const bytes = @import("bytes.zig");
 
 pub const Result = struct {
     allocator: std.mem.Allocator,

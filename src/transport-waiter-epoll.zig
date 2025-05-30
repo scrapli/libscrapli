@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const c = @cImport({
     @cInclude("unistd.h");
@@ -36,6 +35,7 @@ pub const EpollWaiter = struct {
     }
 
     pub fn deinit(self: *EpollWaiter) void {
+        // TODO prolly close th eepoll and event fds
         self.allocator.destroy(self);
     }
 

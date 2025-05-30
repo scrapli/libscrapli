@@ -289,7 +289,7 @@ pub const Session = struct {
             // close to *not* trigger) the session didnt get "closed", ensure we do that...
             // but... we ignore errors here since we want deinit to return void and it really
             // shouldn't matter if something errors during close
-            // zlint-disable suppressed-errors
+            // zlint-disable-next-line suppressed-errors
             self.close() catch {};
         }
 
@@ -370,13 +370,13 @@ pub const Session = struct {
     pub fn close(self: *Session) !void {
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
-        // need to unblock the transport waiter after signaling the read thread to stop, this will
-        // break any blocking read, then the readloop can nicely exit
-        try self.waiter.unblock();
-
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
             std.time.sleep(read_loop_delay_ns);
         }
+
+        // need to unblock the transport waiter after signaling the read thread to stop, this will
+        // break any blocking read, then the readloop can nicely exit
+        try self.waiter.unblock();
 
         if (self.read_thread) |t| {
             t.join();
@@ -682,6 +682,19 @@ pub const Session = struct {
         }
     }
 
+    pub fn getReadBackoff(
+        cur_val: u64,
+    ) u64 {
+        var new_val: u64 = cur_val;
+
+        new_val *= 2;
+        if (new_val > 7_500_000) {
+            new_val = 7_500_000;
+        }
+
+        return new_val;
+    }
+
     fn readTimeout(
         self: *Session,
         timer: *std.time.Timer,
@@ -690,6 +703,8 @@ pub const Session = struct {
         args: ReadArgs,
         bufs: *ReadBufs,
     ) !MatchPositions {
+        var cur_read_delay_ns: u64 = 5_000;
+
         // to ensure the check_read_operation_done function doesnt think we are done "early" by
         // finding a match from an earlier prompt we snag the len of the processed buf then we
         // just send that to the end of the buffer to the check func, we have to make sure we
@@ -711,19 +726,25 @@ pub const Session = struct {
             // if timeout is 0 we dont timeout -- we do this to let users 1) disable it but also
             // 2) to let the ffi layer via (go) context control it for example
             if (self.options.operation_timeout_ns != 0 and
-                elapsed_time >= self.options.operation_timeout_ns)
+                (elapsed_time + cur_read_delay_ns) >= self.options.operation_timeout_ns)
             {
                 self.log.critical("op timeout exceeded", .{});
 
                 return errors.ScrapliError.TimeoutExceeded;
             }
 
-            defer std.time.sleep(read_loop_delay_ns);
+            defer std.time.sleep(cur_read_delay_ns);
 
             const n = try self.read(buf);
 
             if (n == 0) {
+                cur_read_delay_ns = Session.getReadBackoff(
+                    cur_read_delay_ns,
+                );
+
                 continue;
+            } else {
+                cur_read_delay_ns = 5_000;
             }
 
             try bufs.appendSliceBoth(buf[0..n]);

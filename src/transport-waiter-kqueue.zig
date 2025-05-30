@@ -1,9 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
-
-const EVADD = 0x0001;
-const EVCLEAR = 0x0020;
-const EVNOTETRIGGER = 0x0100;
 
 const UNBLOCK_IDENT = 1;
 
@@ -19,8 +14,8 @@ pub const KqueueWaiter = struct {
 
         const user_event = std.posix.Kevent{
             .ident = UNBLOCK_IDENT,
-            .filter = -10, // EVFILT_USER
-            .flags = EVADD | EVCLEAR,
+            .filter = std.c.EVFILT.USER,
+            .flags = std.c.EV.ADD | std.c.EV.CLEAR,
             .fflags = 0,
             .data = 0,
             .udata = 0,
@@ -42,6 +37,7 @@ pub const KqueueWaiter = struct {
     }
 
     pub fn deinit(self: *KqueueWaiter) void {
+        std.posix.close(self.kq);
         self.allocator.destroy(self);
     }
 
@@ -50,8 +46,8 @@ pub const KqueueWaiter = struct {
 
         const ev = std.posix.Kevent{
             .ident = @intCast(fd),
-            .filter = -1, // read
-            .flags = EVADD | EVCLEAR,
+            .filter = std.c.EVFILT.READ,
+            .flags = std.c.EV.ADD | std.c.EV.CLEAR,
             .fflags = 0,
             .data = 0,
             .udata = 0,
@@ -70,6 +66,8 @@ pub const KqueueWaiter = struct {
             try self.registerFd(fd);
         }
 
+        // fairly sure we need this to be sized to 2 -- for each event type we care about receiving
+        // -- that is the there is data available and our unblock messages
         var out: [2]std.posix.Kevent = undefined;
 
         _ = try std.posix.kevent(
@@ -82,10 +80,10 @@ pub const KqueueWaiter = struct {
 
     pub fn unblock(self: *KqueueWaiter) !void {
         const event = std.posix.Kevent{
-            .ident = 1,
-            .filter = -10, // EVFILT_USER
+            .ident = UNBLOCK_IDENT,
+            .filter = std.c.EVFILT.USER,
             .flags = 0,
-            .fflags = EVNOTETRIGGER,
+            .fflags = std.c.NOTE.TRIGGER,
             .data = 0,
             .udata = 0,
         };

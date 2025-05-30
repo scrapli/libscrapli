@@ -4,7 +4,6 @@
 const std = @import("std");
 
 const cli = @import("../../cli.zig");
-const auth = @import("../../auth.zig");
 const operation = @import("../../cli-operation.zig");
 const mode = @import("../../cli-mode.zig");
 const flags = @import("../../flags.zig");

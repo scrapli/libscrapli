@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const cli = @import("cli.zig");
 const netconf = @import("netconf.zig");
@@ -24,11 +23,6 @@ pub const FfiDriver = struct {
 
     poll_fds: [2]std.posix.fd_t,
 
-    // settings configuring sleep for wait operations on ffi things
-    wait_poll_delay_min_ns: u64 = 5_000,
-    wait_poll_delay_max_ns: u64 = 7_500_000,
-    wait_poll_delay_backoff_factor: u8 = 2,
-
     operation_id_counter: u32,
     operation_thread: ?std.Thread,
     operation_ready: std.atomic.Value(bool),
@@ -52,14 +46,6 @@ pub const FfiDriver = struct {
     ) !*FfiDriver {
         const ffi_driver = try allocator.create(FfiDriver);
 
-        var poll_fds: [2]std.posix.fd_t = undefined;
-
-        if (builtin.target.os.tag == .linux) {
-            poll_fds = [2]std.posix.fd_t{ 0, try std.os.eventfd(0, 0) };
-        } else if (builtin.target.os.tag == .macos) {
-            poll_fds = try std.posix.pipe();
-        }
-
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .real_driver = RealDriver{
@@ -69,7 +55,7 @@ pub const FfiDriver = struct {
                     config,
                 ),
             },
-            .poll_fds = poll_fds,
+            .poll_fds = try std.posix.pipe(),
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -97,14 +83,6 @@ pub const FfiDriver = struct {
     ) !*FfiDriver {
         const ffi_driver = try allocator.create(FfiDriver);
 
-        var poll_fds: [2]std.posix.fd_t = undefined;
-
-        if (builtin.target.os.tag == .linux) {
-            poll_fds = [2]std.posix.fd_t{ 0, try std.os.eventfd(0, 0) };
-        } else if (builtin.target.os.tag == .macos) {
-            poll_fds = try std.posix.pipe();
-        }
-
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .real_driver = RealDriver{
@@ -114,7 +92,7 @@ pub const FfiDriver = struct {
                     config,
                 ),
             },
-            .poll_fds = poll_fds,
+            .poll_fds = try std.posix.pipe(),
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -245,29 +223,11 @@ pub const FfiDriver = struct {
         }
     }
 
-    pub fn getWaitBackoffValue(
-        self: *FfiDriver,
-        cur_val: u64,
-    ) u64 {
-        var new_val: u64 = cur_val;
-
-        new_val *= self.wait_poll_delay_backoff_factor;
-        if (new_val > self.wait_poll_delay_max_ns) {
-            new_val = self.wait_poll_delay_max_ns;
-        }
-
-        return new_val;
-    }
-
     fn writePollWakeUp(self: *FfiDriver) !void {
-        if (self.poll_fds[1] != 0) {
-            // we have read and write side -- darwin, so write one byte
-            const wakeup_fd = self.poll_fds[1];
-            _ = try std.posix.write(wakeup_fd, "x");
-        } else {
-            const wakeup_fd = self.poll_fds[1];
-            _ = try std.posix.write(wakeup_fd, "x");
-        }
+        // TODO we should probably either make this conditional -- as in only use fd for wakeup
+        // when doing async polling, -- or -- just always do this and remove the wait backoff
+        // and wait method
+        _ = try std.posix.write(self.poll_fds[1], "x");
     }
 
     /// The operation loop is the "thing" that actually invokes user requested functions by popping
@@ -404,11 +364,8 @@ pub const FfiDriver = struct {
 
             self.operation_lock.unlock();
 
-            // TODO here is where we write a wakeup signal to the poll fd that py/go reads from
-            // update hte netconf one too fi i cahnge stuff here
             self.writePollWakeUp() catch {
-                std.debug.print("FOOOOOOOP\n", .{});
-                @panic("failed writing to wakeup fd");
+                @panic("failed writing to wakeup fd, cannot proceed");
             };
         }
 
@@ -667,38 +624,11 @@ pub const FfiDriver = struct {
             self.operation_lock.unlock();
 
             self.writePollWakeUp() catch {
-                @panic("failed writing to wakeup fd");
+                @panic("failed writing to wakeup fd, cannot proceed");
             };
         }
 
         self.log(logging.LogLevel.info, "operation thread stopped", .{});
-    }
-
-    /// Poll the result hash for the presence of a "done" result for the given operation id.
-    pub fn pollOperation(
-        self: *FfiDriver,
-        operation_id: u32,
-        remove: bool,
-    ) !ffi_operations.OperationResult {
-        self.operation_lock.lock();
-        defer self.operation_lock.unlock();
-
-        if (!self.operation_results.contains(operation_id)) {
-            return errors.ScrapliError.BadOperationId;
-        }
-
-        const ret = self.operation_results.get(operation_id);
-        if (ret == null) {
-            // unreachable because we already checked if the id is present
-            unreachable;
-        }
-
-        if (remove) {
-            // clean it up
-            _ = self.operation_results.remove(operation_id);
-        }
-
-        return ret.?;
     }
 
     pub fn queueOperation(
@@ -749,5 +679,31 @@ pub const FfiDriver = struct {
         self.operation_condition.signal();
 
         return operation_id;
+    }
+
+    pub fn dequeueOperation(
+        self: *FfiDriver,
+        operation_id: u32,
+        remove: bool,
+    ) !ffi_operations.OperationResult {
+        self.operation_lock.lock();
+        defer self.operation_lock.unlock();
+
+        if (!self.operation_results.contains(operation_id)) {
+            return errors.ScrapliError.BadOperationId;
+        }
+
+        const ret = self.operation_results.get(operation_id);
+        if (ret == null) {
+            // unreachable because we already checked if the id is present
+            unreachable;
+        }
+
+        if (remove) {
+            // clean it up
+            _ = self.operation_results.remove(operation_id);
+        }
+
+        return ret.?;
     }
 };

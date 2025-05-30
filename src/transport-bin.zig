@@ -439,9 +439,7 @@ pub const Transport = struct {
         const n = self.reader.?.read(buf) catch |err| {
             switch (err) {
                 error.WouldBlock => {
-                    w.wait(self.f.?.handle) catch |wait_err| {
-                        return wait_err;
-                    };
+                    try w.wait(self.f.?.handle);
 
                     return 0;
                 },
