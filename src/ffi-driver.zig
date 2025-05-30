@@ -138,12 +138,9 @@ pub const FfiDriver = struct {
             },
         }
 
-        // close the ffi layer poll fd(s)
+        // close the ffi layer poll fds
         std.posix.close(self.poll_fds[0]);
-
-        if (self.poll_fds[1] != 0) {
-            std.posix.close(self.poll_fds[1]);
-        }
+        std.posix.close(self.poll_fds[1]);
 
         self.allocator.destroy(self);
     }
