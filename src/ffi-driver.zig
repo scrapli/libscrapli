@@ -114,16 +114,16 @@ pub const FfiDriver = struct {
     }
 
     pub fn deinit(self: *FfiDriver) void {
-        // signal to the operation thread to stop, cant defer unlock because it obviously needs
-        // to be unlocked for us to join on the thread or the thread would block waiting to acquire
+        // store the stop signal before signaling the operation thread to iterate
+        self.operation_stop.store(true, std.builtin.AtomicOrder.unordered);
+
+        // signal to the operation thread to iterate, it should then catch the stored stop condition
         self.operation_lock.lock();
         self.operation_condition.signal();
         self.operation_lock.unlock();
 
-        self.operation_stop.store(true, std.builtin.AtomicOrder.unordered);
-
-        if (self.operation_thread != null) {
-            self.operation_thread.?.join();
+        if (self.operation_thread) |ot| {
+            ot.join();
         }
 
         self.operation_queue.deinit();
