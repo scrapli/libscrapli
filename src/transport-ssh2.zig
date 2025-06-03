@@ -271,7 +271,7 @@ pub const Transport = struct {
             const sock = std.posix.socket(
                 addr.un.family,
                 std.posix.SOCK.STREAM,
-                0,
+                std.posix.IPPROTO.TCP,
             ) catch |err| {
                 self.log.warn(
                     "failed initializing socket for addr {any}, err: {}",
@@ -281,8 +281,21 @@ pub const Transport = struct {
                 continue;
             };
 
+            std.posix.connect(
+                sock,
+                @ptrCast(&addr),
+                addr.getOsSockLen(),
+            ) catch |err| {
+                self.log.warn("failed connecting socket, err: {}", .{err});
+
+                std.posix.close(sock);
+
+                continue;
+            };
+
             self.socket = sock;
-            break;
+
+            return;
         }
 
         if (self.socket == null) {
@@ -293,16 +306,6 @@ pub const Transport = struct {
 
             return errors.ScrapliError.OpenFailed;
         }
-
-        std.posix.connect(
-            self.socket.?,
-            @ptrCast(&resolved_addresses.addrs[0]),
-            resolved_addresses.addrs[0].getOsSockLen(),
-        ) catch |err| {
-            self.log.critical("failed connecting socket, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
-        };
     }
 
     fn initSession(
