@@ -299,7 +299,29 @@ pub const Transport = struct {
             );
         }
 
+        try self.open_args.append(
+            strings.MaybeHeapString{
+                .allocator = null,
+                .string = "-o",
+            },
+        );
+
         if (self.options.enable_strict_key) {
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = null,
+                    .string = "StrictHostKeyChecking=yes",
+                },
+            );
+        } else {
+            try self.open_args.append(
+                strings.MaybeHeapString{
+                    .allocator = null,
+                    .string = "StrictHostKeyChecking=no",
+                },
+            );
+
+            // if not strict checking, just /dev/null em too
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
@@ -310,7 +332,7 @@ pub const Transport = struct {
             try self.open_args.append(
                 strings.MaybeHeapString{
                     .allocator = null,
-                    .string = "StrictHostKeyChecking=yes",
+                    .string = "UserKnownHostsFile=/dev/null",
                 },
             );
         }
