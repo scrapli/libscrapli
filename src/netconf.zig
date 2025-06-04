@@ -1223,7 +1223,7 @@ pub const Driver = struct {
         {
             self.log.critical("op timeout exceeded", .{});
 
-            return errors.ScrapliError.RegexError;
+            return errors.ScrapliError.TimeoutExceeded;
         }
     }
 
