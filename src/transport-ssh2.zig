@@ -764,7 +764,7 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.critical("failed password authentication, will try keyboard interactive", .{});
+            self.log.warn("failed password authentication, will try keyboard interactive", .{});
 
             return errors.ScrapliError.OpenFailed;
         }

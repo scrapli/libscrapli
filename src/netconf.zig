@@ -842,7 +842,7 @@ pub const Driver = struct {
                             },
                         }
 
-                        self.log.critical(
+                        self.log.warn(
                             "message processing thread stopping, " ++
                                 "session read queue drained and read thread stopped",
                             .{},
