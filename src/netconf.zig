@@ -1890,42 +1890,7 @@ pub const Driver = struct {
             operation.RpcOptions{
                 .close_session = options,
             },
-        ) catch |err| {
-            switch (err) {
-                errors.ScrapliError.EOF => {
-                    // we may read an EOF and miss the reply when using ssh2 transport (due i think
-                    // in part or whole to being in non blocking mode). so... we lie. if we hit eof
-                    // we did indeed close the session... good enough format up and send an
-                    // appropriate response, allocate it and everything so normal deinit flow is
-                    // as expected
-                    const res = try self.NewResult(
-                        allocator,
-                        "",
-                        operation.Kind.close,
-                    );
-
-                    try res.record([2][]const u8{
-                        try std.fmt.allocPrint(
-                            allocator,
-                            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
-                        ,
-                            .{self.message_id - 1},
-                        ),
-                        try std.fmt.allocPrint(
-                            allocator,
-                            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
-                        ,
-                            .{self.message_id - 1},
-                        ),
-                    });
-
-                    return res;
-                },
-                else => {
-                    return err;
-                },
-            }
-        };
+        );
     }
 
     fn buildKillSessionElem(

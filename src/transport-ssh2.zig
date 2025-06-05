@@ -927,6 +927,14 @@ pub const Transport = struct {
     pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
         self.session_lock.lock();
 
+        if (ssh2.libssh2_channel_eof(self.channel.?) == 1) {
+            // because nonblock we will just eagain forever (really until the timeout catches us)
+            // if we dont check explicitly for eof, so do that
+            self.session_lock.unlock();
+
+            return errors.ScrapliError.EOF;
+        }
+
         // only lock around the actual read, not waiting on kqueue/epoll stuff
         const n = ssh2.libssh2_channel_read_ex(
             self.channel.?,
