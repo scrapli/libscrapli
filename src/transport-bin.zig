@@ -466,7 +466,7 @@ pub const Transport = struct {
                     return 0;
                 },
                 else => {
-                    self.log.critical("failed reading from pty, err: {}", .{err});
+                    self.log.warn("failed reading from pty, err: {}", .{err});
 
                     return errors.ScrapliError.ReadFailed;
                 },

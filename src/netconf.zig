@@ -833,25 +833,31 @@ pub const Driver = struct {
                         const owned_buf = try message_buf.toOwnedSlice();
                         defer self.allocator.free(owned_buf);
 
-                        switch (self.negotiated_version) {
-                            .version_1_0 => {
-                                try self.processFoundMessageVersion1_0(owned_buf);
-                            },
-                            .version_1_1 => {
-                                try self.processFoundMessageVersion1_1(owned_buf);
-                            },
+                        defer {
+                            self.log.warn(
+                                "message processing thread stopping, " ++
+                                    "session read queue drained and read thread stopped",
+                                .{},
+                            );
+
+                            // dont set this to true till we processed any remaining messages
+                            // otherwise we may bail out of dispatch rpc without seeing a close
+                            // session response
+                            self.process_thread_exited = true;
                         }
 
-                        self.log.warn(
-                            "message processing thread stopping, " ++
-                                "session read queue drained and read thread stopped",
-                            .{},
-                        );
-
-                        // dont set this to true till we processed any remaining messages
-                        // otherwise we may bail out of dispatch rpc without seeing a close
-                        // session response
-                        self.process_thread_exited = true;
+                        switch (self.negotiated_version) {
+                            // we'll just squash any errors we get from processing as we maybe
+                            // didnt even have valid data anyway
+                            .version_1_0 => {
+                                // zlint-disable suppressed-errors
+                                self.processFoundMessageVersion1_0(owned_buf) catch {};
+                            },
+                            .version_1_1 => {
+                                // zlint-disable suppressed-errors
+                                self.processFoundMessageVersion1_1(owned_buf) catch {};
+                            },
+                        }
 
                         return;
                     },
@@ -1152,6 +1158,12 @@ pub const Driver = struct {
             // first move the iter_idx past the chunk size marker, then consume cr/lf before the
             // actual chunk content (whitespace like an actual space is valid for chunks!)
             iter_idx = chunk_size_end_idx;
+
+            if (iter_idx + chunk_size >= buf.len) {
+                // just being defensive here, this should *not* happen in normal circumstances but
+                // ya know... shit happens
+                return errors.ScrapliError.ParsingError;
+            }
 
             while (true) {
                 if (buf[iter_idx] == ascii.control_chars.cr or
@@ -1890,7 +1902,43 @@ pub const Driver = struct {
             operation.RpcOptions{
                 .close_session = options,
             },
-        );
+        ) catch |err| {
+            switch (err) {
+                errors.ScrapliError.EOF, errors.ScrapliError.ParsingError => {
+                    // we may read an EOF and miss the reply when using ssh2 transport (due i think
+                    // in part or whole to being in non blocking mode). so... we lie. if we hit eof
+                    // *or* a parsing error (which can happen when we only read part of the close
+                    // reply from the server), we did indeed close the session... good enough...
+                    // format up and send an appropriate response, allocate it and everything so
+                    // normal deinit flow is as expected
+                    const res = try self.NewResult(
+                        allocator,
+                        "",
+                        operation.Kind.close,
+                    );
+
+                    try res.record([2][]const u8{
+                        try std.fmt.allocPrint(
+                            allocator,
+                            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
+                        ,
+                            .{self.message_id - 1},
+                        ),
+                        try std.fmt.allocPrint(
+                            allocator,
+                            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
+                        ,
+                            .{self.message_id - 1},
+                        ),
+                    });
+
+                    return res;
+                },
+                else => {
+                    return err;
+                },
+            }
+        };
     }
 
     fn buildKillSessionElem(
@@ -2642,19 +2690,20 @@ pub const Driver = struct {
             self.messages_lock.lock();
 
             if (!self.messages.contains(message_id)) {
+                self.messages_lock.unlock();
+
                 if (self.process_thread_exited) {
                     return errors.ScrapliError.EOF;
                 }
 
-                self.messages_lock.unlock();
                 std.time.sleep(self.options.message_poll_interval_ns);
 
                 continue;
             }
 
-            self.messages_lock.unlock();
-
             const kv = self.messages.fetchRemove(message_id);
+
+            self.messages_lock.unlock();
 
             return kv.?.value;
         }
