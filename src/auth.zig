@@ -220,7 +220,7 @@ pub fn processSearchableAuthBuf(
         compiled_prompt_pattern.?,
         searchable_buf,
     );
-    if (prompt_match.len > 0) {
+    if (prompt_match != null) {
         return State.complete;
     }
 
@@ -228,7 +228,7 @@ pub fn processSearchableAuthBuf(
         compiled_password_pattern.?,
         searchable_buf,
     );
-    if (password_match.len > 0) {
+    if (password_match != null) {
         return State.password_prompted;
     }
 
@@ -236,7 +236,7 @@ pub fn processSearchableAuthBuf(
         compiled_username_pattern.?,
         searchable_buf,
     );
-    if (username_match.len > 0) {
+    if (username_match != null) {
         return State.username_prompted;
     }
 
@@ -244,7 +244,7 @@ pub fn processSearchableAuthBuf(
         compiled_passphrase_pattern.?,
         searchable_buf,
     );
-    if (passphrase_match.len > 0) {
+    if (passphrase_match != null) {
         return State.passphrase_prompted;
     }
 

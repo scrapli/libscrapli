@@ -71,7 +71,7 @@ pub fn pcre2CompileMany(
 pub fn pcre2Find(
     regexp: *pcre2.pcre2_code_8,
     haystack: []const u8,
-) ![]const u8 {
+) !?[]const u8 {
     const matches: ?*pcre2.pcre2_match_data_8 = pcre2.pcre2_match_data_create_from_pattern_8(
         regexp,
         null,
@@ -100,7 +100,7 @@ pub fn pcre2Find(
         const err_message = err_message_buf[0..@intCast(err_message_len)];
 
         if (std.mem.indexOf(u8, err_message, "no match") != null) {
-            return "";
+            return null;
         }
 
         std.log.err("failed executing match, err: {s}", .{
@@ -135,13 +135,19 @@ test "pcre2Find" {
         name: []const u8,
         pattern: []const u8,
         haystack: []const u8,
-        expected: []const u8,
+        expected: ?[]const u8,
     }{
         .{
             .name = "simple match",
             .pattern = "bar",
             .haystack = "foo bar baz",
             .expected = "bar",
+        },
+        .{
+            .name = "no match",
+            .pattern = "poo",
+            .haystack = "foo bar baz",
+            .expected = null,
         },
     };
 
@@ -158,7 +164,11 @@ test "pcre2Find" {
             case.haystack,
         );
 
-        try std.testing.expectEqualStrings(case.expected, actual);
+        if (case.expected) |expected| {
+            try std.testing.expectEqualStrings(expected, actual.?);
+        } else {
+            try std.testing.expectEqual(null, actual);
+        }
     }
 }
 

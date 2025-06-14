@@ -29,6 +29,11 @@ pub const GetPromptOptions = struct {
     cancel: ?*bool = null,
 };
 
+pub const EnterModeOptions = struct {
+    cancel: ?*bool = null,
+    requested_mode: []const u8,
+};
+
 pub const SendInputOptions = struct {
     cancel: ?*bool = null,
     input: []const u8,
@@ -81,7 +86,24 @@ pub const SendPromptedInputOptions = struct {
     abort_input: ?[]const u8 = null,
 };
 
-pub const EnterModeOptions = struct {
+pub const ReadCallbackOptions = struct {
+    name: []const u8,
+    // contains/contains_pattern are mutually exclusive -- if contains is set we use/check that
+    contains: ?[]const u8 = null,
+    contains_pattern: ?[]const u8 = null,
+    // not contains is checked in both string match and pattern match modes
+    not_contains: ?[]const u8 = null,
+    // trigger this callback only once
+    only_once: bool = false,
+    // reset the operation timer or no -- for long running things obviously you dont want to just
+    // have a "single" operations worht of timer govern what could be a zilliondy callbacks that
+    // should run for a long time
+    reset_timer: bool = false,
+    // indicates we are done with the readWithCallbacks call
+    completes: bool = false,
+};
+
+pub const ReadWithCallbacksOptions = struct {
     cancel: ?*bool = null,
-    requested_mode: []const u8,
+    initial_input: ?[]const u8 = null,
 };

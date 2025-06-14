@@ -1,4 +1,5 @@
 const std = @import("std");
+const ascii = @import("ascii.zig");
 
 pub fn toLower(buf: []u8) void {
     for (buf) |*b| {
@@ -246,3 +247,51 @@ pub fn getBufSearchView(
 
     return buf[buf.len - depth ..];
 }
+
+pub const ProcessedBuf = struct {
+    raw: std.ArrayList(u8),
+    processed: std.ArrayList(u8),
+
+    pub fn init(allocator: std.mem.Allocator) ProcessedBuf {
+        return ProcessedBuf{
+            .raw = std.ArrayList(u8).init(allocator),
+            .processed = std.ArrayList(u8).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *ProcessedBuf) void {
+        self.raw.deinit();
+        self.processed.deinit();
+    }
+
+    pub fn appendSlice(self: *ProcessedBuf, buf: []u8) !void {
+        try self.raw.appendSlice(buf);
+
+        if (std.mem.indexOf(u8, buf, &[_]u8{ascii.control_chars.esc}) != null) {
+            // if ESC in the new buf look at last n of processed buf to replace if
+            // necessary; this *feels* bad like we may miss sequences (if our read gets part
+            // of a sequence, then a subsequent read gets the rest), however this has never
+            // happened in 5+ years of scrapli/scrapligo only checking/cleaning the read buf
+            // so we are going to roll with it and hope :)
+            const n = ascii.stripAsciiAndAnsiControlCharsInPlace(
+                buf,
+                0,
+            );
+            try self.processed.appendSlice(buf[0..n]);
+        } else {
+            try self.processed.appendSlice(buf);
+        }
+    }
+
+    /// returns array of raw and processed bufs, including doing a final trimming of whitespace
+    /// on the processed buf
+    pub fn toOwnedSlices(self: *ProcessedBuf, allocator: std.mem.Allocator) ![2][]const u8 {
+        const processed = try self.processed.toOwnedSlice();
+        defer allocator.free(processed);
+
+        return [2][]const u8{
+            try self.raw.toOwnedSlice(),
+            try trimWhitespace(allocator, processed),
+        };
+    }
+};

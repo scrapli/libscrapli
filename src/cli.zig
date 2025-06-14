@@ -1,7 +1,11 @@
 const std = @import("std");
+const arrays = @import("arrays.zig");
 const logging = @import("logging.zig");
 const session = @import("session.zig");
 const auth = @import("auth.zig");
+const bytes = @import("bytes.zig");
+const bytes_check = @import("bytes-check.zig");
+const re = @import("re.zig");
 const transport = @import("transport.zig");
 const platform = @import("cli-platform.zig");
 const operation = @import("cli-operation.zig");
@@ -9,12 +13,48 @@ const mode = @import("cli-mode.zig");
 const result = @import("cli-result.zig");
 const errors = @import("errors.zig");
 
+const pcre2 = @cImport(
+    {
+        @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
+        @cInclude("pcre2.h");
+    },
+);
+
 const default_ssh_port: u16 = 22;
 const default_telnet_port: u16 = 23;
 
-pub const DeinitCallback = struct {
-    f: *const fn (*anyopaque) void,
-    context: *anyopaque,
+pub const ReadCallback = struct {
+    options: operation.ReadCallbackOptions,
+    callback: *const fn (*Driver) anyerror!void,
+};
+
+const CallbackPattern = struct {
+    allocator: std.mem.Allocator,
+    pattern: []const u8,
+    compiled_pattern: *pcre2.pcre2_code_8,
+
+    fn init(allocator: std.mem.Allocator, pattern: []const u8) !*CallbackPattern {
+        const cp = try allocator.create(CallbackPattern);
+
+        const compiled_pattern = re.pcre2Compile(pattern);
+        if (compiled_pattern == null) {
+            return errors.ScrapliError.RegexError;
+        }
+
+        cp.* = CallbackPattern{
+            .allocator = allocator,
+            .pattern = pattern,
+            .compiled_pattern = compiled_pattern.?,
+        };
+
+        return cp;
+    }
+
+    fn deinit(self: *CallbackPattern) void {
+        re.pcre2Free(self.compiled_pattern);
+
+        self.allocator.destroy(self);
+    }
 };
 
 pub const DefinitionSource = union(enum) {
@@ -455,6 +495,11 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendInputOptions,
     ) !*result.Result {
+        self.log.info(
+            "requested sendInput for input '{s}''",
+            .{options.input},
+        );
+
         var res = try self.NewResult(
             allocator,
             operation.Kind.send_input,
@@ -491,6 +536,11 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendInputsOptions,
     ) !*result.Result {
+        self.log.info(
+            "requested sendInputs for inputs '{s}''",
+            .{options.inputs},
+        );
+
         var target_mode = options.requested_mode;
 
         if (std.mem.eql(u8, target_mode, mode.default_mode)) {
@@ -543,6 +593,11 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendPromptedInputOptions,
     ) !*result.Result {
+        self.log.info(
+            "requested sendPromptedInput for input '{s}''",
+            .{options.input},
+        );
+
         var res = try self.NewResult(
             allocator,
             operation.Kind.send_prompted_input,
@@ -577,10 +632,312 @@ pub const Driver = struct {
         return res;
     }
 
+    fn _readWithCallbacks(
+        self: *Driver,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        callbacks: []const ReadCallback,
+        bufs: *bytes.ProcessedBuf,
+        buf_pos: usize,
+        contain_patterns: *std.ArrayList(*CallbackPattern),
+        triggered_callbacks: *std.ArrayList([]const u8),
+    ) !void {
+        while (true) {
+            _ = try self.session.readTimeout(
+                timer,
+                cancel,
+                bytes_check.nonZeroBuf,
+                .{},
+                bufs,
+            );
+
+            for (callbacks) |callback| {
+                if (!try readCallbackShouldExecute(
+                    // we look from the last "pos" -> the end
+                    bufs.processed.items[buf_pos..],
+                    contain_patterns,
+                    triggered_callbacks,
+                    callback,
+                )) {
+                    self.log.debug(
+                        "callback '{s}' skipped...",
+                        .{
+                            callback.options.name,
+                        },
+                    );
+
+                    continue;
+                }
+
+                self.log.debug("callback '{s}' matched, executing...", .{callback.options.name});
+
+                try callback.callback(self);
+
+                if (callback.options.completes) {
+                    self.log.debug(
+                        "callback '{s}' completes...",
+                        .{
+                            callback.options.name,
+                        },
+                    );
+
+                    return;
+                }
+
+                if (callback.options.reset_timer) {
+                    timer.reset();
+                }
+
+                try triggered_callbacks.append(callback.options.name);
+
+                return self._readWithCallbacks(
+                    timer,
+                    cancel,
+                    callbacks,
+                    bufs,
+                    // pass the end of the current buf so we dont re-read old stuff
+                    bufs.processed.items.len,
+                    contain_patterns,
+                    triggered_callbacks,
+                );
+            }
+        }
+    }
+
     pub fn readWithCallbacks(
         self: *Driver,
-    ) void {
-        // TODO obviuosly :)
-        _ = self;
+        allocator: std.mem.Allocator,
+        options: operation.ReadWithCallbacksOptions,
+        callbacks: []const ReadCallback,
+    ) !void {
+        self.log.debug(
+            "requested readWithCallbacks",
+            .{},
+        );
+
+        var t = try std.time.Timer.start();
+
+        if (options.initial_input) |initial_input| {
+            try self.session.writeAndReturn(initial_input, false);
+        }
+
+        var bufs = bytes.ProcessedBuf.init(allocator);
+        defer bufs.deinit();
+
+        var contain_patterns = std.ArrayList(*CallbackPattern).init(allocator);
+        defer {
+            for (contain_patterns.items) |cp| {
+                cp.deinit();
+            }
+
+            contain_patterns.deinit();
+        }
+
+        for (callbacks) |cb| {
+            // could do this lazily but easier to just compile everything now
+            if (cb.options.contains_pattern) |p| {
+                try contain_patterns.append(try CallbackPattern.init(allocator, p));
+            }
+        }
+
+        var triggered_callbacks = std.ArrayList([]const u8).init(allocator);
+        defer triggered_callbacks.deinit();
+
+        return self._readWithCallbacks(
+            &t,
+            options.cancel,
+            callbacks,
+            &bufs,
+            0,
+            &contain_patterns,
+            &triggered_callbacks,
+        );
     }
 };
+
+fn readCallbackShouldExecute(
+    buf: []u8,
+    contain_patterns: *std.ArrayList(*CallbackPattern),
+    triggered_callbacks: *std.ArrayList([]const u8),
+    callback: ReadCallback,
+) !bool {
+    if (callback.options.only_once) {
+        var skip = false;
+        for (triggered_callbacks.items) |tcb| {
+            if (std.mem.eql(u8, tcb, callback.options.name)) {
+                skip = true;
+                break;
+            }
+        }
+
+        if (skip) {
+            return false;
+        }
+    }
+
+    var callback_contains_or_pattern_matches = false;
+
+    if (callback.options.contains) |contains| {
+        if (std.mem.indexOf(u8, buf, contains) != null) {
+            callback_contains_or_pattern_matches = true;
+        }
+    } else if (callback.options.contains_pattern) |contains_pattern| {
+        // we would have not gotten here if any of the callbacks that have a match
+        // pattern failed to compile, so we can safely set to 0 knowing that we will
+        // always find the right compiled pattern for the given callback by iterating
+        // through our compiled bits
+        var foundIdx: usize = 0;
+
+        for (0.., contain_patterns.items) |idx, cp| {
+            if (std.mem.eql(u8, contains_pattern, cp.pattern)) {
+                foundIdx = idx;
+
+                break;
+            }
+        }
+
+        const match = try re.pcre2Find(
+            contain_patterns.items[foundIdx].compiled_pattern,
+            buf,
+        );
+        if (match != null) {
+            callback_contains_or_pattern_matches = true;
+        }
+    }
+
+    if (!callback_contains_or_pattern_matches) {
+        return false;
+    }
+
+    if (callback.options.not_contains) |not_contains| {
+        // not contains applies regardless of string or pattern containment check
+        if (std.mem.indexOf(u8, buf, not_contains) != null) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+fn noop(d: *Driver) anyerror!void {
+    _ = d;
+}
+
+test "readCallbackShouldExecute" {
+    const cases = [_]struct {
+        name: []const u8,
+        buf: []const u8,
+        contain_patterns: std.ArrayList(*CallbackPattern),
+        triggered_callbacks: std.ArrayList([]const u8),
+        callback: ReadCallback,
+        expected: bool,
+    }{
+        .{
+            .name = "no contains match",
+            .buf = "foo bar baz",
+            .contain_patterns = std.ArrayList(*CallbackPattern).init(std.testing.allocator),
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .callback = .{
+                .options = .{
+                    .name = "cb1",
+                    .contains = "bloop",
+                },
+                .callback = noop,
+            },
+            .expected = false,
+        },
+        .{
+            .name = "contains match",
+            .buf = "foo bar baz",
+            .contain_patterns = std.ArrayList(*CallbackPattern).init(std.testing.allocator),
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .callback = .{
+                .options = .{
+                    .name = "cb1",
+                    .contains = "bar",
+                },
+                .callback = noop,
+            },
+            .expected = true,
+        },
+        .{
+            .name = "contains match but has not contains",
+            .buf = "foo bar baz",
+            .contain_patterns = std.ArrayList(*CallbackPattern).init(std.testing.allocator),
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .callback = .{
+                .options = .{
+                    .name = "cb1",
+                    .contains = "bar",
+                    .not_contains = "baz",
+                },
+                .callback = noop,
+            },
+            .expected = false,
+        },
+        .{
+            .name = "contain pattern match",
+            .buf = "foo bar baz",
+            .contain_patterns = try arrays.inlineInitArrayList(
+                std.testing.allocator,
+                *CallbackPattern,
+                &[_]*CallbackPattern{
+                    try CallbackPattern.init(std.testing.allocator, "\\sbar\\s"),
+                },
+            ),
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .callback = .{
+                .options = .{
+                    .name = "cb1",
+                    .contains = "bar",
+                },
+                .callback = noop,
+            },
+            .expected = true,
+        },
+        .{
+            .name = "contain pattern match but has not contains",
+            .buf = "foo bar baz",
+            .contain_patterns = try arrays.inlineInitArrayList(
+                std.testing.allocator,
+                *CallbackPattern,
+                &[_]*CallbackPattern{
+                    try CallbackPattern.init(std.testing.allocator, "\\sbar\\s"),
+                },
+            ),
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .callback = .{
+                .options = .{
+                    .name = "cb1",
+                    .contains = "bar",
+                    .not_contains = "baz",
+                },
+                .callback = noop,
+            },
+            .expected = false,
+        },
+    };
+
+    for (cases) |case| {
+        defer {
+            for (case.contain_patterns.items) |contain_pattern| {
+                contain_pattern.deinit();
+            }
+
+            case.contain_patterns.deinit();
+            case.triggered_callbacks.deinit();
+        }
+
+        var contain_patterns = case.contain_patterns;
+        var triggered_callbacks = case.triggered_callbacks;
+
+        const actual = try readCallbackShouldExecute(
+            @constCast(case.buf),
+            &contain_patterns,
+            &triggered_callbacks,
+            case.callback,
+        );
+
+        try std.testing.expectEqual(case.expected, actual);
+    }
+}
