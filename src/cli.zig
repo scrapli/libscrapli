@@ -23,11 +23,6 @@ const pcre2 = @cImport(
 const default_ssh_port: u16 = 22;
 const default_telnet_port: u16 = 23;
 
-pub const ReadCallback = struct {
-    options: operation.ReadCallbackOptions,
-    callback: *const fn (*Driver) anyerror!void,
-};
-
 const CallbackPattern = struct {
     allocator: std.mem.Allocator,
     pattern: []const u8,
@@ -636,7 +631,7 @@ pub const Driver = struct {
         self: *Driver,
         timer: *std.time.Timer,
         cancel: ?*bool,
-        callbacks: []const ReadCallback,
+        callbacks: []const operation.ReadCallback,
         bufs: *bytes.ProcessedBuf,
         buf_pos: usize,
         contain_patterns: *std.ArrayList(*CallbackPattern),
@@ -708,12 +703,17 @@ pub const Driver = struct {
         self: *Driver,
         allocator: std.mem.Allocator,
         options: operation.ReadWithCallbacksOptions,
-        callbacks: []const ReadCallback,
-    ) !void {
+    ) !*result.Result {
         self.log.debug(
             "requested readWithCallbacks",
             .{},
         );
+
+        var res = try self.NewResult(
+            allocator,
+            operation.Kind.read_with_callbacks,
+        );
+        errdefer res.deinit();
 
         var t = try std.time.Timer.start();
 
@@ -733,7 +733,7 @@ pub const Driver = struct {
             contain_patterns.deinit();
         }
 
-        for (callbacks) |cb| {
+        for (options.callbacks) |cb| {
             // could do this lazily but easier to just compile everything now
             if (cb.options.contains_pattern) |p| {
                 try contain_patterns.append(try CallbackPattern.init(allocator, p));
@@ -743,15 +743,22 @@ pub const Driver = struct {
         var triggered_callbacks = std.ArrayList([]const u8).init(allocator);
         defer triggered_callbacks.deinit();
 
-        return self._readWithCallbacks(
+        try self._readWithCallbacks(
             &t,
             options.cancel,
-            callbacks,
+            options.callbacks,
             &bufs,
             0,
             &contain_patterns,
             &triggered_callbacks,
         );
+
+        try res.record(
+            options.initial_input orelse "",
+            try bufs.toOwnedSlices(allocator),
+        );
+
+        return res;
     }
 };
 
@@ -759,7 +766,7 @@ fn readCallbackShouldExecute(
     buf: []u8,
     contain_patterns: *std.ArrayList(*CallbackPattern),
     triggered_callbacks: *std.ArrayList([]const u8),
-    callback: ReadCallback,
+    callback: operation.ReadCallback,
 ) !bool {
     if (callback.options.only_once) {
         var skip = false;
@@ -829,7 +836,7 @@ test "readCallbackShouldExecute" {
         buf: []const u8,
         contain_patterns: std.ArrayList(*CallbackPattern),
         triggered_callbacks: std.ArrayList([]const u8),
-        callback: ReadCallback,
+        callback: operation.ReadCallback,
         expected: bool,
     }{
         .{

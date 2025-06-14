@@ -1,3 +1,4 @@
+const cli = @import("cli.zig");
 const mode = @import("cli-mode.zig");
 
 pub const Kind = enum {
@@ -9,6 +10,7 @@ pub const Kind = enum {
     get_prompt,
     send_input,
     send_prompted_input,
+    read_with_callbacks,
 };
 
 pub const InputHandling = enum {
@@ -103,7 +105,13 @@ pub const ReadCallbackOptions = struct {
     completes: bool = false,
 };
 
+pub const ReadCallback = struct {
+    options: ReadCallbackOptions,
+    callback: *const fn (*cli.Driver) anyerror!void,
+};
+
 pub const ReadWithCallbacksOptions = struct {
     cancel: ?*bool = null,
     initial_input: ?[]const u8 = null,
+    callbacks: []const ReadCallback,
 };
