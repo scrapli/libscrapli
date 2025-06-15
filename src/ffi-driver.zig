@@ -324,8 +324,8 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
-                .read_with_callbacks => |o| {
-                    ret_ok = rd.readWithCallbacks(
+                .read_any => |o| {
+                    ret_ok = rd.readAny(
                         self.allocator,
                         o,
                     ) catch |err| blk: {

@@ -4,6 +4,7 @@ const bytes = @import("bytes.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
+const cli = @import("cli.zig");
 
 const logging = @import("logging.zig");
 
@@ -512,56 +513,28 @@ export fn ls_cli_send_prompted_input(
     return 0;
 }
 
-export fn ls_cli_read_with_callbacks(
+export fn ls_cli_read_any(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
-    initial_input: [*c]const u8,
-    names: [*c]const u8,
-    // callbacks are closures in py/go that wrap the py/go Cli object so there is no need to pass
-    // the pointer cli object in on the ffi way. those callbacks in the native lang will be wrapped
-    // in our closure that will return "1" if things errored so we know to stop or not.
-    callbacks: [*c]const *const fn () callconv(.C) u8,
-    contains: [*c]const u8,
-    contains_pattern: [*c]const u8,
-    not_contains: [*c]const u8,
-    // because we end up having so many args and things on heap (registers above 5 or 7 i think?)
-    // are grouchy in purego and dont wanna let us pass slices we just do everything as strings that
-    // are delimted via the __libscrapli__ delim -- for these things that should be bools we just
-    // will check that the parts around the delimiter are "true" or "false" obviously corresponding
-    // to that bool value
-    only_once: [*c]const u8,
-    reset_timer: [*c]const u8,
-    completes: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
-
-    const options = ffi_args_to_options.ReadWithCallbacksOptionsFromArgs(
-        cancel,
-        initial_input,
-        names,
-        callbacks,
-        contains,
-        contains_pattern,
-        not_contains,
-        only_once,
-        reset_timer,
-        completes,
-    );
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
             .operation = .{
                 .cli = .{
-                    .read_with_callbacks = options,
+                    .read_any = .{
+                        .cancel = cancel,
+                    },
                 },
             },
         },
     ) catch |err| {
         d.log(
             logging.LogLevel.critical,
-            "error during queue readWithCallbacks {any}",
+            "error during queue readAny {any}",
             .{err},
         );
 
@@ -569,6 +542,42 @@ export fn ls_cli_read_with_callbacks(
     };
 
     operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn ls_cli_read_callback_should_execute(
+    buf: [*c]const u8,
+    name: [*c]const u8,
+    contains: [*c]const u8,
+    contains_pattern: [*c]const u8,
+    not_contains: [*c]const u8,
+    only_once: bool,
+    execute: *bool,
+) u8 {
+    var _triggered_callbacks = std.ArrayList([]const u8).init(std.heap.c_allocator);
+
+    const should_execute = cli.readCallbackShouldExecute(
+        std.mem.span(buf),
+        std.mem.span(name),
+        if (std.mem.span(contains).len == 0) null else std.mem.span(contains),
+        if (std.mem.span(contains_pattern).len == 0) null else std.mem.span(contains_pattern),
+        if (std.mem.span(not_contains).len == 0) null else std.mem.span(not_contains),
+        only_once,
+        // py/go will be responsible for this check -- we are only really doing this whole
+        // "should execute" thing in zig so we never have to rely on regex in py/go, but clearly
+        // doing string contains is way easier there (certainly when considering passing things
+        // over ffi), so yea... w/e this is zero allocation operation so just pass empty arraylist
+        &_triggered_callbacks,
+    ) catch {
+        return 1;
+    };
+
+    if (should_execute) {
+        execute.* = true;
+    } else {
+        execute.* = false;
+    }
 
     return 0;
 }

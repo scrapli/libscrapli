@@ -691,6 +691,29 @@ pub const Session = struct {
         }
     }
 
+    pub fn readAny(
+        self: *Session,
+        allocator: std.mem.Allocator,
+        options: operation.ReadAnyOptions,
+    ) ![2][]const u8 {
+        self.log.info("read any requested", .{});
+
+        var bufs = bytes.ProcessedBuf.init(allocator);
+        defer bufs.deinit();
+
+        var timer = try std.time.Timer.start();
+
+        _ = try self.readTimeout(
+            &timer,
+            options.cancel,
+            bytes_check.nonZeroBuf,
+            .{},
+            &bufs,
+        );
+
+        return bufs.toOwnedSlices(allocator);
+    }
+
     pub fn getPrompt(
         self: *Session,
         allocator: std.mem.Allocator,
