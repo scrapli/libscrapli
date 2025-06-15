@@ -1,6 +1,10 @@
 const std = @import("std");
 const ascii = @import("ascii.zig");
 
+// a string that is used to delimit multiple substrings -- used in a few places for passing things
+// via ffi to not have to deal w/ c arrays and such
+pub const libscrapli_delimiter = "__libscrapli__";
+
 pub fn toLower(buf: []u8) void {
     for (buf) |*b| {
         b.* = std.ascii.toLower(b.*);

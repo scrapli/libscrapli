@@ -1,6 +1,8 @@
 const cli = @import("cli.zig");
 const mode = @import("cli-mode.zig");
 
+pub const max_ffi_read_with_callbacks_callbacks = 32;
+
 pub const Kind = enum {
     open,
     on_open,
@@ -107,11 +109,18 @@ pub const ReadCallbackOptions = struct {
 
 pub const ReadCallback = struct {
     options: ReadCallbackOptions,
-    callback: *const fn (*cli.Driver) anyerror!void,
+    callback: ?*const fn (*cli.Driver) anyerror!void = null,
+    // unfortunately in order to accommodate the py/go wrappers of libscrapli it was easier to just
+    // have another field for those callbacks as they behave a bit differently
+    unbound_callback: ?*const fn () callconv(.C) u8 = null,
 };
 
 pub const ReadWithCallbacksOptions = struct {
     cancel: ?*bool = null,
     initial_input: ?[]const u8 = null,
     callbacks: []const ReadCallback,
+    // necessary when used from ffi as we allocate a max_read_with_callbacks_callback_count sized
+    // array so we dont have to heap allocate things and/or have arraylists of things etc. this is
+    // unnecessary in pure zig libscrapli and can be ignored
+    callback_count: ?usize = null,
 };

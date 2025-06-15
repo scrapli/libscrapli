@@ -25,6 +25,7 @@ pub const OperationOptions = struct {
             get_prompt: operation.GetPromptOptions,
             send_input: operation.SendInputOptions,
             send_prompted_input: operation.SendPromptedInputOptions,
+            read_with_callbacks: operation.ReadWithCallbacksOptions,
         },
         netconf: union(enum) {
             open: operation_netconf.OpenOptions,

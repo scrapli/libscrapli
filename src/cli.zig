@@ -632,6 +632,7 @@ pub const Driver = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         callbacks: []const operation.ReadCallback,
+        callback_count: usize,
         bufs: *bytes.ProcessedBuf,
         buf_pos: usize,
         contain_patterns: *std.ArrayList(*CallbackPattern),
@@ -646,7 +647,9 @@ pub const Driver = struct {
                 bufs,
             );
 
-            for (callbacks) |callback| {
+            for (0..callback_count) |idx| {
+                const callback = callbacks[idx];
+
                 if (!try readCallbackShouldExecute(
                     // we look from the last "pos" -> the end
                     bufs.processed.items[buf_pos..],
@@ -666,7 +669,15 @@ pub const Driver = struct {
 
                 self.log.debug("callback '{s}' matched, executing...", .{callback.options.name});
 
-                try callback.callback(self);
+                if (callback.callback) |cb| {
+                    try cb(self);
+                } else if (callback.unbound_callback) |cb| {
+                    const rc = cb();
+
+                    if (rc != 0) {
+                        return errors.ScrapliError.CallbackFailed;
+                    }
+                }
 
                 if (callback.options.completes) {
                     self.log.debug(
@@ -689,6 +700,7 @@ pub const Driver = struct {
                     timer,
                     cancel,
                     callbacks,
+                    callback_count,
                     bufs,
                     // pass the end of the current buf so we dont re-read old stuff
                     bufs.processed.items.len,
@@ -733,9 +745,13 @@ pub const Driver = struct {
             contain_patterns.deinit();
         }
 
-        for (options.callbacks) |cb| {
+        // ffi will pass fixed size slice of callbacks so we must pass the counter and check it
+        // in normal zig operations we wont do that and cna just use .len
+        const callback_count = options.callback_count orelse options.callbacks.len;
+
+        for (0..callback_count) |idx| {
             // could do this lazily but easier to just compile everything now
-            if (cb.options.contains_pattern) |p| {
+            if (options.callbacks[idx].options.contains_pattern) |p| {
                 try contain_patterns.append(try CallbackPattern.init(allocator, p));
             }
         }
@@ -747,6 +763,7 @@ pub const Driver = struct {
             &t,
             options.cancel,
             options.callbacks,
+            callback_count,
             &bufs,
             0,
             &contain_patterns,

@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const bytes = @import("bytes.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
@@ -8,8 +9,6 @@ const logging = @import("logging.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
-
-const operation_delimiter = "__libscrapli__";
 
 /// writes the ntc template platform from the driver's definition into the character slice at
 /// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
@@ -216,13 +215,13 @@ export fn ls_cli_fetch_operation_sizes(
         operation_count.* = @intCast(dret.results.items.len);
 
         operation_input_size.* = dret.getInputLen(
-            .{ .delimiter = operation_delimiter },
+            .{ .delimiter = bytes.libscrapli_delimiter },
         );
         operation_result_raw_size.* = dret.getResultRawLen(
-            .{ .delimiter = operation_delimiter },
+            .{ .delimiter = bytes.libscrapli_delimiter },
         );
         operation_result_size.* = dret.getResultLen(
-            .{ .delimiter = operation_delimiter },
+            .{ .delimiter = bytes.libscrapli_delimiter },
         );
         operation_failure_indicator_size.* = 0;
         operation_error_size.* = 0;
@@ -299,7 +298,7 @@ export fn ls_cli_fetch_operation(
             cur += input.len;
 
             if (idx != dret.inputs.items.len - 1) {
-                for (operation_delimiter) |delimiter_char| {
+                for (bytes.libscrapli_delimiter) |delimiter_char| {
                     operation_input.*[cur] = delimiter_char;
                     cur += 1;
                 }
@@ -313,7 +312,7 @@ export fn ls_cli_fetch_operation(
             cur += result_raw.len;
 
             if (idx != dret.results_raw.items.len - 1) {
-                for (operation_delimiter) |delimiter_char| {
+                for (bytes.libscrapli_delimiter) |delimiter_char| {
                     operation_result_raw.*[cur] = delimiter_char;
                     cur += 1;
                 }
@@ -327,7 +326,7 @@ export fn ls_cli_fetch_operation(
             cur += result.len;
 
             if (idx != dret.results.items.len - 1) {
-                for (operation_delimiter) |delimiter_char| {
+                for (bytes.libscrapli_delimiter) |delimiter_char| {
                     operation_result.*[cur] = delimiter_char;
                     cur += 1;
                 }
@@ -502,6 +501,67 @@ export fn ls_cli_send_prompted_input(
         d.log(
             logging.LogLevel.critical,
             "error during queue sendPromptedInput {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn ls_cli_read_with_callbacks(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    initial_input: [*c]const u8,
+    names: [*c]const u8,
+    // callbacks are closures in py/go that wrap the py/go Cli object so there is no need to pass
+    // the pointer cli object in on the ffi way. those callbacks in the native lang will be wrapped
+    // in our closure that will return "1" if things errored so we know to stop or not.
+    callbacks: [*c]const *const fn () callconv(.C) u8,
+    contains: [*c]const u8,
+    contains_pattern: [*c]const u8,
+    not_contains: [*c]const u8,
+    // because we end up having so many args and things on heap (registers above 5 or 7 i think?)
+    // are grouchy in purego and dont wanna let us pass slices we just do everything as strings that
+    // are delimted via the __libscrapli__ delim -- for these things that should be bools we just
+    // will check that the parts around the delimiter are "true" or "false" obviously corresponding
+    // to that bool value
+    only_once: [*c]const u8,
+    reset_timer: [*c]const u8,
+    completes: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.ReadWithCallbacksOptionsFromArgs(
+        cancel,
+        initial_input,
+        names,
+        callbacks,
+        contains,
+        contains_pattern,
+        not_contains,
+        only_once,
+        reset_timer,
+        completes,
+    );
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .read_with_callbacks = options,
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue readWithCallbacks {any}",
             .{err},
         );
 
