@@ -513,7 +513,7 @@ pub const Session = struct {
 
             switch (state) {
                 .complete => {
-                    return bufs.toOwnedSlices(allocator);
+                    return bufs.toOwnedSlices();
                 },
                 .username_prompted => {
                     if (self.auth_options.username == null) {
@@ -711,7 +711,7 @@ pub const Session = struct {
             &bufs,
         );
 
-        return bufs.toOwnedSlices(allocator);
+        return bufs.toOwnedSlices();
     }
 
     pub fn getPrompt(
@@ -879,7 +879,7 @@ pub const Session = struct {
             );
         }
 
-        return bufs.toOwnedSlices(allocator);
+        return bufs.toOwnedSlices();
     }
 
     pub fn sendPromptedInput(
@@ -992,6 +992,6 @@ pub const Session = struct {
             );
         }
 
-        return bufs.toOwnedSlices(allocator);
+        return bufs.toOwnedSlices();
     }
 };

@@ -287,15 +287,10 @@ pub const ProcessedBuf = struct {
         }
     }
 
-    /// returns array of raw and processed bufs, including doing a final trimming of whitespace
-    /// on the processed buf
-    pub fn toOwnedSlices(self: *ProcessedBuf, allocator: std.mem.Allocator) ![2][]const u8 {
-        const processed = try self.processed.toOwnedSlice();
-        defer allocator.free(processed);
-
+    pub fn toOwnedSlices(self: *ProcessedBuf) ![2][]const u8 {
         return [2][]const u8{
             try self.raw.toOwnedSlice(),
-            try trimWhitespace(allocator, processed),
+            try self.processed.toOwnedSlice(),
         };
     }
 };

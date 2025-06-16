@@ -1,4 +1,5 @@
 const std = @import("std");
+const bytes = @import("bytes.zig");
 const operation = @import("cli-operation.zig");
 
 pub const Result = struct {
@@ -81,7 +82,12 @@ pub const Result = struct {
         try self.splits_ns.append(std.time.nanoTimestamp());
         try self.inputs.append(input);
         try self.results_raw.append(rets[0]);
-        try self.results.append(rets[1]);
+
+        // trimWhitespace allocates new memory properly sized, so we can then free
+        // up the original "processed" buf (it is "processed" becuase ansi/ascii stuff is removed)
+        const trimmed = try bytes.trimWhitespace(self.allocator, rets[1]);
+        self.allocator.free(rets[1]);
+        try self.results.append(trimmed);
 
         if (self.failed_indicators == null) {
             return;

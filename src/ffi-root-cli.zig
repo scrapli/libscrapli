@@ -552,7 +552,6 @@ export fn ls_cli_read_callback_should_execute(
     contains: [*c]const u8,
     contains_pattern: [*c]const u8,
     not_contains: [*c]const u8,
-    only_once: bool,
     execute: *bool,
 ) u8 {
     var _triggered_callbacks = std.ArrayList([]const u8).init(std.heap.c_allocator);
@@ -563,11 +562,11 @@ export fn ls_cli_read_callback_should_execute(
         if (std.mem.span(contains).len == 0) null else std.mem.span(contains),
         if (std.mem.span(contains_pattern).len == 0) null else std.mem.span(contains_pattern),
         if (std.mem.span(not_contains).len == 0) null else std.mem.span(not_contains),
-        only_once,
         // py/go will be responsible for this check -- we are only really doing this whole
         // "should execute" thing in zig so we never have to rely on regex in py/go, but clearly
         // doing string contains is way easier there (certainly when considering passing things
         // over ffi), so yea... w/e this is zero allocation operation so just pass empty arraylist
+        false,
         &_triggered_callbacks,
     ) catch {
         return 1;

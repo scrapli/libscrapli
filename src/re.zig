@@ -72,6 +72,11 @@ pub fn pcre2Find(
     regexp: *pcre2.pcre2_code_8,
     haystack: []const u8,
 ) !?[]const u8 {
+    // if we send a empty haystack pcre2 will not be happy, be defensive
+    if (haystack.len == 0) {
+        return null;
+    }
+
     const matches: ?*pcre2.pcre2_match_data_8 = pcre2.pcre2_match_data_create_from_pattern_8(
         regexp,
         null,
