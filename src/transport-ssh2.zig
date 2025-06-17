@@ -1,7 +1,6 @@
 const std = @import("std");
 const auth = @import("auth.zig");
 const logging = @import("logging.zig");
-const file = @import("file.zig");
 const errors = @import("errors.zig");
 const transport_waiter = @import("transport-waiter.zig");
 

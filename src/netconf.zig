@@ -1,5 +1,6 @@
 const std = @import("std");
 const auth = @import("auth.zig");
+const bytes = @import("bytes.zig");
 const logging = @import("logging.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
@@ -1410,7 +1411,7 @@ pub const Driver = struct {
             var extra_namespaces_iterator = std.mem.splitSequence(
                 u8,
                 extra_namespaces_str,
-                "__libscrapli__",
+                bytes.libscrapli_delimiter,
             );
 
             var idx: usize = 0;

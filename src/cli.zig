@@ -2,6 +2,9 @@ const std = @import("std");
 const logging = @import("logging.zig");
 const session = @import("session.zig");
 const auth = @import("auth.zig");
+const bytes = @import("bytes.zig");
+const bytes_check = @import("bytes-check.zig");
+const re = @import("re.zig");
 const transport = @import("transport.zig");
 const platform = @import("cli-platform.zig");
 const operation = @import("cli-operation.zig");
@@ -11,11 +14,6 @@ const errors = @import("errors.zig");
 
 const default_ssh_port: u16 = 22;
 const default_telnet_port: u16 = 23;
-
-pub const DeinitCallback = struct {
-    f: *const fn (*anyopaque) void,
-    context: *anyopaque,
-};
 
 pub const DefinitionSource = union(enum) {
     string: []const u8,
@@ -175,13 +173,14 @@ pub const Driver = struct {
         errdefer res.deinit();
 
         try res.record(
-            "", // no "input" for opening
-            try self.session.open(
-                allocator,
-                self.host,
-                self.port,
-                options.cancel,
-            ),
+            .{
+                .rets = try self.session.open(
+                    allocator,
+                    self.host,
+                    self.port,
+                    options.cancel,
+                ),
+            },
         );
 
         // getting prompt also ensures we vacuum up anything in the buffer from after login (matters
@@ -280,8 +279,9 @@ pub const Driver = struct {
         errdefer res.deinit();
 
         try res.record(
-            "",
-            try self.session.getPrompt(allocator, options),
+            .{
+                .rets = try self.session.getPrompt(allocator, options),
+            },
         );
 
         return res;
@@ -455,6 +455,11 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendInputOptions,
     ) !*result.Result {
+        self.log.info(
+            "requested sendInput for input '{s}''",
+            .{options.input},
+        );
+
         var res = try self.NewResult(
             allocator,
             operation.Kind.send_input,
@@ -479,8 +484,10 @@ pub const Driver = struct {
         }
 
         try res.record(
-            options.input,
-            try self.session.sendInput(allocator, options),
+            .{
+                .input = options.input,
+                .rets = try self.session.sendInput(allocator, options),
+            },
         );
 
         return res;
@@ -491,6 +498,11 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendInputsOptions,
     ) !*result.Result {
+        self.log.info(
+            "requested sendInputs for inputs '{s}''",
+            .{options.inputs},
+        );
+
         var target_mode = options.requested_mode;
 
         if (std.mem.eql(u8, target_mode, mode.default_mode)) {
@@ -516,18 +528,20 @@ pub const Driver = struct {
 
         for (options.inputs) |input| {
             try res.record(
-                input,
-                try self.session.sendInput(
-                    allocator,
-                    .{
-                        .cancel = options.cancel,
-                        .input = input,
-                        .requested_mode = options.requested_mode,
-                        .input_handling = options.input_handling,
-                        .retain_input = options.retain_input,
-                        .retain_trailing_prompt = options.retain_trailing_prompt,
-                    },
-                ),
+                .{
+                    .input = input,
+                    .rets = try self.session.sendInput(
+                        allocator,
+                        .{
+                            .cancel = options.cancel,
+                            .input = input,
+                            .requested_mode = options.requested_mode,
+                            .input_handling = options.input_handling,
+                            .retain_input = options.retain_input,
+                            .retain_trailing_prompt = options.retain_trailing_prompt,
+                        },
+                    ),
+                },
             );
 
             if (options.stop_on_indicated_failure and res.result_failure_indicated) {
@@ -543,6 +557,11 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendPromptedInputOptions,
     ) !*result.Result {
+        self.log.info(
+            "requested sendPromptedInput for input '{s}''",
+            .{options.input},
+        );
+
         var res = try self.NewResult(
             allocator,
             operation.Kind.send_prompted_input,
@@ -567,20 +586,298 @@ pub const Driver = struct {
         }
 
         try res.record(
-            options.input,
-            try self.session.sendPromptedInput(
-                allocator,
-                options,
-            ),
+            .{
+                .input = options.input,
+                .rets = try self.session.sendPromptedInput(
+                    allocator,
+                    options,
+                ),
+            },
         );
 
         return res;
     }
 
+    // safely reads any bytes from the session with the deafult timeout handling. "nicer" than just
+    // directly reading from the session since timeouts are handled and ascii/ansi things are
+    // stripped if present, however no whitespace is trimmed! this is because we dont want to chomp
+    // off a newline that actually matters to output, and since we are not reading to "well known"
+    // places (i.e. the next prompt) we have no idea what we've read so we better not faff w/ it.
+    pub fn readAny(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: operation.ReadAnyOptions,
+    ) !*result.Result {
+        // TODO go through and make all logs consistent in both where we fire them, the levels,
+        // and casing and formatting and stuff
+        self.log.info("requested readAny", .{});
+
+        var res = try self.NewResult(
+            allocator,
+            operation.Kind.read_any,
+        );
+        errdefer res.deinit();
+
+        try res.record(
+            .{
+                .rets = try self.session.readAny(allocator, options),
+                .trim_processed = false,
+            },
+        );
+
+        return res;
+    }
+
+    fn _readWithCallbacks(
+        self: *Driver,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        callbacks: []const operation.ReadCallback,
+        bufs: *bytes.ProcessedBuf,
+        buf_pos: usize,
+        triggered_callbacks: *std.ArrayList([]const u8),
+    ) !void {
+        while (true) {
+            _ = try self.session.readTimeout(
+                timer,
+                cancel,
+                bytes_check.nonZeroBuf,
+                .{},
+                bufs,
+            );
+
+            for (callbacks) |callback| {
+                if (!try readCallbackShouldExecute(
+                    // we look from the last "pos" -> the end
+                    bufs.processed.items[buf_pos..],
+                    callback.options.name,
+                    callback.options.contains,
+                    callback.options.contains_pattern,
+                    callback.options.not_contains,
+                    callback.options.only_once,
+                    triggered_callbacks,
+                )) {
+                    self.log.debug(
+                        "callback '{s}' skipped...",
+                        .{
+                            callback.options.name,
+                        },
+                    );
+
+                    continue;
+                }
+
+                self.log.debug("callback '{s}' matched, executing...", .{callback.options.name});
+
+                try callback.callback(self);
+
+                if (callback.options.completes) {
+                    self.log.debug(
+                        "callback '{s}' completes...",
+                        .{
+                            callback.options.name,
+                        },
+                    );
+
+                    return;
+                }
+
+                if (callback.options.reset_timer) {
+                    timer.reset();
+                }
+
+                try triggered_callbacks.append(callback.options.name);
+
+                return self._readWithCallbacks(
+                    timer,
+                    cancel,
+                    callbacks,
+                    bufs,
+                    // pass the end of the current buf so we dont re-read old stuff
+                    bufs.processed.items.len,
+                    triggered_callbacks,
+                );
+            }
+        }
+    }
+
     pub fn readWithCallbacks(
         self: *Driver,
-    ) void {
-        // TODO obviuosly :)
-        _ = self;
+        allocator: std.mem.Allocator,
+        options: operation.ReadWithCallbacksOptions,
+    ) !*result.Result {
+        self.log.debug(
+            "requested readWithCallbacks",
+            .{},
+        );
+
+        var res = try self.NewResult(
+            allocator,
+            operation.Kind.read_with_callbacks,
+        );
+        errdefer res.deinit();
+
+        var t = try std.time.Timer.start();
+
+        if (options.initial_input) |initial_input| {
+            try self.session.writeAndReturn(initial_input, false);
+        }
+
+        var bufs = bytes.ProcessedBuf.init(allocator);
+        defer bufs.deinit();
+
+        var triggered_callbacks = std.ArrayList([]const u8).init(allocator);
+        defer triggered_callbacks.deinit();
+
+        try self._readWithCallbacks(
+            &t,
+            options.cancel,
+            options.callbacks,
+            &bufs,
+            0,
+            &triggered_callbacks,
+        );
+
+        try res.record(
+            .{
+                .input = options.initial_input orelse "",
+                .rets = try bufs.toOwnedSlices(),
+                // this may be the only place we *dont* want to trim whitespace
+                // .trim_processed = false,
+            },
+        );
+
+        return res;
     }
 };
+
+pub fn readCallbackShouldExecute(
+    buf: []const u8,
+    name: []const u8,
+    contains: ?[]const u8,
+    contains_pattern: ?[]const u8,
+    not_contains: ?[]const u8,
+    only_once: bool,
+    triggered_callbacks: *std.ArrayList([]const u8),
+) !bool {
+    if (only_once) {
+        var skip = false;
+        for (triggered_callbacks.items) |tcb| {
+            if (std.mem.eql(u8, tcb, name)) {
+                skip = true;
+                break;
+            }
+        }
+
+        if (skip) {
+            return false;
+        }
+    }
+
+    var callback_contains_or_pattern_matches = false;
+
+    if (contains) |c| {
+        if (std.mem.indexOf(u8, buf, c) != null) {
+            callback_contains_or_pattern_matches = true;
+        }
+    } else if (contains_pattern) |cp| {
+        const compiled_cp = re.pcre2Compile(cp);
+        if (compiled_cp == null) {
+            return errors.ScrapliError.RegexError;
+        }
+
+        const match = try re.pcre2Find(
+            compiled_cp.?,
+            buf,
+        );
+        if (match != null) {
+            callback_contains_or_pattern_matches = true;
+        }
+    }
+
+    if (!callback_contains_or_pattern_matches) {
+        return false;
+    }
+
+    if (not_contains) |nc| {
+        // not contains applies regardless of string or pattern containment check
+        if (std.mem.indexOf(u8, buf, nc) != null) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+test "readCallbackShouldExecute" {
+    const cases = [_]struct {
+        name: []const u8,
+        buf: []const u8,
+        cb_name: []const u8,
+        contains: ?[]const u8 = null,
+        contains_pattern: ?[]const u8 = null,
+        not_contains: ?[]const u8 = null,
+        only_once: bool = false,
+        triggered_callbacks: std.ArrayList([]const u8),
+        expected: bool,
+    }{
+        .{
+            .name = "no contains match",
+            .buf = "foo bar baz",
+            .cb_name = "cb1",
+            .contains = "bloop",
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .expected = false,
+        },
+        .{
+            .name = "contains match",
+            .buf = "foo bar baz",
+            .cb_name = "cb1",
+            .contains = "bar",
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .expected = true,
+        },
+        .{
+            .name = "contains match but has not contains",
+            .buf = "foo bar baz",
+            .cb_name = "cb1",
+            .contains = "bar",
+            .not_contains = "baz",
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .expected = false,
+        },
+        .{
+            .name = "contain pattern match",
+            .buf = "foo bar baz",
+            .cb_name = "cb1",
+            .contains_pattern = "\\sbar\\s",
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .expected = true,
+        },
+        .{
+            .name = "contain pattern match but has not contains",
+            .buf = "foo bar baz",
+            .cb_name = "cb1",
+            .contains_pattern = "\\sbar\\s",
+            .not_contains = "baz",
+            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .expected = false,
+        },
+    };
+
+    for (cases) |case| {
+        var triggered_callbacks = case.triggered_callbacks;
+
+        const actual = try readCallbackShouldExecute(
+            @constCast(case.buf),
+            case.cb_name,
+            case.contains,
+            case.contains_pattern,
+            case.not_contains,
+            case.only_once,
+            &triggered_callbacks,
+        );
+
+        try std.testing.expectEqual(case.expected, actual);
+    }
+}

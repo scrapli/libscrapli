@@ -1,15 +1,15 @@
 const std = @import("std");
 
+const bytes = @import("bytes.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
+const cli = @import("cli.zig");
 
 const logging = @import("logging.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
-
-const operation_delimiter = "__libscrapli__";
 
 /// writes the ntc template platform from the driver's definition into the character slice at
 /// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
@@ -216,13 +216,13 @@ export fn ls_cli_fetch_operation_sizes(
         operation_count.* = @intCast(dret.results.items.len);
 
         operation_input_size.* = dret.getInputLen(
-            .{ .delimiter = operation_delimiter },
+            .{ .delimiter = bytes.libscrapli_delimiter },
         );
         operation_result_raw_size.* = dret.getResultRawLen(
-            .{ .delimiter = operation_delimiter },
+            .{ .delimiter = bytes.libscrapli_delimiter },
         );
         operation_result_size.* = dret.getResultLen(
-            .{ .delimiter = operation_delimiter },
+            .{ .delimiter = bytes.libscrapli_delimiter },
         );
         operation_failure_indicator_size.* = 0;
         operation_error_size.* = 0;
@@ -299,7 +299,7 @@ export fn ls_cli_fetch_operation(
             cur += input.len;
 
             if (idx != dret.inputs.items.len - 1) {
-                for (operation_delimiter) |delimiter_char| {
+                for (bytes.libscrapli_delimiter) |delimiter_char| {
                     operation_input.*[cur] = delimiter_char;
                     cur += 1;
                 }
@@ -313,7 +313,7 @@ export fn ls_cli_fetch_operation(
             cur += result_raw.len;
 
             if (idx != dret.results_raw.items.len - 1) {
-                for (operation_delimiter) |delimiter_char| {
+                for (bytes.libscrapli_delimiter) |delimiter_char| {
                     operation_result_raw.*[cur] = delimiter_char;
                     cur += 1;
                 }
@@ -327,7 +327,7 @@ export fn ls_cli_fetch_operation(
             cur += result.len;
 
             if (idx != dret.results.items.len - 1) {
-                for (operation_delimiter) |delimiter_char| {
+                for (bytes.libscrapli_delimiter) |delimiter_char| {
                     operation_result.*[cur] = delimiter_char;
                     cur += 1;
                 }
@@ -509,6 +509,74 @@ export fn ls_cli_send_prompted_input(
     };
 
     operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn ls_cli_read_any(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .read_any = .{
+                        .cancel = cancel,
+                    },
+                },
+            },
+        },
+    ) catch |err| {
+        d.log(
+            logging.LogLevel.critical,
+            "error during queue readAny {any}",
+            .{err},
+        );
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
+export fn ls_cli_read_callback_should_execute(
+    buf: [*c]const u8,
+    name: [*c]const u8,
+    contains: [*c]const u8,
+    contains_pattern: [*c]const u8,
+    not_contains: [*c]const u8,
+    execute: *bool,
+) u8 {
+    var _triggered_callbacks = std.ArrayList([]const u8).init(std.heap.c_allocator);
+
+    const should_execute = cli.readCallbackShouldExecute(
+        std.mem.span(buf),
+        std.mem.span(name),
+        if (std.mem.span(contains).len == 0) null else std.mem.span(contains),
+        if (std.mem.span(contains_pattern).len == 0) null else std.mem.span(contains_pattern),
+        if (std.mem.span(not_contains).len == 0) null else std.mem.span(not_contains),
+        // py/go will be responsible for this check -- we are only really doing this whole
+        // "should execute" thing in zig so we never have to rely on regex in py/go, but clearly
+        // doing string contains is way easier there (certainly when considering passing things
+        // over ffi), so yea... w/e this is zero allocation operation so just pass empty arraylist
+        false,
+        &_triggered_callbacks,
+    ) catch {
+        return 1;
+    };
+
+    if (should_execute) {
+        execute.* = true;
+    } else {
+        execute.* = false;
+    }
 
     return 0;
 }

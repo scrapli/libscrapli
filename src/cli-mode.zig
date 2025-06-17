@@ -221,7 +221,7 @@ pub fn determineMode(
                 compiled_prompt_pattern,
                 current_prompt,
             );
-            if (match.len > 0) {
+            if (match != null) {
                 var is_excluded = false;
 
                 if (mode_def.value_ptr.*.prompt_excludes) |prompt_excludes| {

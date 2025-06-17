@@ -3,6 +3,7 @@ const transport = @import("transport.zig");
 const transport_waiter = @import("transport-waiter.zig");
 const re = @import("re.zig");
 const bytes = @import("bytes.zig");
+const bytes_check = @import("bytes-check.zig");
 const operation = @import("cli-operation.zig");
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
@@ -10,78 +11,21 @@ const auth = @import("auth.zig");
 const file = @import("file.zig");
 const errors = @import("errors.zig");
 
-const pcre2 = @cImport({
-    @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
-    @cInclude("pcre2.h");
-});
+const pcre2 = @cImport(
+    {
+        @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
+        @cInclude("pcre2.h");
+    },
+);
 
 const min_read_delay_ns: u64 = 5_000;
 const max_read_delay_ns: u64 = 7_500_000;
-
-const defaults = struct {
-    const read_size: u64 = 4_096;
-    const return_char: []const u8 = "\n";
-    const operation_timeout_ns: u64 = 10_000_000_000;
-    const operation_max_search_depth: u64 = 512;
-};
+const default_return_char: []const u8 = "\n";
 
 const ReadThreadState = enum(u8) {
     uninitialized,
     run,
     stop,
-};
-
-const ReadArgs = struct {
-    pattern: ?*pcre2.pcre2_code_8 = null,
-    patterns: ?[]const ?*pcre2.pcre2_code_8 = null,
-    actual: ?[]const u8 = null,
-};
-
-const ReadBufs = struct {
-    raw: std.ArrayList(u8),
-    processed: std.ArrayList(u8),
-
-    fn init(allocator: std.mem.Allocator) ReadBufs {
-        return ReadBufs{
-            .raw = std.ArrayList(u8).init(allocator),
-            .processed = std.ArrayList(u8).init(allocator),
-        };
-    }
-
-    fn deinit(self: *ReadBufs) void {
-        self.raw.deinit();
-        self.processed.deinit();
-    }
-
-    fn appendSliceBoth(self: *ReadBufs, buf: []const u8) !void {
-        try self.raw.appendSlice(buf);
-        try self.processed.appendSlice(buf);
-    }
-
-    /// returns array of raw and processed bufs, including doing a final trimming of whitespace
-    /// on the processed buf
-    fn toOwnedSlices(self: *ReadBufs, allocator: std.mem.Allocator) ![2][]const u8 {
-        const processed = try self.processed.toOwnedSlice();
-        defer allocator.free(processed);
-
-        return [2][]const u8{
-            try self.raw.toOwnedSlice(),
-            try bytes.trimWhitespace(allocator, processed),
-        };
-    }
-};
-
-const MatchPositions = struct {
-    start: usize,
-    end: usize,
-
-    fn len(self: *MatchPositions) usize {
-        if (self.end == 0) {
-            return 0;
-        }
-
-        return self.end - self.start + 1;
-    }
 };
 
 pub const RecordDestination = union(enum) {
@@ -90,10 +34,10 @@ pub const RecordDestination = union(enum) {
 };
 
 pub const OptionsInputs = struct {
-    read_size: u64 = defaults.read_size,
-    return_char: []const u8 = defaults.return_char,
-    operation_timeout_ns: u64 = defaults.operation_timeout_ns,
-    operation_max_search_depth: u64 = defaults.operation_max_search_depth,
+    read_size: u64 = 4_096,
+    return_char: []const u8 = default_return_char,
+    operation_timeout_ns: u64 = 10_000_000_000,
+    operation_max_search_depth: u64 = 512,
     record_destination: ?RecordDestination = null,
 };
 
@@ -118,7 +62,7 @@ pub const Options = struct {
             .record_destination = opts.record_destination,
         };
 
-        if (&o.return_char[0] != &defaults.return_char[0]) {
+        if (&o.return_char[0] != &default_return_char[0]) {
             o.return_char = try o.allocator.dupe(u8, o.return_char);
         }
 
@@ -137,7 +81,7 @@ pub const Options = struct {
     }
 
     pub fn deinit(self: *Options) void {
-        if (&self.return_char[0] != &defaults.return_char[0]) {
+        if (&self.return_char[0] != &default_return_char[0]) {
             self.allocator.free(self.return_char);
         }
 
@@ -172,14 +116,14 @@ pub const Session = struct {
     ),
     read_thread_errored: bool = false,
 
-    recorder: ?std.fs.File.Writer,
+    recorder: ?std.fs.File.Writer = null,
 
-    compiled_username_pattern: ?*pcre2.pcre2_code_8,
-    compiled_password_pattern: ?*pcre2.pcre2_code_8,
-    compiled_private_key_passphrase_pattern: ?*pcre2.pcre2_code_8,
+    compiled_username_pattern: ?*pcre2.pcre2_code_8 = null,
+    compiled_password_pattern: ?*pcre2.pcre2_code_8 = null,
+    compiled_private_key_passphrase_pattern: ?*pcre2.pcre2_code_8 = null,
 
     prompt_pattern: []const u8,
-    compiled_prompt_pattern: ?*pcre2.pcre2_code_8,
+    compiled_prompt_pattern: ?*pcre2.pcre2_code_8 = null,
 
     last_consumed_prompt: std.ArrayList(u8),
 
@@ -233,11 +177,7 @@ pub const Session = struct {
                 std.fifo.LinearFifoBufferType.Dynamic,
             ).init(allocator),
             .recorder = recorder,
-            .compiled_username_pattern = null,
-            .compiled_password_pattern = null,
-            .compiled_private_key_passphrase_pattern = null,
             .prompt_pattern = prompt_pattern,
-            .compiled_prompt_pattern = null,
             .last_consumed_prompt = std.ArrayList(u8).init(allocator),
         };
         errdefer s.deinit();
@@ -489,7 +429,7 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("in session authentication starting...", .{});
 
-        var bufs = ReadBufs.init(allocator);
+        var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
         var cur_check_start_idx: usize = 0;
@@ -545,17 +485,7 @@ pub const Session = struct {
                 continue;
             }
 
-            try bufs.appendSliceBoth(buf[0..n]);
-
-            if (std.mem.indexOf(u8, buf[0..n], &[_]u8{ascii.control_chars.esc}) != null) {
-                // same as readTimeout other than we dont bother limiting the search depth here
-                // see readTimeout for some more info
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    bufs.processed.items,
-                    bufs.processed.items.len - n,
-                );
-                try bufs.processed.resize(new_size);
-            }
+            try bufs.appendSlice(buf[0..n]);
 
             const searchable_buf = bytes.getBufSearchView(
                 bufs.processed.items[cur_check_start_idx..],
@@ -583,7 +513,7 @@ pub const Session = struct {
 
             switch (state) {
                 .complete => {
-                    return bufs.toOwnedSlices(allocator);
+                    return bufs.toOwnedSlices();
                 },
                 .username_prompted => {
                     if (self.auth_options.username == null) {
@@ -692,14 +622,14 @@ pub const Session = struct {
         return new_val;
     }
 
-    fn readTimeout(
+    pub fn readTimeout(
         self: *Session,
         timer: *std.time.Timer,
         cancel: ?*bool,
-        check_read_operation_done: fn (buf: []u8, args: ReadArgs) anyerror!MatchPositions,
-        args: ReadArgs,
-        bufs: *ReadBufs,
-    ) !MatchPositions {
+        checkf: bytes_check.CheckF,
+        checkargs: bytes_check.CheckArgs,
+        bufs: *bytes.ProcessedBuf,
+    ) !bytes_check.MatchPositions {
         var cur_read_delay_ns: u64 = min_read_delay_ns;
 
         // to ensure the check_read_operation_done function doesnt think we are done "early" by
@@ -744,30 +674,14 @@ pub const Session = struct {
                 cur_read_delay_ns = min_read_delay_ns;
             }
 
-            try bufs.appendSliceBoth(buf[0..n]);
-
-            if (std.mem.indexOf(u8, buf[0..n], &[_]u8{ascii.control_chars.esc}) != null) {
-                // if ESC in the new buf look at last n of processed buf to replace if
-                // necessary; this *feels* bad like we may miss sequences (if our read gets part
-                // of a sequence, then a subsequent read gets the rest), however this has never
-                // happened in 5+ years of scrapli/scrapligo only checking/cleaning the read buf
-                // so we are going to roll with it and hope :)
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    bufs.processed.items,
-                    bufs.processed.items.len - n,
-                );
-                try bufs.processed.resize(new_size);
-            }
+            try bufs.appendSlice(buf[0..n]);
 
             const searchable_buf = bytes.getBufSearchView(
                 bufs.processed.items[op_processed_buf_starting_len..],
                 self.options.operation_max_search_depth,
             );
 
-            var match_indexes = try check_read_operation_done(
-                searchable_buf,
-                args,
-            );
+            var match_indexes = try checkf(checkargs, searchable_buf);
 
             if (!(match_indexes.start == 0 and match_indexes.end == 0)) {
                 match_indexes.start += (bufs.processed.items.len - searchable_buf.len);
@@ -775,6 +689,29 @@ pub const Session = struct {
                 return match_indexes;
             }
         }
+    }
+
+    pub fn readAny(
+        self: *Session,
+        allocator: std.mem.Allocator,
+        options: operation.ReadAnyOptions,
+    ) ![2][]const u8 {
+        self.log.info("read any requested", .{});
+
+        var bufs = bytes.ProcessedBuf.init(allocator);
+        defer bufs.deinit();
+
+        var timer = try std.time.Timer.start();
+
+        _ = try self.readTimeout(
+            &timer,
+            options.cancel,
+            bytes_check.nonZeroBuf,
+            .{},
+            &bufs,
+        );
+
+        return bufs.toOwnedSlices();
     }
 
     pub fn getPrompt(
@@ -786,18 +723,20 @@ pub const Session = struct {
 
         try self.writeReturn();
 
-        var bufs = ReadBufs.init(allocator);
+        var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
         var timer = try std.time.Timer.start();
 
+        const checkArgs = bytes_check.CheckArgs{
+            .pattern = self.compiled_prompt_pattern,
+        };
+
         _ = try self.readTimeout(
             &timer,
             options.cancel,
-            readUntilPatternCheckDone,
-            .{
-                .pattern = self.compiled_prompt_pattern,
-            },
+            bytes_check.patternInBuf,
+            checkArgs,
             &bufs,
         );
 
@@ -808,8 +747,17 @@ pub const Session = struct {
             bufs.processed.items,
         );
 
-        const owned_found_prompt = try allocator.alloc(u8, found_prompt.len);
-        @memcpy(owned_found_prompt, found_prompt);
+        if (found_prompt == null) {
+            self.log.critical(
+                "no prompt found matching prompt pattern '{s}'",
+                .{self.prompt_pattern},
+            );
+
+            return errors.ScrapliError.RegexError;
+        }
+
+        const owned_found_prompt = try allocator.alloc(u8, found_prompt.?.len);
+        @memcpy(owned_found_prompt, found_prompt.?);
 
         // we want to ensure we are storing the last consumed prompt so that our send_input
         // buf is always "correct" when "retain_input" is true
@@ -827,9 +775,9 @@ pub const Session = struct {
         cancel: ?*bool,
         input: []const u8,
         input_handling: operation.InputHandling,
-        bufs: *ReadBufs,
-    ) !MatchPositions {
-        const args = ReadArgs{
+        bufs: *bytes.ProcessedBuf,
+    ) !bytes_check.MatchPositions {
+        const checkArgs = bytes_check.CheckArgs{
             .pattern = self.compiled_prompt_pattern,
             .actual = input,
         };
@@ -837,15 +785,15 @@ pub const Session = struct {
         try self.write(input, false);
 
         // SAFETY: will always be set or we'll error
-        var match_indexes: MatchPositions = undefined;
+        var match_indexes: bytes_check.MatchPositions = undefined;
 
         switch (input_handling) {
             operation.InputHandling.exact => {
                 match_indexes = try self.readTimeout(
                     timer,
                     cancel,
-                    readUntilExactCheckDone,
-                    args,
+                    bytes_check.exactInBuf,
+                    checkArgs,
                     bufs,
                 );
             },
@@ -853,8 +801,8 @@ pub const Session = struct {
                 match_indexes = try self.readTimeout(
                     timer,
                     cancel,
-                    readUntilFuzzyCheckDone,
-                    args,
+                    bytes_check.fuzzyInBuf,
+                    checkArgs,
                     bufs,
                 );
             },
@@ -863,7 +811,7 @@ pub const Session = struct {
                 // when in "ignore" handling mode
                 try self.writeReturn();
 
-                return MatchPositions{ .start = 0, .end = 0 };
+                return bytes_check.MatchPositions{ .start = 0, .end = 0 };
             },
         }
 
@@ -881,13 +829,13 @@ pub const Session = struct {
 
         var timer = try std.time.Timer.start();
 
-        var bufs = ReadBufs.init(allocator);
+        var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
         if (self.last_consumed_prompt.items.len != 0) {
             // if we had some prompt consumed, stuff it on the raw and processed buffers and then
             // re-zeroize
-            try bufs.appendSliceBoth(self.last_consumed_prompt.items);
+            try bufs.appendSlice(self.last_consumed_prompt.items);
             try self.last_consumed_prompt.resize(0);
         }
 
@@ -904,14 +852,16 @@ pub const Session = struct {
             try bufs.processed.resize(0);
         }
 
+        const checkArgs = bytes_check.CheckArgs{
+            .pattern = self.compiled_prompt_pattern,
+            .actual = options.input,
+        };
+
         var prompt_indexes = try self.readTimeout(
             &timer,
             options.cancel,
-            readUntilPatternCheckDone,
-            .{
-                .pattern = self.compiled_prompt_pattern,
-                .actual = options.input,
-            },
+            bytes_check.patternInBuf,
+            checkArgs,
             &bufs,
         );
 
@@ -929,7 +879,7 @@ pub const Session = struct {
             );
         }
 
-        return bufs.toOwnedSlices(allocator);
+        return bufs.toOwnedSlices();
     }
 
     pub fn sendPromptedInput(
@@ -969,13 +919,13 @@ pub const Session = struct {
             }
         }
 
-        var bufs = ReadBufs.init(allocator);
+        var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
         if (self.last_consumed_prompt.items.len != 0) {
             // if we had some prompt consumed, stuff it on the raw and processed buffers and then
             // re-zeroize
-            try bufs.appendSliceBoth(self.last_consumed_prompt.items);
+            try bufs.appendSlice(self.last_consumed_prompt.items);
             try self.last_consumed_prompt.resize(0);
         }
 
@@ -987,24 +937,24 @@ pub const Session = struct {
             &bufs,
         );
 
-        var args = ReadArgs{
+        var checkArgs = bytes_check.CheckArgs{
             .actual = options.prompt_exact,
         };
 
         if (compiled_pattern) |cp| {
-            args.patterns = &[_]?*pcre2.pcre2_code_8{
+            checkArgs.patterns = &[_]?*pcre2.pcre2_code_8{
                 self.compiled_prompt_pattern,
                 cp,
             };
         } else {
-            args.pattern = self.compiled_prompt_pattern;
+            checkArgs.pattern = self.compiled_prompt_pattern;
         }
 
         _ = try self.readTimeout(
             &timer,
             options.cancel,
-            readUntilExactCheckDone,
-            args,
+            bytes_check.exactInBuf,
+            checkArgs,
             &bufs,
         );
 
@@ -1023,8 +973,8 @@ pub const Session = struct {
         var prompt_indexes = try self.readTimeout(
             &timer,
             options.cancel,
-            readUntilPatternCheckDone,
-            args,
+            bytes_check.patternInBuf,
+            checkArgs,
             &bufs,
         );
 
@@ -1042,290 +992,6 @@ pub const Session = struct {
             );
         }
 
-        return bufs.toOwnedSlices(allocator);
+        return bufs.toOwnedSlices();
     }
 };
-
-fn readUntilPatternCheckDone(buf: []const u8, args: ReadArgs) !MatchPositions {
-    if (buf.len == 0) {
-        return MatchPositions{ .start = 0, .end = 0 };
-    }
-
-    const match_indexes = try re.pcre2FindIndex(args.pattern.?, buf);
-    if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
-        return MatchPositions{ .start = match_indexes[0], .end = match_indexes[1] - 1 };
-    }
-
-    return MatchPositions{ .start = 0, .end = 0 };
-}
-
-test "readUntilPatternCheckDone" {
-    const cases = [_]struct {
-        name: []const u8,
-        haystack: []const u8,
-        read_args: ReadArgs,
-        expected: MatchPositions,
-    }{
-        .{
-            .name = "not done",
-            .haystack = "",
-            .read_args = ReadArgs{
-                .pattern = re.pcre2Compile("foo"),
-                .patterns = null,
-                .actual = null,
-            },
-            .expected = MatchPositions{ .start = 0, .end = 0 },
-        },
-        .{
-            .name = "simple match",
-            .haystack = "foo",
-            .read_args = ReadArgs{
-                .pattern = re.pcre2Compile("foo"),
-                .patterns = null,
-                .actual = null,
-            },
-            .expected = MatchPositions{ .start = 0, .end = 2 },
-        },
-        .{
-            .name = "simple not from start",
-            .haystack = "abcfoo",
-            .read_args = ReadArgs{
-                .pattern = re.pcre2Compile("foo"),
-                .patterns = null,
-                .actual = null,
-            },
-            .expected = MatchPositions{ .start = 3, .end = 5 },
-        },
-    };
-
-    defer {
-        for (cases) |case| {
-            re.pcre2Free(case.read_args.pattern.?);
-        }
-    }
-
-    for (cases) |case| {
-        const actual = try readUntilPatternCheckDone(case.haystack, case.read_args);
-
-        try std.testing.expectEqual(case.expected, actual);
-    }
-}
-
-fn readUntilAnyPatternCheckDone(buf: []const u8, args: ReadArgs) !MatchPositions {
-    if (buf.len == 0) {
-        return MatchPositions{ .start = 0, .end = 0 };
-    }
-
-    for (args.patterns.?) |pattern| {
-        const match_indexes = try re.pcre2FindIndex(pattern.?, buf);
-        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
-            return MatchPositions{ .start = match_indexes[0], .end = match_indexes[1] - 1 };
-        }
-    }
-
-    return MatchPositions{ .start = 0, .end = 0 };
-}
-
-test "readUntilAnyPatternCheckDone" {
-    const cases = [_]struct {
-        name: []const u8,
-        haystack: []const u8,
-        read_args: ReadArgs,
-        expected: MatchPositions,
-    }{
-        .{
-            .name = "not done",
-            .haystack = "",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = try re.pcre2CompileMany(
-                    std.testing.allocator,
-                    &[_][]const u8{
-                        "foo",
-                        "bar",
-                        "baz",
-                    },
-                ),
-                .actual = null,
-            },
-            .expected = MatchPositions{ .start = 0, .end = 0 },
-        },
-        .{
-            .name = "done first match",
-            .haystack = "foo",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = try re.pcre2CompileMany(
-                    std.testing.allocator,
-                    &[_][]const u8{
-                        "foo",
-                        "bar",
-                        "baz",
-                    },
-                ),
-                .actual = null,
-            },
-            .expected = MatchPositions{ .start = 0, .end = 2 },
-        },
-        .{
-            .name = "done last match",
-            .haystack = "bar",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = try re.pcre2CompileMany(
-                    std.testing.allocator,
-                    &[_][]const u8{
-                        "foo",
-                        "bar",
-                        "baz",
-                    },
-                ),
-                .actual = null,
-            },
-            .expected = MatchPositions{ .start = 0, .end = 2 },
-        },
-    };
-
-    defer {
-        for (cases) |case| {
-            for (case.read_args.patterns.?) |pattern| {
-                re.pcre2Free(pattern.?);
-            }
-
-            std.testing.allocator.free(case.read_args.patterns.?);
-        }
-    }
-
-    for (cases) |case| {
-        const actual = try readUntilAnyPatternCheckDone(
-            case.haystack,
-            case.read_args,
-        );
-
-        try std.testing.expectEqual(case.expected, actual);
-    }
-}
-
-fn readUntilExactCheckDone(buf: []const u8, args: ReadArgs) !MatchPositions {
-    if (buf.len == 0) {
-        return MatchPositions{ .start = 0, .end = 0 };
-    }
-
-    const match_start_index = std.mem.indexOf(u8, buf, args.actual.?);
-    if (match_start_index != null) {
-        return MatchPositions{
-            .start = match_start_index.?,
-            .end = match_start_index.? + args.actual.?.len - 1,
-        };
-    }
-
-    return MatchPositions{ .start = 0, .end = 0 };
-}
-
-test "readUntilExactCheckDone" {
-    const cases = [_]struct {
-        name: []const u8,
-        haystack: []const u8,
-        read_args: ReadArgs,
-        expected: MatchPositions,
-    }{
-        .{
-            .name = "not done",
-            .haystack = "",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = null,
-                .actual = "foo",
-            },
-            .expected = MatchPositions{ .start = 0, .end = 0 },
-        },
-        .{
-            .name = "simple match",
-            .haystack = "foo",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = null,
-                .actual = "foo",
-            },
-            .expected = MatchPositions{ .start = 0, .end = 2 },
-        },
-        .{
-            .name = "simple not from start",
-            .haystack = "abcfoo",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = null,
-                .actual = "foo",
-            },
-            .expected = MatchPositions{ .start = 3, .end = 5 },
-        },
-    };
-
-    for (cases) |case| {
-        const actual = try readUntilExactCheckDone(
-            case.haystack,
-            case.read_args,
-        );
-
-        try std.testing.expectEqual(case.expected, actual);
-    }
-}
-
-fn readUntilFuzzyCheckDone(buf: []const u8, args: ReadArgs) !MatchPositions {
-    const match_indexes = bytes.roughlyContains(buf, args.actual.?);
-
-    if (match_indexes[0] == 0 and match_indexes[1] == 0) {
-        return MatchPositions{ .start = 0, .end = 0 };
-    }
-
-    return MatchPositions{ .start = match_indexes[0], .end = match_indexes[1] - 1 };
-}
-
-test "readUntilFuzzyCheckDone" {
-    const cases = [_]struct {
-        name: []const u8,
-        haystack: []const u8,
-        read_args: ReadArgs,
-        expected: MatchPositions,
-    }{
-        .{
-            .name = "not done",
-            .haystack = "",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = null,
-                .actual = "foo",
-            },
-            .expected = MatchPositions{ .start = 0, .end = 0 },
-        },
-        .{
-            .name = "simple match",
-            .haystack = "f X o X o",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = null,
-                .actual = "foo",
-            },
-            .expected = MatchPositions{ .start = 0, .end = 8 },
-        },
-        .{
-            .name = "simple not from start",
-            .haystack = "X o f X o X o",
-            .read_args = ReadArgs{
-                .pattern = null,
-                .patterns = null,
-                .actual = "foo",
-            },
-            .expected = MatchPositions{ .start = 4, .end = 12 },
-        },
-    };
-
-    for (cases) |case| {
-        const actual = try readUntilFuzzyCheckDone(
-            case.haystack,
-            case.read_args,
-        );
-
-        try std.testing.expectEqual(case.expected, actual);
-    }
-}

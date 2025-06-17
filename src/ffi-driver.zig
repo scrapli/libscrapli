@@ -221,9 +221,6 @@ pub const FfiDriver = struct {
     }
 
     fn writePollWakeUp(self: *FfiDriver) !void {
-        // TODO we should probably either make this conditional -- as in only use fd for wakeup
-        // when doing async polling, -- or -- just always do this and remove the wait backoff
-        // and wait method
         _ = try std.posix.write(self.poll_fds[1], "x");
     }
 
@@ -320,6 +317,15 @@ pub const FfiDriver = struct {
                 },
                 .send_prompted_input => |o| {
                     ret_ok = rd.sendPromptedInput(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
+                .read_any => |o| {
+                    ret_ok = rd.readAny(
                         self.allocator,
                         o,
                     ) catch |err| blk: {
