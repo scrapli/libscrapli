@@ -76,25 +76,33 @@ pub const Result = struct {
 
     pub fn record(
         self: *Result,
-        input: []const u8,
-        rets: [2][]const u8,
+        data: struct {
+            input: []const u8 = "",
+            rets: [2][]const u8,
+            trim_processed: bool = true,
+        },
     ) !void {
         try self.splits_ns.append(std.time.nanoTimestamp());
-        try self.inputs.append(input);
-        try self.results_raw.append(rets[0]);
+        try self.inputs.append(data.input);
+        try self.results_raw.append(data.rets[0]);
 
-        // trimWhitespace allocates new memory properly sized, so we can then free
-        // up the original "processed" buf (it is "processed" becuase ansi/ascii stuff is removed)
-        const trimmed = try bytes.trimWhitespace(self.allocator, rets[1]);
-        self.allocator.free(rets[1]);
-        try self.results.append(trimmed);
+        if (data.trim_processed) {
+            // trimWhitespace allocates new memory properly sized, so we can then free
+            // up the original "processed" buf (it is "processed" becuase ansi/ascii stuff is
+            // removed, but we still trim whitespace to get rid of leading/trailing junk)
+            const trimmed = try bytes.trimWhitespace(self.allocator, data.rets[1]);
+            self.allocator.free(data.rets[1]);
+            try self.results.append(trimmed);
+        } else {
+            try self.results.append(data.rets[1]);
+        }
 
         if (self.failed_indicators == null) {
             return;
         }
 
         for (0.., self.failed_indicators.?.items) |idx, failed_when| {
-            if (std.mem.indexOf(u8, rets[1], failed_when) != null) {
+            if (std.mem.indexOf(u8, data.rets[1], failed_when) != null) {
                 self.result_failure_indicated = true;
                 self.result_failure_indicator = @intCast(idx);
 

@@ -173,13 +173,14 @@ pub const Driver = struct {
         errdefer res.deinit();
 
         try res.record(
-            "", // no "input" for opening
-            try self.session.open(
-                allocator,
-                self.host,
-                self.port,
-                options.cancel,
-            ),
+            .{
+                .rets = try self.session.open(
+                    allocator,
+                    self.host,
+                    self.port,
+                    options.cancel,
+                ),
+            },
         );
 
         // getting prompt also ensures we vacuum up anything in the buffer from after login (matters
@@ -278,8 +279,9 @@ pub const Driver = struct {
         errdefer res.deinit();
 
         try res.record(
-            "",
-            try self.session.getPrompt(allocator, options),
+            .{
+                .rets = try self.session.getPrompt(allocator, options),
+            },
         );
 
         return res;
@@ -482,8 +484,10 @@ pub const Driver = struct {
         }
 
         try res.record(
-            options.input,
-            try self.session.sendInput(allocator, options),
+            .{
+                .input = options.input,
+                .rets = try self.session.sendInput(allocator, options),
+            },
         );
 
         return res;
@@ -524,18 +528,20 @@ pub const Driver = struct {
 
         for (options.inputs) |input| {
             try res.record(
-                input,
-                try self.session.sendInput(
-                    allocator,
-                    .{
-                        .cancel = options.cancel,
-                        .input = input,
-                        .requested_mode = options.requested_mode,
-                        .input_handling = options.input_handling,
-                        .retain_input = options.retain_input,
-                        .retain_trailing_prompt = options.retain_trailing_prompt,
-                    },
-                ),
+                .{
+                    .input = input,
+                    .rets = try self.session.sendInput(
+                        allocator,
+                        .{
+                            .cancel = options.cancel,
+                            .input = input,
+                            .requested_mode = options.requested_mode,
+                            .input_handling = options.input_handling,
+                            .retain_input = options.retain_input,
+                            .retain_trailing_prompt = options.retain_trailing_prompt,
+                        },
+                    ),
+                },
             );
 
             if (options.stop_on_indicated_failure and res.result_failure_indicated) {
@@ -580,11 +586,13 @@ pub const Driver = struct {
         }
 
         try res.record(
-            options.input,
-            try self.session.sendPromptedInput(
-                allocator,
-                options,
-            ),
+            .{
+                .input = options.input,
+                .rets = try self.session.sendPromptedInput(
+                    allocator,
+                    options,
+                ),
+            },
         );
 
         return res;
@@ -592,7 +600,9 @@ pub const Driver = struct {
 
     // safely reads any bytes from the session with the deafult timeout handling. "nicer" than just
     // directly reading from the session since timeouts are handled and ascii/ansi things are
-    // stripped if present
+    // stripped if present, however no whitespace is trimmed! this is because we dont want to chomp
+    // off a newline that actually matters to output, and since we are not reading to "well known"
+    // places (i.e. the next prompt) we have no idea what we've read so we better not faff w/ it.
     pub fn readAny(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -608,7 +618,12 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        try res.record("", try self.session.readAny(allocator, options));
+        try res.record(
+            .{
+                .rets = try self.session.readAny(allocator, options),
+                .trim_processed = false,
+            },
+        );
 
         return res;
     }
@@ -724,8 +739,12 @@ pub const Driver = struct {
         );
 
         try res.record(
-            options.initial_input orelse "",
-            try bufs.toOwnedSlices(allocator),
+            .{
+                .input = options.initial_input orelse "",
+                .rets = try bufs.toOwnedSlices(),
+                // this may be the only place we *dont* want to trim whitespace
+                // .trim_processed = false,
+            },
         );
 
         return res;
