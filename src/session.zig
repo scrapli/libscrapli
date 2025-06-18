@@ -728,15 +728,13 @@ pub const Session = struct {
 
         var timer = try std.time.Timer.start();
 
-        const checkArgs = bytes_check.CheckArgs{
-            .pattern = self.compiled_prompt_pattern,
-        };
-
         _ = try self.readTimeout(
             &timer,
             options.cancel,
             bytes_check.patternInBuf,
-            checkArgs,
+            .{
+                .pattern = self.compiled_prompt_pattern,
+            },
             &bufs,
         );
 

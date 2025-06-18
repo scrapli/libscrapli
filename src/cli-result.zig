@@ -102,7 +102,7 @@ pub const Result = struct {
         }
 
         for (0.., self.failed_indicators.?.items) |idx, failed_when| {
-            if (std.mem.indexOf(u8, data.rets[1], failed_when) != null) {
+            if (std.mem.indexOf(u8, self.results.items[self.results.items.len - 1], failed_when) != null) {
                 self.result_failure_indicated = true;
                 self.result_failure_indicator = @intCast(idx);
 
