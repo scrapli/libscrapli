@@ -6,6 +6,7 @@ const transport_waiter = @import("transport-waiter.zig");
 
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
+    @cInclude("sys/socket.h");
     @cInclude("stdlib.h");
 });
 
@@ -13,13 +14,11 @@ const ssh2 = @cImport({
     @cInclude("libssh2.h");
 });
 
-const LIBSSH2_ERROR_EAGAIN = -37;
-
 const open_eagain_delay_ns: u64 = 100_000;
 
 var ssh2_initialized = false;
 
-fn ssh2InitializeOnce() c_int {
+fn libssh2InitializeOnce() c_int {
     if (!ssh2_initialized) {
         // 0 is normal initialization, only other thing we can do here is tell it to *not*
         // initialize crypto libraries, which we obviously want it to be doing, so just pass 0
@@ -51,8 +50,21 @@ fn libssh2ChannelOpenSession(session: ?*ssh2.LIBSSH2_SESSION) ?*ssh2.LIBSSH2_CHA
     );
 }
 
+fn libssh2ChannelOpenProxySession(
+    session: ?*ssh2.LIBSSH2_SESSION,
+    host: [:0]u8,
+) ?*ssh2.LIBSSH2_CHANNEL {
+    return ssh2.libssh2_channel_direct_tcpip_ex(
+        session,
+        host,
+        22, // TODO obv add to the options
+        "127.0.0.1",
+        0,
+    );
+}
+
 // another untranslatable macro one
-fn libssh2_channel_request_pty(channel: ?*ssh2.LIBSSH2_CHANNEL) c_int {
+fn libssh2ChannelRequestPty(channel: ?*ssh2.LIBSSH2_CHANNEL) c_int {
     const term_type = "xterm";
 
     // this seems to have no affect on at least on iosxe test box but... want to have echo
@@ -98,14 +110,121 @@ fn libssh2ChannelProcessStartup(channel: ?*ssh2.LIBSSH2_CHANNEL, netconf: bool) 
     );
 }
 
+const ProxyLoop = struct {
+    allocator: std.mem.Allocator,
+    channel: ?*ssh2.LIBSSH2_CHANNEL = null,
+    remote_fd: c_int = 0,
+    stop_flag: std.atomic.Value(bool),
+    pipe_to_channel_thread: ?std.Thread = null,
+    channel_to_pipe_thread: ?std.Thread = null,
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+    ) !*ProxyLoop {
+        const pl = try allocator.create(ProxyLoop);
+
+        pl.* = ProxyLoop{
+            .allocator = allocator,
+            .stop_flag = std.atomic.Value(bool).init(false),
+        };
+
+        return pl;
+    }
+
+    pub fn deinit(self: *ProxyLoop) void {
+        self.allocator.destroy(self);
+    }
+
+    pub fn start(self: *ProxyLoop, channel: *ssh2.LIBSSH2_CHANNEL, remote_fd: c_int) !void {
+        self.channel = channel;
+        self.remote_fd = remote_fd;
+
+        self.stop_flag.store(false, std.builtin.AtomicOrder.unordered);
+
+        self.pipe_to_channel_thread = try std.Thread.spawn(
+            .{},
+            ProxyLoop.copy_pipe_to_channel,
+            .{
+                self,
+            },
+        );
+        self.channel_to_pipe_thread = try std.Thread.spawn(
+            .{},
+            ProxyLoop.copy_channel_to_pipe,
+            .{
+                self,
+            },
+        );
+    }
+
+    pub fn stop(self: *ProxyLoop) void {
+        std.posix.close(self.remote_fd);
+
+        self.stop_flag.store(true, std.builtin.AtomicOrder.unordered);
+
+        if (self.pipe_to_channel_thread) |t| t.join();
+        if (self.channel_to_pipe_thread) |t| t.join();
+
+        self.pipe_to_channel_thread = null;
+        self.channel_to_pipe_thread = null;
+    }
+
+    fn copy_pipe_to_channel(
+        self: *ProxyLoop,
+    ) !void {
+        var buf: [4096]u8 = undefined;
+        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+            // TODO i assume this is a blockign read which... is not good
+            const n = std.posix.read(self.remote_fd, &buf) catch |err| {
+                switch (err) {
+                    error.NotOpenForReading => {
+                        return;
+                    },
+                    else => {
+                        return err;
+                    },
+                }
+            };
+            if (n == 0) break;
+
+            const rc = ssh2.libssh2_channel_write_ex(self.channel, 0, buf[0..n].ptr, n);
+
+            // TODO gotta figure out what happens if these fail -- maybe the "normal" read method
+            // should check for the state of the proxy loop if in proxy jump setup?
+            if (rc < 0) {
+                return error.WriteFailed;
+            }
+        }
+    }
+
+    fn copy_channel_to_pipe(
+        self: *ProxyLoop,
+    ) !void {
+        var buf: [4096]u8 = undefined;
+        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+            const n = ssh2.libssh2_channel_read(self.channel, buf[0..].ptr, 4096);
+            if (n == 0) break;
+            if (n < 0) continue;
+            _ = try std.posix.write(self.remote_fd, buf[0..@intCast(n)]);
+        }
+    }
+};
+
 const AuthCallbackData = struct {
     password: [:0]u8,
+};
+
+pub const ProxyJumpTarget = struct {
+    host: []const u8,
+    username: []const u8,
+    password: []const u8,
 };
 
 pub const OptionsInputs = struct {
     known_hosts_path: ?[]const u8 = null,
     libssh2_trace: bool = false,
     netconf: bool = false,
+    proxy_jump_target: ?ProxyJumpTarget = null,
 };
 
 pub const Options = struct {
@@ -113,6 +232,7 @@ pub const Options = struct {
     known_hosts_path: ?[]const u8,
     libssh2_trace: bool,
     netconf: bool,
+    proxy_jump_target: ?ProxyJumpTarget,
 
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
@@ -123,6 +243,7 @@ pub const Options = struct {
             .known_hosts_path = opts.known_hosts_path,
             .libssh2_trace = opts.libssh2_trace,
             .netconf = opts.netconf,
+            .proxy_jump_target = opts.proxy_jump_target,
         };
 
         return o;
@@ -140,19 +261,29 @@ pub const Transport = struct {
     options: *Options,
 
     auth_callback_data: *AuthCallbackData,
+    proxy_auth_callback_data: *AuthCallbackData,
 
     session_lock: std.Thread.Mutex,
 
+    // may be to the actual host or to the jumphost
     socket: ?std.posix.socket_t = null,
-    session: ?*ssh2.struct__LIBSSH2_SESSION = null,
-    channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null,
+
+    // the session/channel to the host in normal operation, or to the "initial" host in proxy jump
+    // operations
+    initial_session: ?*ssh2.struct__LIBSSH2_SESSION = null,
+    initial_channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null,
+
+    // the "outer" (or original) session/channel (to the jumphost basically)
+    proxy_session: ?*ssh2.struct__LIBSSH2_SESSION = null,
+    proxy_channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null,
+    proxy_loop: *ProxyLoop,
 
     pub fn init(
         allocator: std.mem.Allocator,
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
-        const rc = ssh2InitializeOnce();
+        const rc = libssh2InitializeOnce();
         if (rc != 0) {
             log.critical("failed initializing ssh2", .{});
 
@@ -167,11 +298,20 @@ pub const Transport = struct {
             .password = undefined,
         };
 
+        const pa = try allocator.create(AuthCallbackData);
+
+        pa.* = AuthCallbackData{
+            // SAFETY: used in C callback, so think this is expected/fine
+            .password = undefined,
+        };
+
         t.* = Transport{
             .allocator = allocator,
             .log = log,
             .options = options,
             .auth_callback_data = a,
+            .proxy_auth_callback_data = pa,
+            .proxy_loop = try ProxyLoop.init(allocator),
             .session_lock = std.Thread.Mutex{},
         };
 
@@ -179,13 +319,14 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
-        if (self.session != null) {
+        if (self.initial_session != null) {
             while (true) {
-                const rc = ssh2.libssh2_session_free(self.session);
+                // TODO proxy session too if applicable
+                const rc = ssh2.libssh2_session_free(self.initial_session);
 
                 if (rc == 0) {
                     break;
-                } else if (rc == LIBSSH2_ERROR_EAGAIN) {
+                } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                     std.time.sleep(open_eagain_delay_ns);
 
                     continue;
@@ -197,8 +338,9 @@ pub const Transport = struct {
             }
         }
 
-        // any data set in this obj will be freed during auth itself
         self.allocator.destroy(self.auth_callback_data);
+        self.allocator.destroy(self.proxy_auth_callback_data);
+        self.proxy_loop.deinit();
         self.allocator.destroy(self);
     }
 
@@ -219,26 +361,58 @@ pub const Transport = struct {
             timer,
             cancel,
             operation_timeout_ns,
+            self.initial_session.?,
             auth_options,
         );
+
         self.log.info("authentication complete", .{});
 
-        try self.openChannel(timer, cancel, operation_timeout_ns);
+        var channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null;
+
+        if (self.options.proxy_jump_target == null) {
+            // no proxy jump, normal flow
+            self.initial_channel = try self.openChannel(
+                timer,
+                cancel,
+                operation_timeout_ns,
+                self.initial_session.?,
+            );
+
+            channel = self.initial_channel;
+        } else {
+            try self.openProxyChannel(timer, cancel, operation_timeout_ns);
+
+            self.proxy_channel = try self.openChannel(
+                timer,
+                cancel,
+                operation_timeout_ns,
+                self.proxy_session.?,
+            );
+
+            channel = self.proxy_channel;
+        }
 
         if (!self.options.netconf) {
-            // no pty for netconf, it causes inputs to be echoed (which we normally want, but not
-            // in netconf), and disabling them via term mode only makes it echo once not twice :p
+            // no pty for netconf, it causes inputs to be echoed (which we normally want, but
+            // not in netconf), and disabling them via term mode only makes it echo once
+            // not twice :p
             try self.requestPty(
                 timer,
                 cancel,
                 operation_timeout_ns,
+                channel.?,
             );
         }
 
-        try self.requestShell(timer, cancel, operation_timeout_ns);
+        try self.requestShell(
+            timer,
+            cancel,
+            operation_timeout_ns,
+            channel.?,
+        );
 
-        // all the open things are sequential/single-threaded, any read/write operation past this
-        // point must acquire the lock to operate against the session!
+        // all the open things are sequential/single-threaded, any read/write operation past
+        // this point must acquire the lock to operate against the session!
     }
 
     fn initSocket(
@@ -314,25 +488,25 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
     ) !void {
-        self.session = ssh2.libssh2_session_init_ex(
+        self.initial_session = ssh2.libssh2_session_init_ex(
             null,
             null,
             null,
             self.auth_callback_data,
         );
-        if (self.session == null) {
+        if (self.initial_session == null) {
             self.log.critical("failed creating libssh2 session", .{});
 
             return errors.ScrapliError.OpenFailed;
         }
 
         // set blocking status (0 non-block, 1 block)
-        ssh2.libssh2_session_set_blocking(self.session, 0);
+        ssh2.libssh2_session_set_blocking(self.initial_session, 0);
 
         if (self.options.libssh2_trace) {
             // best effort, but probably wont fail anyway :p
             _ = ssh2.libssh2_trace(
-                self.session,
+                self.initial_session,
                 ssh2.LIBSSH2_TRACE_PUBLICKEY |
                     ssh2.LIBSSH2_TRACE_CONN |
                     ssh2.LIBSSH2_TRACE_ERROR |
@@ -359,13 +533,13 @@ pub const Transport = struct {
             }
 
             const rc = ssh2.libssh2_session_handshake(
-                self.session,
+                self.initial_session,
                 self.socket.?,
             );
 
             if (rc == 0) {
                 break;
-            } else if (rc == LIBSSH2_ERROR_EAGAIN) {
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 std.time.sleep(open_eagain_delay_ns);
 
                 continue;
@@ -406,7 +580,7 @@ pub const Transport = struct {
         };
         defer self.allocator.free(_known_hosts_path);
 
-        const nh = ssh2.libssh2_knownhost_init(self.session.?);
+        const nh = ssh2.libssh2_knownhost_init(self.initial_session.?);
         if (nh == null) {
             self.log.critical("failed libssh2 known hosts init", .{});
 
@@ -429,7 +603,7 @@ pub const Transport = struct {
         var key_type: c_int = 0;
 
         const host_fingerprint = ssh2.libssh2_session_hostkey(
-            self.session.?,
+            self.initial_session.?,
             &len,
             &key_type,
         );
@@ -483,6 +657,7 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        session: *ssh2.struct__LIBSSH2_SESSION,
         auth_options: *auth.Options,
     ) !void {
         const _username = self.allocator.dupeZ(u8, auth_options.username.?) catch |err| {
@@ -497,6 +672,7 @@ pub const Transport = struct {
                 timer,
                 cancel,
                 operation_timeout_ns,
+                session,
                 _username,
                 auth_options.private_key_path,
                 auth_options.private_key_passphrase,
@@ -509,6 +685,7 @@ pub const Transport = struct {
                 timer,
                 cancel,
                 operation_timeout_ns,
+                session,
             )) {
                 return;
             }
@@ -532,6 +709,7 @@ pub const Transport = struct {
                 timer,
                 cancel,
                 operation_timeout_ns,
+                session,
                 _username,
                 _password,
             ) catch blk: {
@@ -544,6 +722,7 @@ pub const Transport = struct {
                 timer,
                 cancel,
                 operation_timeout_ns,
+                session,
             )) {
                 return;
             }
@@ -552,12 +731,14 @@ pub const Transport = struct {
                 timer,
                 cancel,
                 operation_timeout_ns,
+                session,
                 _username,
             );
             if (try self.isAuthenticated(
                 timer,
                 cancel,
                 operation_timeout_ns,
+                session,
             )) {
                 return;
             }
@@ -571,6 +752,7 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        session: *ssh2.struct__LIBSSH2_SESSION,
     ) !bool {
         while (true) {
             if (cancel != null and cancel.?.*) {
@@ -587,12 +769,12 @@ pub const Transport = struct {
                 return errors.ScrapliError.TimeoutExceeded;
             }
 
-            const rc = ssh2.libssh2_userauth_authenticated(self.session);
+            const rc = ssh2.libssh2_userauth_authenticated(session);
 
             // 1 for auth, 0 for not, including EAGAIN just in case, but unclear if needed
             if (rc == 1) {
                 return true;
-            } else if (rc == LIBSSH2_ERROR_EAGAIN) {
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 std.time.sleep(open_eagain_delay_ns);
 
                 continue;
@@ -607,6 +789,7 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        session: *ssh2.struct__LIBSSH2_SESSION,
         username: [:0]u8,
         private_key_path: ?[]const u8,
         passphrase: ?[]const u8,
@@ -657,7 +840,7 @@ pub const Transport = struct {
             // -18 rc == "failed" (key auth not supported)
             // -19 rc == "unverified" (auth failed)
             const rc = ssh2.libssh2_userauth_publickey_fromfile_ex(
-                self.session,
+                session,
                 username,
                 @intCast(username.len),
                 null, // would be public key if not using openssl as libssh2 crypto engine
@@ -667,7 +850,7 @@ pub const Transport = struct {
 
             if (rc == 0) {
                 break;
-            } else if (rc == LIBSSH2_ERROR_EAGAIN) {
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 std.time.sleep(open_eagain_delay_ns);
 
                 continue;
@@ -684,6 +867,7 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        session: *ssh2.struct__LIBSSH2_SESSION,
         username: [:0]u8,
     ) !void {
         while (true) {
@@ -702,7 +886,7 @@ pub const Transport = struct {
             }
 
             const rc = ssh2.libssh2_userauth_keyboard_interactive_ex(
-                self.session,
+                session,
                 username,
                 @intCast(username.len),
                 kbdInteractiveCallback,
@@ -710,7 +894,7 @@ pub const Transport = struct {
 
             if (rc == 0) {
                 break;
-            } else if (rc == LIBSSH2_ERROR_EAGAIN) {
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 std.time.sleep(open_eagain_delay_ns);
 
                 continue;
@@ -727,6 +911,7 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        session: *ssh2.struct__LIBSSH2_SESSION,
         username: [:0]u8,
         password: [:0]u8,
     ) !void {
@@ -748,7 +933,7 @@ pub const Transport = struct {
             }
 
             const rc = ssh2.libssh2_userauth_password_ex(
-                self.session,
+                session,
                 username,
                 @intCast(username.len),
                 password,
@@ -758,7 +943,7 @@ pub const Transport = struct {
 
             if (rc == 0) {
                 break;
-            } else if (rc == LIBSSH2_ERROR_EAGAIN) {
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 std.time.sleep(open_eagain_delay_ns);
 
                 continue;
@@ -775,7 +960,8 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
-    ) !void {
+        session: *ssh2.struct__LIBSSH2_SESSION,
+    ) !?*ssh2.struct__LIBSSH2_CHANNEL {
         while (true) {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
@@ -791,17 +977,15 @@ pub const Transport = struct {
                 return errors.ScrapliError.TimeoutExceeded;
             }
 
-            const channel = libssh2ChannelOpenSession(self.session);
+            const channel = libssh2ChannelOpenSession(session);
 
             if (channel != null) {
-                self.channel = channel;
-
-                break;
+                return channel;
             }
 
-            const rc = ssh2.libssh2_session_last_errno(self.session.?);
+            const rc = ssh2.libssh2_session_last_errno(session);
 
-            if (rc == LIBSSH2_ERROR_EAGAIN) {
+            if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 std.time.sleep(open_eagain_delay_ns);
 
                 continue;
@@ -813,7 +997,7 @@ pub const Transport = struct {
         }
     }
 
-    fn requestPty(
+    fn openProxyChannel(
         self: *Transport,
         timer: *std.time.Timer,
         cancel: ?*bool,
@@ -834,11 +1018,160 @@ pub const Transport = struct {
                 return errors.ScrapliError.TimeoutExceeded;
             }
 
-            const rc = libssh2_channel_request_pty(self.channel);
+            const _host = self.allocator.dupeZ(
+                u8,
+                self.options.proxy_jump_target.?.host,
+            ) catch |err| {
+                self.log.critical(
+                    "failed casting proxy target host to c string, err: {}",
+                    .{err},
+                );
+
+                return errors.ScrapliError.OpenFailed;
+            };
+            defer self.allocator.free(_host);
+
+            self.initial_channel = libssh2ChannelOpenProxySession(
+                self.initial_session,
+                _host,
+            );
+
+            if (self.initial_channel != null) {
+                break;
+            }
+
+            const rc = ssh2.libssh2_session_last_errno(self.initial_session.?);
+
+            if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
+                std.time.sleep(open_eagain_delay_ns);
+
+                continue;
+            }
+
+            self.log.critical("failed opening session (initial direct tcpip) channel {d}", .{rc});
+
+            return errors.ScrapliError.OpenFailed;
+        }
+
+        const _password = self.allocator.dupeZ(
+            u8,
+            self.options.proxy_jump_target.?.password,
+        ) catch |err| {
+            self.log.critical("failed casting password to c string, err: {}", .{err});
+
+            return errors.ScrapliError.OpenFailed;
+        };
+        defer self.allocator.free(_password);
+
+        self.proxy_auth_callback_data.password = _password;
+
+        const _username = self.allocator.dupeZ(
+            u8,
+            self.options.proxy_jump_target.?.username,
+        ) catch |err| {
+            self.log.critical("failed casting username to c string, err: {}", .{err});
+
+            return errors.ScrapliError.OpenFailed;
+        };
+        defer self.allocator.free(_username);
+
+        self.proxy_session = ssh2.libssh2_session_init_ex(
+            null,
+            null,
+            null,
+            self.proxy_auth_callback_data,
+        );
+        if (self.proxy_session == null) {
+            self.log.critical("failed creating libssh2 session", .{});
+
+            return errors.ScrapliError.OpenFailed;
+        }
+
+        // TODO option to enable trace for the "inner" session
+        // _ = ssh2.libssh2_trace(
+        //     final_session.?,
+        //     ssh2.LIBSSH2_TRACE_PUBLICKEY |
+        //         ssh2.LIBSSH2_TRACE_CONN |
+        //         ssh2.LIBSSH2_TRACE_ERROR |
+        //         ssh2.LIBSSH2_TRACE_SOCKET |
+        //         ssh2.LIBSSH2_TRACE_TRANS |
+        //         ssh2.LIBSSH2_TRACE_KEX |
+        //         ssh2.LIBSSH2_TRACE_AUTH,
+        // );
+
+        // we have to create a socket pair/pipe so we can give libssh2 a real socket -- we then
+        // run this little proxy loop around it to read/write to/from the pipe and then to the
+        // final (proxy-jump-d) session.
+        var fds: [2]c_int = undefined;
+        const sockrc = c.socketpair(c.AF_UNIX, c.SOCK_STREAM, 0, &fds);
+        if (sockrc != 0) {
+            // TODO use scrapli error
+            return error.ErrorCreatingSocketPair;
+        }
+
+        const local_fd = fds[0];
+        const remote_fd = fds[1];
+
+        try self.proxy_loop.start(self.initial_channel.?, remote_fd);
+
+        const handshake_rc = ssh2.libssh2_session_handshake(self.proxy_session, local_fd);
+        if (handshake_rc != 0) {
+            return errors.ScrapliError.OpenFailed;
+        }
+
+        ssh2.libssh2_session_set_blocking(self.proxy_session, 0);
+
+        var handshake_attempts: u32 = 0;
+        while (true) {
+            handshake_attempts += 1;
+
+            const rc = ssh2.libssh2_userauth_password_ex(
+                self.proxy_session.?,
+                _username,
+                @intCast(self.options.proxy_jump_target.?.username.len),
+                _password,
+                @intCast(self.options.proxy_jump_target.?.password.len),
+                null,
+            );
 
             if (rc == 0) {
                 break;
-            } else if (rc == LIBSSH2_ERROR_EAGAIN) {
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
+                std.time.sleep(std.time.ns_per_ms * 500);
+                continue;
+            }
+
+            std.time.sleep(std.time.ns_per_ms * 500);
+        }
+    }
+
+    fn requestPty(
+        self: *Transport,
+        timer: *std.time.Timer,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+        channel: *ssh2.struct__LIBSSH2_CHANNEL,
+    ) !void {
+        while (true) {
+            if (cancel != null and cancel.?.*) {
+                self.log.critical("operation cancelled", .{});
+
+                return errors.ScrapliError.Cancelled;
+            }
+
+            const elapsed_time = timer.read();
+
+            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+                self.log.critical("op timeout exceeded", .{});
+
+                return errors.ScrapliError.TimeoutExceeded;
+            }
+
+            const rc = libssh2ChannelRequestPty(channel);
+
+            if (rc == 0) {
+                break;
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 std.time.sleep(open_eagain_delay_ns);
 
                 continue;
@@ -855,6 +1188,7 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        channel: *ssh2.struct__LIBSSH2_CHANNEL,
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
@@ -872,13 +1206,13 @@ pub const Transport = struct {
             }
 
             const rc = libssh2ChannelProcessStartup(
-                self.channel,
+                channel,
                 self.options.netconf,
             );
 
             if (rc == 0) {
                 break;
-            } else if (rc == LIBSSH2_ERROR_EAGAIN) {
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 std.time.sleep(open_eagain_delay_ns);
 
                 continue;
@@ -894,21 +1228,32 @@ pub const Transport = struct {
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
-        if (self.session != null) {
-            const rc = ssh2.libssh2_session_disconnect(self.session, "deinit");
+        // TODO proxy session shit too
+        if (self.initial_session != null) {
+            const rc = ssh2.libssh2_session_disconnect(self.initial_session, "deinit");
             if (rc != 0) {
                 self.log.critical("failed disconnecting ssh2 session", .{});
             }
         }
+
+        self.proxy_loop.stop();
     }
 
     pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
-        const n = ssh2.libssh2_channel_write_ex(self.channel, 0, buf.ptr, buf.len);
+        var channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null;
+        if (self.options.proxy_jump_target == null) {
+            channel = self.initial_channel.?;
+        } else {
+            std.debug.print("WRITE TO PROXY CHAN?\n", .{});
+            channel = self.proxy_channel.?;
+        }
 
-        if (n == LIBSSH2_ERROR_EAGAIN) {
+        const n = ssh2.libssh2_channel_write_ex(channel, 0, buf.ptr, buf.len);
+
+        if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
             // would block
             return self.write(w, buf);
         }
@@ -927,9 +1272,20 @@ pub const Transport = struct {
     pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
         self.session_lock.lock();
 
+        var channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null;
+        var wait_fd: ?std.posix.fd_t = null;
+
+        if (self.options.proxy_jump_target == null) {
+            channel = self.initial_channel.?;
+            wait_fd = self.socket.?;
+        } else {
+            channel = self.proxy_channel.?;
+            wait_fd = self.proxy_loop.remote_fd;
+        }
+
         // because nonblock we will just eagain forever (really until the timeout catches us)
         // if we dont check explicitly for eof, so do that
-        if (ssh2.libssh2_channel_eof(self.channel.?) == 1) {
+        if (ssh2.libssh2_channel_eof(channel) == 1) {
             self.session_lock.unlock();
 
             return errors.ScrapliError.EOF;
@@ -937,7 +1293,7 @@ pub const Transport = struct {
 
         // only locked around the actual read (and eof check), not waiting on kqueue/epoll stuff
         const n = ssh2.libssh2_channel_read_ex(
-            self.channel.?,
+            channel,
             @as(c_int, 0),
             &buf[0],
             @intCast(buf.len),
@@ -945,8 +1301,12 @@ pub const Transport = struct {
 
         self.session_lock.unlock();
 
-        if (n == LIBSSH2_ERROR_EAGAIN) {
-            try w.wait(self.socket.?);
+        if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            // TODO have to wait on a diff socket if we are proxied i think
+            // _ = w;
+            try w.wait(wait_fd.?);
+            // std.debug.print("w", .{});
+            // try w.wait(self.socket.?);
 
             return 0;
         }
