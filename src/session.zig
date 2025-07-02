@@ -296,9 +296,16 @@ pub const Session = struct {
             return errors.ScrapliError.OpenFailed;
         };
 
-        // check if we have auth bypass or the transport handles auth for us -- if yes we are done
-        if (self.auth_options.in_session_auth_bypass or !self.transport.isInSessionAuth()) {
-            return [2][]const u8{ "", "" };
+        if (!self.auth_options.force_in_session_auth) {
+            if (!self.transport.isInSessionAuth()) {
+                // not forcing in session auth, and the transport is not requiring it, done
+                return [2][]const u8{ "", "" };
+            }
+
+            if (self.auth_options.bypass_in_session_auth) {
+                // not forcing, and user wants to bypass, done
+                return [2][]const u8{ "", "" };
+            }
         }
 
         return self.authenticate(

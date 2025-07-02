@@ -8,7 +8,7 @@ const pcre2 = @cImport({
     @cInclude("pcre2.h");
 });
 
-pub const default_username_pattern: []const u8 = "^(.*username:)|(.*login:)\\s?$";
+pub const default_username_pattern: []const u8 = "^(.*user(name)?:)|(.*login:)\\s?$";
 pub const default_password_pattern: []const u8 = "(.*@.*)?password:\\s?$";
 pub const default_passphrase_pattern: []const u8 = "enter passphrase for key";
 
@@ -34,7 +34,16 @@ pub const OptionsInputs = struct {
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
     lookup_map: ?[]const LookupKeyValue = null,
-    in_session_auth_bypass: bool = false,
+    // when true, regardless of the transport, do the in session auth bits -- that means we check
+    // for user/password/passphrase and finally for expected prompt. normally this would be skipped
+    // when using libssh2 since we would auth in channel, but this flag can force this behavior. may
+    // be useful for some weird devices that do ssh auth then also prompt for user/pass on login --
+    // like cisco wlc for example.
+    force_in_session_auth: bool = false,
+    // when true fully skip the in session auth bits even when using telnet/bin transports. this
+    // would let you write some custom on open function to handle banners or whatever even when
+    // using the telnet/bin transports.
+    bypass_in_session_auth: bool = false,
     username_pattern: []const u8 = default_username_pattern,
     password_pattern: []const u8 = default_password_pattern,
     passphrase_pattern: []const u8 = default_passphrase_pattern,
@@ -47,7 +56,8 @@ pub const Options = struct {
     private_key_path: ?[]const u8,
     private_key_passphrase: ?[]const u8,
     lookups: ?[]const LookupKeyValue,
-    in_session_auth_bypass: bool,
+    force_in_session_auth: bool,
+    bypass_in_session_auth: bool,
     username_pattern: []const u8,
     password_pattern: []const u8,
     private_key_passphrase_pattern: []const u8,
@@ -63,7 +73,8 @@ pub const Options = struct {
             .private_key_path = opts.private_key_path,
             .private_key_passphrase = opts.private_key_passphrase,
             .lookups = opts.lookup_map,
-            .in_session_auth_bypass = opts.in_session_auth_bypass,
+            .force_in_session_auth = opts.force_in_session_auth,
+            .bypass_in_session_auth = opts.bypass_in_session_auth,
             .username_pattern = opts.username_pattern,
             .password_pattern = opts.password_pattern,
             .private_key_passphrase_pattern = opts.passphrase_pattern,

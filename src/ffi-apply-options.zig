@@ -292,17 +292,34 @@ export fn ls_option_auth_set_lookup_key_value(
     return 0;
 }
 
-export fn ls_option_auth_in_session_auth_bypass(
+export fn ls_option_auth_force_in_session_auth(
     d_ptr: usize,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
         .cli => |rd| {
-            rd.session.auth_options.in_session_auth_bypass = true;
+            rd.session.auth_options.force_in_session_auth = true;
         },
         .netconf => |rd| {
-            rd.session.auth_options.in_session_auth_bypass = true;
+            rd.session.auth_options.force_in_session_auth = true;
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_auth_bypass_in_session_auth(
+    d_ptr: usize,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            rd.session.auth_options.bypass_in_session_auth = true;
+        },
+        .netconf => |rd| {
+            rd.session.auth_options.bypass_in_session_auth = true;
         },
     }
 

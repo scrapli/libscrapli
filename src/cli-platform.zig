@@ -239,6 +239,8 @@ pub const Options = struct {
     bound_on_open_callback: ?*BoundOnXCallback = null,
     on_close_callback: ?OnXCallback = null,
     bound_on_close_callback: ?*BoundOnXCallback = null,
+    force_in_session_auth: bool = false,
+    bypass_in_session_auth: bool = false,
     ntc_templates_platform: ?[]const u8 = null,
     genie_platform: ?[]const u8 = null,
 };
@@ -256,6 +258,8 @@ pub const Definition = struct {
     bound_on_open_callback: ?*BoundOnXCallback,
     on_close_callback: ?OnXCallback,
     bound_on_close_callback: ?*BoundOnXCallback,
+    force_in_session_auth: bool,
+    bypass_in_session_auth: bool,
     ntc_templates_platform: ?[]const u8,
     genie_platform: ?[]const u8,
 
@@ -272,6 +276,8 @@ pub const Definition = struct {
             .bound_on_open_callback = options.bound_on_open_callback,
             .on_close_callback = options.on_close_callback,
             .bound_on_close_callback = options.bound_on_close_callback,
+            .force_in_session_auth = options.force_in_session_auth,
+            .bypass_in_session_auth = options.bypass_in_session_auth,
             .ntc_templates_platform = if (options.ntc_templates_platform) |s|
                 try allocator.dupe(u8, s)
             else
@@ -358,6 +364,8 @@ pub const YamlDefinition = struct {
     failure_indicators: ?[][]const u8,
     on_open_instructions: ?[]BoundOnXCallbackInstruction,
     on_close_instructions: ?[]BoundOnXCallbackInstruction,
+    force_in_session_auth: ?bool,
+    bypass_in_session_auth: ?bool,
     ntc_templates_platform: ?[]const u8,
     genie_platform: ?[]const u8,
 
@@ -413,6 +421,8 @@ pub const YamlDefinition = struct {
                     operation.Kind.on_close,
                     instr,
                 ) else null,
+                .force_in_session_auth = parsed_definition.force_in_session_auth orelse false,
+                .bypass_in_session_auth = parsed_definition.bypass_in_session_auth orelse false,
                 .ntc_templates_platform = parsed_definition.ntc_templates_platform,
                 .genie_platform = parsed_definition.genie_platform,
             },
