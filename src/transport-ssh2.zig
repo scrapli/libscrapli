@@ -2,6 +2,7 @@ const std = @import("std");
 const auth = @import("auth.zig");
 const logging = @import("logging.zig");
 const errors = @import("errors.zig");
+const file = @import("file.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 const c = @cImport({
@@ -113,6 +114,7 @@ fn libssh2ChannelProcessStartup(channel: ?*ssh2.LIBSSH2_CHANNEL, netconf: bool) 
 const ProxyLoop = struct {
     allocator: std.mem.Allocator,
     channel: ?*ssh2.LIBSSH2_CHANNEL = null,
+    local_fd: c_int = 0,
     remote_fd: c_int = 0,
     stop_flag: std.atomic.Value(bool),
     pipe_to_channel_thread: ?std.Thread = null,
@@ -132,11 +134,18 @@ const ProxyLoop = struct {
     }
 
     pub fn deinit(self: *ProxyLoop) void {
+        std.posix.close(self.remote_fd);
         self.allocator.destroy(self);
     }
 
-    pub fn start(self: *ProxyLoop, channel: *ssh2.LIBSSH2_CHANNEL, remote_fd: c_int) !void {
+    pub fn start(
+        self: *ProxyLoop,
+        channel: *ssh2.LIBSSH2_CHANNEL,
+        local_fd: c_int,
+        remote_fd: c_int,
+    ) !void {
         self.channel = channel;
+        self.local_fd = local_fd;
         self.remote_fd = remote_fd;
 
         self.stop_flag.store(false, std.builtin.AtomicOrder.unordered);
@@ -158,8 +167,6 @@ const ProxyLoop = struct {
     }
 
     pub fn stop(self: *ProxyLoop) void {
-        std.posix.close(self.remote_fd);
-
         self.stop_flag.store(true, std.builtin.AtomicOrder.unordered);
 
         if (self.pipe_to_channel_thread) |t| t.join();
@@ -169,43 +176,79 @@ const ProxyLoop = struct {
         self.channel_to_pipe_thread = null;
     }
 
-    fn copy_pipe_to_channel(
+    fn pipe_to_channel(
         self: *ProxyLoop,
     ) !void {
         var buf: [4096]u8 = undefined;
-        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
-            // TODO i assume this is a blockign read which... is not good
-            const n = std.posix.read(self.remote_fd, &buf) catch |err| {
+
+        const n = try std.posix.read(self.remote_fd, &buf);
+
+        if (n == 0) {
+            // TODO scrapli error
+            return error.EOF;
+        }
+
+        const rc = ssh2.libssh2_channel_write_ex(self.channel, 0, buf[0..n].ptr, n);
+
+        if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            return error.WouldBlock;
+        } else if (rc < 0) {
+            return error.WriteFailed;
+        }
+    }
+
+    fn copy_pipe_to_channel(
+        self: *ProxyLoop,
+    ) !void {
+        read_loop: while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+            _ = self.pipe_to_channel() catch |err| {
                 switch (err) {
-                    error.NotOpenForReading => {
-                        return;
+                    error.WouldBlock => {
+                        std.time.sleep(open_eagain_delay_ns);
+
+                        continue :read_loop;
                     },
                     else => {
                         return err;
                     },
                 }
             };
-            if (n == 0) break;
-
-            const rc = ssh2.libssh2_channel_write_ex(self.channel, 0, buf[0..n].ptr, n);
-
-            // TODO gotta figure out what happens if these fail -- maybe the "normal" read method
-            // should check for the state of the proxy loop if in proxy jump setup?
-            if (rc < 0) {
-                return error.WriteFailed;
-            }
         }
+    }
+
+    fn channel_to_pipe(
+        self: *ProxyLoop,
+    ) !void {
+        var buf: [4096]u8 = undefined;
+
+        const n = ssh2.libssh2_channel_read(self.channel, buf[0..].ptr, 4096);
+        if (n == 0) {
+            return;
+        } else if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            return error.WouldBlock;
+        } else if (n < 0) {
+            return error.WriteFailed;
+        }
+
+        _ = try std.posix.write(self.remote_fd, buf[0..@intCast(n)]);
     }
 
     fn copy_channel_to_pipe(
         self: *ProxyLoop,
     ) !void {
-        var buf: [4096]u8 = undefined;
-        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
-            const n = ssh2.libssh2_channel_read(self.channel, buf[0..].ptr, 4096);
-            if (n == 0) break;
-            if (n < 0) continue;
-            _ = try std.posix.write(self.remote_fd, buf[0..@intCast(n)]);
+        write_loop: while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+            _ = self.channel_to_pipe() catch |err| {
+                switch (err) {
+                    error.WouldBlock => {
+                        std.time.sleep(open_eagain_delay_ns);
+
+                        continue :write_loop;
+                    },
+                    else => {
+                        return err;
+                    },
+                }
+            };
         }
     }
 };
@@ -380,7 +423,11 @@ pub const Transport = struct {
 
             channel = self.initial_channel;
         } else {
-            try self.openProxyChannel(timer, cancel, operation_timeout_ns);
+            try self.openProxyChannel(
+                timer,
+                cancel,
+                operation_timeout_ns,
+            );
 
             self.proxy_channel = try self.openChannel(
                 timer,
@@ -412,7 +459,12 @@ pub const Transport = struct {
         );
 
         // all the open things are sequential/single-threaded, any read/write operation past
-        // this point must acquire the lock to operate against the session!
+        // this point must acquire the lock to operate against the session! we also check the
+        // proxy session bits and stop the forever loops for copying between the pipe and the
+        // channel (if in place obv)
+        if (self.options.proxy_jump_target != null) {
+            self.proxy_loop.stop();
+        }
     }
 
     fn initSocket(
@@ -1089,7 +1141,7 @@ pub const Transport = struct {
 
         // TODO option to enable trace for the "inner" session
         // _ = ssh2.libssh2_trace(
-        //     final_session.?,
+        //     self.proxy_session.?,
         //     ssh2.LIBSSH2_TRACE_PUBLICKEY |
         //         ssh2.LIBSSH2_TRACE_CONN |
         //         ssh2.LIBSSH2_TRACE_ERROR |
@@ -1105,14 +1157,21 @@ pub const Transport = struct {
         var fds: [2]c_int = undefined;
         const sockrc = c.socketpair(c.AF_UNIX, c.SOCK_STREAM, 0, &fds);
         if (sockrc != 0) {
-            // TODO use scrapli error
+            // TODO use scrapli error (also in other places in here, just do a quick check)
             return error.ErrorCreatingSocketPair;
         }
 
         const local_fd = fds[0];
         const remote_fd = fds[1];
 
-        try self.proxy_loop.start(self.initial_channel.?, remote_fd);
+        // set both sides of pipe/pair to nonblock for our normal behavior and so that we can start
+        // the proxy loop for initial session establishment while still being able to not be stuck
+        // in a blocking read -- this way we can "stop" the proxy behavior (of reading forever) once
+        // establishment is done, then move on to our "normal" flow of reading/writing
+        try file.setNonBlocking(local_fd);
+        try file.setNonBlocking(remote_fd);
+
+        try self.proxy_loop.start(self.initial_channel.?, local_fd, remote_fd);
 
         const handshake_rc = ssh2.libssh2_session_handshake(self.proxy_session, local_fd);
         if (handshake_rc != 0) {
@@ -1121,28 +1180,23 @@ pub const Transport = struct {
 
         ssh2.libssh2_session_set_blocking(self.proxy_session, 0);
 
-        var handshake_attempts: u32 = 0;
-        while (true) {
-            handshake_attempts += 1;
+        // TODO this probably needs the lookup map and maybe something else?
+        const pa = try auth.Options.init(
+            self.allocator,
+            .{
+                .username = self.options.proxy_jump_target.?.username,
+                .password = self.options.proxy_jump_target.?.password,
+            },
+        );
+        defer pa.deinit();
 
-            const rc = ssh2.libssh2_userauth_password_ex(
-                self.proxy_session.?,
-                _username,
-                @intCast(self.options.proxy_jump_target.?.username.len),
-                _password,
-                @intCast(self.options.proxy_jump_target.?.password.len),
-                null,
-            );
-
-            if (rc == 0) {
-                break;
-            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(std.time.ns_per_ms * 500);
-                continue;
-            }
-
-            std.time.sleep(std.time.ns_per_ms * 500);
-        }
+        try self.authenticate(
+            timer,
+            cancel,
+            operation_timeout_ns,
+            self.proxy_session.?,
+            pa,
+        );
     }
 
     fn requestPty(
@@ -1247,14 +1301,12 @@ pub const Transport = struct {
         if (self.options.proxy_jump_target == null) {
             channel = self.initial_channel.?;
         } else {
-            std.debug.print("WRITE TO PROXY CHAN?\n", .{});
             channel = self.proxy_channel.?;
         }
 
         const n = ssh2.libssh2_channel_write_ex(channel, 0, buf.ptr, buf.len);
 
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            // would block
             return self.write(w, buf);
         }
 
@@ -1267,20 +1319,35 @@ pub const Transport = struct {
 
             return errors.ScrapliError.WriteFailed;
         }
+
+        if (self.options.proxy_jump_target != null) {
+            // have to copy from the libssh2 channel to the pipe connecting the outer and inner
+            // sessions basically
+            while (true) {
+                const result = self.proxy_loop.pipe_to_channel();
+                if (result) {
+                    break;
+                } else |err| {
+                    switch (err) {
+                        error.WouldBlock => {
+                            continue;
+                        },
+                        else => return err,
+                    }
+                }
+            }
+        }
     }
 
     pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
         self.session_lock.lock();
 
         var channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null;
-        var wait_fd: ?std.posix.fd_t = null;
 
         if (self.options.proxy_jump_target == null) {
             channel = self.initial_channel.?;
-            wait_fd = self.socket.?;
         } else {
             channel = self.proxy_channel.?;
-            wait_fd = self.proxy_loop.remote_fd;
         }
 
         // because nonblock we will just eagain forever (really until the timeout catches us)
@@ -1289,6 +1356,27 @@ pub const Transport = struct {
             self.session_lock.unlock();
 
             return errors.ScrapliError.EOF;
+        }
+
+        if (self.options.proxy_jump_target != null) {
+            // copy from the pipe into the libssh2 channel so a read will be available (if present)
+            while (true) {
+                const result = self.proxy_loop.channel_to_pipe();
+                if (result) {
+                    continue;
+                } else |err| {
+                    switch (err) {
+                        error.WouldBlock => {
+                            // dont care, let the "normal" flow catch this
+                            break;
+                        },
+                        else => {
+                            self.session_lock.unlock();
+                            return err;
+                        },
+                    }
+                }
+            }
         }
 
         // only locked around the actual read (and eof check), not waiting on kqueue/epoll stuff
@@ -1302,11 +1390,7 @@ pub const Transport = struct {
         self.session_lock.unlock();
 
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            // TODO have to wait on a diff socket if we are proxied i think
-            // _ = w;
-            try w.wait(wait_fd.?);
-            // std.debug.print("w", .{});
-            // try w.wait(self.socket.?);
+            try w.wait(self.socket.?);
 
             return 0;
         }
