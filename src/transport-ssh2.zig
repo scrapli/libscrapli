@@ -54,11 +54,12 @@ fn libssh2ChannelOpenSession(session: ?*ssh2.LIBSSH2_SESSION) ?*ssh2.LIBSSH2_CHA
 fn libssh2ChannelOpenProxySession(
     session: ?*ssh2.LIBSSH2_SESSION,
     host: [:0]u8,
+    port: c_int,
 ) ?*ssh2.LIBSSH2_CHANNEL {
     return ssh2.libssh2_channel_direct_tcpip_ex(
         session,
         host,
-        22, // TODO obv add to the options
+        port,
         "127.0.0.1",
         0,
     );
@@ -111,10 +112,36 @@ fn libssh2ChannelProcessStartup(channel: ?*ssh2.LIBSSH2_CHANNEL, netconf: bool) 
     );
 }
 
-const ProxyLoop = struct {
+fn libssh2Free(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void {
+    var counter: usize = 0;
+
+    while (true) {
+        const rc = ssh2.libssh2_session_free(session);
+
+        if (rc == 0) {
+            break;
+        } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            counter += 1;
+
+            if (counter > 25) {
+                // to prevent blocking here
+                break;
+            }
+
+            std.time.sleep(open_eagain_delay_ns);
+
+            continue;
+        } else {
+            log.critical("failed freeing ssh2 session", .{});
+
+            break;
+        }
+    }
+}
+
+const ProxyWrapper = struct {
     allocator: std.mem.Allocator,
     channel: ?*ssh2.LIBSSH2_CHANNEL = null,
-    local_fd: c_int = 0,
     remote_fd: c_int = 0,
     stop_flag: std.atomic.Value(bool),
     pipe_to_channel_thread: ?std.Thread = null,
@@ -122,10 +149,10 @@ const ProxyLoop = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-    ) !*ProxyLoop {
-        const pl = try allocator.create(ProxyLoop);
+    ) !*ProxyWrapper {
+        const pl = try allocator.create(ProxyWrapper);
 
-        pl.* = ProxyLoop{
+        pl.* = ProxyWrapper{
             .allocator = allocator,
             .stop_flag = std.atomic.Value(bool).init(false),
         };
@@ -133,40 +160,38 @@ const ProxyLoop = struct {
         return pl;
     }
 
-    pub fn deinit(self: *ProxyLoop) void {
+    pub fn deinit(self: *ProxyWrapper) void {
         std.posix.close(self.remote_fd);
         self.allocator.destroy(self);
     }
 
-    pub fn start(
-        self: *ProxyLoop,
+    pub fn run(
+        self: *ProxyWrapper,
         channel: *ssh2.LIBSSH2_CHANNEL,
-        local_fd: c_int,
         remote_fd: c_int,
     ) !void {
         self.channel = channel;
-        self.local_fd = local_fd;
         self.remote_fd = remote_fd;
 
         self.stop_flag.store(false, std.builtin.AtomicOrder.unordered);
 
         self.pipe_to_channel_thread = try std.Thread.spawn(
             .{},
-            ProxyLoop.copy_pipe_to_channel,
+            ProxyWrapper.copy_pipe_to_channel,
             .{
                 self,
             },
         );
         self.channel_to_pipe_thread = try std.Thread.spawn(
             .{},
-            ProxyLoop.copy_channel_to_pipe,
+            ProxyWrapper.copy_channel_to_pipe,
             .{
                 self,
             },
         );
     }
 
-    pub fn stop(self: *ProxyLoop) void {
+    pub fn stop(self: *ProxyWrapper) void {
         self.stop_flag.store(true, std.builtin.AtomicOrder.unordered);
 
         if (self.pipe_to_channel_thread) |t| t.join();
@@ -177,15 +202,14 @@ const ProxyLoop = struct {
     }
 
     fn pipe_to_channel(
-        self: *ProxyLoop,
+        self: *ProxyWrapper,
     ) !void {
         var buf: [4096]u8 = undefined;
 
         const n = try std.posix.read(self.remote_fd, &buf);
 
         if (n == 0) {
-            // TODO scrapli error
-            return error.EOF;
+            return errors.ScrapliError.EOF;
         }
 
         const rc = ssh2.libssh2_channel_write_ex(self.channel, 0, buf[0..n].ptr, n);
@@ -197,27 +221,22 @@ const ProxyLoop = struct {
         }
     }
 
-    fn copy_pipe_to_channel(
-        self: *ProxyLoop,
-    ) !void {
-        read_loop: while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
-            _ = self.pipe_to_channel() catch |err| {
-                switch (err) {
-                    error.WouldBlock => {
-                        std.time.sleep(open_eagain_delay_ns);
+    fn copy_pipe_to_channel(self: *ProxyWrapper) !void {
+        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+            const result = self.pipe_to_channel();
+            if (result) {} else |err| switch (err) {
+                error.WouldBlock => {
+                    std.time.sleep(open_eagain_delay_ns);
 
-                        continue :read_loop;
-                    },
-                    else => {
-                        return err;
-                    },
-                }
-            };
+                    continue;
+                },
+                else => return err,
+            }
         }
     }
 
     fn channel_to_pipe(
-        self: *ProxyLoop,
+        self: *ProxyWrapper,
     ) !void {
         var buf: [4096]u8 = undefined;
 
@@ -233,21 +252,14 @@ const ProxyLoop = struct {
         _ = try std.posix.write(self.remote_fd, buf[0..@intCast(n)]);
     }
 
-    fn copy_channel_to_pipe(
-        self: *ProxyLoop,
-    ) !void {
-        write_loop: while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
-            _ = self.channel_to_pipe() catch |err| {
-                switch (err) {
-                    error.WouldBlock => {
-                        std.time.sleep(open_eagain_delay_ns);
-
-                        continue :write_loop;
-                    },
-                    else => {
-                        return err;
-                    },
-                }
+    fn copy_channel_to_pipe(self: *ProxyWrapper) !void {
+        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+            self.channel_to_pipe() catch |err| switch (err) {
+                error.WouldBlock => {
+                    std.time.sleep(open_eagain_delay_ns);
+                    continue;
+                },
+                else => return err,
             };
         }
     }
@@ -257,17 +269,19 @@ const AuthCallbackData = struct {
     password: [:0]u8,
 };
 
-pub const ProxyJumpTarget = struct {
+pub const ProxyJumpOptions = struct {
     host: []const u8,
+    port: u16 = 22,
     username: []const u8,
     password: []const u8,
+    libssh2_trace: bool = false,
 };
 
 pub const OptionsInputs = struct {
     known_hosts_path: ?[]const u8 = null,
     libssh2_trace: bool = false,
     netconf: bool = false,
-    proxy_jump_target: ?ProxyJumpTarget = null,
+    proxy_jump_options: ?ProxyJumpOptions = null,
 };
 
 pub const Options = struct {
@@ -275,7 +289,7 @@ pub const Options = struct {
     known_hosts_path: ?[]const u8,
     libssh2_trace: bool,
     netconf: bool,
-    proxy_jump_target: ?ProxyJumpTarget,
+    proxy_jump_options: ?ProxyJumpOptions,
 
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
@@ -286,7 +300,7 @@ pub const Options = struct {
             .known_hosts_path = opts.known_hosts_path,
             .libssh2_trace = opts.libssh2_trace,
             .netconf = opts.netconf,
-            .proxy_jump_target = opts.proxy_jump_target,
+            .proxy_jump_options = opts.proxy_jump_options,
         };
 
         return o;
@@ -316,10 +330,9 @@ pub const Transport = struct {
     initial_session: ?*ssh2.struct__LIBSSH2_SESSION = null,
     initial_channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null,
 
-    // the "outer" (or original) session/channel (to the jumphost basically)
     proxy_session: ?*ssh2.struct__LIBSSH2_SESSION = null,
     proxy_channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null,
-    proxy_loop: *ProxyLoop,
+    proxy_wrapper: *ProxyWrapper,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -354,7 +367,7 @@ pub const Transport = struct {
             .options = options,
             .auth_callback_data = a,
             .proxy_auth_callback_data = pa,
-            .proxy_loop = try ProxyLoop.init(allocator),
+            .proxy_wrapper = try ProxyWrapper.init(allocator),
             .session_lock = std.Thread.Mutex{},
         };
 
@@ -362,28 +375,17 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
+        if (self.proxy_session != null) {
+            libssh2Free(self.proxy_session, self.log);
+        }
+
         if (self.initial_session != null) {
-            while (true) {
-                // TODO proxy session too if applicable
-                const rc = ssh2.libssh2_session_free(self.initial_session);
-
-                if (rc == 0) {
-                    break;
-                } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                    std.time.sleep(open_eagain_delay_ns);
-
-                    continue;
-                } else {
-                    self.log.critical("failed freeing ssh2 session", .{});
-
-                    break;
-                }
-            }
+            libssh2Free(self.initial_session, self.log);
         }
 
         self.allocator.destroy(self.auth_callback_data);
         self.allocator.destroy(self.proxy_auth_callback_data);
-        self.proxy_loop.deinit();
+        self.proxy_wrapper.deinit();
         self.allocator.destroy(self);
     }
 
@@ -412,7 +414,7 @@ pub const Transport = struct {
 
         var channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null;
 
-        if (self.options.proxy_jump_target == null) {
+        if (self.options.proxy_jump_options == null) {
             // no proxy jump, normal flow
             self.initial_channel = try self.openChannel(
                 timer,
@@ -427,6 +429,7 @@ pub const Transport = struct {
                 timer,
                 cancel,
                 operation_timeout_ns,
+                auth_options,
             );
 
             self.proxy_channel = try self.openChannel(
@@ -462,8 +465,8 @@ pub const Transport = struct {
         // this point must acquire the lock to operate against the session! we also check the
         // proxy session bits and stop the forever loops for copying between the pipe and the
         // channel (if in place obv)
-        if (self.options.proxy_jump_target != null) {
-            self.proxy_loop.stop();
+        if (self.options.proxy_jump_options != null) {
+            self.proxy_wrapper.stop();
         }
     }
 
@@ -1054,6 +1057,7 @@ pub const Transport = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
         operation_timeout_ns: u64,
+        auth_options: *auth.Options,
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
@@ -1072,7 +1076,7 @@ pub const Transport = struct {
 
             const _host = self.allocator.dupeZ(
                 u8,
-                self.options.proxy_jump_target.?.host,
+                self.options.proxy_jump_options.?.host,
             ) catch |err| {
                 self.log.critical(
                     "failed casting proxy target host to c string, err: {}",
@@ -1086,6 +1090,7 @@ pub const Transport = struct {
             self.initial_channel = libssh2ChannelOpenProxySession(
                 self.initial_session,
                 _host,
+                self.options.proxy_jump_options.?.port,
             );
 
             if (self.initial_channel != null) {
@@ -1107,7 +1112,7 @@ pub const Transport = struct {
 
         const _password = self.allocator.dupeZ(
             u8,
-            self.options.proxy_jump_target.?.password,
+            self.options.proxy_jump_options.?.password,
         ) catch |err| {
             self.log.critical("failed casting password to c string, err: {}", .{err});
 
@@ -1119,7 +1124,7 @@ pub const Transport = struct {
 
         const _username = self.allocator.dupeZ(
             u8,
-            self.options.proxy_jump_target.?.username,
+            self.options.proxy_jump_options.?.username,
         ) catch |err| {
             self.log.critical("failed casting username to c string, err: {}", .{err});
 
@@ -1139,17 +1144,18 @@ pub const Transport = struct {
             return errors.ScrapliError.OpenFailed;
         }
 
-        // TODO option to enable trace for the "inner" session
-        // _ = ssh2.libssh2_trace(
-        //     self.proxy_session.?,
-        //     ssh2.LIBSSH2_TRACE_PUBLICKEY |
-        //         ssh2.LIBSSH2_TRACE_CONN |
-        //         ssh2.LIBSSH2_TRACE_ERROR |
-        //         ssh2.LIBSSH2_TRACE_SOCKET |
-        //         ssh2.LIBSSH2_TRACE_TRANS |
-        //         ssh2.LIBSSH2_TRACE_KEX |
-        //         ssh2.LIBSSH2_TRACE_AUTH,
-        // );
+        if (self.options.proxy_jump_options.?.libssh2_trace) {
+            _ = ssh2.libssh2_trace(
+                self.proxy_session.?,
+                ssh2.LIBSSH2_TRACE_PUBLICKEY |
+                    ssh2.LIBSSH2_TRACE_CONN |
+                    ssh2.LIBSSH2_TRACE_ERROR |
+                    ssh2.LIBSSH2_TRACE_SOCKET |
+                    ssh2.LIBSSH2_TRACE_TRANS |
+                    ssh2.LIBSSH2_TRACE_KEX |
+                    ssh2.LIBSSH2_TRACE_AUTH,
+            );
+        }
 
         // we have to create a socket pair/pipe so we can give libssh2 a real socket -- we then
         // run this little proxy loop around it to read/write to/from the pipe and then to the
@@ -1171,7 +1177,7 @@ pub const Transport = struct {
         try file.setNonBlocking(local_fd);
         try file.setNonBlocking(remote_fd);
 
-        try self.proxy_loop.start(self.initial_channel.?, local_fd, remote_fd);
+        try self.proxy_wrapper.run(self.initial_channel.?, remote_fd);
 
         const handshake_rc = ssh2.libssh2_session_handshake(self.proxy_session, local_fd);
         if (handshake_rc != 0) {
@@ -1180,12 +1186,13 @@ pub const Transport = struct {
 
         ssh2.libssh2_session_set_blocking(self.proxy_session, 0);
 
-        // TODO this probably needs the lookup map and maybe something else?
+        // TODO does this need anything else from the original auth options?
         const pa = try auth.Options.init(
             self.allocator,
             .{
-                .username = self.options.proxy_jump_target.?.username,
-                .password = self.options.proxy_jump_target.?.password,
+                .username = self.options.proxy_jump_options.?.username,
+                .password = self.options.proxy_jump_options.?.password,
+                .lookup_map = auth_options.lookups,
             },
         );
         defer pa.deinit();
@@ -1332,11 +1339,11 @@ pub const Transport = struct {
             return errors.ScrapliError.WriteFailed;
         }
 
-        if (self.options.proxy_jump_target != null) {
+        if (self.options.proxy_jump_options != null) {
             // have to copy from the libssh2 channel to the pipe connecting the outer and inner
             // sessions basically
             while (true) {
-                const result = self.proxy_loop.pipe_to_channel();
+                const result = self.proxy_wrapper.pipe_to_channel();
                 if (result) {
                     break;
                 } else |err| {
@@ -1352,7 +1359,7 @@ pub const Transport = struct {
     }
 
     pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
-        if (self.options.proxy_jump_target == null) {
+        if (self.options.proxy_jump_options == null) {
             return self._write_standard(w, buf);
         } else {
             return self._write_proxied(w, buf);
@@ -1404,7 +1411,7 @@ pub const Transport = struct {
 
         // copy from the pipe into the libssh2 channel so a read will be available (if present)
         while (true) {
-            const result = self.proxy_loop.channel_to_pipe();
+            const result = self.proxy_wrapper.channel_to_pipe();
             if (result) {
                 continue;
             } else |err| {
@@ -1443,7 +1450,7 @@ pub const Transport = struct {
     }
 
     pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
-        if (self.options.proxy_jump_target == null) {
+        if (self.options.proxy_jump_options == null) {
             return self._read_standard(w, buf);
         } else {
             return self._read_proxied(w, buf);
