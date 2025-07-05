@@ -1289,25 +1289,37 @@ pub const Transport = struct {
                 self.log.critical("failed disconnecting ssh2 session", .{});
             }
         }
-
-        self.proxy_loop.stop();
     }
 
-    pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+    fn _write_standard(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
-        var channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null;
-        if (self.options.proxy_jump_target == null) {
-            channel = self.initial_channel.?;
-        } else {
-            channel = self.proxy_channel.?;
-        }
-
-        const n = ssh2.libssh2_channel_write_ex(channel, 0, buf.ptr, buf.len);
+        const n = ssh2.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
 
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            return self.write(w, buf);
+            return self._write_standard(w, buf);
+        }
+
+        if (n < 0) {
+            return errors.ScrapliError.WriteFailed;
+        }
+
+        if (n != buf.len) {
+            self.log.critical("wrote {d} bytes, expected to write {d}", .{ n, buf.len });
+
+            return errors.ScrapliError.WriteFailed;
+        }
+    }
+
+    fn _write_proxied(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+        self.session_lock.lock();
+        defer self.session_lock.unlock();
+
+        const n = ssh2.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
+
+        if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            return self._write_proxied(w, buf);
         }
 
         if (n < 0) {
@@ -1339,49 +1351,28 @@ pub const Transport = struct {
         }
     }
 
-    pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
-        self.session_lock.lock();
-
-        var channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null;
-
+    pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
         if (self.options.proxy_jump_target == null) {
-            channel = self.initial_channel.?;
+            return self._write_standard(w, buf);
         } else {
-            channel = self.proxy_channel.?;
+            return self._write_proxied(w, buf);
         }
+    }
+
+    fn _read_standard(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+        self.session_lock.lock();
 
         // because nonblock we will just eagain forever (really until the timeout catches us)
         // if we dont check explicitly for eof, so do that
-        if (ssh2.libssh2_channel_eof(channel) == 1) {
+        if (ssh2.libssh2_channel_eof(self.initial_channel.?) == 1) {
             self.session_lock.unlock();
 
             return errors.ScrapliError.EOF;
         }
 
-        if (self.options.proxy_jump_target != null) {
-            // copy from the pipe into the libssh2 channel so a read will be available (if present)
-            while (true) {
-                const result = self.proxy_loop.channel_to_pipe();
-                if (result) {
-                    continue;
-                } else |err| {
-                    switch (err) {
-                        error.WouldBlock => {
-                            // dont care, let the "normal" flow catch this
-                            break;
-                        },
-                        else => {
-                            self.session_lock.unlock();
-                            return err;
-                        },
-                    }
-                }
-            }
-        }
-
         // only locked around the actual read (and eof check), not waiting on kqueue/epoll stuff
         const n = ssh2.libssh2_channel_read_ex(
-            channel,
+            self.initial_channel.?,
             @as(c_int, 0),
             &buf[0],
             @intCast(buf.len),
@@ -1393,13 +1384,70 @@ pub const Transport = struct {
             try w.wait(self.socket.?);
 
             return 0;
-        }
-
-        if (n < 0) {
+        } else if (n < 0) {
             return errors.ScrapliError.ReadFailed;
         }
 
         return @intCast(n);
+    }
+
+    fn _read_proxied(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+        self.session_lock.lock();
+
+        // because nonblock we will just eagain forever (really until the timeout catches us)
+        // if we dont check explicitly for eof, so do that
+        if (ssh2.libssh2_channel_eof(self.proxy_channel.?) == 1) {
+            self.session_lock.unlock();
+
+            return errors.ScrapliError.EOF;
+        }
+
+        // copy from the pipe into the libssh2 channel so a read will be available (if present)
+        while (true) {
+            const result = self.proxy_loop.channel_to_pipe();
+            if (result) {
+                continue;
+            } else |err| {
+                switch (err) {
+                    error.WouldBlock => {
+                        // dont care, let the "normal" flow catch this
+                        break;
+                    },
+                    else => {
+                        self.session_lock.unlock();
+                        return err;
+                    },
+                }
+            }
+        }
+
+        // only locked around the actual read (and eof check), not waiting on kqueue/epoll stuff
+        const n = ssh2.libssh2_channel_read_ex(
+            self.proxy_channel.?,
+            @as(c_int, 0),
+            &buf[0],
+            @intCast(buf.len),
+        );
+
+        self.session_lock.unlock();
+
+        if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            try w.wait(self.socket.?);
+
+            return 0;
+        } else if (n < 0) {
+            return errors.ScrapliError.ReadFailed;
+        }
+
+        return @intCast(n);
+    }
+
+    pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+        if (self.options.proxy_jump_target == null) {
+            return self._read_standard(w, buf);
+        } else {
+            return self._read_proxied(w, buf);
+        }
     }
 };
 
