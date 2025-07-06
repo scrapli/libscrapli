@@ -318,7 +318,7 @@ pub const Transport = struct {
     options: *Options,
 
     auth_callback_data: *AuthCallbackData,
-    proxy_auth_callback_data: *AuthCallbackData,
+    proxy_auth_callback_data: ?*AuthCallbackData = null,
 
     session_lock: std.Thread.Mutex,
 
@@ -332,7 +332,7 @@ pub const Transport = struct {
 
     proxy_session: ?*ssh2.struct__LIBSSH2_SESSION = null,
     proxy_channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null,
-    proxy_wrapper: *ProxyWrapper,
+    proxy_wrapper: ?*ProxyWrapper = null,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -354,22 +354,25 @@ pub const Transport = struct {
             .password = undefined,
         };
 
-        const pa = try allocator.create(AuthCallbackData);
-
-        pa.* = AuthCallbackData{
-            // SAFETY: used in C callback, so think this is expected/fine
-            .password = undefined,
-        };
-
         t.* = Transport{
             .allocator = allocator,
             .log = log,
             .options = options,
             .auth_callback_data = a,
-            .proxy_auth_callback_data = pa,
-            .proxy_wrapper = try ProxyWrapper.init(allocator),
             .session_lock = std.Thread.Mutex{},
         };
+
+        if (options.proxy_jump_options != null) {
+            const pa = try allocator.create(AuthCallbackData);
+
+            pa.* = AuthCallbackData{
+                // SAFETY: used in C callback, so think this is expected/fine
+                .password = undefined,
+            };
+
+            t.proxy_auth_callback_data = pa;
+            t.proxy_wrapper = try ProxyWrapper.init(allocator);
+        }
 
         return t;
     }
@@ -384,8 +387,12 @@ pub const Transport = struct {
         }
 
         self.allocator.destroy(self.auth_callback_data);
-        self.allocator.destroy(self.proxy_auth_callback_data);
-        self.proxy_wrapper.deinit();
+
+        if (self.options.proxy_jump_options != null) {
+            self.allocator.destroy(self.proxy_auth_callback_data.?);
+            self.proxy_wrapper.?.deinit();
+        }
+
         self.allocator.destroy(self);
     }
 
@@ -465,8 +472,8 @@ pub const Transport = struct {
         // this point must acquire the lock to operate against the session! we also check the
         // proxy session bits and stop the forever loops for copying between the pipe and the
         // channel (if in place obv)
-        if (self.options.proxy_jump_options != null) {
-            self.proxy_wrapper.stop();
+        if (self.proxy_wrapper != null) {
+            self.proxy_wrapper.?.stop();
         }
     }
 
@@ -1120,7 +1127,7 @@ pub const Transport = struct {
         };
         defer self.allocator.free(_password);
 
-        self.proxy_auth_callback_data.password = _password;
+        self.proxy_auth_callback_data.?.password = _password;
 
         const _username = self.allocator.dupeZ(
             u8,
@@ -1177,7 +1184,7 @@ pub const Transport = struct {
         try file.setNonBlocking(local_fd);
         try file.setNonBlocking(remote_fd);
 
-        try self.proxy_wrapper.run(self.initial_channel.?, remote_fd);
+        try self.proxy_wrapper.?.run(self.initial_channel.?, remote_fd);
 
         const handshake_rc = ssh2.libssh2_session_handshake(self.proxy_session, local_fd);
         if (handshake_rc != 0) {
@@ -1343,7 +1350,7 @@ pub const Transport = struct {
             // have to copy from the libssh2 channel to the pipe connecting the outer and inner
             // sessions basically
             while (true) {
-                const result = self.proxy_wrapper.pipe_to_channel();
+                const result = self.proxy_wrapper.?.pipe_to_channel();
                 if (result) {
                     break;
                 } else |err| {
@@ -1411,7 +1418,7 @@ pub const Transport = struct {
 
         // copy from the pipe into the libssh2 channel so a read will be available (if present)
         while (true) {
-            const result = self.proxy_wrapper.channel_to_pipe();
+            const result = self.proxy_wrapper.?.channel_to_pipe();
             if (result) {
                 continue;
             } else |err| {
