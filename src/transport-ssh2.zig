@@ -1296,7 +1296,13 @@ pub const Transport = struct {
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
-        // TODO proxy session shit too
+        if (self.proxy_session != null) {
+            const rc = ssh2.libssh2_session_disconnect(self.proxy_session, "deinit");
+            if (rc != 0) {
+                self.log.critical("failed disconnecting ssh2 session", .{});
+            }
+        }
+
         if (self.initial_session != null) {
             const rc = ssh2.libssh2_session_disconnect(self.initial_session, "deinit");
             if (rc != 0) {
