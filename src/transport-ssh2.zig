@@ -15,7 +15,7 @@ const ssh2 = @cImport({
     @cInclude("libssh2.h");
 });
 
-const open_eagain_delay_ns: u64 = 100_000;
+const default_eagain_delay_ns: u64 = 100_000;
 
 var ssh2_initialized = false;
 
@@ -112,7 +112,36 @@ fn libssh2ChannelProcessStartup(channel: ?*ssh2.LIBSSH2_CHANNEL, netconf: bool) 
     );
 }
 
-fn libssh2Free(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void {
+fn libssh2DisconnectSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void {
+    var counter: usize = 0;
+
+    while (true) {
+        const rc = ssh2.libssh2_session_disconnect(session, "closing");
+
+        if (rc == 0) {
+            break;
+        } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            counter += 1;
+
+            if (counter > 25) {
+                // to prevent blocking here
+                log.critical("eagain too many times freeing ssh2 session", .{});
+
+                break;
+            }
+
+            std.time.sleep(default_eagain_delay_ns);
+
+            continue;
+        } else {
+            log.critical("failed freeing ssh2 session", .{});
+
+            break;
+        }
+    }
+}
+
+fn libssh2FreeSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void {
     var counter: usize = 0;
 
     while (true) {
@@ -125,10 +154,12 @@ fn libssh2Free(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void {
 
             if (counter > 25) {
                 // to prevent blocking here
+                log.critical("eagain too many times freeing ssh2 session", .{});
+
                 break;
             }
 
-            std.time.sleep(open_eagain_delay_ns);
+            std.time.sleep(default_eagain_delay_ns);
 
             continue;
         } else {
@@ -138,6 +169,68 @@ fn libssh2Free(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void {
         }
     }
 }
+
+fn libssh2CloseChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
+    var counter: usize = 0;
+
+    while (true) {
+        const rc = ssh2.libssh2_channel_close(chan);
+
+        if (rc == 0) {
+            break;
+        } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            counter += 1;
+
+            if (counter > 250) {
+                // to prevent blocking here
+                log.warn("eagain too many times closing ssh2 channel", .{});
+
+                break;
+            }
+
+            std.time.sleep(default_eagain_delay_ns);
+
+            continue;
+        } else {
+            log.warn("failed closing ssh2 channel", .{});
+
+            break;
+        }
+    }
+}
+
+fn libssh2FreeChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
+    var counter: usize = 0;
+
+    while (true) {
+        const rc = ssh2.libssh2_channel_free(chan);
+
+        if (rc == 0) {
+            break;
+        } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            counter += 1;
+
+            if (counter > 250) {
+                // to prevent blocking here
+                log.critical("eagain too many times freeing ssh2 channel", .{});
+
+                break;
+            }
+
+            std.time.sleep(default_eagain_delay_ns);
+
+            continue;
+        } else {
+            log.critical("failed freeing ssh2 channel", .{});
+
+            break;
+        }
+    }
+}
+
+const AuthCallbackData = struct {
+    password: [:0]u8,
+};
 
 const ProxyWrapper = struct {
     allocator: std.mem.Allocator,
@@ -226,7 +319,7 @@ const ProxyWrapper = struct {
             const result = self.pipe_to_channel();
             if (result) {} else |err| switch (err) {
                 error.WouldBlock => {
-                    std.time.sleep(open_eagain_delay_ns);
+                    std.time.sleep(default_eagain_delay_ns);
 
                     continue;
                 },
@@ -256,7 +349,7 @@ const ProxyWrapper = struct {
         while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
             self.channel_to_pipe() catch |err| switch (err) {
                 error.WouldBlock => {
-                    std.time.sleep(open_eagain_delay_ns);
+                    std.time.sleep(default_eagain_delay_ns);
                     continue;
                 },
                 else => return err,
@@ -265,15 +358,13 @@ const ProxyWrapper = struct {
     }
 };
 
-const AuthCallbackData = struct {
-    password: [:0]u8,
-};
-
 pub const ProxyJumpOptions = struct {
     host: []const u8,
     port: u16 = 22,
-    username: []const u8,
-    password: []const u8,
+    username: ?[]const u8 = null,
+    password: ?[]const u8 = null,
+    private_key_path: ?[]const u8 = null,
+    private_key_passphrase: ?[]const u8 = null,
     libssh2_trace: bool = false,
 };
 
@@ -318,7 +409,6 @@ pub const Transport = struct {
     options: *Options,
 
     auth_callback_data: *AuthCallbackData,
-    proxy_auth_callback_data: ?*AuthCallbackData = null,
 
     session_lock: std.Thread.Mutex,
 
@@ -363,14 +453,6 @@ pub const Transport = struct {
         };
 
         if (options.proxy_jump_options != null) {
-            const pa = try allocator.create(AuthCallbackData);
-
-            pa.* = AuthCallbackData{
-                // SAFETY: used in C callback, so think this is expected/fine
-                .password = undefined,
-            };
-
-            t.proxy_auth_callback_data = pa;
             t.proxy_wrapper = try ProxyWrapper.init(allocator);
         }
 
@@ -378,19 +460,22 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
-        if (self.proxy_session != null) {
-            libssh2Free(self.proxy_session, self.log);
+        if (self.proxy_session) |sess| {
+            libssh2FreeSession(sess, self.log);
         }
 
-        if (self.initial_session != null) {
-            libssh2Free(self.initial_session, self.log);
+        if (self.initial_channel) |chan| {
+            libssh2FreeChannel(chan, self.log);
+        }
+
+        if (self.initial_session) |sess| {
+            libssh2FreeSession(sess, self.log);
         }
 
         self.allocator.destroy(self.auth_callback_data);
 
-        if (self.options.proxy_jump_options != null) {
-            self.allocator.destroy(self.proxy_auth_callback_data.?);
-            self.proxy_wrapper.?.deinit();
+        if (self.proxy_wrapper) |proxy_wrapper| {
+            proxy_wrapper.deinit();
         }
 
         self.allocator.destroy(self);
@@ -602,7 +687,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -795,6 +880,7 @@ pub const Transport = struct {
                 operation_timeout_ns,
                 session,
                 _username,
+                _password,
             );
             if (try self.isAuthenticated(
                 timer,
@@ -837,7 +923,7 @@ pub const Transport = struct {
             if (rc == 1) {
                 return true;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             } else {
@@ -913,7 +999,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -931,7 +1017,10 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         session: *ssh2.struct__LIBSSH2_SESSION,
         username: [:0]u8,
+        password: [:0]u8,
     ) !void {
+        self.auth_callback_data.password = password;
+
         while (true) {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
@@ -957,7 +1046,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1006,7 +1095,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1048,7 +1137,7 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(session);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1107,7 +1196,7 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(self.initial_session.?);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1117,33 +1206,11 @@ pub const Transport = struct {
             return errors.ScrapliError.OpenFailed;
         }
 
-        const _password = self.allocator.dupeZ(
-            u8,
-            self.options.proxy_jump_options.?.password,
-        ) catch |err| {
-            self.log.critical("failed casting password to c string, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
-        };
-        defer self.allocator.free(_password);
-
-        self.proxy_auth_callback_data.?.password = _password;
-
-        const _username = self.allocator.dupeZ(
-            u8,
-            self.options.proxy_jump_options.?.username,
-        ) catch |err| {
-            self.log.critical("failed casting username to c string, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
-        };
-        defer self.allocator.free(_username);
-
         self.proxy_session = ssh2.libssh2_session_init_ex(
             null,
             null,
             null,
-            self.proxy_auth_callback_data,
+            self.auth_callback_data,
         );
         if (self.proxy_session == null) {
             self.log.critical("failed creating libssh2 session", .{});
@@ -1185,6 +1252,7 @@ pub const Transport = struct {
         try file.setNonBlocking(remote_fd);
 
         try self.proxy_wrapper.?.run(self.initial_channel.?, remote_fd);
+        errdefer self.proxy_wrapper.?.stop();
 
         const handshake_rc = ssh2.libssh2_session_handshake(self.proxy_session, local_fd);
         if (handshake_rc != 0) {
@@ -1193,12 +1261,13 @@ pub const Transport = struct {
 
         ssh2.libssh2_session_set_blocking(self.proxy_session, 0);
 
-        // TODO does this need anything else from the original auth options?
         const pa = try auth.Options.init(
             self.allocator,
             .{
                 .username = self.options.proxy_jump_options.?.username,
                 .password = self.options.proxy_jump_options.?.password,
+                .private_key_path = self.options.proxy_jump_options.?.private_key_path,
+                .private_key_passphrase = self.options.proxy_jump_options.?.private_key_passphrase,
                 .lookup_map = auth_options.lookups,
             },
         );
@@ -1240,7 +1309,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1281,7 +1350,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(open_eagain_delay_ns);
+                std.time.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1296,18 +1365,20 @@ pub const Transport = struct {
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
-        if (self.proxy_session != null) {
-            const rc = ssh2.libssh2_session_disconnect(self.proxy_session, "deinit");
-            if (rc != 0) {
-                self.log.critical("failed disconnecting ssh2 session", .{});
-            }
+        if (self.proxy_channel) |chan| {
+            libssh2CloseChannel(chan, self.log);
         }
 
-        if (self.initial_session != null) {
-            const rc = ssh2.libssh2_session_disconnect(self.initial_session, "deinit");
-            if (rc != 0) {
-                self.log.critical("failed disconnecting ssh2 session", .{});
-            }
+        if (self.initial_channel) |chan| {
+            libssh2CloseChannel(chan, self.log);
+        }
+
+        if (self.proxy_session) |sess| {
+            libssh2DisconnectSession(sess, self.log);
+        }
+
+        if (self.initial_session) |sess| {
+            libssh2DisconnectSession(sess, self.log);
         }
     }
 
