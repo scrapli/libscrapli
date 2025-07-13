@@ -733,7 +733,7 @@ export fn ls_option_transport_ssh2_known_hosts_path(
         .cli => |rd| {
             switch (rd.session.transport.implementation) {
                 .ssh2 => |i| {
-                    i.options.known_hosts_path = rd.options.transport.bin.allocator.dupe(
+                    i.options.known_hosts_path = rd.options.transport.ssh2.allocator.dupe(
                         u8,
                         std.mem.span(value),
                     ) catch {
@@ -748,7 +748,7 @@ export fn ls_option_transport_ssh2_known_hosts_path(
         .netconf => |rd| {
             switch (rd.session.transport.implementation) {
                 .ssh2 => |i| {
-                    i.options.known_hosts_path = rd.options.transport.bin.allocator.dupe(
+                    i.options.known_hosts_path = rd.options.transport.ssh2.allocator.dupe(
                         u8,
                         std.mem.span(value),
                     ) catch {
@@ -785,6 +785,305 @@ export fn ls_option_transport_ssh2_libssh2trace(
             switch (rd.session.transport.implementation) {
                 .ssh2 => |i| {
                     i.options.libssh2_trace = true;
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_transport_ssh2_proxy_jump_host(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    if (i.options.proxy_jump_options == null) {
+                        i.options.proxy_jump_options = .{
+                            .host = rd.options.transport.ssh2.allocator.dupe(
+                                u8,
+                                std.mem.span(value),
+                            ) catch {
+                                return 1;
+                            },
+                        };
+
+                        return 0;
+                    }
+
+                    i.options.proxy_jump_options.?.host = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+        .netconf => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    if (i.options.proxy_jump_options == null) {
+                        i.options.proxy_jump_options = .{
+                            .host = rd.options.transport.ssh2.allocator.dupe(
+                                u8,
+                                std.mem.span(value),
+                            ) catch {
+                                return 1;
+                            },
+                        };
+
+                        return 0;
+                    }
+
+                    i.options.proxy_jump_options.?.host = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_transport_ssh2_proxy_jump_port(
+    d_ptr: usize,
+    value: u16,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.port = value;
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+        .netconf => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.port = value;
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_transport_ssh2_proxy_jump_username(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.username = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+        .netconf => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.username = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_transport_ssh2_proxy_jump_password(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.password = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+        .netconf => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.password = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_transport_ssh2_proxy_jump_private_key_path(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.private_key_path = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+        .netconf => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.private_key_path = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_transport_ssh2_proxy_jump_private_key_passphrase(
+    d_ptr: usize,
+    value: [*c]const u8,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.private_key_passphrase = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+        .netconf => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.private_key_passphrase = rd.options.transport.ssh2.allocator.dupe(
+                        u8,
+                        std.mem.span(value),
+                    ) catch {
+                        return 1;
+                    };
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_transport_ssh2_proxy_jump_libssh2trace(
+    d_ptr: usize,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.libssh2_trace = true;
+                },
+                else => {
+                    return 1;
+                },
+            }
+        },
+        .netconf => |rd| {
+            switch (rd.session.transport.implementation) {
+                .ssh2 => |i| {
+                    i.options.proxy_jump_options.?.libssh2_trace = true;
                 },
                 else => {
                     return 1;

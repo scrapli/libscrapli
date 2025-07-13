@@ -125,7 +125,7 @@ fn libssh2DisconnectSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger
 
             if (counter > 25) {
                 // to prevent blocking here
-                log.critical("eagain too many times freeing ssh2 session", .{});
+                log.warn("eagain too many times freeing ssh2 session", .{});
 
                 break;
             }
@@ -154,7 +154,7 @@ fn libssh2FreeSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void
 
             if (counter > 25) {
                 // to prevent blocking here
-                log.critical("eagain too many times freeing ssh2 session", .{});
+                log.warn("eagain too many times freeing ssh2 session", .{});
 
                 break;
             }
@@ -212,7 +212,7 @@ fn libssh2FreeChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
 
             if (counter > 250) {
                 // to prevent blocking here
-                log.critical("eagain too many times freeing ssh2 channel", .{});
+                log.warn("eagain too many times freeing ssh2 channel", .{});
 
                 break;
             }
@@ -452,10 +452,6 @@ pub const Transport = struct {
             .session_lock = std.Thread.Mutex{},
         };
 
-        if (options.proxy_jump_options != null) {
-            t.proxy_wrapper = try ProxyWrapper.init(allocator);
-        }
-
         return t;
     }
 
@@ -517,6 +513,8 @@ pub const Transport = struct {
 
             channel = self.initial_channel;
         } else {
+            self.proxy_wrapper = try ProxyWrapper.init(self.allocator);
+
             try self.openProxyChannel(
                 timer,
                 cancel,
@@ -1155,6 +1153,19 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         auth_options: *auth.Options,
     ) !void {
+        const _host = self.allocator.dupeZ(
+            u8,
+            self.options.proxy_jump_options.?.host,
+        ) catch |err| {
+            self.log.critical(
+                "failed casting proxy target host to c string, err: {}",
+                .{err},
+            );
+
+            return errors.ScrapliError.OpenFailed;
+        };
+        defer self.allocator.free(_host);
+
         while (true) {
             if (cancel != null and cancel.?.*) {
                 self.log.critical("operation cancelled", .{});
@@ -1169,19 +1180,6 @@ pub const Transport = struct {
 
                 return errors.ScrapliError.TimeoutExceeded;
             }
-
-            const _host = self.allocator.dupeZ(
-                u8,
-                self.options.proxy_jump_options.?.host,
-            ) catch |err| {
-                self.log.critical(
-                    "failed casting proxy target host to c string, err: {}",
-                    .{err},
-                );
-
-                return errors.ScrapliError.OpenFailed;
-            };
-            defer self.allocator.free(_host);
 
             self.initial_channel = libssh2ChannelOpenProxySession(
                 self.initial_session,

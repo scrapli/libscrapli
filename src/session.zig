@@ -390,8 +390,6 @@ pub const Session = struct {
             try self.read_queue.write(buf[0..n]);
             self.read_lock.unlock();
         }
-
-        self.log.info("read thread stopped", .{});
     }
 
     pub fn read(self: *Session, buf: []u8) !usize {
@@ -447,6 +445,10 @@ pub const Session = struct {
 
         var buf = try allocator.alloc(u8, self.options.read_size);
         defer allocator.free(buf);
+
+        // in the case of auth, if we error out, we almost certainly need to stop the read loop
+        // as the transport is probably gone from under our feet anyway.
+        errdefer self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         while (true) {
             if (cancel != null and cancel.?.*) {
