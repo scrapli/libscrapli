@@ -342,7 +342,17 @@ const ProxyWrapper = struct {
             return error.WriteFailed;
         }
 
-        _ = try std.posix.write(self.remote_fd, buf[0..@intCast(n)]);
+        var wrote: usize = 0;
+
+        while (true) {
+            const wrote_n = try std.posix.write(self.remote_fd, buf[0..@intCast(n)]);
+
+            wrote += wrote_n;
+
+            if (wrote == n) {
+                return;
+            }
+        }
     }
 
     fn copy_channel_to_pipe(self: *ProxyWrapper) !void {
@@ -555,8 +565,8 @@ pub const Transport = struct {
         // this point must acquire the lock to operate against the session! we also check the
         // proxy session bits and stop the forever loops for copying between the pipe and the
         // channel (if in place obv)
-        if (self.proxy_wrapper != null) {
-            self.proxy_wrapper.?.stop();
+        if (self.proxy_wrapper) |pw| {
+            pw.stop();
         }
     }
 
@@ -1421,11 +1431,11 @@ pub const Transport = struct {
             return errors.ScrapliError.WriteFailed;
         }
 
-        if (self.options.proxy_jump_options != null) {
+        if (self.proxy_wrapper) |pw| {
             // have to copy from the libssh2 channel to the pipe connecting the outer and inner
             // sessions basically
             while (true) {
-                const result = self.proxy_wrapper.?.pipe_to_channel();
+                const result = pw.pipe_to_channel();
                 if (result) {
                     break;
                 } else |err| {
@@ -1483,34 +1493,11 @@ pub const Transport = struct {
     fn _read_proxied(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
         self.session_lock.lock();
 
-        // because nonblock we will just eagain forever (really until the timeout catches us)
-        // if we dont check explicitly for eof, so do that
         if (ssh2.libssh2_channel_eof(self.proxy_channel.?) == 1) {
             self.session_lock.unlock();
-
             return errors.ScrapliError.EOF;
         }
 
-        // copy from the pipe into the libssh2 channel so a read will be available (if present)
-        while (true) {
-            const result = self.proxy_wrapper.?.channel_to_pipe();
-            if (result) {
-                continue;
-            } else |err| {
-                switch (err) {
-                    error.WouldBlock => {
-                        // dont care, let the "normal" flow catch this
-                        break;
-                    },
-                    else => {
-                        self.session_lock.unlock();
-                        return err;
-                    },
-                }
-            }
-        }
-
-        // only locked around the actual read (and eof check), not waiting on kqueue/epoll stuff
         const n = ssh2.libssh2_channel_read_ex(
             self.proxy_channel.?,
             @as(c_int, 0),
@@ -1520,7 +1507,21 @@ pub const Transport = struct {
 
         self.session_lock.unlock();
 
+        // need to make sure we are flushing things the *other* way too -- as in back to the server
+        // because if we dont do this our acks and such wont get there
+        self.proxy_wrapper.?.pipe_to_channel() catch {};
+
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            const res = self.proxy_wrapper.?.channel_to_pipe();
+            if (res) {
+                // re-read since we copied data from the cahnnel to the pipe, so now something
+                // should be available for libssh2_channel-read_ex
+                return self._read_proxied(w, buf);
+            } else |_| {
+                // didn't copy data, wait on the socket so libssh2 has something to read on
+                // the next iteration
+            }
+
             try w.wait(self.socket.?);
 
             return 0;
