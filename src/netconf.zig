@@ -1264,11 +1264,15 @@ pub const Driver = struct {
             );
         }
 
-        // we need to load the user's provided filter as an object so we can stuff it into
-        // our rpc, mercifully zig-xml is dope and has this where we can just embed what they
-        // give us directly. they do have to provide valid xml, but... ya know, the rest is not
-        // our problem!
-        try writer.embed(filter);
+        if (filter_type == operation.FilterType.xpath) {
+            try writer.attribute("select", filter);
+        } else {
+            // we need to load the user's provided filter as an object so we can stuff it into
+            // our rpc, mercifully zig-xml is dope and has this where we can just embed what they
+            // give us directly. they do have to provide valid xml, but... ya know, the rest is not
+            // our problem!
+            try writer.embed(filter);
+        }
 
         // finally close out the filter tag
         try writer.elementEnd();
@@ -3172,6 +3176,33 @@ test "buildGetConfigElem" {
             .expected =
             \\#325
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source><filter type="subtree"><foo:interface/></filter><with-defaults xmlns="urn:ietf:params:netconf:capability:with-defaults:1.0">report-all</with-defaults></get-config></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "filtered-1.0-xpath",
+            .version = Version.version_1_0,
+            .driver_config = .{},
+            .options = .{
+                .filter = "/interfaces/interface[name='Management0']/state",
+                .filter_type = operation.FilterType.xpath,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source><filter type="xpath" select="/interfaces/interface[name='Management0']/state"></filter></get-config></rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "filtered-1.1-xpath",
+            .version = Version.version_1_1,
+            .driver_config = .{},
+            .options = .{
+                .filter = "/interfaces/interface[name='Management0']/state",
+                .filter_type = operation.FilterType.xpath,
+            },
+            .expected =
+            \\#262
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source><filter type="xpath" select="/interfaces/interface[name='Management0']/state"></filter></get-config></rpc>
             \\##
             ,
         },
