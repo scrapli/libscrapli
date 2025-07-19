@@ -366,7 +366,7 @@ test "driver open-cancellation" {
         },
     );
 
-    std.time.sleep(1_000);
+    std.time.sleep(10_000);
 
     cancel_ptr.* = true;
     open_thread.join();
