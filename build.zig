@@ -8,7 +8,7 @@ const libscrapli_version = std.SemanticVersion{
     .major = 0,
     .minor = 0,
     .patch = 1,
-    .pre = "beta.3",
+    .pre = "beta.4",
 };
 
 const targets: []const std.Target.Query = &.{

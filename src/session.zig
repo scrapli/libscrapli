@@ -254,11 +254,6 @@ pub const Session = struct {
 
         self.waiter.deinit();
         self.transport.deinit();
-
-        // acquire the read_queue lock to make sure we dont panic w/ an errant write or read
-        // that hasnt stopped for some reason... *probably* shouldnt happen but likely wont hurt
-        self.read_lock.lock();
-        defer self.read_lock.unlock();
         self.read_queue.deinit();
 
         self.allocator.destroy(self);
