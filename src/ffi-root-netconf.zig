@@ -349,7 +349,13 @@ export fn ls_netconf_next_subscription_message_size(
         return;
     }
 
-    size.* = d.real_driver.netconf.subscriptions.get(subscription_id).?.items[0].len;
+    if (d.real_driver.netconf.subscriptions.get(subscription_id)) |sub| {
+        if (sub.items.len == 0) {
+            return;
+        }
+
+        size.* = sub.items[0].len;
+    }
 }
 
 export fn ls_netconf_next_subscription_message(

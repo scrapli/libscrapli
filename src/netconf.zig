@@ -835,7 +835,7 @@ pub const Driver = struct {
                         defer self.allocator.free(owned_buf);
 
                         defer {
-                            self.log.warn(
+                            self.log.debug(
                                 "message processing thread stopping, " ++
                                     "session read queue drained and read thread stopped",
                                 .{},

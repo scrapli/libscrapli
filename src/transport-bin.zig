@@ -474,7 +474,7 @@ pub const Transport = struct {
         };
 
         if (n == 0) {
-            self.log.warn("read from pty returned zero bytes read", .{});
+            self.log.debug("read from pty returned zero bytes read", .{});
 
             // this should kill the read loop, but the main program will be killed from session
             return errors.ScrapliError.ReadFailed;
