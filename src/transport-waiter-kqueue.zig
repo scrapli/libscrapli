@@ -70,12 +70,35 @@ pub const KqueueWaiter = struct {
         // -- that is the there is data available and our unblock messages
         var out: [2]std.posix.Kevent = undefined;
 
-        _ = try std.posix.kevent(
-            self.kq,
-            &[_]std.posix.Kevent{},
-            &out,
-            null,
-        );
+        const oOut = &out;
+        const changelist = &[_]std.posix.Kevent{};
+
+        while (true) {
+            const rc = std.posix.system.kevent(
+                self.kq,
+                changelist.ptr,
+                std.math.cast(c_int, changelist.len) orelse return error.Overflow,
+                oOut.ptr,
+                std.math.cast(c_int, out.len) orelse return error.Overflow,
+                null,
+            );
+            switch (std.posix.errno(rc)) {
+                .SUCCESS => return,
+                .ACCES => return error.AccessDenied,
+                .FAULT => unreachable,
+                // in std lib BADF is unreachable, but in our case we may have a process shot
+                // out from under us (like on connection refused and fd gets freed right away)
+                // because we are exec'ing /bin/ssh, so... we just return an EOF rather than
+                // unreachable
+                .BADF => return error.EOF,
+                .INTR => continue,
+                .INVAL => unreachable,
+                .NOENT => return error.EventNotFound,
+                .NOMEM => return error.SystemResources,
+                .SRCH => return error.ProcessNotFound,
+                else => unreachable,
+            }
+        }
     }
 
     pub fn unblock(self: *KqueueWaiter) !void {
