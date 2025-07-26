@@ -313,7 +313,7 @@ test "driver open-timeout" {
     defer std.testing.allocator.free(fixture_filename);
 
     var d = try GetTestDriver(fixture_filename);
-    d.session.options.operation_timeout_ns = 100_000;
+    d.session.options.operation_timeout_ns = 1_000_000;
 
     defer d.deinit();
 
