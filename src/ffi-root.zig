@@ -112,6 +112,11 @@ export fn ls_cli_alloc(
         };
     }
 
+    var _port: ?u16 = null;
+    if (port != 0) {
+        _port = port;
+    }
+
     const d = ffi_driver.FfiDriver.init(
         getAllocator(),
         std.mem.span(host),
@@ -120,7 +125,7 @@ export fn ls_cli_alloc(
                 .string = std.mem.span(definition_string),
             },
             .logger = log,
-            .port = port,
+            .port = _port,
             .transport = switch (getTransport(std.mem.span(transport_kind))) {
                 transport.Kind.bin => .{ .bin = .{} },
                 transport.Kind.telnet => .{ .telnet = .{} },
@@ -155,12 +160,17 @@ export fn ls_netconf_alloc(
         };
     }
 
+    var _port: ?u16 = null;
+    if (port != 0) {
+        _port = port;
+    }
+
     const d = ffi_driver.FfiDriver.init_netconf(
         getAllocator(),
         std.mem.span(host),
         .{
             .logger = log,
-            .port = port,
+            .port = _port,
             .transport = switch (getTransport(std.mem.span(transport_kind))) {
                 transport.Kind.bin => .{ .bin = .{} },
                 transport.Kind.ssh2 => .{ .ssh2 = .{} },
