@@ -18,8 +18,6 @@ const pcre2 = @cImport(
     },
 );
 
-const min_read_delay_ns: u64 = 5_000;
-const max_read_delay_ns: u64 = 7_500_000;
 const default_return_char: []const u8 = "\n";
 
 const ReadThreadState = enum(u8) {
@@ -35,6 +33,8 @@ pub const RecordDestination = union(enum) {
 
 pub const OptionsInputs = struct {
     read_size: u64 = 4_096,
+    min_read_delay_ns: u64 = 5_000,
+    max_read_delay_ns: u64 = 15_000_000,
     return_char: []const u8 = default_return_char,
     operation_timeout_ns: u64 = 10_000_000_000,
     operation_max_search_depth: u64 = 512,
@@ -44,6 +44,8 @@ pub const OptionsInputs = struct {
 pub const Options = struct {
     allocator: std.mem.Allocator,
     read_size: u64,
+    min_read_delay_ns: u64,
+    max_read_delay_ns: u64,
     return_char: []const u8,
     operation_timeout_ns: u64,
     operation_max_search_depth: u64,
@@ -56,6 +58,8 @@ pub const Options = struct {
         o.* = Options{
             .allocator = allocator,
             .read_size = opts.read_size,
+            .min_read_delay_ns = opts.min_read_delay_ns,
+            .max_read_delay_ns = opts.max_read_delay_ns,
             .return_char = opts.return_char,
             .operation_timeout_ns = opts.operation_timeout_ns,
             .operation_max_search_depth = opts.operation_max_search_depth,
@@ -319,7 +323,7 @@ pub const Session = struct {
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            std.time.sleep(min_read_delay_ns);
+            std.time.sleep(self.options.min_read_delay_ns);
         }
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
@@ -618,14 +622,15 @@ pub const Session = struct {
         }
     }
 
-    pub fn getReadBackoff(
+    fn getReadBackoff(
         cur_val: u64,
+        max_val: u64,
     ) u64 {
         var new_val: u64 = cur_val;
 
         new_val *= 2;
-        if (new_val > max_read_delay_ns) {
-            new_val = max_read_delay_ns;
+        if (new_val > max_val) {
+            new_val = max_val;
         }
 
         return new_val;
@@ -639,7 +644,7 @@ pub const Session = struct {
         checkargs: bytes_check.CheckArgs,
         bufs: *bytes.ProcessedBuf,
     ) !bytes_check.MatchPositions {
-        var cur_read_delay_ns: u64 = min_read_delay_ns;
+        var cur_read_delay_ns: u64 = self.options.min_read_delay_ns;
 
         // to ensure the check_read_operation_done function doesnt think we are done "early" by
         // finding a match from an earlier prompt we snag the len of the processed buf then we
@@ -676,11 +681,12 @@ pub const Session = struct {
             if (n == 0) {
                 cur_read_delay_ns = Session.getReadBackoff(
                     cur_read_delay_ns,
+                    self.options.max_read_delay_ns,
                 );
 
                 continue;
             } else {
-                cur_read_delay_ns = min_read_delay_ns;
+                cur_read_delay_ns = self.options.min_read_delay_ns;
             }
 
             try bufs.appendSlice(buf[0..n]);

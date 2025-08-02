@@ -125,7 +125,7 @@ fn libssh2DisconnectSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger
 
             if (counter > 25) {
                 // to prevent blocking here
-                log.warn("eagain too many times freeing ssh2 session", .{});
+                log.debug("eagain too many times freeing ssh2 session", .{});
 
                 break;
             }
@@ -154,7 +154,7 @@ fn libssh2FreeSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void
 
             if (counter > 25) {
                 // to prevent blocking here
-                log.warn("eagain too many times freeing ssh2 session", .{});
+                log.debug("eagain too many times freeing ssh2 session", .{});
 
                 break;
             }
@@ -183,7 +183,7 @@ fn libssh2CloseChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
 
             if (counter > 250) {
                 // to prevent blocking here
-                log.warn("eagain too many times closing ssh2 channel", .{});
+                log.debug("eagain too many times closing ssh2 channel", .{});
 
                 break;
             }
@@ -212,7 +212,7 @@ fn libssh2FreeChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
 
             if (counter > 250) {
                 // to prevent blocking here
-                log.warn("eagain too many times freeing ssh2 channel", .{});
+                log.debug("eagain too many times freeing ssh2 channel", .{});
 
                 break;
             }

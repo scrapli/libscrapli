@@ -27,6 +27,42 @@ export fn ls_option_session_read_size(
     return 0;
 }
 
+export fn ls_option_session_read_min_delay_ns(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            rd.session.options.min_read_delay_ns = value;
+        },
+        .netconf => |rd| {
+            rd.session.options.min_read_delay_ns = value;
+        },
+    }
+
+    return 0;
+}
+
+export fn ls_option_session_read_max_delay_ns(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            rd.session.options.max_read_delay_ns = value;
+        },
+        .netconf => |rd| {
+            rd.session.options.max_read_delay_ns = value;
+        },
+    }
+
+    return 0;
+}
+
 export fn ls_option_session_return_char(
     d_ptr: usize,
     value: [*c]const u8,
