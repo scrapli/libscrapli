@@ -8,16 +8,16 @@ const libscrapli_version = std.SemanticVersion{
     .major = 0,
     .minor = 0,
     .patch = 1,
-    .pre = "beta.8",
+    .pre = "beta.9",
 };
 
 const targets: []const std.Target.Query = &.{
     .{ .cpu_arch = .aarch64, .os_tag = .macos },
-    // .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu },
-    // .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
-    // .{ .cpu_arch = .x86_64, .os_tag = .macos },
-    // .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
-    // .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
+    .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu },
+    .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
+    .{ .cpu_arch = .x86_64, .os_tag = .macos },
+    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
+    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
 };
 
 const all_examples: []const []const u8 = &.{
