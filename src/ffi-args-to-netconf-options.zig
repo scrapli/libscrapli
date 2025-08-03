@@ -229,8 +229,11 @@ pub fn EditConfigOptionsFromArgs(
     cancel: *bool,
     config: [*c]const u8,
     target: [*c]const u8,
+    default_operation: [*c]const u8,
+    test_option: [*c]const u8,
+    error_option: [*c]const u8,
 ) operation.EditConfigOptions {
-    return operation.EditConfigOptions{
+    var options = operation.EditConfigOptions{
         .cancel = cancel,
         .config = std.mem.span(config),
         .target = getDatastoreType(
@@ -238,6 +241,68 @@ pub fn EditConfigOptionsFromArgs(
             operation.DatastoreType.running,
         ),
     };
+
+    const _default_operation = std.mem.span(default_operation);
+
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultOperation.merge),
+        _default_operation,
+    )) {
+        options.default_operation = operation.DefaultOperation.merge;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultOperation.none),
+        _default_operation,
+    )) {
+        options.default_operation = operation.DefaultOperation.none;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultOperation.replace),
+        _default_operation,
+    )) {
+        options.default_operation = operation.DefaultOperation.replace;
+    }
+
+    const _test_option = std.mem.span(test_option);
+
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.TestOption.set),
+        _test_option,
+    )) {
+        options.test_option = operation.TestOption.set;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.TestOption.test_then_set),
+        _test_option,
+    )) {
+        options.test_option = operation.TestOption.test_then_set;
+    }
+
+    const _error_option = std.mem.span(error_option);
+
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.ErrorOption.continue_on_error),
+        _error_option,
+    )) {
+        options.error_option = operation.ErrorOption.continue_on_error;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.ErrorOption.rollback_on_error),
+        _error_option,
+    )) {
+        options.error_option = operation.ErrorOption.rollback_on_error;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.ErrorOption.stop_on_error),
+        _error_option,
+    )) {
+        options.error_option = operation.ErrorOption.stop_on_error;
+    }
+
+    return options;
 }
 
 pub fn CopyConfigOptionsFromArgs(

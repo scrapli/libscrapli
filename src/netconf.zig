@@ -93,7 +93,6 @@ pub const Options = struct {
     auth: *auth.Options,
     session: *session.Options,
     transport: *transport.Options,
-    // TODO custom/extra client caps?
     error_tag: []const u8,
     preferred_version: ?Version,
     message_poll_interval_ns: u64,
@@ -139,14 +138,6 @@ pub const Options = struct {
     }
 };
 
-const RelevantCapabilities = struct {
-    // TOOD "candidate" capablility (requried for at least commit) https://www.rfc-editor.org/rfc/rfc6241.html
-    // TODO datastores, with defaults, etc. etc. and actually maybe ingore these onse since i gave
-    // up on dealing w/ supporting all the stuff for them
-    rfc5277_event_notifications: bool = false,
-    rfc8639_subscribed_notifications: bool = false,
-};
-
 pub const Driver = struct {
     allocator: std.mem.Allocator,
     log: logging.Logger,
@@ -158,7 +149,6 @@ pub const Driver = struct {
     session: *session.Session,
 
     server_capabilities: ?std.ArrayList(Capability),
-    relevant_capabilities: RelevantCapabilities,
     negotiated_version: Version,
     session_id: ?u64,
 
@@ -240,7 +230,6 @@ pub const Driver = struct {
             .session = sess,
 
             .server_capabilities = std.ArrayList(Capability).init(allocator),
-            .relevant_capabilities = RelevantCapabilities{},
             .negotiated_version = Version.version_1_0,
             .session_id = null,
 
@@ -674,37 +663,10 @@ pub const Driver = struct {
                         }
                     }
 
-                    self.checkCapabilityRelevance(found_capability);
-
                     try self.server_capabilities.?.append(found_capability);
                 },
                 else => {},
             }
-        }
-    }
-
-    fn checkCapabilityRelevance(
-        self: *Driver,
-        capability: Capability,
-    ) void {
-        if (std.mem.indexOf(
-            u8,
-            "urn:ietf:params:xml:ns:yang:ietf-event-notifications",
-            capability.name,
-        ) != null) {
-            self.relevant_capabilities.rfc5277_event_notifications = true;
-
-            return;
-        }
-
-        if (std.mem.indexOf(
-            u8,
-            "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications",
-            capability.name,
-        ) != null) {
-            self.relevant_capabilities.rfc8639_subscribed_notifications = true;
-
-            return;
         }
     }
 
@@ -1558,10 +1520,28 @@ pub const Driver = struct {
 
         try Driver.addTargetElem(&writer, options.target.toString());
 
+        if (options.default_operation) |default_operation| {
+            try writer.elementStartNs(base_capability_name, "default-operation");
+            try writer.text(default_operation.toString());
+            try writer.elementEnd();
+        }
+
+        if (options.test_option) |test_option| {
+            try writer.elementStartNs(base_capability_name, "test-option");
+            try writer.text(test_option.toString());
+            try writer.elementEnd();
+        }
+
+        if (options.error_option) |error_option| {
+            try writer.elementStartNs(base_capability_name, "error-option");
+            try writer.text(error_option.toString());
+            try writer.elementEnd();
+        }
+
         try writer.elementStartNs(base_capability_name, "config");
         try writer.embed(options.config);
-
         try writer.elementEnd();
+
         try writer.elementEnd();
         try writer.elementEnd();
         try writer.eof();
@@ -3270,6 +3250,54 @@ test "builEditConfigElem" {
             .expected =
             \\#297
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></config></edit-config></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "1.1-with-defaults-operation",
+            .version = Version.version_1_1,
+            .driver_config = Config{},
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
+                .target = operation.DatastoreType.running,
+                .default_operation = operation.DefaultOperation.merge,
+            },
+            .expected =
+            \\#341
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><default-operation>merge</default-operation><config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></config></edit-config></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "1.1-with-test-option",
+            .version = Version.version_1_1,
+            .driver_config = Config{},
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
+                .target = operation.DatastoreType.running,
+                .test_option = operation.TestOption.set,
+            },
+            .expected =
+            \\#327
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><test-option>set</test-option><config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></config></edit-config></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "1.1-with-error-option",
+            .version = Version.version_1_1,
+            .driver_config = Config{},
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
+                .target = operation.DatastoreType.running,
+                .error_option = operation.ErrorOption.continue_on_error,
+            },
+            .expected =
+            \\#343
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><error-option>continue-on-error</error-option><config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></config></edit-config></rpc>
             \\##
             ,
         },

@@ -483,6 +483,9 @@ export fn ls_netconf_edit_config(
     cancel: *bool,
     config: [*c]const u8,
     target: [*c]const u8,
+    default_operation: [*c]const u8,
+    test_option: [*c]const u8,
+    error_option: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
@@ -490,6 +493,9 @@ export fn ls_netconf_edit_config(
         cancel,
         config,
         target,
+        default_operation,
+        test_option,
+        error_option,
     );
 
     const _operation_id = d.queueOperation(

@@ -171,6 +171,65 @@ pub const SchemaFormat = enum {
     }
 };
 
+// for example with edit-config, see rfc4741
+pub const DefaultOperation = enum {
+    merge,
+    replace,
+    none,
+
+    pub fn toString(self: DefaultOperation) []const u8 {
+        switch (self) {
+            .merge => {
+                return "merge";
+            },
+            .replace => {
+                return "replace";
+            },
+            .none => {
+                return "none";
+            },
+        }
+    }
+};
+
+// also see rfc4741
+pub const TestOption = enum {
+    test_then_set,
+    set,
+
+    pub fn toString(self: TestOption) []const u8 {
+        switch (self) {
+            .test_then_set => {
+                return "test-then-set";
+            },
+            .set => {
+                return "set";
+            },
+        }
+    }
+};
+
+// and... also see rfc4741
+pub const ErrorOption = enum {
+    stop_on_error,
+    continue_on_error,
+    rollback_on_error,
+
+    pub fn toString(self: ErrorOption) []const u8 {
+        switch (self) {
+            .stop_on_error => {
+                return "stop-on-error";
+            },
+            .continue_on_error => {
+                return "continue-on-error";
+            },
+            .rollback_on_error => {
+                return "rollback-on-error";
+            },
+        }
+    }
+};
+
 pub const OpenOptions = struct {
     cancel: ?*bool = null,
 };
@@ -212,10 +271,9 @@ pub const EditConfigOptions = struct {
     cancel: ?*bool = null,
     config: []const u8,
     target: DatastoreType = DatastoreType.running,
-    // TODO: https://www.rfc-editor.org/rfc/rfc4741.html#section-7.2
-    // defaults_operation: null,
-    // test_option: null,
-    // error_option: null,
+    default_operation: ?DefaultOperation = null,
+    test_option: ?TestOption = null,
+    error_option: ?ErrorOption = null,
 };
 
 pub const CopyConfigOptions = struct {
