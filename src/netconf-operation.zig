@@ -320,7 +320,7 @@ pub const DiscardOptions = struct {
 
 pub const CancelCommitOptions = struct {
     cancel: ?*bool = null,
-    // TODO add persist-id param -> https://datatracker.ietf.org/doc/html/rfc6241#section-8.4.4.1
+    persist_id: ?[]const u8 = null,
 };
 
 pub const ValidateOptions = struct {
@@ -344,7 +344,6 @@ pub const GetDataOptions = struct {
     filter_namespace_prefix: ?[]const u8 = null,
     filter_namespace: ?[]const u8 = null,
     config_filter: ?bool = null,
-    // TODO check if this should/could be typed or if it makes more sense to leave as a str
     origin_filters: ?[]const u8 = null,
     max_depth: ?u32 = null,
     with_origin: ?bool = null,
@@ -354,8 +353,8 @@ pub const GetDataOptions = struct {
 pub const EditDataOptions = struct {
     cancel: ?*bool = null,
     datastore: DatastoreType = DatastoreType.running,
-    // TODO -- same as edit-config rpc -> defaults_operation: null,
     edit_content: []const u8,
+    default_operation: ?DefaultOperation = null,
 };
 
 pub const ActionOptions = struct {

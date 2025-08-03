@@ -394,6 +394,23 @@ pub fn ValidateOptionsFromArgs(
     };
 }
 
+pub fn CancelCommitOptionsFromArgs(
+    cancel: *bool,
+    persist_id: [*c]const u8,
+) operation.CancelCommitOptions {
+    var options = operation.CancelCommitOptions{
+        .cancel = cancel,
+    };
+
+    const _persist_id = std.mem.span(persist_id);
+
+    if (_persist_id.len > 0) {
+        options.persist_id = _persist_id;
+    }
+
+    return options;
+}
+
 pub fn GetSchemaOptionsFromArgs(
     cancel: *bool,
     identifier: [*c]const u8,
@@ -467,8 +484,9 @@ pub fn EditDataOptionsFromArgs(
     cancel: *bool,
     datastore: [*c]const u8,
     edit_content: [*c]const u8,
+    default_operation: [*c]const u8,
 ) operation.EditDataOptions {
-    return operation.EditDataOptions{
+    var options = operation.EditDataOptions{
         .cancel = cancel,
         .datastore = getDatastoreType(
             datastore,
@@ -476,4 +494,28 @@ pub fn EditDataOptionsFromArgs(
         ),
         .edit_content = std.mem.span(edit_content),
     };
+
+    const _default_operation = std.mem.span(default_operation);
+
+    if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultOperation.merge),
+        _default_operation,
+    )) {
+        options.default_operation = operation.DefaultOperation.merge;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultOperation.none),
+        _default_operation,
+    )) {
+        options.default_operation = operation.DefaultOperation.none;
+    } else if (std.mem.eql(
+        u8,
+        @tagName(operation.DefaultOperation.replace),
+        _default_operation,
+    )) {
+        options.default_operation = operation.DefaultOperation.replace;
+    }
+
+    return options;
 }

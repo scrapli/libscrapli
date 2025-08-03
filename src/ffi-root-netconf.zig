@@ -855,6 +855,7 @@ export fn ls_netconf_cancel_commit(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
+    persist_id: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
@@ -863,9 +864,10 @@ export fn ls_netconf_cancel_commit(
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .cancel_commit = .{
-                        .cancel = cancel,
-                    },
+                    .cancel_commit = ffi_args_to_options.CancelCommitOptionsFromArgs(
+                        cancel,
+                        persist_id,
+                    ),
                 },
             },
         },
@@ -1015,6 +1017,7 @@ export fn ls_netconf_edit_data(
     cancel: *bool,
     datastore: [*c]const u8,
     edit_content: [*c]const u8,
+    default_operation: [*c]const u8,
 ) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
@@ -1027,6 +1030,7 @@ export fn ls_netconf_edit_data(
                         cancel,
                         datastore,
                         edit_content,
+                        default_operation,
                     ),
                 },
             },

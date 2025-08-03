@@ -2094,8 +2094,6 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CancelCommitOptions,
     ) ![]const u8 {
-        _ = options;
-
         var message_id_buf: [20]u8 = undefined;
 
         var sink = std.ArrayList(u8).init(allocator);
@@ -2119,7 +2117,15 @@ pub const Driver = struct {
                 .{self.message_id},
             ),
         );
+
         try writer.elementStartNs(base_capability_name, "cancel-commit");
+
+        if (options.persist_id) |persist_id| {
+            try writer.elementStartNs(base_capability_name, "persist-id");
+            try writer.text(persist_id);
+            try writer.elementEnd();
+        }
+
         try writer.elementEnd();
         try writer.elementEnd();
         try writer.eof();
@@ -2412,6 +2418,12 @@ pub const Driver = struct {
             .{options.datastore.toString()},
         ));
         try writer.elementEnd();
+
+        if (options.default_operation) |default_operation| {
+            try writer.elementStartNs(base_capability_name, "default-operation");
+            try writer.text(default_operation.toString());
+            try writer.elementEnd();
+        }
 
         try writer.elementStart("config");
         try writer.embed(options.edit_content);
@@ -3897,6 +3909,19 @@ test "buildCancelCommitElem" {
             \\##
             ,
         },
+        .{
+            .name = "persist-id",
+            .version = Version.version_1_1,
+            .driver_config = .{},
+            .options = .{
+                .persist_id = "1234",
+            },
+            .expected =
+            \\#174
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><cancel-commit><persist-id>1234</persist-id></cancel-commit></rpc>
+            \\##
+            ,
+        },
     };
 
     for (cases) |case| {
@@ -4138,6 +4163,20 @@ test "builEditDataElem" {
             .expected =
             \\#299
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><config>foo</config></edit-data></rpc>
+            \\##
+            ,
+        },
+        .{
+            .name = "default-operation",
+            .version = Version.version_1_1,
+            .driver_config = .{},
+            .options = .{
+                .edit_content = "foo",
+                .default_operation = operation.DefaultOperation.merge,
+            },
+            .expected =
+            \\#343
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores"><datastore>ds:running</datastore><default-operation>merge</default-operation><config>foo</config></edit-data></rpc>
             \\##
             ,
         },
