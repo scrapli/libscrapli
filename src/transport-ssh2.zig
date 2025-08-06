@@ -234,6 +234,7 @@ const AuthCallbackData = struct {
 
 const ProxyWrapper = struct {
     allocator: std.mem.Allocator,
+    log: logging.Logger,
     channel: ?*ssh2.LIBSSH2_CHANNEL = null,
     remote_fd: c_int = 0,
     stop_flag: std.atomic.Value(bool),
@@ -242,11 +243,13 @@ const ProxyWrapper = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        log: logging.Logger,
     ) !*ProxyWrapper {
         const pl = try allocator.create(ProxyWrapper);
 
         pl.* = ProxyWrapper{
             .allocator = allocator,
+            .log = log,
             .stop_flag = std.atomic.Value(bool).init(false),
         };
 
@@ -310,7 +313,13 @@ const ProxyWrapper = struct {
         if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
             return error.WouldBlock;
         } else if (rc < 0) {
-            return error.WriteFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "write failed, return code: {d}",
+                .{n},
+            );
         }
     }
 
@@ -339,7 +348,13 @@ const ProxyWrapper = struct {
         } else if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
             return error.WouldBlock;
         } else if (n < 0) {
-            return error.WriteFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "write failed, return code: {d}",
+                .{n},
+            );
         }
 
         var wrote: usize = 0;
@@ -441,9 +456,13 @@ pub const Transport = struct {
     ) !*Transport {
         const rc = libssh2InitializeOnce();
         if (rc != 0) {
-            log.critical("failed initializing ssh2", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                log,
+                "failed inizializing libssh2, return code: {d}",
+                .{rc},
+            );
         }
 
         const t = try allocator.create(Transport);
@@ -523,7 +542,7 @@ pub const Transport = struct {
 
             channel = self.initial_channel;
         } else {
-            self.proxy_wrapper = try ProxyWrapper.init(self.allocator);
+            self.proxy_wrapper = try ProxyWrapper.init(self.allocator, self.log);
 
             try self.openProxyChannel(
                 timer,
@@ -581,19 +600,24 @@ pub const Transport = struct {
             host,
             port,
         ) catch |err| {
-            self.log.critical(
-                "failed initializing resolved addresses, err: {}",
-                .{err},
+            return errors.wrapCriticalError(
+                err,
+                @src(),
+                self.log,
+                "failed initializing resolved addresses",
+                .{},
             );
-
-            return errors.ScrapliError.OpenFailed;
         };
         defer resolved_addresses.deinit();
 
         if (resolved_addresses.addrs.len == 0) {
-            self.log.critical("failed resolving any address for host '{s}'", .{host});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed resolving any address for host '{s}'",
+                .{host},
+            );
         }
 
         for (resolved_addresses.addrs) |addr| {
@@ -628,12 +652,13 @@ pub const Transport = struct {
         }
 
         if (self.socket == null) {
-            self.log.critical(
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
                 "failed initializing socket, all resolved addresses failed",
                 .{},
             );
-
-            return errors.ScrapliError.OpenFailed;
         }
     }
 
@@ -650,9 +675,13 @@ pub const Transport = struct {
             self.auth_callback_data,
         );
         if (self.initial_session == null) {
-            self.log.critical("failed creating libssh2 session", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed creating libssh2 session",
+                .{},
+            );
         }
 
         // set blocking status (0 non-block, 1 block)
@@ -674,17 +703,25 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const rc = ssh2.libssh2_session_handshake(
@@ -700,9 +737,13 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.critical("failed session handshake", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed session handshake",
+                .{},
+            );
         }
     }
 
@@ -715,31 +756,24 @@ pub const Transport = struct {
             return;
         }
 
-        const _host = self.allocator.dupeZ(u8, host) catch |err| {
-            self.log.critical("failed casting host to c string, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
-        };
+        const _host = try self.allocator.dupeZ(u8, host);
         defer self.allocator.free(_host);
 
-        const _known_hosts_path = self.allocator.dupeZ(
+        const _known_hosts_path = try self.allocator.dupeZ(
             u8,
             self.options.known_hosts_path.?,
-        ) catch |err| {
-            self.log.critical(
-                "failed casting known hosts path to c string, err: {}",
-                .{err},
-            );
-
-            return errors.ScrapliError.OpenFailed;
-        };
+        );
         defer self.allocator.free(_known_hosts_path);
 
         const nh = ssh2.libssh2_knownhost_init(self.initial_session.?);
         if (nh == null) {
-            self.log.critical("failed libssh2 known hosts init", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed libssh2 known hosts init",
+                .{},
+            );
         }
         defer ssh2.libssh2_knownhost_free(nh);
 
@@ -749,9 +783,13 @@ pub const Transport = struct {
             ssh2.LIBSSH2_KNOWNHOST_FILE_OPENSSH,
         );
         if (read_rc < 0) {
-            self.log.critical("failed to read known hosts file", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed to read known hosts file",
+                .{},
+            );
         }
 
         var len: usize = 0;
@@ -763,9 +801,13 @@ pub const Transport = struct {
             &key_type,
         );
         if (host_fingerprint == null) {
-            self.log.critical("failed to fingerprint target host", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed to fingerprint target host",
+                .{},
+            );
         }
 
         var known_host: ?*ssh2.libssh2_knownhost = null;
@@ -785,24 +827,40 @@ pub const Transport = struct {
                 return;
             },
             ssh2.LIBSSH2_KNOWNHOST_CHECK_MISMATCH => {
-                self.log.critical("known host check mismatch", .{});
-
-                return errors.ScrapliError.OpenFailed;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "known host check mismatch",
+                    .{},
+                );
             },
             ssh2.LIBSSH2_KNOWNHOST_CHECK_NOTFOUND => {
-                self.log.critical("known host check not found", .{});
-
-                return errors.ScrapliError.OpenFailed;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "known host check not found",
+                    .{},
+                );
             },
             ssh2.LIBSSH2_KNOWNHOST_CHECK_FAILURE => {
-                self.log.critical("known host check failure", .{});
-
-                return errors.ScrapliError.OpenFailed;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "known host check failure",
+                    .{},
+                );
             },
             else => {
-                self.log.critical("known host unknown error", .{});
-
-                return errors.ScrapliError.OpenFailed;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "known host unknown error",
+                    .{},
+                );
             },
         }
     }
@@ -815,11 +873,7 @@ pub const Transport = struct {
         session: *ssh2.struct__LIBSSH2_SESSION,
         auth_options: *auth.Options,
     ) !void {
-        const _username = self.allocator.dupeZ(u8, auth_options.username.?) catch |err| {
-            self.log.critical("failed casting username to c string, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
-        };
+        const _username = try self.allocator.dupeZ(u8, auth_options.username.?);
         defer self.allocator.free(_username);
 
         if (auth_options.private_key_path != null) {
@@ -847,17 +901,14 @@ pub const Transport = struct {
         }
 
         if (auth_options.username != null and auth_options.password != null) {
-            const _password = self.allocator.dupeZ(
+            const _password = try self.allocator.dupeZ(
                 u8,
                 try auth_options.resolveAuthValue(
                     auth_options.password.?,
                 ),
-            ) catch |err| {
-                self.log.critical("failed casting password to c string, err: {}", .{err});
-
-                return errors.ScrapliError.OpenFailed;
-            };
+            );
             defer self.allocator.free(_password);
+
             self.auth_callback_data.password = _password;
 
             self.handlePasswordAuth(
@@ -900,7 +951,13 @@ pub const Transport = struct {
             }
         }
 
-        return errors.ScrapliError.AuthenticationFailed;
+        return errors.wrapCriticalError(
+            errors.ScrapliError.Transport,
+            @src(),
+            self.log,
+            "all authentication methods have failed",
+            .{},
+        );
     }
 
     fn isAuthenticated(
@@ -912,17 +969,25 @@ pub const Transport = struct {
     ) !bool {
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const rc = ssh2.libssh2_userauth_authenticated(session);
@@ -950,14 +1015,10 @@ pub const Transport = struct {
         private_key_path: ?[]const u8,
         passphrase: ?[]const u8,
     ) !void {
-        const _private_key_path = self.allocator.dupeZ(
+        const _private_key_path = try self.allocator.dupeZ(
             u8,
             private_key_path.?,
-        ) catch |err| {
-            self.log.critical("failed casting private key path to c string, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
-        };
+        );
         defer self.allocator.free(_private_key_path);
 
         // SAFETY: will be set always, but this possibly saves us an allocation
@@ -980,17 +1041,25 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             // -18 rc == "failed" (key auth not supported)
@@ -1012,9 +1081,13 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.critical("failed private key authentication", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed private key authentication",
+                .{},
+            );
         }
     }
 
@@ -1031,17 +1104,25 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const rc = ssh2.libssh2_userauth_keyboard_interactive_ex(
@@ -1059,9 +1140,13 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.critical("failed keyboard interactive authentication", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed keyboard interactive authentication",
+                .{},
+            );
         }
     }
 
@@ -1078,17 +1163,25 @@ pub const Transport = struct {
         // to -> https://github.com/ziglang/zig/issues/18824
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const rc = ssh2.libssh2_userauth_password_ex(
@@ -1108,9 +1201,13 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.warn("failed password authentication, will try keyboard interactive", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed password authentication, will try keyboard interactive",
+                .{},
+            );
         }
     }
 
@@ -1123,17 +1220,25 @@ pub const Transport = struct {
     ) !?*ssh2.struct__LIBSSH2_CHANNEL {
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const channel = libssh2ChannelOpenSession(session);
@@ -1150,9 +1255,13 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.critical("failed opening session channel", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed opening session channel",
+                .{},
+            );
         }
     }
 
@@ -1163,32 +1272,33 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         auth_options: *auth.Options,
     ) !void {
-        const _host = self.allocator.dupeZ(
+        const _host = try self.allocator.dupeZ(
             u8,
             self.options.proxy_jump_options.?.host,
-        ) catch |err| {
-            self.log.critical(
-                "failed casting proxy target host to c string, err: {}",
-                .{err},
-            );
-
-            return errors.ScrapliError.OpenFailed;
-        };
+        );
         defer self.allocator.free(_host);
 
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             self.initial_channel = libssh2ChannelOpenProxySession(
@@ -1209,9 +1319,13 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.critical("failed opening session (initial direct tcpip) channel {d}", .{rc});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed opening session (initial direct tcpip) channel {d}",
+                .{rc},
+            );
         }
 
         self.proxy_session = ssh2.libssh2_session_init_ex(
@@ -1221,9 +1335,13 @@ pub const Transport = struct {
             self.auth_callback_data,
         );
         if (self.proxy_session == null) {
-            self.log.critical("failed creating libssh2 session", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed creating libssh2 session",
+                .{},
+            );
         }
 
         if (self.options.proxy_jump_options.?.libssh2_trace) {
@@ -1264,7 +1382,13 @@ pub const Transport = struct {
 
         const handshake_rc = ssh2.libssh2_session_handshake(self.proxy_session, local_fd);
         if (handshake_rc != 0) {
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed libssh2 session handshake",
+                .{},
+            );
         }
 
         ssh2.libssh2_session_set_blocking(self.proxy_session, 0);
@@ -1299,17 +1423,25 @@ pub const Transport = struct {
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const rc = libssh2ChannelRequestPty(channel);
@@ -1322,9 +1454,13 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.critical("failed requesting pty", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed requesting pty",
+                .{},
+            );
         }
     }
 
@@ -1337,17 +1473,25 @@ pub const Transport = struct {
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const rc = libssh2ChannelProcessStartup(
@@ -1363,9 +1507,13 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.log.critical("failed requesting shell", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed requesting shell",
+                .{},
+            );
         }
     }
 
@@ -1401,13 +1549,23 @@ pub const Transport = struct {
         }
 
         if (n < 0) {
-            return errors.ScrapliError.WriteFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "write failed, return code: {d}",
+                .{n},
+            );
         }
 
         if (n != buf.len) {
-            self.log.critical("wrote {d} bytes, expected to write {d}", .{ n, buf.len });
-
-            return errors.ScrapliError.WriteFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "wrote {d} bytes, expected to write {d}",
+                .{ n, buf.len },
+            );
         }
     }
 
@@ -1422,13 +1580,23 @@ pub const Transport = struct {
         }
 
         if (n < 0) {
-            return errors.ScrapliError.WriteFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "write failed, return code: {d}",
+                .{n},
+            );
         }
 
         if (n != buf.len) {
-            self.log.critical("wrote {d} bytes, expected to write {d}", .{ n, buf.len });
-
-            return errors.ScrapliError.WriteFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "wrote {d} bytes, expected to write {d}",
+                .{ n, buf.len },
+            );
         }
 
         if (self.proxy_wrapper) |pw| {
@@ -1484,7 +1652,13 @@ pub const Transport = struct {
 
             return 0;
         } else if (n < 0) {
-            return errors.ScrapliError.ReadFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "transport read failed",
+                .{},
+            );
         }
 
         return @intCast(n);
@@ -1526,7 +1700,13 @@ pub const Transport = struct {
 
             return 0;
         } else if (n < 0) {
-            return errors.ScrapliError.ReadFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "transport read failed",
+                .{},
+            );
         }
 
         return @intCast(n);

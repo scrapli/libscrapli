@@ -195,7 +195,7 @@ pub const Options = struct {
         }
 
         if (self.lookups == null) {
-            return errors.ScrapliError.LookupFailed;
+            return errors.ScrapliError.Driver;
         }
 
         var default_idx: ?usize = null;
@@ -216,7 +216,7 @@ pub const Options = struct {
             return self.lookups.?[default_idx.?].value;
         }
 
-        return errors.ScrapliError.LookupFailed;
+        return errors.ScrapliError.Driver;
     }
 };
 

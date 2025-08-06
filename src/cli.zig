@@ -27,7 +27,9 @@ pub const Config = struct {
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
-    transport: transport.OptionsInputs = .{ .bin = .{} },
+    transport: transport.OptionsInputs = .{
+        .bin = .{},
+    },
 };
 
 pub const Options = struct {
@@ -298,12 +300,13 @@ pub const Driver = struct {
         );
 
         if (!self.definition.modes.contains(options.requested_mode)) {
-            self.log.info(
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                self.log,
                 "no mode '{s}' in definition",
                 .{self.current_mode},
             );
-
-            return errors.ScrapliError.UnsupportedOperation;
         }
 
         var res = try self.NewResult(
@@ -333,15 +336,16 @@ pub const Driver = struct {
             self.definition.modes,
             res.results.items[0],
         ) catch |err| {
-            self.log.critical(
+            return errors.wrapCriticalError(
+                err,
+                @src(),
+                self.log,
                 "failed determining prompt from '{s}' | {d}\n",
                 .{
                     res.results.items[0],
                     res.results.items[0],
                 },
             );
-
-            return err;
         };
 
         if (std.mem.eql(u8, self.current_mode, options.requested_mode)) {
@@ -367,14 +371,26 @@ pub const Driver = struct {
 
             const step_mode = self.definition.modes.get(step);
             if (step_mode == null) {
-                return errors.ScrapliError.UnknownMode;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Operation,
+                    @src(),
+                    self.log,
+                    "no mode '{s}' in definition",
+                    .{step},
+                );
             }
 
             const next_mode_name = steps.items[step_idx + 1];
 
             const next_operation = step_mode.?.accessible_modes.get(next_mode_name);
             if (next_operation == null) {
-                return errors.ScrapliError.UnknownMode;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Operation,
+                    @src(),
+                    self.log,
+                    "mode '{s}' not accessible from current mode '{s}'",
+                    .{ next_mode_name, self.current_mode },
+                );
             }
 
             for (next_operation.?) |op| {
@@ -647,7 +663,7 @@ pub const Driver = struct {
             );
 
             for (callbacks) |callback| {
-                if (!try readCallbackShouldExecute(
+                const execute = readCallbackShouldExecute(
                     // we look from the last "pos" -> the end
                     bufs.processed.items[buf_pos..],
                     callback.options.name,
@@ -656,7 +672,17 @@ pub const Driver = struct {
                     callback.options.not_contains,
                     callback.options.only_once,
                     triggered_callbacks,
-                )) {
+                ) catch |err| {
+                    return errors.wrapCriticalError(
+                        err,
+                        @src(),
+                        self.log,
+                        "failed compling contains pattern '{s}'",
+                        .{callback.options.contains_pattern},
+                    );
+                };
+
+                if (execute) {
                     self.log.debug(
                         "callback '{s}' skipped...",
                         .{
@@ -783,7 +809,7 @@ pub fn readCallbackShouldExecute(
     } else if (contains_pattern) |cp| {
         const compiled_cp = re.pcre2Compile(cp);
         if (compiled_cp == null) {
-            return errors.ScrapliError.RegexError;
+            return errors.ScrapliError.Operation;
         }
 
         const match = try re.pcre2Find(

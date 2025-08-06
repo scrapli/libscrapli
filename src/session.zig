@@ -188,41 +188,48 @@ pub const Session = struct {
 
         s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern);
         if (s.compiled_username_pattern == null) {
-            s.log.critical(
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                log,
                 "failed compling username pattern {s}",
                 .{s.auth_options.username_pattern},
             );
-
-            return errors.ScrapliError.RegexError;
         }
 
         s.compiled_password_pattern = re.pcre2Compile(s.auth_options.password_pattern);
         if (s.compiled_password_pattern == null) {
-            s.log.critical(
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                log,
                 "failed compling password pattern {s}",
                 .{s.auth_options.password_pattern},
             );
-
-            return errors.ScrapliError.RegexError;
         }
 
         s.compiled_private_key_passphrase_pattern = re.pcre2Compile(
             s.auth_options.private_key_passphrase_pattern,
         );
         if (s.compiled_private_key_passphrase_pattern == null) {
-            s.log.critical(
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                log,
                 "failed compling passphrase pattern {s}",
                 .{s.auth_options.private_key_passphrase_pattern},
             );
-
-            return errors.ScrapliError.RegexError;
         }
 
         s.compiled_prompt_pattern = re.pcre2Compile(s.prompt_pattern);
         if (s.compiled_prompt_pattern == null) {
-            s.log.critical("failed compling prompt pattern {s}", .{s.prompt_pattern});
-
-            return errors.ScrapliError.RegexError;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                log,
+                "failed compling prompt pattern {s}",
+                .{s.prompt_pattern},
+            );
         }
 
         return s;
@@ -270,14 +277,7 @@ pub const Session = struct {
         port: u16,
         cancel: ?*bool,
     ) ![2][]const u8 {
-        var timer = std.time.Timer.start() catch |err| {
-            self.log.critical(
-                "failed initializing open/authentication timer, err: {}",
-                .{err},
-            );
-
-            return errors.ScrapliError.AuthenticationFailed;
-        };
+        var timer = try std.time.Timer.start();
 
         try self.transport.open(
             &timer,
@@ -295,9 +295,13 @@ pub const Session = struct {
             Session.readLoop,
             .{self},
         ) catch |err| {
-            self.log.critical("failed spawning read thread, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                err,
+                @src(),
+                self.log,
+                "failed spawning read thread",
+                .{},
+            );
         };
 
         if (!self.auth_options.force_in_session_auth) {
@@ -456,9 +460,13 @@ pub const Session = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
@@ -466,9 +474,13 @@ pub const Session = struct {
             if (self.options.operation_timeout_ns != 0 and
                 elapsed_time >= self.options.operation_timeout_ns)
             {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const n = self.read(buf) catch |err| {
@@ -483,10 +495,22 @@ pub const Session = struct {
                         );
 
                         if (error_message) |msg| {
-                            self.log.critical("open failed, error: '{s}'", .{msg});
+                            return errors.wrapCriticalError(
+                                errors.ScrapliError.Transport,
+                                @src(),
+                                self.log,
+                                "open failed, error: '{s}'",
+                                .{msg},
+                            );
                         }
 
-                        return errors.ScrapliError.OpenFailed;
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Transport,
+                            @src(),
+                            self.log,
+                            "open failed",
+                            .{},
+                        );
                     },
                     else => {
                         return err;
@@ -511,9 +535,13 @@ pub const Session = struct {
             );
 
             if (error_message) |msg| {
-                self.log.critical("open failed, error: '{s}'", .{msg});
-
-                return errors.ScrapliError.OpenFailed;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Sesssion,
+                    @src(),
+                    self.log,
+                    "open failed, error: '{s}'",
+                    .{msg},
+                );
             }
 
             const state = try auth.processSearchableAuthBuf(
@@ -530,23 +558,25 @@ pub const Session = struct {
                 },
                 .username_prompted => {
                     if (self.auth_options.username == null) {
-                        self.log.critical(
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Sesssion,
+                            @src(),
+                            self.log,
                             "username prompt seen but no username set",
                             .{},
                         );
-
-                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     auth_username_prompt_seen_count += 1;
 
                     if (auth_username_prompt_seen_count > 2) {
-                        self.log.critical(
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Sesssion,
+                            @src(),
+                            self.log,
                             "username prompt seen multiple times, assuming authentication failed",
                             .{},
                         );
-
-                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     try self.writeAndReturn(self.auth_options.username.?, true);
@@ -557,29 +587,39 @@ pub const Session = struct {
                 },
                 .password_prompted => {
                     if (self.auth_options.password == null) {
-                        self.log.critical(
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Sesssion,
+                            @src(),
+                            self.log,
                             "password prompt seen but no password set",
                             .{},
                         );
-
-                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     auth_password_prompt_seen_count += 1;
 
                     if (auth_password_prompt_seen_count > 2) {
-                        self.log.critical(
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Sesssion,
+                            @src(),
+                            self.log,
                             "password prompt seen multiple times, assuming authentication failed",
                             .{},
                         );
-
-                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     try self.writeAndReturn(
-                        try self.auth_options.resolveAuthValue(
+                        self.auth_options.resolveAuthValue(
                             self.auth_options.password.?,
-                        ),
+                        ) catch |err| {
+                            return errors.wrapCriticalError(
+                                err,
+                                @src(),
+                                self.log,
+                                "failed resolving auth lookup value '{s}'",
+                                .{self.auth_options.password.?},
+                            );
+                        },
                         true,
                     );
 
@@ -589,29 +629,39 @@ pub const Session = struct {
                 },
                 .passphrase_prompted => {
                     if (self.auth_options.private_key_passphrase == null) {
-                        self.log.critical(
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Sesssion,
+                            @src(),
+                            self.log,
                             "private key passphrase prompt seen but no passphrase set",
                             .{},
                         );
-
-                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     auth_passphrase_prompt_seen_count += 1;
 
                     if (auth_passphrase_prompt_seen_count > 2) {
-                        self.log.critical(
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Sesssion,
+                            @src(),
+                            self.log,
                             "private key passphrase prompt seen multiple times, assuming authentication failed",
                             .{},
                         );
-
-                        return errors.ScrapliError.AuthenticationFailed;
                     }
 
                     try self.writeAndReturn(
-                        try self.auth_options.resolveAuthValue(
+                        self.auth_options.resolveAuthValue(
                             self.auth_options.private_key_passphrase.?,
-                        ),
+                        ) catch |err| {
+                            return errors.wrapCriticalError(
+                                err,
+                                @src(),
+                                self.log,
+                                "failed resolving auth lookup value '{s}'",
+                                .{self.auth_options.password.?},
+                            );
+                        },
                         true,
                     );
 
@@ -657,9 +707,13 @@ pub const Session = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
@@ -669,9 +723,13 @@ pub const Session = struct {
             if (self.options.operation_timeout_ns != 0 and
                 (elapsed_time + cur_read_delay_ns) >= self.options.operation_timeout_ns)
             {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             defer std.time.sleep(cur_read_delay_ns);
@@ -761,12 +819,13 @@ pub const Session = struct {
         );
 
         if (found_prompt == null) {
-            self.log.critical(
-                "no prompt found matching prompt pattern '{s}'",
-                .{self.prompt_pattern},
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                self.log,
+                "no prompt found matching prompt pattern '{s}' in '{s}'",
+                .{ self.prompt_pattern, bufs.processed.items },
             );
-
-            return errors.ScrapliError.RegexError;
         }
 
         const owned_found_prompt = try allocator.alloc(u8, found_prompt.?.len);
@@ -910,7 +969,13 @@ pub const Session = struct {
             if (pattern.len > 0) {
                 compiled_pattern = re.pcre2Compile(pattern);
                 if (compiled_pattern == null) {
-                    return errors.ScrapliError.RegexError;
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Driver,
+                        @src(),
+                        self.log,
+                        "failed compiling pattern '{s}'",
+                        .{pattern},
+                    );
                 }
             }
         }

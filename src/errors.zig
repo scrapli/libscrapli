@@ -1,23 +1,61 @@
+const std = @import("std");
+const logging = @import("logging.zig");
+
 pub const ScrapliError = error{
-    // TODO really gotta do better than this... can these have context so i can return it? then
-    // we can have fewer errors because this is unhinged
-    UnsupportedTransport,
-    OpenFailed,
-    NotOpened,
-    TimeoutExceeded,
-    CapabilitiesError,
-    Cancelled,
-    WriteFailed,
-    ReadFailed,
-    AuthenticationFailed,
-    RegexError,
-    UnknownMode,
-    UnsupportedOperation,
-    ParsingError,
-    LookupFailed,
-    PtyError,
-    SetNonBlockingFailed,
-    BadOperationId,
+    // EOF is a special error that can help signal to the read loop(s) to shutdown
     EOF,
-    CallbackFailed,
+
+    // obviously for when an operation is cancelled or timeout is exceeded
+    Cancelled,
+    TimeoutExceeded,
+
+    // all other errors that we generate come from these -- usually we return the actual
+    // error that we hit but in some cases we have to create our own since otherwise we
+    // just have a return code from libssh2 or pcre2 etc
+    Driver,
+    Sesssion,
+    Transport,
+    Operation,
 };
+
+pub fn wrapCriticalError(
+    err: anyerror,
+    src: std.builtin.SourceLocation,
+    log: ?logging.Logger,
+    comptime format: []const u8,
+    args: anytype,
+) anyerror {
+    if (log) |l| {
+        l.trace(
+            "encountered error '{any}', raised from {s}:{d}",
+            .{
+                err, src.file, src.line,
+            },
+        );
+
+        l.critical(format, args);
+    }
+
+    return err;
+}
+
+pub fn wrapWarnError(
+    err: anyerror,
+    src: std.builtin.SourceLocation,
+    log: ?logging.Logger,
+    comptime format: []const u8,
+    args: anytype,
+) anyerror {
+    if (log) |l| {
+        l.trace(
+            "encountered error '{any}', raised from {s}:{d}",
+            .{
+                err, src.file, src.line,
+            },
+        );
+
+        l.warn(format, args);
+    }
+
+    return err;
+}

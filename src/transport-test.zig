@@ -88,7 +88,13 @@ pub const Transport = struct {
                     return 0;
                 },
                 else => {
-                    return errors.ScrapliError.ReadFailed;
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Transport,
+                        @src(),
+                        null,
+                        "transport read failed",
+                        .{},
+                    );
                 },
             }
         };

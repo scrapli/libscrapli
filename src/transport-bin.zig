@@ -398,17 +398,9 @@ pub const Transport = struct {
         port: u16,
         auth_options: *auth.Options,
     ) !void {
-        self.buildArgs(host, port, auth_options, operation_timeout_ns) catch |err| {
-            self.log.critical("failed generating open command, err: {}", .{err});
+        try self.buildArgs(host, port, auth_options, operation_timeout_ns);
 
-            return errors.ScrapliError.OpenFailed;
-        };
-
-        const open_args = self.allocator.alloc([]const u8, self.open_args.items.len) catch |err| {
-            self.log.critical("failed preparing open command, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
-        };
+        const open_args = try self.allocator.alloc([]const u8, self.open_args.items.len);
         defer self.allocator.free(open_args);
 
         for (self.open_args.items, 0..) |arg, idx| {
@@ -424,9 +416,13 @@ pub const Transport = struct {
             self.options.term_height,
             self.options.netconf,
         ) catch |err| {
-            self.log.critical("failed inizializing master_fd, err: {}", .{err});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                err,
+                @src(),
+                self.log,
+                "failed inizializing master_fd",
+                .{},
+            );
         };
 
         self.reader = self.f.?.reader();
@@ -443,19 +439,35 @@ pub const Transport = struct {
 
     pub fn write(self: *Transport, buf: []const u8) !void {
         if (self.writer == null) {
-            return errors.ScrapliError.NotOpened;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "write attempted, but transport not opened",
+                .{},
+            );
         }
 
         self.writer.?.writeAll(buf) catch |err| {
-            self.log.critical("failed writing to pty, err: {}", .{err});
-
-            return errors.ScrapliError.WriteFailed;
+            return errors.wrapCriticalError(
+                err,
+                @src(),
+                self.log,
+                "writing to pty failed",
+                .{},
+            );
         };
     }
 
     pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
         if (self.reader == null) {
-            return errors.ScrapliError.NotOpened;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "read attempted, but transport not opened",
+                .{},
+            );
         }
 
         const n = self.reader.?.read(buf) catch |err| {
@@ -466,18 +478,28 @@ pub const Transport = struct {
                     return 0;
                 },
                 else => {
-                    self.log.warn("failed reading from pty, err: {}", .{err});
-
-                    return errors.ScrapliError.ReadFailed;
+                    // a warning as this can happen during close so we dont necessarily want to
+                    // log a crit
+                    return errors.wrapWarnError(
+                        err,
+                        @src(),
+                        self.log,
+                        "failed reading from pty",
+                        .{},
+                    );
                 },
             }
         };
 
         if (n == 0) {
-            self.log.debug("read from pty returned zero bytes read", .{});
-
             // this should kill the read loop, but the main program will be killed from session
-            return errors.ScrapliError.ReadFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "read from pty returned zero bytes read",
+                .{},
+            );
         }
 
         return n;
@@ -496,8 +518,8 @@ fn openPty(
         .allow_ctty = false,
     });
 
-    if (c.grantpt(master_fd.handle) < 0) return errors.ScrapliError.PtyError;
-    if (c.unlockpt(master_fd.handle) < 0) return errors.ScrapliError.PtyError;
+    if (c.grantpt(master_fd.handle) < 0) return error.PtyError;
+    if (c.unlockpt(master_fd.handle) < 0) return error.PtyError;
 
     const s_name = c.ptsname(master_fd.handle);
 
@@ -512,7 +534,7 @@ fn openPty(
     const pid = c.fork();
 
     if (pid < 0) {
-        return errors.ScrapliError.PtyError;
+        return error.PtyError;
     } else if (pid == 0) {
         // child process
         const args = try allocator.allocSentinel(?[*:0]const u8, open_args.len, null);
@@ -576,14 +598,14 @@ fn openPtyChild(
     // calling setsid and ioctl to set ctty in zig os.linux functions does *not* work for...
     // reasons? but... the C bits work juuuuust fine
     if (setsid() == -1) {
-        return errors.ScrapliError.PtyError;
+        return error.PtyError;
     }
 
     if (std.posix.system.ioctl(
         slave_fd.handle,
         c.TIOCSCTTY,
     ) != 0) {
-        return errors.ScrapliError.PtyError;
+        return error.PtyError;
     }
 
     if (!netconf) {
@@ -601,7 +623,7 @@ fn openPtyChild(
         );
 
         if (set_win_size_rc != 0) {
-            return errors.ScrapliError.PtyError;
+            return error.PtyError;
         }
     } else {
         // zlint-disable suppressed-errors

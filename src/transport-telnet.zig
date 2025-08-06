@@ -84,36 +84,15 @@ pub const Transport = struct {
     ) !bool {
         if (control_buf.items.len == 0) {
             if (maybe_control_char != control_char_iac) {
-                self.initial_buf.append(maybe_control_char) catch |err| {
-                    self.log.critical(
-                        "failed to append maybe control char to control initial buf array list, err: {}",
-                        .{err},
-                    );
-
-                    return errors.ScrapliError.OpenFailed;
-                };
+                try self.initial_buf.append(maybe_control_char);
 
                 return true;
             } else {
-                control_buf.append(maybe_control_char) catch |err| {
-                    self.log.critical(
-                        "failed to append control char to control char array list, err: {}",
-                        .{err},
-                    );
-
-                    return errors.ScrapliError.OpenFailed;
-                };
+                try control_buf.append(maybe_control_char);
             }
         } else if (control_buf.items.len == 1) {
             if (bytes.charIn(&control_chars_actionable, maybe_control_char)) {
-                control_buf.append(maybe_control_char) catch |err| {
-                    self.log.critical(
-                        "failed to append control char to control char array list, err: {}",
-                        .{err},
-                    );
-
-                    return errors.ScrapliError.OpenFailed;
-                };
+                try control_buf.append(maybe_control_char);
             } else {
                 // not 100% sure this is "correct" behavior, but have seen at least EOS devices
                 // send one last control char, then start sending non-actionable chars (like the
@@ -123,14 +102,7 @@ pub const Transport = struct {
         } else if (control_buf.items.len == 2) {
             const cmd = control_buf.items[1..2][0];
 
-            control_buf.resize(0) catch |err| {
-                self.log.critical(
-                    "failed to zeroize control char array list, err: {}",
-                    .{err},
-                );
-
-                return errors.ScrapliError.OpenFailed;
-            };
+            try control_buf.resize(0);
 
             if (cmd == control_char_do and maybe_control_char == control_char_sga) {
                 const seq = [3]u8{
@@ -178,17 +150,25 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
 
             if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             var control_char_buf: [1]u8 = undefined;
@@ -230,18 +210,23 @@ pub const Transport = struct {
             host,
             port,
         ) catch |err| {
-            self.log.critical(
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
                 "failed connecting to host '{s}', err: {}",
                 .{ host, err },
             );
-
-            return errors.ScrapliError.OpenFailed;
         };
 
         file.setNonBlocking(self.stream.?.handle) catch {
-            self.log.critical("failed ensuring socket set to non blocking", .{});
-
-            return errors.ScrapliError.OpenFailed;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "failed ensuring socket set to non blocking",
+                .{},
+            );
         };
 
         try self.handleControlChars(
@@ -260,19 +245,35 @@ pub const Transport = struct {
 
     pub fn write(self: *Transport, buf: []const u8) !void {
         if (self.stream == null) {
-            return errors.ScrapliError.NotOpened;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "write attempted, but transport not opened",
+                .{},
+            );
         }
 
         self.stream.?.writeAll(buf) catch |err| {
-            self.log.critical("failed writing to stream, err: {}", .{err});
-
-            return errors.ScrapliError.WriteFailed;
+            return errors.wrapCriticalError(
+                err,
+                @src(),
+                self.log,
+                "transport write failed",
+                .{},
+            );
         };
     }
 
     pub fn read(self: *Transport, w: ?transport_waiter.Waiter, buf: []u8) !usize {
         if (self.stream == null) {
-            return errors.ScrapliError.NotOpened;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "read attempted, but transport not opened",
+                .{},
+            );
         }
 
         if (self.initial_buf.items.len > 0) {
@@ -296,9 +297,13 @@ pub const Transport = struct {
                     return 0;
                 },
                 else => {
-                    self.log.critical("failed reading from stream, err: {}", .{err});
-
-                    return errors.ScrapliError.ReadFailed;
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Transport,
+                        @src(),
+                        self.log,
+                        "transport read failed",
+                        .{},
+                    );
                 },
             }
         };

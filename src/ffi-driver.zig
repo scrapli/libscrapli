@@ -183,13 +183,13 @@ pub const FfiDriver = struct {
                     FfiDriver.operationLoop,
                     .{self},
                 ) catch |err| {
-                    self.log(
-                        logging.LogLevel.critical,
-                        "failed spawning operation thread, err: {}",
-                        .{err},
+                    return errors.wrapCriticalError(
+                        err,
+                        @src(),
+                        self.log,
+                        "failed spawning operation thread",
+                        .{},
                     );
-
-                    return errors.ScrapliError.OpenFailed;
                 };
             },
             .netconf => {
@@ -198,13 +198,13 @@ pub const FfiDriver = struct {
                     FfiDriver.operationLoopNetconf,
                     .{self},
                 ) catch |err| {
-                    self.log(
-                        logging.LogLevel.critical,
-                        "failed spawning operation thread, err: {}",
-                        .{err},
+                    return errors.wrapCriticalError(
+                        err,
+                        @src(),
+                        self.log,
+                        "failed spawning operation thread",
+                        .{},
                     );
-
-                    return errors.ScrapliError.OpenFailed;
                 };
             },
         }
@@ -693,7 +693,13 @@ pub const FfiDriver = struct {
         defer self.operation_lock.unlock();
 
         if (!self.operation_results.contains(operation_id)) {
-            return errors.ScrapliError.BadOperationId;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                self.log,
+                "bad operation id",
+                .{},
+            );
         }
 
         const ret = self.operation_results.get(operation_id);

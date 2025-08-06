@@ -64,7 +64,7 @@ pub const Mode = struct {
             const compiled = re.pcre2Compile(pattern);
 
             if (compiled == null) {
-                return errors.ScrapliError.RegexError;
+                return error.Regex;
             }
 
             m.compiled_prompt_pattern = compiled;
@@ -246,7 +246,7 @@ pub fn determineMode(
         }
     }
 
-    return errors.ScrapliError.UnknownMode;
+    return errors.ScrapliError.Driver;
 }
 
 test "determineMode" {

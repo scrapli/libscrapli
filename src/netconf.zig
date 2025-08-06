@@ -200,7 +200,13 @@ pub const Driver = struct {
                 // nothing to do for test transport, but its "allowed" so dont return an error
             },
             else => {
-                return errors.ScrapliError.UnsupportedTransport;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    log,
+                    "unsupported transport for netconf",
+                    .{},
+                );
             },
         }
 
@@ -374,7 +380,13 @@ pub const Driver = struct {
                     "<hello ",
                 );
                 if (cap_start_index == null) {
-                    return errors.ScrapliError.CapabilitiesError;
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Driver,
+                        @src(),
+                        self.log,
+                        "could not find start of server capabilities",
+                        .{},
+                    );
                 }
 
                 // session will have read up to (and consumed) the prompt (]]>]]> at this point),
@@ -385,7 +397,13 @@ pub const Driver = struct {
                     "/hello>",
                 );
                 if (cap_end_index == null) {
-                    return errors.ScrapliError.CapabilitiesError;
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Driver,
+                        @src(),
+                        self.log,
+                        "could not find end of server capabilities",
+                        .{},
+                    );
                 }
 
                 cap_buf = try allocator.dupe(
@@ -435,12 +453,13 @@ pub const Driver = struct {
             Driver.processLoop,
             .{self},
         ) catch |err| {
-            self.log.critical(
-                "failed spawning message processing thread, err: {}",
-                .{err},
+            return errors.wrapCriticalError(
+                err,
+                @src(),
+                self.log,
+                "failed spawning message processing thread",
+                .{},
             );
-
-            return errors.ScrapliError.OpenFailed;
         };
 
         return res;
@@ -505,9 +524,13 @@ pub const Driver = struct {
 
         while (true) {
             if (options.cancel != null and options.cancel.?.*) {
-                self.log.critical("operation cancelled", .{});
-
-                return errors.ScrapliError.Cancelled;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "operation cancelled",
+                    .{},
+                );
             }
 
             const elapsed_time = timer.read();
@@ -515,9 +538,13 @@ pub const Driver = struct {
             if (self.session.options.operation_timeout_ns != 0 and
                 elapsed_time >= self.session.options.operation_timeout_ns)
             {
-                self.log.critical("op timeout exceeded", .{});
-
-                return errors.ScrapliError.TimeoutExceeded;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "operation timeout exceeded",
+                    .{},
+                );
             }
 
             const n = try self.session.read(_read_cap_buf);
@@ -677,7 +704,13 @@ pub const Driver = struct {
         revision: ?[]const u8,
     ) !bool {
         if (self.server_capabilities == null) {
-            return errors.ScrapliError.CapabilitiesError;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                self.log,
+                "hasCapabilitiy requested but capabilities unset",
+                .{},
+            );
         }
 
         for (self.server_capabilities.?.items) |cap| {
@@ -721,9 +754,13 @@ pub const Driver = struct {
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
-            self.log.critical("capabilities negotiation failed", .{});
-
-            return errors.ScrapliError.CapabilitiesError;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                self.log,
+                "capabilities negotiation failed",
+                .{},
+            );
         }
 
         if (self.options.preferred_version == null) {
@@ -737,18 +774,26 @@ pub const Driver = struct {
                     self.negotiated_version = Version.version_1_0;
                 }
 
-                self.log.critical("preferred capability unavailable", .{});
-
-                return errors.ScrapliError.CapabilitiesError;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    "preferred capability unavailable",
+                    .{},
+                );
             },
             Version.version_1_1 => {
                 if (hasVersion_1_1) {
                     self.negotiated_version = Version.version_1_1;
                 }
 
-                self.log.critical("preferred capability unavailable", .{});
-
-                return errors.ScrapliError.CapabilitiesError;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    "preferred capability unavailable",
+                    .{},
+                );
             },
         }
     }
@@ -1114,7 +1159,13 @@ pub const Driver = struct {
             }
 
             if (chunk_size == 0) {
-                return errors.ScrapliError.ParsingError;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    "failed parsing netconf message, found chunk size of zero",
+                    .{},
+                );
             }
 
             // now that we processed the size, consume any whitespace up to the chunk to read;
@@ -1125,7 +1176,13 @@ pub const Driver = struct {
             if (iter_idx + chunk_size >= buf.len) {
                 // just being defensive here, this should *not* happen in normal circumstances but
                 // ya know... shit happens
-                return errors.ScrapliError.ParsingError;
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    "failed parsing netconf message, next index to check out of range",
+                    .{},
+                );
             }
 
             while (true) {
@@ -1184,9 +1241,13 @@ pub const Driver = struct {
         cancel: ?*bool,
     ) !void {
         if (cancel != null and cancel.?.*) {
-            self.log.critical("operation cancelled", .{});
-
-            return errors.ScrapliError.Cancelled;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Cancelled,
+                @src(),
+                self.log,
+                "operation cancelled",
+                .{},
+            );
         }
 
         const elapsed_time = timer.read();
@@ -1196,9 +1257,13 @@ pub const Driver = struct {
         if (self.session.options.operation_timeout_ns != 0 and
             (elapsed_time > self.session.options.operation_timeout_ns))
         {
-            self.log.critical("op timeout exceeded", .{});
-
-            return errors.ScrapliError.TimeoutExceeded;
+            return errors.wrapCriticalError(
+                errors.ScrapliError.TimeoutExceeded,
+                @src(),
+                self.log,
+                "operation timeout exceeded",
+                .{},
+            );
         }
     }
 
@@ -1889,7 +1954,7 @@ pub const Driver = struct {
             },
         ) catch |err| {
             switch (err) {
-                errors.ScrapliError.EOF, errors.ScrapliError.ParsingError => {
+                errors.ScrapliError.Transport, errors.ScrapliError.Driver => {
                     // we may read an EOF and miss the reply when using ssh2 transport (due i think
                     // in part or whole to being in non blocking mode). so... we lie. if we hit eof
                     // *or* a parsing error (which can happen when we only read part of the close
@@ -2642,7 +2707,13 @@ pub const Driver = struct {
                     o,
                 );
             },
-            else => return errors.ScrapliError.UnsupportedOperation,
+            else => return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                self.log,
+                "unsupported operation type",
+                .{},
+            ),
         }
 
         var res = try self.NewResult(
