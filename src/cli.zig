@@ -90,6 +90,8 @@ pub const Driver = struct {
             .f = logging.noopLogf,
         };
 
+        logging.traceWithSrc(log, @src(), "initializing cli.Driver object", .{});
+
         const definition = switch (config.definition) {
             .string => |d| try platform.YamlDefinition.ToDefinition(
                 allocator,
@@ -143,6 +145,8 @@ pub const Driver = struct {
     }
 
     pub fn deinit(self: *Driver) void {
+        logging.traceWithSrc(self.log, @src(), "deinitializing cli.Driver object", .{});
+
         self.session.deinit();
         self.definition.deinit();
         self.options.deinit();

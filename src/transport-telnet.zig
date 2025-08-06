@@ -59,6 +59,8 @@ pub const Transport = struct {
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
+        logging.traceWithSrc(log, @src(), "initializing telnet.Transport object", .{});
+
         const t = try allocator.create(Transport);
 
         t.* = Transport{
@@ -73,6 +75,8 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
+        logging.traceWithSrc(self.log, @src(), "deinitializing telnet.Transport object", .{});
+
         self.initial_buf.deinit();
         self.allocator.destroy(self);
     }

@@ -454,6 +454,8 @@ pub const Transport = struct {
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
+        logging.traceWithSrc(log, @src(), "initializing ssh2.Transport object", .{});
+
         const rc = libssh2InitializeOnce();
         if (rc != 0) {
             return errors.wrapCriticalError(
@@ -485,6 +487,8 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
+        logging.traceWithSrc(self.log, @src(), "deinitializing ssh2.Transport object", .{});
+
         if (self.proxy_session) |sess| {
             libssh2FreeSession(sess, self.log);
         }

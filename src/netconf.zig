@@ -189,6 +189,8 @@ pub const Driver = struct {
             .f = logging.noopLogf,
         };
 
+        logging.traceWithSrc(log, @src(), "initializing netconf.Driver object", .{});
+
         switch (opts.transport.*) {
             .bin => {
                 opts.transport.bin.netconf = true;
@@ -270,6 +272,8 @@ pub const Driver = struct {
     }
 
     pub fn deinit(self: *Driver) void {
+        logging.traceWithSrc(self.log, @src(), "deinitializing netconf.Driver object", .{});
+
         if (self.process_stop.load(std.builtin.AtomicOrder.acquire) == ProcessThreadState.run) {
             // same as session, for ignoring errors on close and just gracefully freeing things
             // zlint-disable suppressed-errors

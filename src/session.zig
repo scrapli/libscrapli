@@ -139,6 +139,8 @@ pub const Session = struct {
         auth_options: *auth.Options,
         transport_options: *transport.Options,
     ) !*Session {
+        logging.traceWithSrc(log, @src(), "initializing session.Session object", .{});
+
         const t = try transport.Transport.init(
             allocator,
             log,
@@ -236,6 +238,8 @@ pub const Session = struct {
     }
 
     pub fn deinit(self: *Session) void {
+        logging.traceWithSrc(self.log, @src(), "deinitializing session.Session object", .{});
+
         if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.run) {
             // if for whatever reason (likely because a call to driver.open failed causing a defer
             // close to *not* trigger) the session didnt get "closed", ensure we do that...

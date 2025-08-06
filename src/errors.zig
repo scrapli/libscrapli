@@ -27,9 +27,9 @@ pub fn wrapCriticalError(
 ) anyerror {
     if (log) |l| {
         l.trace(
-            "encountered error '{any}', raised from {s}:{d}",
+            "{s}:{d}: encountered error '{any}'",
             .{
-                err, src.file, src.line,
+                src.file, src.line, err,
             },
         );
 
@@ -48,9 +48,9 @@ pub fn wrapWarnError(
 ) anyerror {
     if (log) |l| {
         l.trace(
-            "encountered error '{any}', raised from {s}:{d}",
+            "{s}:{d}: encountered error '{any}'",
             .{
-                err, src.file, src.line,
+                src.file, src.line, err,
             },
         );
 

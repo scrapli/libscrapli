@@ -179,3 +179,14 @@ pub const Logger = struct {
         self.f.?(@intFromEnum(LogLevel.fatal), &formatted_message);
     }
 };
+
+pub fn traceWithSrc(
+    log: Logger,
+    src: std.builtin.SourceLocation,
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const full_format = comptime "{s}:{d}: " ++ format;
+
+    log.trace(full_format, .{ src.file, src.line } ++ args);
+}

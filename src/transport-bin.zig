@@ -134,6 +134,8 @@ pub const Transport = struct {
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
+        logging.traceWithSrc(log, @src(), "initializing bin.Transport object", .{});
+
         const t = try allocator.create(Transport);
 
         t.* = Transport{
@@ -147,6 +149,8 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
+        logging.traceWithSrc(self.log, @src(), "deinitializing bin.Transport object", .{});
+
         for (self.open_args.items) |*arg| {
             arg.deinit();
         }
