@@ -1,7 +1,6 @@
 // zlint-disable unused-decls
 // note: leaving consts in here for future sanity/to not have to look stuff up
 const std = @import("std");
-const arrays = @import("arrays.zig");
 const thelper = @import("test-helper.zig");
 
 pub const control_chars = struct {
@@ -510,177 +509,177 @@ test "stripAsciiControlCharsInPlace" {
     }{
         .{
             .name = "no change",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo"),
             .expected = "foo",
         },
         .{
             .name = "NUL",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x00 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x00 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "SOH",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x01 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x01 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "STX",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x02 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x02 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "ETX",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x03 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x03 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "EOT",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x04 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x04 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "ENQ",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x05 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x05 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "ACK",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x06 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x06 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "BEL",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x07 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x07 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "BS",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x08 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x08 bar"),
             .expected = "foo  bar",
         },
         // we are *not* stripping tabs
         .{
             .name = "TAB",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x09 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x09 bar"),
             .expected = "foo \x09 bar",
         },
         // we are *not* stripping line feeds
         .{
             .name = "LF",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x0A bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x0A bar"),
             .expected = "foo \x0A bar",
         },
         // we are *not* stripping vertical tabls
         .{
             .name = "VT",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x0B bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x0B bar"),
             .expected = "foo \x0B bar",
         },
         .{
             .name = "FF",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x0C bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x0C bar"),
             .expected = "foo  bar",
         },
         // we are *not* stripping line feeds, but we could :)
         .{
             .name = "LF",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x0A bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x0A bar"),
             .expected = "foo \x0A bar",
         },
         .{
             .name = "SO",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x0E bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x0E bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "SI",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x0F bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x0F bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "DLE",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x10 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x10 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "DC1",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x11 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x11 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "DC2",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x12 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x12 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "DC3",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x13 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x13 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "DC4",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x14 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x14 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "NAK",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x15 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x15 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "SYN",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x16 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x16 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "ETB",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x17 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x17 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "CAN",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x18 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x18 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "EM",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x19 bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x19 bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "SUB",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x1A bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x1A bar"),
             .expected = "foo  bar",
         },
         .{
             // we do *not* strip escapes! the ansii control seq stripper does that!
             .name = "ESC",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x1B bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x1B bar"),
             .expected = "foo \x1B bar",
         },
         .{
             .name = "FS",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x1C bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x1C bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "GS",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x1D bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x1D bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "RS",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x1E bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x1E bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "US",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo \x1F bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo \x1F bar"),
             .expected = "foo  bar",
         },
         .{
             .name = "multi byte char",
-            .haystack = try arrays.inlineInitArrayList(std.testing.allocator, u8, "foo ❯ bar"),
+            .haystack = try thelper.inlineInitArrayList(std.testing.allocator, u8, "foo ❯ bar"),
             .expected = "foo ❯ bar",
         },
     };

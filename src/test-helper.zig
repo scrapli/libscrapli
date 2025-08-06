@@ -530,3 +530,18 @@ fn printIndicatorLine(source: []const u8, indicator_index: usize) void {
     else
         std.debug.print("^ ('\\x{x:0>2}')\n", .{source[indicator_index]});
 }
+
+// conveinence func for initializing arraylists for tests
+pub fn inlineInitArrayList(
+    allocator: std.mem.Allocator,
+    comptime T: type,
+    items: []const T,
+) !std.ArrayList(T) {
+    var al = std.ArrayList(T).init(allocator);
+
+    for (items) |item| {
+        try al.append(item);
+    }
+
+    return al;
+}
