@@ -186,7 +186,6 @@ pub const Driver = struct {
 
         const log = opts.logger orelse logging.Logger{
             .allocator = allocator,
-            .f = logging.noopLogf,
         };
 
         logging.traceWithSrc(log, @src(), "initializing netconf.Driver object", .{});

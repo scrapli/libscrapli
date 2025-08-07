@@ -1205,7 +1205,7 @@ pub const Transport = struct {
                 continue;
             }
 
-            return errors.wrapCriticalError(
+            return errors.wrapWarnError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
@@ -1367,7 +1367,6 @@ pub const Transport = struct {
         var fds: [2]c_int = undefined;
         const sockrc = c.socketpair(c.AF_UNIX, c.SOCK_STREAM, 0, &fds);
         if (sockrc != 0) {
-            // TODO use scrapli error (also in other places in here, just do a quick check)
             return error.ErrorCreatingSocketPair;
         }
 

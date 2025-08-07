@@ -7,12 +7,25 @@ pub const LogLevel = enum(u8) {
     warn,
     critical,
     fatal,
-};
 
-pub fn noopLogf(level: u8, message: *[]u8) callconv(.C) void {
-    _ = level;
-    _ = message;
-}
+    pub fn fromString(s: []const u8) LogLevel {
+        if (std.mem.eql(u8, s, "trace")) {
+            return LogLevel.trace;
+        } else if (std.mem.eql(u8, s, "debug")) {
+            return LogLevel.debug;
+        } else if (std.mem.eql(u8, s, "info")) {
+            return LogLevel.info;
+        } else if (std.mem.eql(u8, s, "warn")) {
+            return LogLevel.warn;
+        } else if (std.mem.eql(u8, s, "critical")) {
+            return LogLevel.critical;
+        } else if (std.mem.eql(u8, s, "fatal")) {
+            return LogLevel.fatal;
+        } else {
+            return LogLevel.warn;
+        }
+    }
+};
 
 pub fn stdLogf(level: u8, message: *[]u8) callconv(.C) void {
     switch (level) {
@@ -44,7 +57,7 @@ pub fn stdLogf(level: u8, message: *[]u8) callconv(.C) void {
 
 pub const Logger = struct {
     allocator: std.mem.Allocator,
-    f: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
+    f: ?*const fn (level: u8, message: *[]u8) callconv(.C) void = null,
     level: LogLevel = LogLevel.warn,
 
     fn sprintf(

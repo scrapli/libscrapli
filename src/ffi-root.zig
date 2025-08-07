@@ -96,19 +96,20 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
 export fn ls_cli_alloc(
     definition_string: [*c]const u8,
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
+    logger_level: [*c]const u8,
     host: [*c]const u8,
     port: u16,
     transport_kind: [*c]const u8,
 ) usize {
     var log = logging.Logger{
         .allocator = getAllocator(),
-        .f = null,
     };
 
-    if (logger_callback != null) {
+    if (logger_callback) |cb| {
         log = logging.Logger{
             .allocator = getAllocator(),
-            .f = logger_callback.?,
+            .f = cb,
+            .level = logging.LogLevel.fromString(std.mem.span(logger_level)),
         };
     }
 
@@ -144,6 +145,7 @@ export fn ls_cli_alloc(
 
 export fn ls_netconf_alloc(
     logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
+    logger_level: [*c]const u8,
     host: [*c]const u8,
     port: u16,
     transport_kind: [*c]const u8,
@@ -153,13 +155,13 @@ export fn ls_netconf_alloc(
         .f = null,
     };
 
-    if (logger_callback != null) {
+    if (logger_callback) |cb| {
         log = logging.Logger{
             .allocator = getAllocator(),
-            .f = logger_callback.?,
+            .f = cb,
+            .level = logging.LogLevel.fromString(std.mem.span(logger_level)),
         };
     }
-
     var _port: ?u16 = null;
     if (port != 0) {
         _port = port;

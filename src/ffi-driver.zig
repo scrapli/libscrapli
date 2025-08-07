@@ -145,6 +145,15 @@ pub const FfiDriver = struct {
         self.allocator.destroy(self);
     }
 
+    fn getLogger(self: *FfiDriver) logging.Logger {
+        const logger = switch (self.real_driver) {
+            .cli => |d| d.log,
+            .netconf => |d| d.log,
+        };
+
+        return logger;
+    }
+
     pub fn log(
         self: *FfiDriver,
         level: logging.LogLevel,
@@ -157,6 +166,9 @@ pub const FfiDriver = struct {
         };
 
         switch (level) {
+            .trace => {
+                logger.trace(format, args);
+            },
             .debug => {
                 logger.debug(format, args);
             },
@@ -186,7 +198,7 @@ pub const FfiDriver = struct {
                     return errors.wrapCriticalError(
                         err,
                         @src(),
-                        self.log,
+                        self.getLogger(),
                         "failed spawning operation thread",
                         .{},
                     );
@@ -201,7 +213,7 @@ pub const FfiDriver = struct {
                     return errors.wrapCriticalError(
                         err,
                         @src(),
-                        self.log,
+                        self.getLogger(),
                         "failed spawning operation thread",
                         .{},
                     );
@@ -696,7 +708,7 @@ pub const FfiDriver = struct {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
-                self.log,
+                self.getLogger(),
                 "bad operation id",
                 .{},
             );
