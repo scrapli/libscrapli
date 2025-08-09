@@ -90,7 +90,7 @@ pub const Result = struct {
             // trimWhitespace allocates new memory properly sized, so we can then free
             // up the original "processed" buf (it is "processed" becuase ansi/ascii stuff is
             // removed, but we still trim whitespace to get rid of leading/trailing junk)
-            const trimmed = try bytes.trimWhitespace(self.allocator, data.rets[1]);
+            const trimmed = try bytes.trimNewlineWhitespace(self.allocator, data.rets[1]);
             self.allocator.free(data.rets[1]);
             try self.results.append(trimmed);
         } else {

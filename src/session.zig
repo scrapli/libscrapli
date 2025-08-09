@@ -398,6 +398,14 @@ pub const Session = struct {
             try self.read_queue.write(buf[0..n]);
             self.read_lock.unlock();
 
+            // log all the reads w/ ascii unprintables shown
+            logging.traceWithSrc(
+                self.log,
+                @src(),
+                "raw read: {s}",
+                .{std.fmt.fmtSliceEscapeLower(buf[0..n])},
+            );
+
             if (self.recorder) |recorder| {
                 try recorder.writeAll(buf[0..n]);
             }
@@ -752,6 +760,15 @@ pub const Session = struct {
             }
 
             try bufs.appendSlice(buf[0..n]);
+
+            // weve logged "raw" reads in the readloop, now that we have processed something
+            // (ProcessedBuf handles ascii filtering on appendSlice) we can show the processed bits
+            logging.traceWithSrc(
+                self.log,
+                @src(),
+                "processed read: {s}",
+                .{bufs.processed.items},
+            );
 
             const searchable_buf = bytes.getBufSearchView(
                 bufs.processed.items[op_processed_buf_starting_len..],

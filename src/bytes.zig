@@ -150,6 +150,19 @@ test "charIn" {
     }
 }
 
+pub fn trimNewlineWhitespace(
+    allocator: std.mem.Allocator,
+    buf: []const u8,
+) ![]const u8 {
+    const trimmed_buf = std.mem.trim(u8, buf, "\t\n\r");
+    const owned_trimmed_buf = try allocator.alloc(u8, trimmed_buf.len);
+
+    @memcpy(owned_trimmed_buf, trimmed_buf);
+
+    return owned_trimmed_buf;
+}
+
+// TODO -- maybe rmeove this (and reswizzle tests to deal w/ the newline one if its working as expected)
 pub fn trimWhitespace(
     allocator: std.mem.Allocator,
     buf: []const u8,
