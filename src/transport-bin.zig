@@ -497,7 +497,7 @@ pub const Transport = struct {
 
         if (n == 0) {
             // this should kill the read loop, but the main program will be killed from session
-            return errors.wrapCriticalError(
+            return errors.wrapWarnError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
