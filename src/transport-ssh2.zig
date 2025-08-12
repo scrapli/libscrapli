@@ -454,7 +454,7 @@ pub const Transport = struct {
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
-        logging.traceWithSrc(log, @src(), "initializing ssh2.Transport object", .{});
+        logging.traceWithSrc(log, @src(), "ssh2.Transport initializing", .{});
 
         const rc = libssh2InitializeOnce();
         if (rc != 0) {
@@ -462,7 +462,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 log,
-                "failed inizializing libssh2, return code: {d}",
+                "ssh2.Transport init: failed inizializing libssh2, return code: {d}",
                 .{rc},
             );
         }
@@ -487,7 +487,7 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
-        logging.traceWithSrc(self.log, @src(), "deinitializing ssh2.Transport object", .{});
+        logging.traceWithSrc(self.log, @src(), "ssh2.Transport deinitializing", .{});
 
         if (self.proxy_session) |sess| {
             libssh2FreeSession(sess, self.log);
@@ -519,6 +519,8 @@ pub const Transport = struct {
         port: u16,
         auth_options: *auth.Options,
     ) !void {
+        self.log.info("ssh2.Transport open requested", .{});
+
         try self.initSocket(host, port);
         try self.initSession(timer, cancel, operation_timeout_ns);
         try self.initKnownHost(host, port);
@@ -531,7 +533,7 @@ pub const Transport = struct {
             auth_options,
         );
 
-        self.log.info("authentication complete", .{});
+        self.log.info("ssh2.Transport open: authentication complete", .{});
 
         var channel: ?*ssh2.struct__LIBSSH2_CHANNEL = null;
 
@@ -608,7 +610,7 @@ pub const Transport = struct {
                 err,
                 @src(),
                 self.log,
-                "failed initializing resolved addresses",
+                "ssh2.Transport initSocket: failed initializing resolved addresses",
                 .{},
             );
         };
@@ -619,7 +621,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed resolving any address for host '{s}'",
+                "ssh2.Transport initSocket: failed resolving any address for host '{s}'",
                 .{host},
             );
         }
@@ -631,7 +633,7 @@ pub const Transport = struct {
                 std.posix.IPPROTO.TCP,
             ) catch |err| {
                 self.log.warn(
-                    "failed initializing socket for addr {any}, err: {}",
+                    "ssh2.Transport initSocket: failed initializing socket for addr {any}, err: {}",
                     .{ addr, err },
                 );
 
@@ -643,7 +645,10 @@ pub const Transport = struct {
                 @ptrCast(&addr),
                 addr.getOsSockLen(),
             ) catch |err| {
-                self.log.warn("failed connecting socket, err: {}", .{err});
+                self.log.warn(
+                    "ssh2.Transport initSocket: failed connecting socket, err: {}",
+                    .{err},
+                );
 
                 std.posix.close(sock);
 
@@ -660,7 +665,8 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed initializing socket, all resolved addresses failed",
+                "ssh2.Transport initSocket: failed initializing socket, " ++
+                    "all resolved addresses failed",
                 .{},
             );
         }
@@ -683,7 +689,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed creating libssh2 session",
+                "ssh2.Transport initSession: failed creating libssh2 session",
                 .{},
             );
         }
@@ -711,7 +717,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport initSession: operation cancelled",
                     .{},
                 );
             }
@@ -723,7 +729,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport initSession: operation timeout exceeded",
                     .{},
                 );
             }
@@ -745,7 +751,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed session handshake",
+                "ssh2.Transport initSession: failed session handshake",
                 .{},
             );
         }
@@ -775,7 +781,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed libssh2 known hosts init",
+                "ssh2.Transport initKnownHost: failed libssh2 known hosts init",
                 .{},
             );
         }
@@ -791,7 +797,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed to read known hosts file",
+                "ssh2.Transport initKnownHost: failed to read known hosts file",
                 .{},
             );
         }
@@ -809,7 +815,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed to fingerprint target host",
+                "ssh2.Transport initKnownHost: failed to fingerprint target host",
                 .{},
             );
         }
@@ -835,7 +841,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "known host check mismatch",
+                    "ssh2.Transport initKnownHost: known host check mismatch",
                     .{},
                 );
             },
@@ -844,7 +850,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "known host check not found",
+                    "ssh2.Transport initKnownHost: known host check not found",
                     .{},
                 );
             },
@@ -853,7 +859,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "known host check failure",
+                    "ssh2.Transport initKnownHost: known host check failure",
                     .{},
                 );
             },
@@ -862,7 +868,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "known host unknown error",
+                    "ssh2.Transport initKnownHost: known host unknown error",
                     .{},
                 );
             },
@@ -959,7 +965,7 @@ pub const Transport = struct {
             errors.ScrapliError.Transport,
             @src(),
             self.log,
-            "all authentication methods have failed",
+            "ssh2.Transport authenticate: all authentication methods have failed",
             .{},
         );
     }
@@ -977,7 +983,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport isAuthenticated: operation cancelled",
                     .{},
                 );
             }
@@ -989,7 +995,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport isAuthenticated: operation timeout exceeded",
                     .{},
                 );
             }
@@ -1049,7 +1055,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport handlePrivateKeyAuth: operation cancelled",
                     .{},
                 );
             }
@@ -1061,7 +1067,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport handlePrivateKeyAuth: operation timeout exceeded",
                     .{},
                 );
             }
@@ -1089,7 +1095,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed private key authentication",
+                "ssh2.Transport handlePrivateKeyAuth: failed private key authentication",
                 .{},
             );
         }
@@ -1112,7 +1118,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport handleKeyboardInteractiveAuth: operation cancelled",
                     .{},
                 );
             }
@@ -1124,7 +1130,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport handleKeyboardInteractiveAuth: operation timeout exceeded",
                     .{},
                 );
             }
@@ -1148,7 +1154,8 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed keyboard interactive authentication",
+                "ssh2.Transport handleKeyboardInteractiveAuth: failed keyboard " ++
+                    "interactive authentication",
                 .{},
             );
         }
@@ -1171,7 +1178,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport handlePasswordAuth: operation cancelled",
                     .{},
                 );
             }
@@ -1183,7 +1190,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport handlePasswordAuth: operation timeout exceeded",
                     .{},
                 );
             }
@@ -1209,7 +1216,8 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed password authentication, will try keyboard interactive",
+                "ssh2.Transport handlePasswordAuth: failed password authentication, " ++
+                    "will try keyboard interactive",
                 .{},
             );
         }
@@ -1228,7 +1236,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport openChannel: operation cancelled",
                     .{},
                 );
             }
@@ -1240,7 +1248,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport openChannel: operation timeout exceeded",
                     .{},
                 );
             }
@@ -1263,7 +1271,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed opening session channel",
+                "ssh2.Transport openChannel: failed opening session channel",
                 .{},
             );
         }
@@ -1288,7 +1296,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport openProxyChannel: operation cancelled",
                     .{},
                 );
             }
@@ -1300,7 +1308,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport openProxyChannel: operation timeout exceeded",
                     .{},
                 );
             }
@@ -1327,7 +1335,8 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed opening session (initial direct tcpip) channel {d}",
+                "ssh2.Transport openProxyChannel:  failed opening session " ++
+                    "(initial direct tcpip) channel {d}",
                 .{rc},
             );
         }
@@ -1343,7 +1352,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed creating libssh2 session",
+                "ssh2.Transport openProxyChannel: failed creating libssh2 session",
                 .{},
             );
         }
@@ -1389,7 +1398,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed libssh2 session handshake",
+                "ssh2.Transport openProxyChannel: failed libssh2 session handshake",
                 .{},
             );
         }
@@ -1430,7 +1439,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport requestPty: operation cancelled",
                     .{},
                 );
             }
@@ -1442,7 +1451,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport requestPty: operation timeout exceeded",
                     .{},
                 );
             }
@@ -1461,7 +1470,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed requesting pty",
+                "ssh2.Transport requestPty: failed requesting pty",
                 .{},
             );
         }
@@ -1480,7 +1489,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "ssh2.Transport requestShell: operation cancelled",
                     .{},
                 );
             }
@@ -1492,7 +1501,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "ssh2.Transport requestShell: operation timeout exceeded",
                     .{},
                 );
             }
@@ -1514,13 +1523,15 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed requesting shell",
+                "ssh2.Transport requestShell: failed requesting shell",
                 .{},
             );
         }
     }
 
     pub fn close(self: *Transport) void {
+        self.log.info("ssh2.Transport close requested", .{});
+
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
@@ -1541,14 +1552,16 @@ pub const Transport = struct {
         }
     }
 
-    fn _write_standard(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+    fn _writeStandard(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+        self.log.debug("ssh2.Transport _writeStandard requested", .{});
+
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
         const n = ssh2.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
 
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            return self._write_standard(w, buf);
+            return self._writeStandard(w, buf);
         }
 
         if (n < 0) {
@@ -1556,7 +1569,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "write failed, return code: {d}",
+                "ssh2.Transport _writeStandard: write failed, return code: {d}",
                 .{n},
             );
         }
@@ -1566,20 +1579,22 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "wrote {d} bytes, expected to write {d}",
+                "ssh2.Transport _writeStandard: wrote {d} bytes, expected to write {d}",
                 .{ n, buf.len },
             );
         }
     }
 
-    fn _write_proxied(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+    fn _writeProxied(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+        self.log.debug("ssh2.Transport _writeProxied requested", .{});
+
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
         const n = ssh2.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
 
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            return self._write_proxied(w, buf);
+            return self._writeProxied(w, buf);
         }
 
         if (n < 0) {
@@ -1587,7 +1602,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "write failed, return code: {d}",
+                "ssh2.Transport _writeProxied: write failed, return code: {d}",
                 .{n},
             );
         }
@@ -1597,7 +1612,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "wrote {d} bytes, expected to write {d}",
+                "ssh2.Transport _writeProxied: wrote {d} bytes, expected to write {d}",
                 .{ n, buf.len },
             );
         }
@@ -1622,14 +1637,18 @@ pub const Transport = struct {
     }
 
     pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+        self.log.info("ssh2.Transport write requested", .{});
+
         if (self.options.proxy_jump_options == null) {
-            return self._write_standard(w, buf);
+            return self._writeStandard(w, buf);
         } else {
-            return self._write_proxied(w, buf);
+            return self._writeProxied(w, buf);
         }
     }
 
-    fn _read_standard(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+    fn _readStandard(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+        self.log.debug("ssh2.Transport _readStandard requested", .{});
+
         self.session_lock.lock();
 
         // because nonblock we will just eagain forever (really until the timeout catches us)
@@ -1659,7 +1678,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "transport read failed, rc {d}",
+                "ssh2.Transport _readStandard: transport read failed, rc {d}",
                 .{n},
             );
         }
@@ -1667,7 +1686,9 @@ pub const Transport = struct {
         return @intCast(n);
     }
 
-    fn _read_proxied(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+    fn _readProxied(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+        self.log.debug("ssh2.Transport _readProxied requested", .{});
+
         self.session_lock.lock();
 
         if (ssh2.libssh2_channel_eof(self.proxy_channel.?) == 1) {
@@ -1693,7 +1714,7 @@ pub const Transport = struct {
             if (res) {
                 // re-read since we copied data from the cahnnel to the pipe, so now something
                 // should be available for libssh2_channel-read_ex
-                return self._read_proxied(w, buf);
+                return self._readProxied(w, buf);
             } else |_| {
                 // didn't copy data, wait on the socket so libssh2 has something to read on
                 // the next iteration
@@ -1707,7 +1728,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "transport read failed, rc {d}",
+                "ssh2.Transport _readProxied: transport read failed, rc {d}",
                 .{n},
             );
         }
@@ -1716,10 +1737,12 @@ pub const Transport = struct {
     }
 
     pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+        self.log.info("ssh2.Transport read requested", .{});
+
         if (self.options.proxy_jump_options == null) {
-            return self._read_standard(w, buf);
+            return self._readStandard(w, buf);
         } else {
-            return self._read_proxied(w, buf);
+            return self._readProxied(w, buf);
         }
     }
 };

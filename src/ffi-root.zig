@@ -1,4 +1,4 @@
-// zlint-disable: suppressed-errors
+// zlint-disable suppressed-errors
 const std = @import("std");
 const builtin = @import("builtin");
 

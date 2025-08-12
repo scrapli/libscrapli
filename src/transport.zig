@@ -221,8 +221,6 @@ pub const Transport = struct {
         port: u16,
         auth_options: *auth.Options,
     ) !void {
-        self.log.debug("transport open start...", .{});
-
         switch (self.implementation) {
             Kind.bin => |t| {
                 // bin transport doesnt need the timer, since we just pass the timeout value to
@@ -247,8 +245,6 @@ pub const Transport = struct {
                 try t.open(cancel);
             },
         }
-
-        self.log.debug("transport open successful...", .{});
     }
 
     pub fn isInSessionAuth(
@@ -268,8 +264,6 @@ pub const Transport = struct {
     // this allows the session to ensure that the transport gets closed during deinit so its always
     // nicely tidied up.
     pub fn close(self: *Transport) void {
-        self.log.debug("transport close start...", .{});
-
         switch (self.implementation) {
             Kind.bin => |t| {
                 t.close();
@@ -284,8 +278,6 @@ pub const Transport = struct {
                 t.close();
             },
         }
-
-        self.log.debug("transport close successful...", .{});
     }
 
     pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {

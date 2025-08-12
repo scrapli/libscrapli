@@ -1,4 +1,4 @@
-// zlint-disable: suppressed-errors
+// zlint-disable suppressed-errors
 const std = @import("std");
 
 const bytes = @import("bytes.zig");
@@ -7,8 +7,6 @@ const ffi_operations = @import("ffi-operations.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
 const cli = @import("cli.zig");
 const errors = @import("errors.zig");
-
-const logging = @import("logging.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;

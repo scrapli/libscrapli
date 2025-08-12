@@ -134,7 +134,7 @@ pub const Transport = struct {
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
-        logging.traceWithSrc(log, @src(), "initializing bin.Transport object", .{});
+        logging.traceWithSrc(log, @src(), "bin.Transport initializing", .{});
 
         const t = try allocator.create(Transport);
 
@@ -149,7 +149,7 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
-        logging.traceWithSrc(self.log, @src(), "deinitializing bin.Transport object", .{});
+        logging.traceWithSrc(self.log, @src(), "bin.Transport deinitializing", .{});
 
         for (self.open_args.items) |*arg| {
             arg.deinit();
@@ -402,6 +402,9 @@ pub const Transport = struct {
         port: u16,
         auth_options: *auth.Options,
     ) !void {
+        self.log.info("bin.Transport open requested", .{});
+        self.log.debug("bin.Transport open: host '{s}', port '{d}'", .{ host, port });
+
         try self.buildArgs(host, port, auth_options, operation_timeout_ns);
 
         const open_args = try self.allocator.alloc([]const u8, self.open_args.items.len);
@@ -411,7 +414,7 @@ pub const Transport = struct {
             open_args[idx] = arg.string;
         }
 
-        self.log.debug("bin transport opening with args: {s}", .{open_args});
+        self.log.debug("bin.Transport open: using args '{s}'", .{open_args});
 
         self.f = openPty(
             self.allocator,
@@ -424,7 +427,7 @@ pub const Transport = struct {
                 err,
                 @src(),
                 self.log,
-                "failed inizializing master_fd",
+                "bin.Transport open: failed inizializing master_fd",
                 .{},
             );
         };
@@ -434,6 +437,8 @@ pub const Transport = struct {
     }
 
     pub fn close(self: *Transport) void {
+        self.log.info("bin.Transport close requested", .{});
+
         if (self.f != null) {
             self.f.?.close();
         }
@@ -442,12 +447,14 @@ pub const Transport = struct {
     }
 
     pub fn write(self: *Transport, buf: []const u8) !void {
+        self.log.info("bin.Transport write requested", .{});
+
         if (self.writer == null) {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "write attempted, but transport not opened",
+                "bin.Transport write: write attempted, but transport not opened",
                 .{},
             );
         }
@@ -457,19 +464,21 @@ pub const Transport = struct {
                 err,
                 @src(),
                 self.log,
-                "writing to pty failed",
+                "bin.Transport write: writing to pty failed",
                 .{},
             );
         };
     }
 
     pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+        self.log.info("bin.Transport read requested", .{});
+
         if (self.reader == null) {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "read attempted, but transport not opened",
+                "bin.Transport read: read attempted, but transport not opened",
                 .{},
             );
         }
@@ -488,7 +497,7 @@ pub const Transport = struct {
                         err,
                         @src(),
                         self.log,
-                        "failed reading from pty",
+                        "bin.Transport read: failed reading from pty",
                         .{},
                     );
                 },
@@ -501,7 +510,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "read from pty returned zero bytes read",
+                "bin.Transport read: read from pty returned zero bytes read",
                 .{},
             );
         }

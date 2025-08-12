@@ -1,5 +1,4 @@
 const std = @import("std");
-const errors = @import("errors.zig");
 
 const pcre2 = @cImport({
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");

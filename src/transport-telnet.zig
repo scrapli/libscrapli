@@ -59,7 +59,7 @@ pub const Transport = struct {
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
-        logging.traceWithSrc(log, @src(), "initializing telnet.Transport object", .{});
+        logging.traceWithSrc(log, @src(), "telnet.Transport initializing", .{});
 
         const t = try allocator.create(Transport);
 
@@ -75,7 +75,7 @@ pub const Transport = struct {
     }
 
     pub fn deinit(self: *Transport) void {
-        logging.traceWithSrc(self.log, @src(), "deinitializing telnet.Transport object", .{});
+        logging.traceWithSrc(self.log, @src(), "telnet.Transport deinitializing", .{});
 
         self.initial_buf.deinit();
         self.allocator.destroy(self);
@@ -158,7 +158,7 @@ pub const Transport = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "telnet.Transport handleControlChars: operation cancelled",
                     .{},
                 );
             }
@@ -170,7 +170,7 @@ pub const Transport = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "telnet.Transport handleControlChars: operation timeout exceeded",
                     .{},
                 );
             }
@@ -185,7 +185,7 @@ pub const Transport = struct {
             } else if (n != 1) {
                 // this would be bad obv
                 self.log.critical(
-                    "expected to read one control char but read {d}",
+                    "telnet.Transport handleControlChars: expected to read one control char but read {d}",
                     .{n},
                 );
             }
@@ -209,6 +209,8 @@ pub const Transport = struct {
         host: []const u8,
         port: u16,
     ) !void {
+        self.log.info("telnet.Transport open requested", .{});
+
         self.stream = std.net.tcpConnectToHost(
             self.allocator,
             host,
@@ -218,7 +220,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed connecting to host '{s}', err: {}",
+                "telnet.Transport open: failed connecting to host '{s}', err: {}",
                 .{ host, err },
             );
         };
@@ -228,7 +230,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "failed ensuring socket set to non blocking",
+                "telnet.Transport open: failed ensuring socket set to non blocking",
                 .{},
             );
         };
@@ -241,6 +243,8 @@ pub const Transport = struct {
     }
 
     pub fn close(self: *Transport) void {
+        self.log.info("telnet.Transport close requested", .{});
+
         if (self.stream != null) {
             self.stream.?.close();
             self.stream = null;
@@ -248,12 +252,14 @@ pub const Transport = struct {
     }
 
     pub fn write(self: *Transport, buf: []const u8) !void {
+        self.log.info("telnet.Transport write requested", .{});
+
         if (self.stream == null) {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "write attempted, but transport not opened",
+                "telnet.Transport write: write attempted, but transport not opened",
                 .{},
             );
         }
@@ -263,19 +269,21 @@ pub const Transport = struct {
                 err,
                 @src(),
                 self.log,
-                "transport write failed",
+                "telnet.Transport write: transport write failed",
                 .{},
             );
         };
     }
 
     pub fn read(self: *Transport, w: ?transport_waiter.Waiter, buf: []u8) !usize {
+        self.log.info("telnet.Transport read requested", .{});
+
         if (self.stream == null) {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "read attempted, but transport not opened",
+                "telnet.Transport read: read attempted, but transport not opened",
                 .{},
             );
         }
@@ -305,7 +313,7 @@ pub const Transport = struct {
                         errors.ScrapliError.Transport,
                         @src(),
                         self.log,
-                        "transport read failed",
+                        "telnet.Transport read: transport read failed",
                         .{},
                     );
                 },
