@@ -1,3 +1,4 @@
+// zlint-disable: suppressed-errors
 const std = @import("std");
 
 const ffi_driver = @import("ffi-driver.zig");
@@ -7,6 +8,7 @@ const result = @import("netconf-result.zig");
 
 const logging = @import("logging.zig");
 const ascii = @import("ascii.zig");
+const errors = @import("errors.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -19,22 +21,26 @@ export fn ls_netconf_open(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during driver open {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during driver open {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
 
     switch (d.real_driver) {
         .cli => {
-            d.log(
-                logging.LogLevel.critical,
-                "attempting to open non netconf driver",
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: attempting to open non netconf driver",
                 .{},
-            );
+            ) catch {};
 
             return 1;
         },
@@ -51,11 +57,13 @@ export fn ls_netconf_open(
                     },
                 },
             ) catch |err| {
-                d.log(
-                    logging.LogLevel.critical,
-                    "error during queue open {any}",
+                errors.wrapCriticalError(
+                    errors.ScrapliError.Operation,
+                    @src(),
+                    d.getLogger(),
+                    "ffi: error during queue open {any}",
                     .{err},
-                );
+                ) catch {};
 
                 return 1;
             };
@@ -90,11 +98,13 @@ export fn ls_netconf_close(
 
     switch (d.real_driver) {
         .cli => {
-            d.log(
-                logging.LogLevel.critical,
-                "attempting to close non netconf driver",
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: attempting to close non netconf driver",
                 .{},
-            );
+            ) catch {};
 
             return 1;
         },
@@ -112,11 +122,13 @@ export fn ls_netconf_close(
                     },
                 },
             ) catch |err| {
-                d.log(
-                    logging.LogLevel.critical,
-                    "error during queue close {any}",
+                errors.wrapCriticalError(
+                    errors.ScrapliError.Operation,
+                    @src(),
+                    d.getLogger(),
+                    "ffi: error during queue close {any}",
                     .{err},
-                );
+                ) catch {};
 
                 return 1;
             };
@@ -156,11 +168,13 @@ export fn ls_netconf_fetch_operation_sizes(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.dequeueOperation(operation_id, false) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during poll operation {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during poll operation {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -207,11 +221,13 @@ export fn ls_netconf_fetch_operation(
         operation_id,
         true,
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during fetch operation {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during fetch operation {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -416,11 +432,13 @@ export fn ls_netconf_raw_rpc(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue raw {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue raw {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -463,11 +481,13 @@ export fn ls_netconf_get_config(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue getConfig {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue getConfig {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -508,11 +528,13 @@ export fn ls_netconf_edit_config(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue editConfig {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue editConfig {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -547,11 +569,13 @@ export fn ls_netconf_copy_config(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue copyConfig {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue copyConfig {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -584,11 +608,13 @@ export fn ls_netconf_delete_config(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue deleteConfig {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue deleteConfig {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -621,11 +647,13 @@ export fn ls_netconf_lock(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue lock {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue lock {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -658,11 +686,13 @@ export fn ls_netconf_unlock(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue unlock {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue unlock {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -703,11 +733,13 @@ export fn ls_netconf_get(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue unlock {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue unlock {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -736,11 +768,13 @@ export fn ls_netconf_close_session(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue unlock {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue unlock {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -771,11 +805,13 @@ export fn ls_netconf_kill_session(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue unlock {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue unlock {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -804,11 +840,13 @@ export fn ls_netconf_commit(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue commit {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue commit {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -837,11 +875,13 @@ export fn ls_netconf_discard(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue discard {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue discard {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -872,11 +912,13 @@ export fn ls_netconf_cancel_commit(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue cancelCommit {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue cancelCommit {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -905,11 +947,13 @@ export fn ls_netconf_validate(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue validate {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue validate {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -944,11 +988,13 @@ export fn ls_netconf_get_schema(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue getSchema {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue getSchema {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -997,11 +1043,13 @@ export fn ls_netconf_get_data(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue getData {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue getData {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -1036,11 +1084,13 @@ export fn ls_netconf_edit_data(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue editData {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue editData {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -1071,11 +1121,13 @@ export fn ls_netconf_action(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue action {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue action {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };

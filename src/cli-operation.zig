@@ -6,12 +6,13 @@ pub const max_ffi_read_with_callbacks_callbacks = 32;
 pub const Kind = enum {
     open,
     on_open,
-    on_close,
     close,
+    on_close,
     read_any,
     enter_mode,
     get_prompt,
     send_input,
+    send_inputs,
     send_prompted_input,
     read_with_callbacks,
 };

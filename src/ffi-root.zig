@@ -1,3 +1,4 @@
+// zlint-disable: suppressed-errors
 const std = @import("std");
 const builtin = @import("builtin");
 
@@ -9,6 +10,7 @@ const ffi_root_netconf = @import("ffi-root-netconf.zig");
 const logging = @import("logging.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
+const errors = @import("errors.zig");
 
 pub export const _force_include_apply_options = &ffi_apply_options.noop;
 pub export const _force_include_root_driver = &ffi_root_cli.noop;
@@ -135,7 +137,7 @@ export fn ls_cli_alloc(
             },
         },
     ) catch |err| {
-        log.critical("error during FfiDriver.init: {any}", .{err});
+        log.critical("ffi: error during FfiDriver.init {any}", .{err});
 
         return 0;
     };
@@ -178,14 +180,14 @@ export fn ls_netconf_alloc(
                 transport.Kind.ssh2 => .{ .ssh2 = .{} },
                 transport.Kind.test_ => .{ .test_ = .{} },
                 else => {
-                    log.critical("telnet is not a valid transport for netconf", .{});
+                    log.critical("ffi: telnet is not a valid transport for netconf", .{});
 
                     return 0;
                 },
             },
         },
     ) catch |err| {
-        log.critical("error during alloc driver {any}", .{err});
+        log.critical("ffi: error during FfiDriver.init {any}", .{err});
 
         return 0;
     };
@@ -261,11 +263,13 @@ export fn ls_session_write(
     }
 
     s.write(std.mem.span(buf), redacted) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during driver write {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during driver write {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -293,11 +297,13 @@ export fn ls_session_write_and_return(
     }
 
     s.writeAndReturn(std.mem.span(buf), redacted) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during driver write {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during driver write {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };

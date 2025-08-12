@@ -1659,8 +1659,8 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "transport read failed",
-                .{},
+                "transport read failed, rc {d}",
+                .{n},
             );
         }
 
@@ -1707,8 +1707,8 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "transport read failed",
-                .{},
+                "transport read failed, rc {d}",
+                .{n},
             );
         }
 

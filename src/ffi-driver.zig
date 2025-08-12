@@ -145,46 +145,13 @@ pub const FfiDriver = struct {
         self.allocator.destroy(self);
     }
 
-    fn getLogger(self: *FfiDriver) logging.Logger {
+    pub fn getLogger(self: *FfiDriver) logging.Logger {
         const logger = switch (self.real_driver) {
             .cli => |d| d.log,
             .netconf => |d| d.log,
         };
 
         return logger;
-    }
-
-    pub fn log(
-        self: *FfiDriver,
-        level: logging.LogLevel,
-        comptime format: []const u8,
-        args: anytype,
-    ) void {
-        const logger = switch (self.real_driver) {
-            .cli => |d| d.log,
-            .netconf => |d| d.log,
-        };
-
-        switch (level) {
-            .trace => {
-                logger.trace(format, args);
-            },
-            .debug => {
-                logger.debug(format, args);
-            },
-            .info => {
-                logger.info(format, args);
-            },
-            .warn => {
-                logger.warn(format, args);
-            },
-            .critical => {
-                logger.critical(format, args);
-            },
-            .fatal => {
-                logger.fatal(format, args);
-            },
-        }
     }
 
     pub fn open(self: *FfiDriver) !void {
@@ -199,7 +166,7 @@ pub const FfiDriver = struct {
                         err,
                         @src(),
                         self.getLogger(),
-                        "failed spawning operation thread",
+                        "ffi: failed spawning operation thread",
                         .{},
                     );
                 };
@@ -214,7 +181,7 @@ pub const FfiDriver = struct {
                         err,
                         @src(),
                         self.getLogger(),
-                        "failed spawning operation thread",
+                        "ffi: failed spawning operation thread",
                         .{},
                     );
                 };
@@ -246,7 +213,7 @@ pub const FfiDriver = struct {
     /// writing what we can when we can. So, while this is extra overhead, it seems like a good
     /// way to address that problem.
     fn operationLoop(self: *FfiDriver) void {
-        self.log(logging.LogLevel.info, "operation thread started", .{});
+        self.getLogger().info("ffi-driver.FfiDriver: operation thread started", .{});
 
         self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
 
@@ -277,7 +244,9 @@ pub const FfiDriver = struct {
             const rd = switch (self.real_driver) {
                 .cli => |d| d,
                 else => {
-                    @panic("cli operation loop executed, but driver is not cli");
+                    @panic(
+                        "ffi-driver.FfiDriver:  cli operation loop executed, but driver is not cli",
+                    );
                 },
             };
 
@@ -360,7 +329,10 @@ pub const FfiDriver = struct {
                         .err = ret_err,
                     },
                 ) catch {
-                    @panic("failed storing operation result, this should not happen");
+                    @panic(
+                        "ffi-driver.FfiDriver: failed storing operation result, " ++
+                            "this should not happen",
+                    );
                 };
             } else {
                 self.operation_results.put(
@@ -373,22 +345,25 @@ pub const FfiDriver = struct {
                         .err = null,
                     },
                 ) catch {
-                    @panic("failed storing operation result, this should not happen");
+                    @panic(
+                        "ffi-driver.FfiDriver: failed storing operation result, " ++
+                            "this should not happen",
+                    );
                 };
             }
 
             self.operation_lock.unlock();
 
             self.writePollWakeUp() catch {
-                @panic("failed writing to wakeup fd, cannot proceed");
+                @panic("ffi-driver.FfiDriver: failed writing to wakeup fd, cannot proceed");
             };
         }
 
-        self.log(logging.LogLevel.info, "operation thread stopped", .{});
+        self.getLogger().info("ffi-driver.FfiDriver: operation thread stopped", .{});
     }
 
     fn operationLoopNetconf(self: *FfiDriver) void {
-        self.log(logging.LogLevel.info, "operation thread started", .{});
+        self.getLogger().info("ffi-driver.FfiDriver: operation thread started", .{});
 
         self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
 
@@ -419,7 +394,10 @@ pub const FfiDriver = struct {
             const rd = switch (self.real_driver) {
                 .netconf => |d| d,
                 else => {
-                    @panic("netconf operation loop executed, but driver is not netconf");
+                    @panic(
+                        "ffi-driver.FfiDriver: netconf operation loop executed, " ++
+                            "but driver is not netconf",
+                    );
                 },
             };
 
@@ -619,7 +597,10 @@ pub const FfiDriver = struct {
                         .err = ret_err,
                     },
                 ) catch {
-                    @panic("failed storing operation result, this should not happen");
+                    @panic(
+                        "ffi-driver.FfiDriver: failed storing operation result, " ++
+                            "this should not happen",
+                    );
                 };
             } else {
                 self.operation_results.put(
@@ -632,18 +613,21 @@ pub const FfiDriver = struct {
                         .err = null,
                     },
                 ) catch {
-                    @panic("failed storing operation result, this should not happen");
+                    @panic(
+                        "ffi-driver.FfiDriver: failed storing operation result, " ++
+                            "this should not happen",
+                    );
                 };
             }
 
             self.operation_lock.unlock();
 
             self.writePollWakeUp() catch {
-                @panic("failed writing to wakeup fd, cannot proceed");
+                @panic("ffi-driver.FfiDriver: failed writing to wakeup fd, cannot proceed");
             };
         }
 
-        self.log(logging.LogLevel.info, "operation thread stopped", .{});
+        self.getLogger().info("ffi-driver.FfiDriver: operation thread stopped", .{});
     }
 
     pub fn queueOperation(

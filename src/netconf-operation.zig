@@ -28,7 +28,7 @@ pub const Kind = enum {
     get_data,
     edit_data,
 
-    // rfc 7950 rps
+    // rfc 7950 rpcs
     action,
 };
 

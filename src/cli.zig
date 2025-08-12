@@ -89,7 +89,7 @@ pub const Driver = struct {
             .allocator = allocator,
         };
 
-        logging.traceWithSrc(log, @src(), "initializing cli.Driver object", .{});
+        logging.traceWithSrc(log, @src(), "cli.Driver initializing", .{});
 
         const definition = switch (config.definition) {
             .string => |d| try platform.YamlDefinition.ToDefinition(
@@ -144,7 +144,7 @@ pub const Driver = struct {
     }
 
     pub fn deinit(self: *Driver) void {
-        logging.traceWithSrc(self.log, @src(), "deinitializing cli.Driver object", .{});
+        logging.traceWithSrc(self.log, @src(), "cli.Driver deinitializing", .{});
 
         self.session.deinit();
         self.definition.deinit();
@@ -157,6 +157,11 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         operation_kind: operation.Kind,
     ) !*result.Result {
+        self.log.debug(
+            "cli.Driver creating new Result object for operation {s}",
+            .{@tagName(operation_kind)},
+        );
+
         return result.Result.init(
             allocator,
             self.host,
@@ -171,6 +176,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.OpenOptions,
     ) !*result.Result {
+        self.log.info("cli.Driver open requested", .{});
+
         var res = try self.NewResult(
             allocator,
             operation.Kind.open,
@@ -203,7 +210,7 @@ pub const Driver = struct {
         if (self.definition.on_open_callback != null or
             self.definition.bound_on_open_callback != null)
         {
-            self.log.info("on open callback set, executing...", .{});
+            self.log.info("cli.Driver open: on open callback set, executing...", .{});
 
             if (self.definition.on_open_callback != null) {
                 try res.recordExtend(
@@ -232,6 +239,8 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.CloseOptions,
     ) !*result.Result {
+        self.log.info("cli.Driver close requested", .{});
+
         var res = try self.NewResult(
             allocator,
             operation.Kind.open,
@@ -244,7 +253,7 @@ pub const Driver = struct {
         if (self.definition.on_close_callback != null or
             self.definition.bound_on_close_callback != null)
         {
-            self.log.info("on close callback set, executing...", .{});
+            self.log.info("cli.Driver close: on close callback set, executing...", .{});
 
             if (self.definition.on_open_callback != null) {
                 try res.recordExtend(
@@ -275,7 +284,7 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.GetPromptOptions,
     ) !*result.Result {
-        self.log.info("requested getPrompt", .{});
+        self.log.info("cli.Driver getPrompt requested", .{});
 
         var res = try self.NewResult(
             allocator,
@@ -297,8 +306,9 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.EnterModeOptions,
     ) anyerror!*result.Result {
-        self.log.info(
-            "requested enterMode to mode '{s}', current mode '{s}'",
+        self.log.info("cli.Driver enterMode requested", .{});
+        self.log.debug(
+            "cli.Driver enterMode: mode '{s}', current mode '{s}'",
             .{ options.requested_mode, self.current_mode },
         );
 
@@ -307,7 +317,7 @@ pub const Driver = struct {
                 errors.ScrapliError.Operation,
                 @src(),
                 self.log,
-                "no mode '{s}' in definition",
+                "cli.Driver no mode '{s}' in definition",
                 .{self.current_mode},
             );
         }
@@ -339,7 +349,7 @@ pub const Driver = struct {
                 err,
                 @src(),
                 self.log,
-                "failed determining prompt from '{s}' | {d}\n",
+                "cli.Driver enterMode: failed determining prompt from '{s}' | {d}",
                 .{
                     res.results.items[0],
                     res.results.items[0],
@@ -348,6 +358,11 @@ pub const Driver = struct {
         };
 
         if (std.mem.eql(u8, self.current_mode, options.requested_mode)) {
+            self.log.info(
+                "cli.Driver enterMode: current mode is requested mode, nothing to do",
+                .{},
+            );
+
             return res;
         }
 
@@ -363,6 +378,11 @@ pub const Driver = struct {
         );
         defer steps.deinit();
 
+        self.log.debug(
+            "cli.Driver enterMode: determined steps to requested mode '{s}' are: '{s}'",
+            .{ options.requested_mode, steps.items },
+        );
+
         for (0.., steps.items) |step_idx, step| {
             if (step_idx == steps.items.len - 1) {
                 break;
@@ -374,7 +394,7 @@ pub const Driver = struct {
                     errors.ScrapliError.Operation,
                     @src(),
                     self.log,
-                    "no mode '{s}' in definition",
+                    "cli.Driver enterMode: no mode '{s}' in definition",
                     .{step},
                 );
             }
@@ -387,7 +407,7 @@ pub const Driver = struct {
                     errors.ScrapliError.Operation,
                     @src(),
                     self.log,
-                    "mode '{s}' not accessible from current mode '{s}'",
+                    "cli.Driver enterMode: mode '{s}' not accessible from current mode '{s}'",
                     .{ next_mode_name, self.current_mode },
                 );
             }
@@ -423,7 +443,8 @@ pub const Driver = struct {
                             // no "response" (usually "enable"/escalation type password), so we will
                             // log it and just try a send input rather than "prompted" input
                             self.log.warn(
-                                "prompted input requested to change to mode '{s}', but no response found, trying standard send input",
+                                "cli.Driver enterMode: prompted input requested to change to  " ++
+                                    "mode '{s}', but no response found, trying standard send input",
                                 .{options.requested_mode},
                             );
 
@@ -470,8 +491,9 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendInputOptions,
     ) !*result.Result {
-        self.log.info(
-            "requested sendInput for input '{s}''",
+        self.log.info("cli.Driver sendInput requested", .{});
+        self.log.debug(
+            "cli.Driver sendInput: input '{s}'",
             .{options.input},
         );
 
@@ -513,8 +535,9 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendInputsOptions,
     ) !*result.Result {
-        self.log.info(
-            "requested sendInputs for inputs '{s}''",
+        self.log.info("cli.Driver sendInputs requested", .{});
+        self.log.debug(
+            "cli.Driver sendInputs: inputs '{s}'",
             .{options.inputs},
         );
 
@@ -537,7 +560,7 @@ pub const Driver = struct {
 
         var res = try self.NewResult(
             allocator,
-            operation.Kind.send_input,
+            operation.Kind.send_inputs,
         );
         errdefer res.deinit();
 
@@ -572,9 +595,10 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.SendPromptedInputOptions,
     ) !*result.Result {
-        self.log.info(
-            "requested sendPromptedInput for input '{s}''",
-            .{options.input},
+        self.log.info("cli.Driver sendPromptedInput requested", .{});
+        self.log.debug(
+            "cli.Driver sendPromptedInput: input '{s}', response '{s}'",
+            .{ options.input, options.response },
         );
 
         var res = try self.NewResult(
@@ -623,9 +647,7 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.ReadAnyOptions,
     ) !*result.Result {
-        // TODO go through and make all logs consistent in both where we fire them, the levels,
-        // and casing and formatting and stuff
-        self.log.info("requested readAny", .{});
+        self.log.info("cli.Driver readAny requested", .{});
 
         var res = try self.NewResult(
             allocator,
@@ -676,14 +698,14 @@ pub const Driver = struct {
                         err,
                         @src(),
                         self.log,
-                        "failed compling contains pattern '{s}'",
+                        "cli.Driver readWithCallbacks: failed compling contains pattern '{s}'",
                         .{callback.options.contains_pattern},
                     );
                 };
 
-                if (execute) {
+                if (!execute) {
                     self.log.debug(
-                        "callback '{s}' skipped...",
+                        "cli.Driver readWithCallbacks: callback '{s}' skipped...",
                         .{
                             callback.options.name,
                         },
@@ -692,13 +714,16 @@ pub const Driver = struct {
                     continue;
                 }
 
-                self.log.debug("callback '{s}' matched, executing...", .{callback.options.name});
+                self.log.debug(
+                    "cli.Driver readWithCallbacks: callback '{s}' matched, executing...",
+                    .{callback.options.name},
+                );
 
                 try callback.callback(self);
 
                 if (callback.options.completes) {
                     self.log.debug(
-                        "callback '{s}' completes...",
+                        "cli.Driver readWithCallbacks: callback '{s}' completes...",
                         .{
                             callback.options.name,
                         },
@@ -731,9 +756,10 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         options: operation.ReadWithCallbacksOptions,
     ) !*result.Result {
+        self.log.info("cli.Driver readWithCallbacks requested", .{});
         self.log.debug(
-            "requested readWithCallbacks",
-            .{},
+            "cli.Driver readWithCallbacks: initial_input '{s}'",
+            .{options.initial_input},
         );
 
         var res = try self.NewResult(

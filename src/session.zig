@@ -139,7 +139,7 @@ pub const Session = struct {
         auth_options: *auth.Options,
         transport_options: *transport.Options,
     ) !*Session {
-        logging.traceWithSrc(log, @src(), "initializing session.Session object", .{});
+        logging.traceWithSrc(log, @src(), "session.Session initializing", .{});
 
         const t = try transport.Transport.init(
             allocator,
@@ -194,7 +194,7 @@ pub const Session = struct {
                 errors.ScrapliError.Driver,
                 @src(),
                 log,
-                "failed compling username pattern {s}",
+                "session.Session init: failed compling username pattern {s}",
                 .{s.auth_options.username_pattern},
             );
         }
@@ -205,7 +205,7 @@ pub const Session = struct {
                 errors.ScrapliError.Driver,
                 @src(),
                 log,
-                "failed compling password pattern {s}",
+                "session.Session init: failed compling password pattern {s}",
                 .{s.auth_options.password_pattern},
             );
         }
@@ -218,7 +218,7 @@ pub const Session = struct {
                 errors.ScrapliError.Driver,
                 @src(),
                 log,
-                "failed compling passphrase pattern {s}",
+                "session.Session init: failed compling passphrase pattern {s}",
                 .{s.auth_options.private_key_passphrase_pattern},
             );
         }
@@ -229,7 +229,7 @@ pub const Session = struct {
                 errors.ScrapliError.Driver,
                 @src(),
                 log,
-                "failed compling prompt pattern {s}",
+                "session.Session init: failed compling prompt pattern {s}",
                 .{s.prompt_pattern},
             );
         }
@@ -238,7 +238,7 @@ pub const Session = struct {
     }
 
     pub fn deinit(self: *Session) void {
-        logging.traceWithSrc(self.log, @src(), "deinitializing session.Session object", .{});
+        logging.traceWithSrc(self.log, @src(), "session.Session deinitializing", .{});
 
         if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.run) {
             // if for whatever reason (likely because a call to driver.open failed causing a defer
@@ -281,6 +281,8 @@ pub const Session = struct {
         port: u16,
         cancel: ?*bool,
     ) ![2][]const u8 {
+        self.log.info("session.Session open requested", .{});
+
         var timer = try std.time.Timer.start();
 
         try self.transport.open(
@@ -303,7 +305,7 @@ pub const Session = struct {
                 err,
                 @src(),
                 self.log,
-                "failed spawning read thread",
+                "session.Session open: failed spawning read thread",
                 .{},
             );
         };
@@ -328,6 +330,8 @@ pub const Session = struct {
     }
 
     pub fn close(self: *Session) !void {
+        self.log.info("session.Session close requested", .{});
+
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
@@ -376,7 +380,7 @@ pub const Session = struct {
     }
 
     fn readLoop(self: *Session) !void {
-        self.log.info("read thread started", .{});
+        self.log.info("session.Session read thread started", .{});
 
         errdefer self.read_thread_errored = true;
 
@@ -402,7 +406,7 @@ pub const Session = struct {
             logging.traceWithSrc(
                 self.log,
                 @src(),
-                "raw read: {s}",
+                "session.Session readLoop: raw read '{s}'",
                 .{std.fmt.fmtSliceEscapeLower(buf[0..n])},
             );
 
@@ -410,9 +414,13 @@ pub const Session = struct {
                 try recorder.writeAll(buf[0..n]);
             }
         }
+
+        self.log.info("session.Session read thread stopped", .{});
     }
 
     pub fn read(self: *Session, buf: []u8) !usize {
+        self.log.info("session.Session read requested", .{});
+
         self.read_lock.lock();
         defer self.read_lock.unlock();
 
@@ -426,14 +434,20 @@ pub const Session = struct {
     }
 
     pub fn write(self: *Session, buf: []const u8, redacted: bool) !void {
+        self.log.info("session.Session write requested", .{});
+
         if (!redacted) {
-            self.log.debug("write: '{s}'", .{std.fmt.fmtSliceEscapeLower(buf)});
+            self.log.debug("session.Session write: '{s}'", .{std.fmt.fmtSliceEscapeLower(buf)});
+        } else {
+            self.log.debug("session.Session write: <redacted>", .{});
         }
 
         try self.transport.write(self.waiter, buf);
     }
 
     pub fn writeReturn(self: *Session) !void {
+        self.log.info("session.Session writeReturn requested", .{});
+
         try self.write(self.options.return_char, false);
     }
 
@@ -452,7 +466,7 @@ pub const Session = struct {
         timer: *std.time.Timer,
         cancel: ?*bool,
     ) ![2][]const u8 {
-        self.log.info("in session authentication starting...", .{});
+        self.log.info("session.Session authenticate requested", .{});
 
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
@@ -476,7 +490,7 @@ pub const Session = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "session.Session authenticate: operation cancelled",
                     .{},
                 );
             }
@@ -490,7 +504,7 @@ pub const Session = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "session.Session authenticate: operation timeout exceeded",
                     .{},
                 );
             }
@@ -511,7 +525,7 @@ pub const Session = struct {
                                 errors.ScrapliError.Transport,
                                 @src(),
                                 self.log,
-                                "open failed, error: '{s}'",
+                                "session.Session authenticate: open failed, error: '{s}'",
                                 .{msg},
                             );
                         }
@@ -520,7 +534,7 @@ pub const Session = struct {
                             errors.ScrapliError.Transport,
                             @src(),
                             self.log,
-                            "open failed",
+                            "session.Session authenticate: open failed",
                             .{},
                         );
                     },
@@ -551,7 +565,7 @@ pub const Session = struct {
                     errors.ScrapliError.Sesssion,
                     @src(),
                     self.log,
-                    "open failed, error: '{s}'",
+                    "session.Session authenticate: open failed, error: '{s}'",
                     .{msg},
                 );
             }
@@ -574,7 +588,8 @@ pub const Session = struct {
                             errors.ScrapliError.Sesssion,
                             @src(),
                             self.log,
-                            "username prompt seen but no username set",
+                            "session.Session authenticate: username prompt seen " ++
+                                "but no username set",
                             .{},
                         );
                     }
@@ -586,7 +601,8 @@ pub const Session = struct {
                             errors.ScrapliError.Sesssion,
                             @src(),
                             self.log,
-                            "username prompt seen multiple times, assuming authentication failed",
+                            "session.Session authenticate: username prompt seen " ++
+                                "multiple times, assuming authentication failed",
                             .{},
                         );
                     }
@@ -603,7 +619,8 @@ pub const Session = struct {
                             errors.ScrapliError.Sesssion,
                             @src(),
                             self.log,
-                            "password prompt seen but no password set",
+                            "session.Session authenticate: password prompt seen " ++
+                                "but no password set",
                             .{},
                         );
                     }
@@ -615,7 +632,8 @@ pub const Session = struct {
                             errors.ScrapliError.Sesssion,
                             @src(),
                             self.log,
-                            "password prompt seen multiple times, assuming authentication failed",
+                            "session.Session authenticate: password prompt seen multiple times, " ++
+                                "assuming authentication failed",
                             .{},
                         );
                     }
@@ -628,7 +646,8 @@ pub const Session = struct {
                                 err,
                                 @src(),
                                 self.log,
-                                "failed resolving auth lookup value '{s}'",
+                                "session.Session authenticate: failed resolving auth " ++
+                                    "lookup value '{s}'",
                                 .{self.auth_options.password.?},
                             );
                         },
@@ -645,7 +664,8 @@ pub const Session = struct {
                             errors.ScrapliError.Sesssion,
                             @src(),
                             self.log,
-                            "private key passphrase prompt seen but no passphrase set",
+                            "session.Session authenticate: private key passphrase prompt " ++
+                                "seen but no passphrase set",
                             .{},
                         );
                     }
@@ -657,7 +677,8 @@ pub const Session = struct {
                             errors.ScrapliError.Sesssion,
                             @src(),
                             self.log,
-                            "private key passphrase prompt seen multiple times, assuming authentication failed",
+                            "session.Session authenticate: private key passphrase prompt " ++
+                                "seen multiple times, assuming authentication failed",
                             .{},
                         );
                     }
@@ -670,7 +691,8 @@ pub const Session = struct {
                                 err,
                                 @src(),
                                 self.log,
-                                "failed resolving auth lookup value '{s}'",
+                                "session.Session authenticate: failed resolving auth " ++
+                                    "lookup value '{s}'",
                                 .{self.auth_options.password.?},
                             );
                         },
@@ -706,6 +728,8 @@ pub const Session = struct {
         checkargs: bytes_check.CheckArgs,
         bufs: *bytes.ProcessedBuf,
     ) !bytes_check.MatchPositions {
+        self.log.info("session.Session readTimeout requested", .{});
+
         var cur_read_delay_ns: u64 = self.options.min_read_delay_ns;
 
         // to ensure the check_read_operation_done function doesnt think we are done "early" by
@@ -723,7 +747,7 @@ pub const Session = struct {
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "operation cancelled",
+                    "session.Session readTimeout: operation cancelled",
                     .{},
                 );
             }
@@ -739,7 +763,7 @@ pub const Session = struct {
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "operation timeout exceeded",
+                    "session.Session readTimeout: operation timeout exceeded",
                     .{},
                 );
             }
@@ -766,7 +790,7 @@ pub const Session = struct {
             logging.traceWithSrc(
                 self.log,
                 @src(),
-                "processed read: {s}",
+                "session.Session readTimeout: processed read: '{s}'",
                 .{bufs.processed.items},
             );
 
@@ -790,7 +814,7 @@ pub const Session = struct {
         allocator: std.mem.Allocator,
         options: operation.ReadAnyOptions,
     ) ![2][]const u8 {
-        self.log.info("read any requested", .{});
+        self.log.info("session.Session readAny requested", .{});
 
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
@@ -813,7 +837,7 @@ pub const Session = struct {
         allocator: std.mem.Allocator,
         options: operation.GetPromptOptions,
     ) ![2][]const u8 {
-        self.log.info("get prompt requested", .{});
+        self.log.info("session.Session getPrompt requested", .{});
 
         try self.writeReturn();
 
@@ -844,7 +868,7 @@ pub const Session = struct {
                 errors.ScrapliError.Driver,
                 @src(),
                 self.log,
-                "no prompt found matching prompt pattern '{s}' in '{s}'",
+                "session.Session getPrompt: no prompt found matching prompt pattern '{s}' in '{s}'",
                 .{ self.prompt_pattern, bufs.processed.items },
             );
         }
@@ -918,7 +942,8 @@ pub const Session = struct {
         allocator: std.mem.Allocator,
         options: operation.SendInputOptions,
     ) ![2][]const u8 {
-        self.log.info("send input requested", .{});
+        self.log.info("session.Session sendInput requested", .{});
+        self.log.debug("session.Session sendInput: input '{s}'", .{options.input});
 
         var timer = try std.time.Timer.start();
 
@@ -980,7 +1005,11 @@ pub const Session = struct {
         allocator: std.mem.Allocator,
         options: operation.SendPromptedInputOptions,
     ) ![2][]const u8 {
-        self.log.info("send prompted input requested", .{});
+        self.log.info("session.Session sendPromptedInput requested", .{});
+        self.log.debug(
+            "session.Session sendPromptedInput: input '{s}', response '{s}'",
+            .{ options.input, options.response },
+        );
 
         var timer = try std.time.Timer.start();
 
@@ -994,7 +1023,7 @@ pub const Session = struct {
                         errors.ScrapliError.Driver,
                         @src(),
                         self.log,
-                        "failed compiling pattern '{s}'",
+                        "session.Session sendPromptedInput: failed compiling pattern '{s}'",
                         .{pattern},
                     );
                 }
@@ -1011,7 +1040,8 @@ pub const Session = struct {
             errdefer {
                 self.writeAndReturn(abort_input, false) catch |err| {
                     self.log.critical(
-                        "failed sending abort sequence after error in prompted input, err: {}",
+                        "session.Session sendPromptedInput: failed sending abort sequence " ++
+                            "after error in prompted input, err: {}",
                         .{err},
                     );
                 };

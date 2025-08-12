@@ -1,3 +1,4 @@
+// zlint-disable: suppressed-errors
 const std = @import("std");
 
 const bytes = @import("bytes.zig");
@@ -5,6 +6,7 @@ const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
 const cli = @import("cli.zig");
+const errors = @import("errors.zig");
 
 const logging = @import("logging.zig");
 
@@ -75,11 +77,13 @@ export fn ls_cli_open(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during driver open {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during driver open {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -98,21 +102,25 @@ export fn ls_cli_open(
                     },
                 },
             ) catch |err| {
-                d.log(
-                    logging.LogLevel.critical,
-                    "error during queue open {any}",
+                errors.wrapCriticalError(
+                    errors.ScrapliError.Operation,
+                    @src(),
+                    d.getLogger(),
+                    "ffi: error during queue open {any}",
                     .{err},
-                );
+                ) catch {};
 
                 return 1;
             };
         },
         .netconf => {
-            d.log(
-                logging.LogLevel.critical,
-                "attempting to open non cli driver",
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: attempting to open non cli driver",
                 .{},
-            );
+            ) catch {};
 
             return 1;
         },
@@ -157,21 +165,25 @@ export fn ls_cli_close(
                     },
                 },
             ) catch |err| {
-                d.log(
-                    logging.LogLevel.critical,
-                    "error during queue close {any}",
+                errors.wrapCriticalError(
+                    errors.ScrapliError.Operation,
+                    @src(),
+                    d.getLogger(),
+                    "ffi: error during queue close {any}",
                     .{err},
-                );
+                ) catch {};
 
                 return 1;
             };
         },
         .netconf => {
-            d.log(
-                logging.LogLevel.critical,
-                "attempting to close non cli driver",
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: attempting to close non cli driver",
                 .{},
-            );
+            ) catch {};
 
             return 1;
         },
@@ -193,11 +205,13 @@ export fn ls_cli_fetch_operation_sizes(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.dequeueOperation(operation_id, false) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during poll operation {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during poll operation {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -210,7 +224,7 @@ export fn ls_cli_fetch_operation_sizes(
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
-            else => @panic("attempting to access non cli result from cli type"),
+            else => @panic("ffi: attempting to access non cli result from cli type"),
         };
 
         operation_count.* = @intCast(dret.results.items.len);
@@ -249,11 +263,13 @@ export fn ls_cli_fetch_operation(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.dequeueOperation(operation_id, true) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during fetch operation {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during fetch operation {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -261,7 +277,7 @@ export fn ls_cli_fetch_operation(
     defer {
         const dret = switch (ret.result) {
             .cli => |r| r,
-            else => @panic("attempting to access non cli result from cli type"),
+            else => @panic("ffi: attempting to access non cli result from cli type"),
         };
         if (dret != null) {
             dret.?.deinit();
@@ -275,7 +291,7 @@ export fn ls_cli_fetch_operation(
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
-            else => @panic("attempting to access non cli result from cli type"),
+            else => @panic("ffi: attempting to access non cli result from cli type"),
         };
 
         if (dret.splits_ns.items.len > 0) {
@@ -368,11 +384,13 @@ export fn ls_cli_enter_mode(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue enterMode {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue enterMode {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -401,11 +419,13 @@ export fn ls_cli_get_prompt(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue getPrompt {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue getPrompt {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -446,11 +466,13 @@ export fn ls_cli_send_input(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue sendInput {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue sendInput {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -499,11 +521,13 @@ export fn ls_cli_send_prompted_input(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue sendPromptedInput {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue sendPromptedInput {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
@@ -532,11 +556,13 @@ export fn ls_cli_read_any(
             },
         },
     ) catch |err| {
-        d.log(
-            logging.LogLevel.critical,
-            "error during queue readAny {any}",
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue readAny {any}",
             .{err},
-        );
+        ) catch {};
 
         return 1;
     };
