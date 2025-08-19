@@ -162,7 +162,8 @@ pub fn trimNewlineWhitespace(
     return owned_trimmed_buf;
 }
 
-// TODO -- maybe rmeove this (and reswizzle tests to deal w/ the newline one if its working as expected)
+// this used to be the "main" trim func, retaining as it may be handy, but now we use
+// the one that just trims the newlines and tabs w/out the spaces
 pub fn trimWhitespace(
     allocator: std.mem.Allocator,
     buf: []const u8,

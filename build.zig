@@ -1,14 +1,11 @@
 const std = @import("std");
 const flags = @import("src/flags.zig");
 
-const safe = std.builtin.OptimizeMode.ReleaseSafe;
-const debug = std.builtin.OptimizeMode.Debug;
-
 const libscrapli_version = std.SemanticVersion{
     .major = 0,
     .minor = 0,
     .patch = 1,
-    .pre = "beta.11",
+    .pre = "beta.12",
 };
 
 const targets: []const std.Target.Query = &.{
@@ -26,23 +23,34 @@ const all_examples: []const []const u8 = &.{
 };
 
 pub fn build(b: *std.Build) !void {
+    const optimize = b.standardOptimizeOption(.{});
+
     const examples = flags.parseCustomFlag("--examples", false);
     const main = flags.parseCustomFlag("--main", false);
     const skip_ffi_lib = flags.parseCustomFlag("--skip-ffi-lib", false);
-    const release = flags.parseCustomFlag("--release", false);
     const all_targets = flags.parseCustomFlag("--all-targets", false);
     const default_target = b.standardTargetOptions(.{});
 
-    const optimize = if (release) safe else debug;
+    const defaultTargetLibscrapli = try buildLibscrapliModule(
+        b,
+        optimize,
+        b.resolveTargetQuery(default_target.query),
+    );
 
     if (all_targets) {
         for (targets) |target| {
+            const libscrapli = try buildLibscrapliModule(
+                b,
+                optimize,
+                b.resolveTargetQuery(default_target.query),
+            );
+
             if (!skip_ffi_lib) {
                 try buildFfiLib(b, optimize, target);
             }
 
             if (examples) {
-                try buildExamples(b, optimize, target);
+                try buildExamples(b, optimize, target, libscrapli);
             }
         }
     } else {
@@ -51,28 +59,28 @@ pub fn build(b: *std.Build) !void {
         }
 
         if (examples) {
-            try buildExamples(b, optimize, default_target.query);
+            try buildExamples(b, optimize, default_target.query, defaultTargetLibscrapli);
         }
     }
 
     try buildTests(b, optimize, default_target);
 
     if (main) {
-        try buildMainExe(b, optimize, default_target);
+        try buildMainExe(b, optimize, default_target, defaultTargetLibscrapli);
     }
 
-    buildCheck(b, optimize, default_target);
+    try buildCheck(b, optimize, default_target.query);
 }
 
 fn getPcre2Dep(
     b: *std.Build,
-    target: std.Target.Query,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Dependency {
     return b.dependency(
         "pcre2",
         .{
-            .target = b.resolveTargetQuery(target),
+            .target = target,
             .optimize = optimize,
         },
     );
@@ -80,13 +88,13 @@ fn getPcre2Dep(
 
 fn getLibssh2Dep(
     b: *std.Build,
-    target: std.Target.Query,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Dependency {
     return b.dependency(
         "libssh2",
         .{
-            .target = b.resolveTargetQuery(target),
+            .target = target,
             .optimize = optimize,
         },
     );
@@ -94,13 +102,13 @@ fn getLibssh2Dep(
 
 fn getZigYamlDep(
     b: *std.Build,
-    target: std.Target.Query,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Dependency {
     return b.dependency(
         "yaml",
         .{
-            .target = b.resolveTargetQuery(target),
+            .target = target,
             .optimize = optimize,
         },
     );
@@ -108,16 +116,92 @@ fn getZigYamlDep(
 
 fn getZigXmlDep(
     b: *std.Build,
-    target: std.Target.Query,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Dependency {
     return b.dependency(
         "xml",
         .{
-            .target = b.resolveTargetQuery(target),
+            .target = target,
             .optimize = optimize,
         },
     );
+}
+
+fn buildLibscrapliModule(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    target: std.Build.ResolvedTarget,
+) !*std.Build.Module {
+    const pcre2 = getPcre2Dep(b, target, optimize);
+    const libssh2 = getLibssh2Dep(b, target, optimize);
+    const yaml = getZigYamlDep(b, target, optimize);
+    const xml = getZigXmlDep(b, target, optimize);
+
+    const libscrapli = b.addModule("scrapli", .{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{
+                .name = "yaml",
+                .module = yaml.module("yaml"),
+            },
+            .{
+                .name = "xml",
+                .module = xml.module("xml"),
+            },
+        },
+    });
+
+    libscrapli.linkLibrary(pcre2.artifact("pcre2-8"));
+    libscrapli.linkLibrary(libssh2.artifact("ssh2"));
+
+    return libscrapli;
+}
+
+fn buildLibscrapliLibrary(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    target: std.Target.Query,
+) !*std.Build.Step.Compile {
+    const rtarget = b.resolveTargetQuery(target);
+
+    const pcre2 = getPcre2Dep(b, rtarget, optimize);
+    const libssh2 = getLibssh2Dep(b, rtarget, optimize);
+    const yaml = getZigYamlDep(b, rtarget, optimize);
+    const xml = getZigXmlDep(b, rtarget, optimize);
+
+    const libscrapli = b.addLibrary(
+        std.Build.LibraryOptions{
+            .name = "scrapli",
+            .root_module = std.Build.Module.create(
+                b,
+                .{
+                    .root_source_file = b.path("src/ffi-root.zig"),
+                    .target = rtarget,
+                    .optimize = optimize,
+                    .imports = &.{
+                        .{
+                            .name = "yaml",
+                            .module = yaml.module("yaml"),
+                        },
+                        .{
+                            .name = "xml",
+                            .module = xml.module("xml"),
+                        },
+                    },
+                },
+            ),
+            .version = libscrapli_version,
+            .linkage = .dynamic,
+        },
+    );
+
+    libscrapli.linkLibrary(pcre2.artifact("pcre2-8"));
+    libscrapli.linkLibrary(libssh2.artifact("ssh2"));
+
+    return libscrapli;
 }
 
 fn genFfiLibOutputName(
@@ -174,49 +258,17 @@ fn buildFfiLib(
     optimize: std.builtin.OptimizeMode,
     target: std.Target.Query,
 ) !void {
-    const pcre2 = getPcre2Dep(b, target, optimize);
-    const libssh2 = getLibssh2Dep(b, target, optimize);
-    const yaml = getZigYamlDep(b, target, optimize);
-    const xml = getZigXmlDep(b, target, optimize);
-
-    const lib = b.addLibrary(
-        std.Build.LibraryOptions{
-            .name = "scrapli",
-            .root_module = std.Build.Module.create(
-                b,
-                .{
-                    .root_source_file = b.path("src/ffi-root.zig"),
-                    .target = b.resolveTargetQuery(target),
-                    .optimize = optimize,
-                    .imports = &.{
-                        .{
-                            .name = "yaml",
-                            .module = yaml.module("yaml"),
-                        },
-                        .{
-                            .name = "xml",
-                            .module = xml.module("xml"),
-                        },
-                    },
-                },
-            ),
-            .version = libscrapli_version,
-            .linkage = .dynamic,
-        },
-    );
-
-    lib.linkLibrary(pcre2.artifact("pcre2-8"));
-    lib.linkLibrary(libssh2.artifact("ssh2"));
+    const libscrapli = try buildLibscrapliLibrary(b, optimize, target);
 
     const lib_target_output = b.addInstallArtifact(
-        lib,
+        libscrapli,
         .{
             .dest_dir = .{
                 .override = .{
                     .custom = try target.zigTriple(b.allocator),
                 },
             },
-            .dest_sub_path = try genFfiLibOutputName(b, lib),
+            .dest_sub_path = try genFfiLibOutputName(b, libscrapli),
             .dylib_symlinks = false,
         },
     );
@@ -228,41 +280,8 @@ fn buildExamples(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     target: std.Target.Query,
+    libscrapli: *std.Build.Module,
 ) !void {
-    const pcre2 = getPcre2Dep(b, target, optimize);
-    const libssh2 = getLibssh2Dep(b, target, optimize);
-    const yaml = getZigYamlDep(b, target, optimize);
-    const xml = getZigXmlDep(b, target, optimize);
-
-    const lib = b.addLibrary(
-        .{
-            .name = "scrapli",
-            .root_module = std.Build.Module.create(
-                b,
-                .{
-                    .root_source_file = b.path("src/root.zig"),
-                    .target = b.resolveTargetQuery(target),
-                    .optimize = optimize,
-                    .imports = &.{
-                        .{
-                            .name = "yaml",
-                            .module = yaml.module("yaml"),
-                        },
-                        .{
-                            .name = "xml",
-                            .module = xml.module("xml"),
-                        },
-                    },
-                },
-            ),
-            .version = libscrapli_version,
-            .linkage = .static,
-        },
-    );
-
-    lib.linkLibrary(pcre2.artifact("pcre2-8"));
-    lib.linkLibrary(libssh2.artifact("ssh2"));
-
     for (all_examples) |example| {
         const exe = b.addExecutable(
             .{
@@ -274,8 +293,7 @@ fn buildExamples(
                 .optimize = optimize,
             },
         );
-        exe.linkLibrary(lib);
-        exe.root_module.addImport("scrapli", lib.root_module);
+        exe.root_module.addImport("scrapli", libscrapli);
 
         const exe_target_output = b.addInstallArtifact(
             exe,
@@ -301,10 +319,10 @@ fn buildTests(
 ) !void {
     const step = b.step("test", "Run tests");
 
-    const pcre2 = getPcre2Dep(b, target.query, optimize);
-    const libssh2 = getLibssh2Dep(b, target.query, optimize);
-    const yaml = getZigYamlDep(b, target.query, optimize);
-    const xml = getZigXmlDep(b, target.query, optimize);
+    const pcre2 = getPcre2Dep(b, target, optimize);
+    const libssh2 = getLibssh2Dep(b, target, optimize);
+    const yaml = getZigYamlDep(b, target, optimize);
+    const xml = getZigXmlDep(b, target, optimize);
 
     const tests = b.addTest(
         .{
@@ -417,41 +435,8 @@ fn buildMainExe(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     target: std.Build.ResolvedTarget,
+    libscrapli: *std.Build.Module,
 ) !void {
-    const pcre2 = getPcre2Dep(b, target.query, optimize);
-    const libssh2 = getLibssh2Dep(b, target.query, optimize);
-    const yaml = getZigYamlDep(b, target.query, optimize);
-    const xml = getZigXmlDep(b, target.query, optimize);
-
-    const lib = b.addLibrary(
-        .{
-            .name = "scrapli",
-            .root_module = std.Build.Module.create(
-                b,
-                .{
-                    .root_source_file = b.path("src/root.zig"),
-                    .target = target,
-                    .optimize = optimize,
-                    .imports = &.{
-                        .{
-                            .name = "yaml",
-                            .module = yaml.module("yaml"),
-                        },
-                        .{
-                            .name = "xml",
-                            .module = xml.module("xml"),
-                        },
-                    },
-                },
-            ),
-            .version = libscrapli_version,
-            .linkage = .static,
-        },
-    );
-
-    lib.linkLibrary(pcre2.artifact("pcre2-8"));
-    lib.linkLibrary(libssh2.artifact("ssh2"));
-
     const exe = b.addExecutable(
         .{
             .name = "scrapli",
@@ -460,8 +445,7 @@ fn buildMainExe(
             .optimize = optimize,
         },
     );
-    exe.linkLibrary(lib);
-    exe.root_module.addImport("scrapli", lib.root_module);
+    exe.root_module.addImport("scrapli", libscrapli);
 
     const exe_target_output = b.addInstallArtifact(exe, .{});
 
@@ -471,42 +455,9 @@ fn buildMainExe(
 fn buildCheck(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
-    target: std.Build.ResolvedTarget,
-) void {
-    const pcre2 = getPcre2Dep(b, target.query, optimize);
-    const libssh2 = getLibssh2Dep(b, target.query, optimize);
-    const yaml = getZigYamlDep(b, target.query, optimize);
-    const xml = getZigXmlDep(b, target.query, optimize);
-
-    const lib = b.addLibrary(
-        .{
-            .name = "scrapli",
-            .root_module = std.Build.Module.create(
-                b,
-                .{
-                    .root_source_file = b.path("src/root.zig"),
-                    .target = target,
-                    .optimize = optimize,
-                    .imports = &.{
-                        .{
-                            .name = "yaml",
-                            .module = yaml.module("yaml"),
-                        },
-                        .{
-                            .name = "xml",
-                            .module = xml.module("xml"),
-                        },
-                    },
-                },
-            ),
-            .version = libscrapli_version,
-            .linkage = .static,
-        },
-    );
-
-    lib.linkLibrary(pcre2.artifact("pcre2-8"));
-    lib.linkLibrary(libssh2.artifact("ssh2"));
-
+    target: std.Target.Query,
+) !void {
+    const libscrapli = try buildLibscrapliLibrary(b, optimize, target);
     const check = b.step("check", "complitaion check step for zls");
-    check.dependOn(&lib.step);
+    check.dependOn(&libscrapli.step);
 }

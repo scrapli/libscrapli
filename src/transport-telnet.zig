@@ -276,7 +276,7 @@ pub const Transport = struct {
     }
 
     pub fn read(self: *Transport, w: ?transport_waiter.Waiter, buf: []u8) !usize {
-        self.log.info("telnet.Transport read requested", .{});
+        self.log.debug("telnet.Transport read requested", .{});
 
         if (self.stream == null) {
             return errors.wrapCriticalError(

@@ -471,7 +471,7 @@ pub const Transport = struct {
     }
 
     pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
-        self.log.info("bin.Transport read requested", .{});
+        self.log.debug("bin.Transport read requested", .{});
 
         if (self.reader == null) {
             return errors.wrapCriticalError(

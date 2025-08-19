@@ -419,8 +419,6 @@ pub const Session = struct {
     }
 
     pub fn read(self: *Session, buf: []u8) !usize {
-        self.log.info("session.Session read requested", .{});
-
         self.read_lock.lock();
         defer self.read_lock.unlock();
 
