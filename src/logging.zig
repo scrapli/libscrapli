@@ -27,7 +27,7 @@ pub const LogLevel = enum(u8) {
     }
 };
 
-pub fn stdLogf(level: u8, message: *[]u8) callconv(.C) void {
+pub fn stdLogf(level: u8, message: *[]u8) callconv(.c) void {
     switch (level) {
         @intFromEnum(LogLevel.trace) => {
             std.debug.print("   trace: {s}\n", .{message.*});
@@ -57,7 +57,7 @@ pub fn stdLogf(level: u8, message: *[]u8) callconv(.C) void {
 
 pub const Logger = struct {
     allocator: std.mem.Allocator,
-    f: ?*const fn (level: u8, message: *[]u8) callconv(.C) void = null,
+    f: ?*const fn (level: u8, message: *[]u8) callconv(.c) void = null,
     level: LogLevel = LogLevel.warn,
 
     fn sprintf(
@@ -65,16 +65,15 @@ pub const Logger = struct {
         comptime format: []const u8,
         args: anytype,
     ) []u8 {
-        var buf = std.ArrayList(u8).init(self.allocator);
-        defer buf.deinit();
+        var buf: std.ArrayList(u8) = .{};
+        defer buf.deinit(self.allocator);
 
-        std.fmt.format(buf.writer(), format, args) catch {
-            // fail with unformatted message worst case
+        buf.print(self.allocator, format, args) catch {
             return @constCast(format);
         };
 
         // caller of sprintf must free!
-        const formatted_buf = buf.toOwnedSlice() catch {
+        const formatted_buf = buf.toOwnedSlice(self.allocator) catch {
             // fail with unformatted message worst case
             return @constCast(format);
         };

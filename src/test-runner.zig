@@ -3,10 +3,11 @@
 // https://gist.githubusercontent.com/karlseguin/ \
 // c6bea5b35e4e8d26af6f81c22cb5d76b/raw/cf9f21131e439f266e360477fa60b89431d67920/test_runner.zig
 const std = @import("std");
-const builtin = @import("builtin");
-const flags = @import("flags.zig");
-
 const Allocator = std.mem.Allocator;
+const builtin = @import("builtin");
+
+const scrapli = @import("scrapli");
+const flags = scrapli.flags;
 
 const border = "=" ** 80;
 
@@ -197,16 +198,19 @@ fn friendlyName(name: []const u8) []const u8 {
 }
 
 const Printer = struct {
-    out: std.fs.File.Writer,
+    f: std.fs.File,
 
     fn init() Printer {
         return .{
-            .out = std.io.getStdErr().writer(),
+            .f = std.fs.File.stdout(),
         };
     }
 
     fn fmt(self: Printer, comptime format: []const u8, args: anytype) void {
-        std.fmt.format(self.out, format, args) catch unreachable;
+        var stdout_buffer: [1024]u8 = undefined;
+        var out = self.f.writer(&stdout_buffer).interface;
+        out.print(format, args) catch unreachable;
+        out.flush() catch {};
     }
 
     fn status(self: Printer, s: Status, comptime format: []const u8, args: anytype) void {
@@ -216,10 +220,14 @@ const Printer = struct {
             .skip => "\x1b[33m",
             else => "",
         };
-        const out = self.out;
-        out.writeAll(color) catch @panic("writeAll failed?!");
-        std.fmt.format(out, format, args) catch @panic("std.fmt.format failed?!");
-        self.fmt("\x1b[0m", .{});
+
+        var stdout_buffer: [1024]u8 = undefined;
+        var out = self.f.writer(&stdout_buffer).interface;
+
+        out.printAscii(color, .{}) catch unreachable;
+        out.print(format, args) catch unreachable;
+        out.print("\x1b[0m", .{}) catch unreachable;
+        out.flush() catch {};
     }
 };
 

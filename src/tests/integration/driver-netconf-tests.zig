@@ -1,10 +1,12 @@
 const std = @import("std");
 
-const netconf = @import("../../netconf.zig");
-const ascii = @import("../../ascii.zig");
-const flags = @import("../../flags.zig");
-const file = @import("../../file.zig");
-const helper = @import("../../test-helper.zig");
+const scrapli = @import("scrapli");
+
+const netconf = scrapli.netconf;
+const ascii = scrapli.ascii;
+const flags = scrapli.flags;
+const file = scrapli.file;
+const helper = scrapli.test_helper;
 
 fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*netconf.Driver {
     return netconf.Driver.init(
@@ -112,7 +114,9 @@ test "driver-netconf open" {
                 .{},
             );
 
-            d = try GetRecordTestDriver(f.writer());
+            // TODO samemeeee fucking question
+            var w_buffer: [1024]u8 = undefined;
+            d = try GetRecordTestDriver(f.writer(&w_buffer));
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -190,7 +194,9 @@ test "driver-netconf get-config" {
                 .{},
             );
 
-            d = try GetRecordTestDriver(f.writer());
+            // TODO samemeeee fucking question
+            var w_buffer: [1024]u8 = undefined;
+            d = try GetRecordTestDriver(f.writer(&w_buffer));
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -274,7 +280,9 @@ test "driver-netconf lock" {
                 .{},
             );
 
-            d = try GetRecordTestDriver(f.writer());
+            // TODO samemeeee fucking question
+            var w_buffer: [1024]u8 = undefined;
+            d = try GetRecordTestDriver(f.writer(&w_buffer));
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -357,7 +365,9 @@ test "driver-netconf unlock" {
                 .{},
             );
 
-            d = try GetRecordTestDriver(f.writer());
+            // TODO samemeeee fucking question
+            var w_buffer: [1024]u8 = undefined;
+            d = try GetRecordTestDriver(f.writer(&w_buffer));
         } else {
             d = try GetTestDriver(fixture_filename);
         }

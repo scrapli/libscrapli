@@ -2,7 +2,7 @@
     .name = .libscrapli,
     .version = "0.0.1",
     .fingerprint = 0xb0e01d3de97bbf58,
-    .minimum_zig_version = "0.14.1",
+    .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",
@@ -11,12 +11,13 @@
             .path = "lib/libssh2",
         },
         .yaml = .{
-            .url = "https://github.com/kubkon/zig-yaml/archive/refs/tags/0.1.1.tar.gz",
-            .hash = "zig_yaml-0.1.0-C1161miEAgBCwL3YAEQZwV_4GyaaT2Xqj9nKB6hNe_TL",
+            .path = "../zig-yaml",
+            // .url = "https://github.com/kubkon/zig-yaml/archive/refs/tags/0.1.1.tar.gz",
+            // .hash = "zig_yaml-0.1.0-C1161miEAgBCwL3YAEQZwV_4GyaaT2Xqj9nKB6hNe_TL",
         },
         .xml = .{
-            .url = "https://github.com/ianprime0509/zig-xml/archive/c0bda4f.tar.gz",
-            .hash = "xml-0.1.0-ZTbP35VkAgAp2cDlvsPuL7SWVZWwPg-V99LmVRSHbCtL",
+            .url = "https://github.com/ianprime0509/zig-xml/archive/b0723c1.tar.gz",
+            .hash = "xml-0.1.0-ZTbP35UoAgDk1IhivGX2bzjEqMCBy2Q5QQBdrUoNURiJ",
         },
     },
     .paths = .{

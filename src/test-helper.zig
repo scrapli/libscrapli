@@ -1,7 +1,8 @@
 const std = @import("std");
+
 const bytes = @import("bytes.zig");
-const flags = @import("flags.zig");
 const file = @import("file.zig");
+const flags = @import("flags.zig");
 const re = @import("re.zig");
 
 const user_at_host_pattern = "\\w+@[\\w\\d\\.]+";
@@ -537,10 +538,10 @@ pub fn inlineInitArrayList(
     comptime T: type,
     items: []const T,
 ) !std.ArrayList(T) {
-    var al = std.ArrayList(T).init(allocator);
+    var al: std.ArrayList(T) = .{};
 
     for (items) |item| {
-        try al.append(item);
+        try al.append(allocator, item);
     }
 
     return al;

@@ -3,16 +3,16 @@
 // note: disabling because of driver/file setup in tests and its fine
 const std = @import("std");
 
-const cli = @import("../../cli.zig");
-const operation = @import("../../cli-operation.zig");
-const mode = @import("../../cli-mode.zig");
-const flags = @import("../../flags.zig");
-const ascii = @import("../../ascii.zig");
-const file = @import("../../file.zig");
-const errors = @import("../../errors.zig");
-const result = @import("../../cli-result.zig");
-
-const helper = @import("../../test-helper.zig");
+const scrapli = @import("scrapli");
+const cli = scrapli.cli;
+const operation = scrapli.cli_operation;
+const mode = scrapli.cli_mode;
+const flags = scrapli.flags;
+const ascii = scrapli.ascii;
+const file = scrapli.file;
+const errors = scrapli.errors;
+const result = scrapli.cli_result;
+const helper = scrapli.test_helper;
 
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
@@ -54,7 +54,7 @@ fn getPlatformPath(buf: []u8) !usize {
     return platform_path_len;
 }
 
-fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*cli.Driver {
+fn GetRecordTestDriver(record_path: []const u8) !*cli.Driver {
     var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const platform_path_len = try getPlatformPath(&platform_path_buf);
 
@@ -78,7 +78,7 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*cli.Driver {
             },
             .session = .{
                 .record_destination = .{
-                    .writer = recorder,
+                    .f = record_path,
                 },
             },
         },
@@ -238,39 +238,10 @@ test "driver open" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                ) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    content,
-                    0,
-                );
-                file.writeToPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                    content[0..new_size],
-                ) catch unreachable;
-            }
-        }
-
         var d: *cli.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -366,7 +337,7 @@ test "driver open-cancellation" {
         },
     );
 
-    std.time.sleep(10_000);
+    std.Thread.sleep(10_000);
 
     cancel_ptr.* = true;
     open_thread.join();
@@ -408,39 +379,10 @@ test "driver get-prompt" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                ) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    content,
-                    0,
-                );
-                file.writeToPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                    content[0..new_size],
-                ) catch unreachable;
-            }
-        }
-
         var d: *cli.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -567,7 +509,7 @@ test "driver get-prompt-cancellation" {
         },
     );
 
-    std.time.sleep(1_000);
+    std.Thread.sleep(1_000);
 
     cancel_ptr.* = true;
     getPrompt_thread.join();
@@ -619,39 +561,10 @@ test "driver enter-mode" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                ) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    content,
-                    0,
-                );
-                file.writeToPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                    content[0..new_size],
-                ) catch unreachable;
-            }
-        }
-
         var d: *cli.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -766,7 +679,7 @@ test "driver enter-mode-cancellation" {
         },
     );
 
-    std.time.sleep(1_000);
+    std.Thread.sleep(1_000);
 
     cancel_ptr.* = true;
     enterMode_thread.join();
@@ -845,39 +758,10 @@ test "driver send-input" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                ) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    content,
-                    0,
-                );
-                file.writeToPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                    content[0..new_size],
-                ) catch unreachable;
-            }
-        }
-
         var d: *cli.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -1021,7 +905,7 @@ test "driver send-input-cancellation" {
             },
         );
 
-        std.time.sleep(1_000);
+        std.Thread.sleep(1_000);
 
         cancel_ptr.* = true;
         send_input_thread.join();
@@ -1102,39 +986,10 @@ test "driver send-inputs" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                ) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    content,
-                    0,
-                );
-                file.writeToPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                    content[0..new_size],
-                ) catch unreachable;
-            }
-        }
-
         var d: *cli.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -1283,7 +1138,7 @@ test "driver send-inputs-cancellation" {
             },
         );
 
-        std.time.sleep(1_000);
+        std.Thread.sleep(1_000);
 
         cancel_ptr.* = true;
         send_inputs_thread.join();
@@ -1355,39 +1210,10 @@ test "driver send-prompted-input" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                ) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    content,
-                    0,
-                );
-                file.writeToPath(
-                    std.testing.allocator,
-                    fixture_filename,
-                    content[0..new_size],
-                ) catch unreachable;
-            }
-        }
-
         var d: *cli.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -1492,7 +1318,7 @@ test "driver send-prompted-input-timeout" {
             },
         );
 
-        std.time.sleep(1_000);
+        std.Thread.sleep(1_000);
 
         cancel_ptr.* = true;
         send_inputs_thread.join();

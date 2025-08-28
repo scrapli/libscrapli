@@ -1,5 +1,4 @@
 const std = @import("std");
-const errors = @import("errors.zig");
 
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
@@ -64,12 +63,17 @@ pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8
     return std.fs.realpathAlloc(allocator, expanded_path);
 }
 
-pub fn ReaderFromPath(allocator: std.mem.Allocator, path: []const u8) !std.fs.File.Reader {
+// buf is passed in for lifetime reasons of course, so needs to be outside of this
+pub fn ReaderFromPath(
+    allocator: std.mem.Allocator,
+    buf: []u8,
+    path: []const u8,
+) !std.fs.File.Reader {
     const resolved_path = try resolveAbsolutePath(allocator, path);
     defer allocator.free(resolved_path);
 
     const f = try std.fs.openFileAbsolute(resolved_path, .{});
-    return f.reader();
+    return f.reader(buf);
 }
 
 pub fn readFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {

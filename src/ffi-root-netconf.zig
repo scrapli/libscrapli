@@ -81,7 +81,7 @@ export fn ls_netconf_open(
             break;
         }
 
-        std.time.sleep(ffi_driver.operation_thread_ready_sleep);
+        std.Thread.sleep(ffi_driver.operation_thread_ready_sleep);
     }
 
     return 0;

@@ -1,12 +1,8 @@
 const std = @import("std");
-const bytes = @import("bytes.zig");
-const re = @import("re.zig");
-const errors = @import("errors.zig");
 
-const pcre2 = @cImport({
-    @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
-    @cInclude("pcre2.h");
-});
+const bytes = @import("bytes.zig");
+const errors = @import("errors.zig");
+const re = @import("re.zig");
 
 pub const default_username_pattern: []const u8 = "^(.*user(name)?:)|(.*login:)\\s?$";
 pub const default_password_pattern: []const u8 = "(.*@.*)?password:\\s?$";
@@ -220,12 +216,21 @@ pub const Options = struct {
     }
 };
 
+test "optionsInit" {
+    const o = try Options.init(
+        std.testing.allocator,
+        .{},
+    );
+
+    o.deinit();
+}
+
 pub fn processSearchableAuthBuf(
     searchable_buf: []const u8,
-    compiled_prompt_pattern: ?*pcre2.pcre2_code_8,
-    compiled_username_pattern: ?*pcre2.pcre2_code_8,
-    compiled_password_pattern: ?*pcre2.pcre2_code_8,
-    compiled_passphrase_pattern: ?*pcre2.pcre2_code_8,
+    compiled_prompt_pattern: ?*re.pcre2CompiledPattern,
+    compiled_username_pattern: ?*re.pcre2CompiledPattern,
+    compiled_password_pattern: ?*re.pcre2CompiledPattern,
+    compiled_passphrase_pattern: ?*re.pcre2CompiledPattern,
 ) !State {
     const prompt_match = try re.pcre2Find(
         compiled_prompt_pattern.?,

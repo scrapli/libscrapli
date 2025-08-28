@@ -5,11 +5,13 @@ const pcre2 = @cImport({
     @cInclude("pcre2.h");
 });
 
-pub fn pcre2Free(regexp: *pcre2.pcre2_code_8) void {
+pub const pcre2CompiledPattern = pcre2.pcre2_code_8;
+
+pub fn pcre2Free(regexp: *pcre2CompiledPattern) void {
     pcre2.pcre2_code_free_8(regexp);
 }
 
-pub fn pcre2Compile(pattern: []const u8) ?*pcre2.pcre2_code_8 {
+pub fn pcre2Compile(pattern: []const u8) ?*pcre2CompiledPattern {
     // SAFETY: required for interop w/ C library
     var err_number: c_int = undefined;
     // SAFETY: required for interop w/ C library
@@ -23,7 +25,7 @@ pub fn pcre2Compile(pattern: []const u8) ?*pcre2.pcre2_code_8 {
         return null;
     }
 
-    const regex: ?*pcre2.pcre2_code_8 = pcre2.pcre2_compile_8(
+    const regex: ?*pcre2CompiledPattern = pcre2.pcre2_compile_8(
         &pattern[0],
         pattern.len,
         pcre2.PCRE2_CASELESS | pcre2.PCRE2_MULTILINE,

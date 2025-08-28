@@ -2,13 +2,6 @@ const std = @import("std");
 const bytes = @import("bytes.zig");
 const re = @import("re.zig");
 
-const pcre2 = @cImport(
-    {
-        @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
-        @cInclude("pcre2.h");
-    },
-);
-
 pub const CheckF = fn (args: CheckArgs, buf: []u8) anyerror!MatchPositions;
 
 pub const MatchPositions = struct {
@@ -25,8 +18,8 @@ pub const MatchPositions = struct {
 };
 
 pub const CheckArgs = struct {
-    pattern: ?*pcre2.pcre2_code_8 = null,
-    patterns: ?[]const ?*pcre2.pcre2_code_8 = null,
+    pattern: ?*re.pcre2CompiledPattern = null,
+    patterns: ?[]const ?*re.pcre2CompiledPattern = null,
     actual: ?[]const u8 = null,
 };
 

@@ -1,11 +1,12 @@
-Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.
+Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.
 (admin@localhost) Password: 
-Last login: Sat Dec 28 20:07:58 2024 from 172.20.20.1
-eos1>
+Last login: Thu Aug 28 13:31:16 2025 from 140.82.116.3
+[5neos1>
 eos1>
 eos1>enable
+Password: 
 eos1#show ip route
-
+[?1h=
 VRF: default
 Source Codes:
        C - connected, S - static, K - kernel,
@@ -28,6 +29,6 @@ Gateway of last resort:
  C        172.20.20.0/24
            directly connected, Management0
 
-eos1#show run | i hostname
-hostname eos1
-eos1#
+[K[?1l>eos1#show run | i hostname
+[?1h=hostname eos1
+[K[?1l>eos1#

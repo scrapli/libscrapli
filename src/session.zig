@@ -1,22 +1,16 @@
 const std = @import("std");
-const transport = @import("transport.zig");
-const transport_waiter = @import("transport-waiter.zig");
-const re = @import("re.zig");
-const bytes = @import("bytes.zig");
-const bytes_check = @import("bytes-check.zig");
-const operation = @import("cli-operation.zig");
-const logging = @import("logging.zig");
+
 const ascii = @import("ascii.zig");
 const auth = @import("auth.zig");
-const file = @import("file.zig");
+const bytes = @import("bytes.zig");
+const bytes_check = @import("bytes-check.zig");
 const errors = @import("errors.zig");
-
-const pcre2 = @cImport(
-    {
-        @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
-        @cInclude("pcre2.h");
-    },
-);
+const file = @import("file.zig");
+const logging = @import("logging.zig");
+const operation = @import("cli-operation.zig");
+const queue = @import("queue.zig");
+const re = @import("re.zig");
+const transport = @import("transport.zig");
 
 const default_return_char: []const u8 = "\n";
 
@@ -108,26 +102,26 @@ pub const Session = struct {
     options: *Options,
     auth_options: *auth.Options,
 
-    waiter: transport_waiter.Waiter,
     transport: *transport.Transport,
 
     read_thread: ?std.Thread,
     read_stop: std.atomic.Value(ReadThreadState),
     read_lock: std.Thread.Mutex,
-    read_queue: std.fifo.LinearFifo(
+    read_queue: queue.LinearFifo(
         u8,
-        std.fifo.LinearFifoBufferType.Dynamic,
+        queue.LinearFifoBufferType.Dynamic,
     ),
     read_thread_errored: bool = false,
 
+    recorder_buf: [1024]u8 = undefined,
     recorder: ?std.fs.File.Writer = null,
 
-    compiled_username_pattern: ?*pcre2.pcre2_code_8 = null,
-    compiled_password_pattern: ?*pcre2.pcre2_code_8 = null,
-    compiled_private_key_passphrase_pattern: ?*pcre2.pcre2_code_8 = null,
+    compiled_username_pattern: ?*re.pcre2CompiledPattern = null,
+    compiled_password_pattern: ?*re.pcre2CompiledPattern = null,
+    compiled_private_key_passphrase_pattern: ?*re.pcre2CompiledPattern = null,
 
     prompt_pattern: []const u8,
-    compiled_prompt_pattern: ?*pcre2.pcre2_code_8 = null,
+    compiled_prompt_pattern: ?*re.pcre2CompiledPattern = null,
 
     last_consumed_prompt: std.ArrayList(u8),
 
@@ -159,8 +153,7 @@ pub const Session = struct {
                         .{},
                     );
 
-                    recorder = out_f.writer();
-                    recorder.?.context = out_f;
+                    recorder = out_f.writer(&s.recorder_buf);
                 },
                 .writer => {
                     recorder = rd.writer;
@@ -173,18 +166,17 @@ pub const Session = struct {
             .log = log,
             .options = options,
             .auth_options = auth_options,
-            .waiter = try transport_waiter.Waiter.init(allocator),
             .transport = t,
             .read_thread = null,
             .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.uninitialized),
             .read_lock = std.Thread.Mutex{},
-            .read_queue = std.fifo.LinearFifo(
+            .read_queue = queue.LinearFifo(
                 u8,
-                std.fifo.LinearFifoBufferType.Dynamic,
+                queue.LinearFifoBufferType.Dynamic,
             ).init(allocator),
             .recorder = recorder,
             .prompt_pattern = prompt_pattern,
-            .last_consumed_prompt = std.ArrayList(u8).init(allocator),
+            .last_consumed_prompt = .{},
         };
         errdefer s.deinit();
 
@@ -249,7 +241,7 @@ pub const Session = struct {
             self.close() catch {};
         }
 
-        self.last_consumed_prompt.deinit();
+        self.last_consumed_prompt.deinit(self.allocator);
 
         if (self.compiled_username_pattern != null) {
             re.pcre2Free(self.compiled_username_pattern.?);
@@ -267,7 +259,6 @@ pub const Session = struct {
             re.pcre2Free(self.compiled_prompt_pattern.?);
         }
 
-        self.waiter.deinit();
         self.transport.deinit();
         self.read_queue.deinit();
 
@@ -335,12 +326,12 @@ pub const Session = struct {
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            std.time.sleep(self.options.min_read_delay_ns);
+            std.Thread.sleep(self.options.min_read_delay_ns);
         }
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
         // break any blocking read, then the readloop can nicely exit
-        try self.waiter.unblock();
+        try self.transport.unblock();
 
         if (self.read_thread) |t| {
             t.join();
@@ -349,28 +340,32 @@ pub const Session = struct {
         if (self.options.record_destination) |rd| {
             switch (rd) {
                 .f => {
+                    // TODO gotta unfuck.... no idea wtf is going on and/or if we need tod o
+                    // better about just the recorder shit in general
                     // when just given a file path we'll "own" that lifecycle and close/cleanup
                     // as well as ensure we strip asci/ansi bits (so the file is easy to read etc.
                     // and especially for tests!); otherwise we'll leave it to the user
-                    self.recorder.?.context.close();
 
-                    var f = try file.ReaderFromPath(
-                        self.allocator,
-                        rd.f,
-                    );
-                    const content = try f.readAllAlloc(
-                        self.allocator,
-                        std.math.maxInt(usize),
-                    );
-                    const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                        content,
-                        0,
-                    );
-                    try file.writeToPath(
-                        self.allocator,
-                        rd.f,
-                        content[0..new_size],
-                    );
+                    // flush the writer then close everything
+                    try self.recorder.?.interface.flush();
+                    self.recorder.?.file.close();
+
+                    // then we'll re-read and strip for sanity reasons
+                    // var r_buffer: [1024]u8 = undefined;
+                    // var f = try file.ReaderFromPath(
+                    //     self.allocator,
+                    //     &r_buffer,
+                    //     rd.f,
+                    // );
+
+                    // var out: [1024]u8 = undefined;
+                    // const n = try f.read(&out);
+                    try ascii.stripAsciiAndAnsiControlCharsInFile(rd.f);
+                    // try file.writeToPath(
+                    //     self.allocator,
+                    //     rd.f,
+                    //     out[0..new_size],
+                    // );
                 },
                 else => {},
             }
@@ -388,7 +383,7 @@ pub const Session = struct {
         defer self.allocator.free(buf);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            const n = self.transport.read(self.waiter, buf) catch {
+            const n = self.transport.read(buf) catch {
                 self.read_thread_errored = true;
 
                 return;
@@ -406,12 +401,14 @@ pub const Session = struct {
             logging.traceWithSrc(
                 self.log,
                 @src(),
-                "session.Session readLoop: raw read '{s}'",
-                .{std.fmt.fmtSliceEscapeLower(buf[0..n])},
+                "session.Session readLoop: raw read '{f}'",
+                .{std.ascii.hexEscape(buf, .lower)},
             );
 
-            if (self.recorder) |recorder| {
-                try recorder.writeAll(buf[0..n]);
+            if (self.recorder) |*recorder| {
+                const r = &recorder.interface;
+                try r.writeAll(buf[0..n]);
+                try r.flush();
             }
         }
 
@@ -435,12 +432,12 @@ pub const Session = struct {
         self.log.info("session.Session write requested", .{});
 
         if (!redacted) {
-            self.log.debug("session.Session write: '{s}'", .{std.fmt.fmtSliceEscapeLower(buf)});
+            self.log.debug("session.Session write: '{f}'", .{std.ascii.hexEscape(buf, .lower)});
         } else {
             self.log.debug("session.Session write: <redacted>", .{});
         }
 
-        try self.transport.write(self.waiter, buf);
+        try self.transport.write(buf);
     }
 
     pub fn writeReturn(self: *Session) !void {
@@ -766,7 +763,7 @@ pub const Session = struct {
                 );
             }
 
-            defer std.time.sleep(cur_read_delay_ns);
+            defer std.Thread.sleep(cur_read_delay_ns);
 
             const n = try self.read(buf);
 
@@ -876,12 +873,13 @@ pub const Session = struct {
 
         // we want to ensure we are storing the last consumed prompt so that our send_input
         // buf is always "correct" when "retain_input" is true
-        try self.last_consumed_prompt.resize(0);
+        try self.last_consumed_prompt.resize(self.allocator, 0);
         try self.last_consumed_prompt.appendSlice(
+            self.allocator,
             owned_found_prompt,
         );
 
-        return [2][]const u8{ try bufs.raw.toOwnedSlice(), owned_found_prompt };
+        return [2][]const u8{ try bufs.raw.toOwnedSlice(self.allocator), owned_found_prompt };
     }
 
     fn _sendInput(
@@ -952,7 +950,7 @@ pub const Session = struct {
             // if we had some prompt consumed, stuff it on the raw and processed buffers and then
             // re-zeroize
             try bufs.appendSlice(self.last_consumed_prompt.items);
-            try self.last_consumed_prompt.resize(0);
+            try self.last_consumed_prompt.resize(self.allocator, 0);
         }
 
         _ = try self._sendInput(
@@ -965,7 +963,7 @@ pub const Session = struct {
 
         if (!options.retain_input) {
             // if we dont want to retain inputs, just resize the processed buffer to 0
-            try bufs.processed.resize(0);
+            try bufs.processed.resize(self.allocator, 0);
         }
 
         const checkArgs = bytes_check.CheckArgs{
@@ -982,6 +980,7 @@ pub const Session = struct {
         );
 
         try self.last_consumed_prompt.appendSlice(
+            self.allocator,
             bufs.processed.items[prompt_indexes.start .. prompt_indexes.end + 1],
         );
 
@@ -989,6 +988,7 @@ pub const Session = struct {
             // using the prompt indexes, replace that range holding the trailing prompt out
             // of the processed buf
             try bufs.processed.replaceRange(
+                self.allocator,
                 prompt_indexes.start,
                 prompt_indexes.len(),
                 "",
@@ -1011,7 +1011,7 @@ pub const Session = struct {
 
         var timer = try std.time.Timer.start();
 
-        var compiled_pattern: ?*pcre2.pcre2_code_8 = null;
+        var compiled_pattern: ?*re.pcre2CompiledPattern = null;
 
         if (options.prompt_pattern) |pattern| {
             if (pattern.len > 0) {
@@ -1053,7 +1053,7 @@ pub const Session = struct {
             // if we had some prompt consumed, stuff it on the raw and processed buffers and then
             // re-zeroize
             try bufs.appendSlice(self.last_consumed_prompt.items);
-            try self.last_consumed_prompt.resize(0);
+            try self.last_consumed_prompt.resize(self.allocator, 0);
         }
 
         _ = try self._sendInput(
@@ -1069,7 +1069,7 @@ pub const Session = struct {
         };
 
         if (compiled_pattern) |cp| {
-            checkArgs.patterns = &[_]?*pcre2.pcre2_code_8{
+            checkArgs.patterns = &[_]?*re.pcre2CompiledPattern{
                 self.compiled_prompt_pattern,
                 cp,
             };
@@ -1106,6 +1106,7 @@ pub const Session = struct {
         );
 
         try self.last_consumed_prompt.appendSlice(
+            self.allocator,
             bufs.processed.items[prompt_indexes.start..prompt_indexes.end],
         );
 
@@ -1113,6 +1114,7 @@ pub const Session = struct {
             // using the prompt indexes, replace that range holding the trailing prompt out
             // of the processed buf
             try bufs.processed.replaceRange(
+                self.allocator,
                 prompt_indexes.start,
                 prompt_indexes.len(),
                 "",
@@ -1122,3 +1124,25 @@ pub const Session = struct {
         return bufs.toOwnedSlices();
     }
 };
+
+test "sessionInit" {
+    const o = try Options.init(std.testing.allocator, .{});
+    const a_o = try auth.Options.init(std.testing.allocator, .{});
+    const t_o = try transport.Options.init(std.testing.allocator, .{ .ssh2 = .{} });
+
+    const s = try Session.init(
+        std.testing.allocator,
+        logging.Logger{
+            .allocator = std.testing.allocator,
+        },
+        ">",
+        o,
+        a_o,
+        t_o,
+    );
+
+    s.deinit();
+    o.deinit();
+    a_o.deinit();
+    t_o.deinit();
+}

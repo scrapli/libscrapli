@@ -1,6 +1,7 @@
 const std = @import("std");
-const file = @import("file.zig");
+
 const errors = @import("errors.zig");
+const file = @import("file.zig");
 
 pub const OptionsInputs = struct {
     f: ?[]const u8 = null,
@@ -40,6 +41,7 @@ pub const Transport = struct {
 
     options: *Options,
 
+    r_buffer: [1024]u8 = undefined,
     reader: ?std.fs.File.Reader,
 
     pub fn init(
@@ -69,7 +71,11 @@ pub const Transport = struct {
             @panic("must set file for test transport!");
         }
 
-        self.reader = try file.ReaderFromPath(self.allocator, self.options.f.?);
+        self.reader = try file.ReaderFromPath(
+            self.allocator,
+            &self.r_buffer,
+            self.options.f.?,
+        );
     }
 
     pub fn close(self: *Transport) void {
@@ -82,21 +88,14 @@ pub const Transport = struct {
     }
 
     pub fn read(self: *Transport, buf: []u8) !usize {
-        const n = self.reader.?.read(buf) catch |err| {
-            switch (err) {
-                error.WouldBlock => {
-                    return 0;
-                },
-                else => {
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Transport,
-                        @src(),
-                        null,
-                        "transport read failed",
-                        .{},
-                    );
-                },
-            }
+        const n = self.reader.?.read(buf) catch {
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                null,
+                "transport read failed",
+                .{},
+            );
         };
 
         // we'll just read 0 bytes when eof, would be probably bad to not report eof upstream in

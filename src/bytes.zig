@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const ascii = @import("ascii.zig");
 
 // a string that is used to delimit multiple substrings -- used in a few places for passing things
@@ -267,23 +268,25 @@ pub fn getBufSearchView(
 }
 
 pub const ProcessedBuf = struct {
+    allocator: std.mem.Allocator,
     raw: std.ArrayList(u8),
     processed: std.ArrayList(u8),
 
     pub fn init(allocator: std.mem.Allocator) ProcessedBuf {
         return ProcessedBuf{
-            .raw = std.ArrayList(u8).init(allocator),
-            .processed = std.ArrayList(u8).init(allocator),
+            .allocator = allocator,
+            .raw = .{},
+            .processed = .{},
         };
     }
 
     pub fn deinit(self: *ProcessedBuf) void {
-        self.raw.deinit();
-        self.processed.deinit();
+        self.raw.deinit(self.allocator);
+        self.processed.deinit(self.allocator);
     }
 
     pub fn appendSlice(self: *ProcessedBuf, buf: []u8) !void {
-        try self.raw.appendSlice(buf);
+        try self.raw.appendSlice(self.allocator, buf);
 
         if (std.mem.indexOf(u8, buf, &[_]u8{ascii.control_chars.esc}) != null) {
             // if ESC in the new buf look at last n of processed buf to replace if
@@ -295,16 +298,16 @@ pub const ProcessedBuf = struct {
                 buf,
                 0,
             );
-            try self.processed.appendSlice(buf[0..n]);
+            try self.processed.appendSlice(self.allocator, buf[0..n]);
         } else {
-            try self.processed.appendSlice(buf);
+            try self.processed.appendSlice(self.allocator, buf);
         }
     }
 
     pub fn toOwnedSlices(self: *ProcessedBuf) ![2][]const u8 {
         return [2][]const u8{
-            try self.raw.toOwnedSlice(),
-            try self.processed.toOwnedSlice(),
+            try self.raw.toOwnedSlice(self.allocator),
+            try self.processed.toOwnedSlice(self.allocator),
         };
     }
 };

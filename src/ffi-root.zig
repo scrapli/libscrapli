@@ -97,7 +97,7 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
 
 export fn ls_cli_alloc(
     definition_string: [*c]const u8,
-    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
+    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.c) void,
     logger_level: [*c]const u8,
     host: [*c]const u8,
     port: u16,
@@ -146,7 +146,7 @@ export fn ls_cli_alloc(
 }
 
 export fn ls_netconf_alloc(
-    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.C) void,
+    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.c) void,
     logger_level: [*c]const u8,
     host: [*c]const u8,
     port: u16,

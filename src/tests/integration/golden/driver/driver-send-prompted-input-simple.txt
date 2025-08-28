@@ -1,2 +1,2 @@
-eos1#write erase
-Proceed with erasing startup configuration? [confirm]
+eos1write erase
+Proceed with erasing startup configuration? [confirm]

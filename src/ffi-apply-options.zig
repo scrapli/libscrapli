@@ -144,17 +144,22 @@ export fn ls_option_session_record_destination(
                 },
             };
 
-            const out_f = std.fs.cwd().createFile(
+            var out_f = std.fs.cwd().createFile(
                 rd.session.options.record_destination.?.f,
                 .{},
             ) catch {
                 return 1;
             };
 
-            var recorder = out_f.writer();
-            recorder.context = out_f;
+            // TODO same shit; also used to be a var and we would update .context so... gotta
+            // figure out that because that is how we know to close the file. really this should
+            // (session recorder things) all be fixed to just be a callback and nothing else --
+            // then the rest can be handled by a user in zig or py/go
+            // var w_buffer: [1024]u8 = undefined;
+            // const recorder = out_f.writer(&w_buffer);
+            // recorder.context = out_f;
 
-            rd.session.recorder = recorder;
+            rd.session.recorder = &out_f;
         },
         .netconf => |rd| {
             rd.session.options.record_destination = .{
@@ -166,17 +171,18 @@ export fn ls_option_session_record_destination(
                 },
             };
 
-            const out_f = std.fs.cwd().createFile(
+            // TODO see above
+            var out_f = std.fs.cwd().createFile(
                 rd.session.options.record_destination.?.f,
                 .{},
             ) catch {
                 return 1;
             };
 
-            var recorder = out_f.writer();
-            recorder.context = out_f;
+            // var recorder = out_f.writer();
+            // recorder.context = out_f;
 
-            rd.session.recorder = recorder;
+            rd.session.recorder = &out_f;
         },
     }
 

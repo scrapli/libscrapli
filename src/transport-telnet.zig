@@ -1,8 +1,9 @@
 const std = @import("std");
-const file = @import("file.zig");
+
 const bytes = @import("bytes.zig");
-const logging = @import("logging.zig");
 const errors = @import("errors.zig");
+const file = @import("file.zig");
+const logging = @import("logging.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 const control_char_iac: u8 = 255;
@@ -50,9 +51,10 @@ pub const Transport = struct {
     log: logging.Logger,
 
     options: *Options,
+    waiter: transport_waiter.Waiter,
 
     stream: ?std.net.Stream,
-    initial_buf: std.ArrayList(u8),
+    initial_buf: std.array_list.Managed(u8),
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -67,8 +69,9 @@ pub const Transport = struct {
             .allocator = allocator,
             .log = log,
             .options = options,
+            .waiter = try transport_waiter.Waiter.init(allocator),
             .stream = null,
-            .initial_buf = std.ArrayList(u8).init(allocator),
+            .initial_buf = std.array_list.Managed(u8).init(allocator),
         };
 
         return t;
@@ -78,6 +81,8 @@ pub const Transport = struct {
         logging.traceWithSrc(self.log, @src(), "telnet.Transport deinitializing", .{});
 
         self.initial_buf.deinit();
+        self.waiter.deinit();
+
         self.allocator.destroy(self);
     }
 
@@ -92,11 +97,11 @@ pub const Transport = struct {
 
                 return true;
             } else {
-                try control_buf.append(maybe_control_char);
+                try control_buf.append(self.allocator, maybe_control_char);
             }
         } else if (control_buf.items.len == 1) {
             if (bytes.charIn(&control_chars_actionable, maybe_control_char)) {
-                try control_buf.append(maybe_control_char);
+                try control_buf.append(self.allocator, maybe_control_char);
             } else {
                 // not 100% sure this is "correct" behavior, but have seen at least EOS devices
                 // send one last control char, then start sending non-actionable chars (like the
@@ -106,7 +111,7 @@ pub const Transport = struct {
         } else if (control_buf.items.len == 2) {
             const cmd = control_buf.items[1..2][0];
 
-            try control_buf.resize(0);
+            try control_buf.resize(self.allocator, 0);
 
             if (cmd == control_char_do and maybe_control_char == control_char_sga) {
                 const seq = [3]u8{
@@ -149,8 +154,8 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
     ) !void {
-        var control_buf = std.ArrayList(u8).init(self.allocator);
-        defer control_buf.deinit();
+        var control_buf: std.ArrayList(u8) = .{};
+        defer control_buf.deinit(self.allocator);
 
         while (true) {
             if (cancel != null and cancel.?.*) {
@@ -177,7 +182,7 @@ pub const Transport = struct {
 
             var control_char_buf: [1]u8 = undefined;
 
-            const n = try self.read(null, &control_char_buf);
+            const n = try self.read(&control_char_buf);
 
             if (n == 0) {
                 // we may get 0 bytes while the server is figuring its life out
@@ -275,7 +280,7 @@ pub const Transport = struct {
         };
     }
 
-    pub fn read(self: *Transport, w: ?transport_waiter.Waiter, buf: []u8) !usize {
+    pub fn read(self: *Transport, buf: []u8) !usize {
         self.log.debug("telnet.Transport read requested", .{});
 
         if (self.stream == null) {
@@ -302,9 +307,7 @@ pub const Transport = struct {
         const n = self.stream.?.read(buf) catch |err| {
             switch (err) {
                 error.WouldBlock => {
-                    if (w) |waiter| {
-                        try waiter.wait(self.stream.?.handle);
-                    }
+                    try self.waiter.wait(self.stream.?.handle);
 
                     return 0;
                 },
@@ -322,4 +325,22 @@ pub const Transport = struct {
 
         return n;
     }
+
+    pub fn unblock(self: *Transport) !void {
+        try self.waiter.unblock();
+    }
 };
+
+test "transportInit" {
+    const o = try Options.init(std.testing.allocator, .{});
+    const t = try Transport.init(
+        std.testing.allocator,
+        logging.Logger{
+            .allocator = std.testing.allocator,
+        },
+        o,
+    );
+
+    t.deinit();
+    o.deinit();
+}

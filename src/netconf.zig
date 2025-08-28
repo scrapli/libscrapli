@@ -1,25 +1,22 @@
 const std = @import("std");
+
+const xml = @import("xml");
+
+const ascii = @import("ascii.zig");
 const auth = @import("auth.zig");
 const bytes = @import("bytes.zig");
+const errors = @import("errors.zig");
 const logging = @import("logging.zig");
-const session = @import("session.zig");
-const transport = @import("transport.zig");
 const operation = @import("netconf-operation.zig");
 const result = @import("netconf-result.zig");
-const ascii = @import("ascii.zig");
-const xml = @import("xml");
-const errors = @import("errors.zig");
+const session = @import("session.zig");
 const test_helper = @import("test-helper.zig");
+const transport = @import("transport.zig");
 
 const ProcessThreadState = enum(u8) {
     uninitialized,
     run,
     stop,
-};
-
-pub const Version = enum {
-    version_1_0,
-    version_1_1,
 };
 
 pub const Capability = struct {
@@ -60,8 +57,6 @@ const version_1_1_capability =
     \\</hello>]]>]]>
 ;
 
-pub const default_rpc_error_tag = "rpc-error>";
-
 const base_capability_name = "urn:ietf:params:xml:ns:netconf:base:1.0";
 const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-defaults:1.0";
 const validate_capability_name = "urn:ietf:params:xml:ns:netconf:capability:validate:1.0";
@@ -81,8 +76,8 @@ pub const Config = struct {
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
     transport: transport.OptionsInputs = .{ .bin = .{} },
-    error_tag: []const u8 = default_rpc_error_tag,
-    preferred_version: ?Version = null,
+    error_tag: []const u8 = operation.default_rpc_error_tag,
+    preferred_version: ?operation.Version = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
 };
 
@@ -94,7 +89,7 @@ pub const Options = struct {
     session: *session.Options,
     transport: *transport.Options,
     error_tag: []const u8,
-    preferred_version: ?Version,
+    preferred_version: ?operation.Version,
     message_poll_interval_ns: u64,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
@@ -118,7 +113,7 @@ pub const Options = struct {
 
         o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
 
-        if (&o.error_tag[0] != &default_rpc_error_tag[0]) {
+        if (&o.error_tag[0] != &operation.default_rpc_error_tag[0]) {
             o.error_tag = try o.allocator.dupe(u8, o.error_tag);
         }
 
@@ -126,7 +121,7 @@ pub const Options = struct {
     }
 
     pub fn deinit(self: *Options) void {
-        if (&self.error_tag[0] != &default_rpc_error_tag[0]) {
+        if (&self.error_tag[0] != &operation.default_rpc_error_tag[0]) {
             self.allocator.free(self.error_tag);
         }
 
@@ -149,7 +144,7 @@ pub const Driver = struct {
     session: *session.Session,
 
     server_capabilities: ?std.ArrayList(Capability),
-    negotiated_version: Version,
+    negotiated_version: operation.Version,
     session_id: ?u64,
 
     process_thread: ?std.Thread,
@@ -215,7 +210,7 @@ pub const Driver = struct {
             opts.port = default_netconf_port;
         }
 
-        const sess = try session.Session.init(
+        const s = try session.Session.init(
             allocator,
             log,
             delimiter_version_1_0,
@@ -229,24 +224,17 @@ pub const Driver = struct {
         d.* = Driver{
             .allocator = allocator,
             .log = log,
-
             .host = host,
-
             .options = opts,
-
-            .session = sess,
-
-            .server_capabilities = std.ArrayList(Capability).init(allocator),
-            .negotiated_version = Version.version_1_0,
+            .session = s,
+            .server_capabilities = .{},
+            .negotiated_version = .version_1_0,
             .session_id = null,
-
             .process_thread = null,
             .process_stop = std.atomic.Value(ProcessThreadState).init(
                 ProcessThreadState.uninitialized,
             ),
-
             .message_id = 101,
-
             .messages = std.HashMap(
                 u64,
                 [2][]const u8,
@@ -254,10 +242,8 @@ pub const Driver = struct {
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
             .messages_lock = std.Thread.Mutex{},
-
-            .notifications = std.ArrayList([]const u8).init(allocator),
+            .notifications = .{},
             .notifications_lock = std.Thread.Mutex{},
-
             .subscriptions = std.HashMap(
                 u64,
                 std.ArrayList([]const u8),
@@ -290,7 +276,7 @@ pub const Driver = struct {
                 mut_cap.deinit();
             }
 
-            self.server_capabilities.?.deinit();
+            self.server_capabilities.?.deinit(self.allocator);
         }
 
         // free any messages that were never fetched
@@ -307,7 +293,7 @@ pub const Driver = struct {
             self.allocator.free(notif);
         }
 
-        self.notifications.deinit();
+        self.notifications.deinit(self.allocator);
 
         // and then subscriptions
         var subscriptions_iterator = self.subscriptions.valueIterator();
@@ -316,7 +302,7 @@ pub const Driver = struct {
                 self.allocator.free(s);
             }
 
-            sl.deinit();
+            sl.deinit(self.allocator);
         }
 
         self.subscriptions.deinit();
@@ -526,17 +512,17 @@ pub const Driver = struct {
     ) ![]u8 {
         self.log.info("netconf.Driver receiveServerCapabilities requested", .{});
 
-        var _cap_buf = std.ArrayList([]u8).init(allocator);
+        var cap_buf: std.ArrayList([]u8) = .{};
         defer {
-            for (_cap_buf.items) |cap| {
+            for (cap_buf.items) |cap| {
                 allocator.free(cap);
             }
 
-            _cap_buf.deinit();
+            cap_buf.deinit(self.allocator);
         }
 
-        var _read_cap_buf = try allocator.alloc(u8, 1_024);
-        defer allocator.free(_read_cap_buf);
+        var read_cap_buf = try allocator.alloc(u8, 1_024);
+        defer allocator.free(read_cap_buf);
 
         var found_cap_start = false;
 
@@ -565,7 +551,7 @@ pub const Driver = struct {
                 );
             }
 
-            const n = try self.session.read(_read_cap_buf);
+            const n = try self.session.read(read_cap_buf);
 
             if (n == 0) {
                 continue;
@@ -574,7 +560,7 @@ pub const Driver = struct {
             if (!found_cap_start) {
                 const cap_start_index = std.mem.indexOf(
                     u8,
-                    _read_cap_buf,
+                    read_cap_buf,
                     "<hello ",
                 );
                 if (cap_start_index != null) {
@@ -588,14 +574,17 @@ pub const Driver = struct {
 
             const cap_end_index = std.mem.indexOf(
                 u8,
-                _read_cap_buf,
+                read_cap_buf,
                 delimiter_version_1_0,
             );
             if (cap_end_index != null) {
                 end_copy_index = cap_end_index.?;
             }
 
-            try _cap_buf.append(try allocator.dupe(u8, _read_cap_buf[0..end_copy_index]));
+            try cap_buf.append(
+                self.allocator,
+                try allocator.dupe(u8, read_cap_buf[0..end_copy_index]),
+            );
 
             if (cap_end_index == null) {
                 continue;
@@ -603,19 +592,19 @@ pub const Driver = struct {
 
             var caps_len: usize = 0;
 
-            for (_cap_buf.items[0..]) |cap| {
+            for (cap_buf.items[0..]) |cap| {
                 caps_len += cap.len;
             }
 
-            const cap_buf = try allocator.alloc(u8, caps_len);
+            const final_cap_buf = try allocator.alloc(u8, caps_len);
 
             var cur_idx: usize = 0;
-            for (_cap_buf.items[0..]) |cap| {
-                @memcpy(cap_buf[cur_idx .. cur_idx + cap.len], cap);
+            for (cap_buf.items[0..]) |cap| {
+                @memcpy(final_cap_buf[cur_idx .. cur_idx + cap.len], cap);
                 cur_idx += cap.len;
             }
 
-            return cap_buf;
+            return final_cap_buf;
         }
     }
 
@@ -625,17 +614,28 @@ pub const Driver = struct {
     ) !void {
         self.log.info("netconf.Driver processServerCapabilities requested", .{});
 
-        var input_stream = std.io.fixedBufferStream(cap_buf);
-        const input_stream_reader = input_stream.reader();
+        // TODO wtf am i doing here?
+        var input_stream = std.Io.Reader.fixed(cap_buf);
+        // const input_stream_reader = input_stream.reader();
 
-        var xml_doc = xml.streamingDocument(
+        // var input_buf: [4096]u8 = undefined;
+        // var input_reader = input_stream.reader();
+        var streaming_reader: xml.Reader.Streaming = .init(
             self.allocator,
-            input_stream_reader,
+            &input_stream,
+            .{},
         );
-        defer xml_doc.deinit();
+        defer streaming_reader.deinit();
+        const xml_reader = &streaming_reader.interface;
 
-        var xml_reader = xml_doc.reader(self.allocator, .{});
-        defer xml_reader.deinit();
+        // var xml_doc = xml.streamingDocument(
+        //     self.allocator,
+        //     input_stream_reader,
+        // );
+        // defer xml_doc.deinit();
+
+        // var xml_reader = xml_doc.reader(self.allocator, .{});
+        // defer xml_reader.deinit();
 
         while (true) {
             const node = try xml_reader.read();
@@ -710,7 +710,7 @@ pub const Driver = struct {
                         }
                     }
 
-                    try self.server_capabilities.?.append(found_capability);
+                    try self.server_capabilities.?.append(self.allocator, found_capability);
                 },
                 else => {},
             }
@@ -773,9 +773,9 @@ pub const Driver = struct {
 
         if (hasVersion_1_1) {
             // we default to preferring 1.1
-            self.negotiated_version = Version.version_1_1;
+            self.negotiated_version = .version_1_1;
         } else if (hasVersion_1_0) {
-            self.negotiated_version = Version.version_1_0;
+            self.negotiated_version = .version_1_0;
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
@@ -794,9 +794,9 @@ pub const Driver = struct {
         }
 
         switch (self.options.preferred_version.?) {
-            Version.version_1_0 => {
+            .version_1_0 => {
                 if (hasVersion_1_0) {
-                    self.negotiated_version = Version.version_1_0;
+                    self.negotiated_version = .version_1_0;
                 }
 
                 return errors.wrapCriticalError(
@@ -807,9 +807,9 @@ pub const Driver = struct {
                     .{},
                 );
             },
-            Version.version_1_1 => {
+            .version_1_1 => {
                 if (hasVersion_1_1) {
-                    self.negotiated_version = Version.version_1_1;
+                    self.negotiated_version = .version_1_1;
                 }
 
                 return errors.wrapCriticalError(
@@ -830,7 +830,7 @@ pub const Driver = struct {
 
         var caps: []const u8 = version_1_0_capability;
 
-        if (self.negotiated_version == Version.version_1_1) {
+        if (self.negotiated_version == .version_1_1) {
             caps = version_1_1_capability;
         }
 
@@ -845,16 +845,16 @@ pub const Driver = struct {
         const buf = try self.allocator.alloc(u8, self.session.options.read_size);
         defer self.allocator.free(buf);
 
-        var message_buf = std.ArrayList(u8).init(self.allocator);
-        defer message_buf.deinit();
+        var message_buf: std.ArrayList(u8) = .{};
+        defer message_buf.deinit(self.allocator);
 
         // SAFETY: will always be set in switch
         var message_complete_delim: []const u8 = undefined;
         switch (self.negotiated_version) {
-            Version.version_1_0 => {
+            .version_1_0 => {
                 message_complete_delim = delimiter_version_1_0;
             },
-            Version.version_1_1 => {
+            .version_1_1 => {
                 message_complete_delim = delimiter_version_1_1;
             },
         }
@@ -865,7 +865,7 @@ pub const Driver = struct {
                     errors.ScrapliError.EOF => {
                         // the session read thread has errored/closed and there is nothing remaining
                         // in the read queue, try one last time to parse out any remaining message(s)
-                        const owned_buf = try message_buf.toOwnedSlice();
+                        const owned_buf = try message_buf.toOwnedSlice(self.allocator);
                         defer self.allocator.free(owned_buf);
 
                         defer {
@@ -908,7 +908,7 @@ pub const Driver = struct {
                 continue;
             }
 
-            try message_buf.appendSlice(buf[0..n]);
+            try message_buf.appendSlice(self.allocator, buf[0..n]);
 
             if (n < 10 and message_buf.items.len > 10) {
                 // probably we are using the file/test transport, in which case we need to look back
@@ -949,7 +949,7 @@ pub const Driver = struct {
                 matched_chars += 1;
 
                 if (matched_chars == message_complete_delim.len) {
-                    const owned_buf = try message_buf.toOwnedSlice();
+                    const owned_buf = try message_buf.toOwnedSlice(self.allocator);
                     defer self.allocator.free(owned_buf);
 
                     switch (self.negotiated_version) {
@@ -1066,17 +1066,17 @@ pub const Driver = struct {
 
             const ret = try self.subscriptions.getOrPut(id_info.found_id);
             if (!ret.found_existing) {
-                ret.value_ptr.* = std.ArrayList([]const u8).init(self.allocator);
+                ret.value_ptr.* = .{};
             }
 
-            try ret.value_ptr.*.append(processed_buf);
+            try ret.value_ptr.*.append(self.allocator, processed_buf);
         } else if (id_info.is_notification_message) {
             self.allocator.free(raw_buf);
 
             self.notifications_lock.lock();
             defer self.notifications_lock.unlock();
 
-            try self.notifications.append(processed_buf);
+            try self.notifications.append(self.allocator, processed_buf);
         } else {
             self.messages_lock.lock();
             defer self.messages_lock.unlock();
@@ -1298,14 +1298,14 @@ pub const Driver = struct {
     }
 
     fn rpcStart(
-        writer: *xml.GenericWriter(error{OutOfMemory}),
+        writer: *xml.Writer,
     ) !void {
         try writer.elementStart("rpc");
         try writer.bindNs("", base_capability_name);
     }
 
     fn addFilterElem(
-        writer: *xml.GenericWriter(error{OutOfMemory}),
+        writer: *xml.Writer,
         filter: []const u8,
         filter_type: operation.FilterType,
         filter_namespace_prefix: ?[]const u8,
@@ -1338,7 +1338,7 @@ pub const Driver = struct {
     // for at least get-data rpc that expects subtree-filter / xpath-filter tags rather than the
     // "traditional" filter tag
     fn addFilterElemExplicitTag(
-        writer: *xml.GenericWriter(error{OutOfMemory}),
+        writer: *xml.Writer,
         filter: []const u8,
         filter_type: operation.FilterType,
         filter_namespace_prefix: ?[]const u8,
@@ -1371,7 +1371,7 @@ pub const Driver = struct {
         try writer.elementEnd();
     }
     fn addTargetElem(
-        writer: *xml.GenericWriter(error{OutOfMemory}),
+        writer: *xml.Writer,
         target: []const u8,
     ) !void {
         try writer.elementStartNs(base_capability_name, "target");
@@ -1381,7 +1381,7 @@ pub const Driver = struct {
     }
 
     fn addSourceElem(
-        writer: *xml.GenericWriter(error{OutOfMemory}),
+        writer: *xml.Writer,
         source: []const u8,
     ) !void {
         try writer.elementStartNs(base_capability_name, "source");
@@ -1391,7 +1391,7 @@ pub const Driver = struct {
     }
 
     fn addDefaultsElem(
-        writer: *xml.GenericWriter(error{OutOfMemory}),
+        writer: *xml.Writer,
         default_type: operation.DefaultsType,
     ) !void {
         try writer.elementStart("with-defaults");
@@ -1410,7 +1410,7 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         elem_conent: []const u8,
     ) ![]const u8 {
-        if (self.negotiated_version == Version.version_1_0) {
+        if (self.negotiated_version == .version_1_0) {
             return std.fmt.allocPrint(
                 allocator,
                 "{s}\n{s}",
@@ -1432,15 +1432,16 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        // TODO ?!?!?!?
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
+        // var out = xml.streamingOutput(sink.writer());
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        // var writer = out.writer(
+        //     allocator,
+        //     .{ .indent = "" },
+        // );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1497,7 +1498,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn rawRpc(
@@ -1520,15 +1521,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1566,7 +1562,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn getConfig(
@@ -1589,15 +1585,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1641,7 +1632,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn editConfig(
@@ -1664,15 +1655,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1694,7 +1680,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn copyConfig(
@@ -1717,15 +1703,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1746,7 +1727,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn deleteConfig(
@@ -1769,15 +1750,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1798,7 +1774,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn lock(
@@ -1821,15 +1797,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1850,7 +1821,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn unlock(
@@ -1873,15 +1844,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1918,7 +1884,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn get(
@@ -1943,15 +1909,10 @@ pub const Driver = struct {
 
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -1969,7 +1930,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn closeSession(
@@ -2028,15 +1989,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2066,7 +2022,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn killSession(
@@ -2091,15 +2047,10 @@ pub const Driver = struct {
 
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2117,7 +2068,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn commit(
@@ -2142,15 +2093,10 @@ pub const Driver = struct {
 
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2168,7 +2114,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn discard(
@@ -2191,15 +2137,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2225,7 +2166,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn cancelCommit(
@@ -2248,15 +2189,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2279,7 +2215,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn validate(
@@ -2302,15 +2238,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2345,7 +2276,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn getSchema(
@@ -2368,15 +2299,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2457,7 +2383,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn getData(
@@ -2480,12 +2406,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(allocator, .{ .indent = "" });
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2528,7 +2452,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn editData(
@@ -2551,15 +2475,10 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        var sink = std.ArrayList(u8).init(allocator);
-        defer sink.deinit();
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        var out = xml.streamingOutput(sink.writer());
-
-        var writer = out.writer(
-            allocator,
-            .{ .indent = "" },
-        );
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);
@@ -2582,7 +2501,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        return self.finalizeElem(allocator, sink.items);
+        return self.finalizeElem(allocator, output.written());
     }
 
     pub fn action(
@@ -2794,7 +2713,7 @@ pub const Driver = struct {
 
         try self.session.writeAndReturn(input, false);
 
-        if (self.negotiated_version == Version.version_1_1) {
+        if (self.negotiated_version == .version_1_1) {
             try self.session.writeReturn();
         }
 
@@ -2810,7 +2729,7 @@ pub const Driver = struct {
                     return errors.ScrapliError.EOF;
                 }
 
-                std.time.sleep(self.options.message_poll_interval_ns);
+                std.Thread.sleep(self.options.message_poll_interval_ns);
 
                 continue;
             }
@@ -2974,7 +2893,7 @@ test "processFoundMessageVersion1_0" {
 
         defer d.deinit();
 
-        d.negotiated_version = Version.version_1_0;
+        d.negotiated_version = .version_1_0;
 
         try d.processFoundMessageVersion1_0(case.input);
 
@@ -3050,7 +2969,7 @@ test "processFoundMessageVersion1_1" {
 
         defer d.deinit();
 
-        d.negotiated_version = Version.version_1_1;
+        d.negotiated_version = .version_1_1;
 
         try d.processFoundMessageVersion1_1(case.input);
 
@@ -3067,14 +2986,14 @@ test "buildRawRpcElement" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.RawRpcOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .payload =
@@ -3088,7 +3007,7 @@ test "buildRawRpcElement" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .payload =
@@ -3103,7 +3022,7 @@ test "buildRawRpcElement" {
         },
         .{
             .name = "simple-1.0-with-extra-namespaces",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .payload =
@@ -3120,7 +3039,7 @@ test "buildRawRpcElement" {
         },
         .{
             .name = "simple-1.1-with-extra-namespaces",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .payload =
@@ -3138,7 +3057,7 @@ test "buildRawRpcElement" {
         },
         .{
             .name = "simple-1.0-with-prefix-and-extra-namespaces",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .payload =
@@ -3156,7 +3075,7 @@ test "buildRawRpcElement" {
         },
         .{
             .name = "simple-1.1-with-prefix-and-extra-namespaces",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .payload =
@@ -3206,14 +3125,14 @@ test "buildGetConfigElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.GetConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3223,7 +3142,7 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3234,7 +3153,7 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "filtered-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .filter = "<foo:interface/>",
@@ -3247,7 +3166,7 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "filtered-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .filter = "<foo:interface/>",
@@ -3261,7 +3180,7 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "filtered-1.0-with-defaults",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .filter = "<foo:interface/>",
@@ -3275,7 +3194,7 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "filtered-1.1-with-defaults",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .filter = "<foo:interface/>",
@@ -3290,7 +3209,7 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "filtered-1.0-xpath",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .filter = "/interfaces/interface[name='Management0']/state",
@@ -3303,7 +3222,7 @@ test "buildGetConfigElem" {
         },
         .{
             .name = "filtered-1.1-xpath",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .filter = "/interfaces/interface[name='Management0']/state",
@@ -3348,14 +3267,14 @@ test "builEditConfigElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.EditConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = Config{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
@@ -3369,7 +3288,7 @@ test "builEditConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = Config{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
@@ -3384,7 +3303,7 @@ test "builEditConfigElem" {
         },
         .{
             .name = "1.1-with-defaults-operation",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = Config{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
@@ -3400,7 +3319,7 @@ test "builEditConfigElem" {
         },
         .{
             .name = "1.1-with-test-option",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = Config{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
@@ -3416,7 +3335,7 @@ test "builEditConfigElem" {
         },
         .{
             .name = "1.1-with-error-option",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = Config{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
@@ -3463,14 +3382,14 @@ test "builCopyConfigElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.CopyConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3480,7 +3399,7 @@ test "builCopyConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3522,14 +3441,14 @@ test "builDeleteConfigElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.DeleteConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3539,7 +3458,7 @@ test "builDeleteConfigElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3581,14 +3500,14 @@ test "buildLockElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.LockUnlockOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3598,7 +3517,7 @@ test "buildLockElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3640,14 +3559,14 @@ test "buildUnlockElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.LockUnlockOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3657,7 +3576,7 @@ test "buildUnlockElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3699,14 +3618,14 @@ test "buildGetElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.GetOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3716,7 +3635,7 @@ test "buildGetElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3758,14 +3677,14 @@ test "buildCloseSessionElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.CloseSessionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3775,7 +3694,7 @@ test "buildCloseSessionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3817,14 +3736,14 @@ test "buildKillSessionElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.KillSessionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = operation.KillSessionOptions{
                 .cancel = null,
@@ -3837,7 +3756,7 @@ test "buildKillSessionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = operation.KillSessionOptions{
                 .cancel = null,
@@ -3882,14 +3801,14 @@ test "buildCommitElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.CommitOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3899,7 +3818,7 @@ test "buildCommitElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3941,14 +3860,14 @@ test "buildDiscardElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.DiscardOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -3958,7 +3877,7 @@ test "buildDiscardElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -4000,14 +3919,14 @@ test "buildCancelCommitElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.CancelCommitOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -4017,7 +3936,7 @@ test "buildCancelCommitElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -4028,7 +3947,7 @@ test "buildCancelCommitElem" {
         },
         .{
             .name = "persist-id",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .persist_id = "1234",
@@ -4072,14 +3991,14 @@ test "buildValidateElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.ValidateOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -4089,7 +4008,7 @@ test "buildValidateElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -4131,14 +4050,14 @@ test "buildGetSchemaElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.GetSchemaOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .identifier = "foo",
@@ -4150,7 +4069,7 @@ test "buildGetSchemaElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .identifier = "foo",
@@ -4194,14 +4113,14 @@ test "buildGetDataElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.GetDataOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -4211,7 +4130,7 @@ test "buildGetDataElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{},
             .expected =
@@ -4253,14 +4172,14 @@ test "builEditDataElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.EditDataOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .edit_content = "foo",
@@ -4272,7 +4191,7 @@ test "builEditDataElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .edit_content = "foo",
@@ -4285,7 +4204,7 @@ test "builEditDataElem" {
         },
         .{
             .name = "default-operation",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .edit_content = "foo",
@@ -4330,14 +4249,14 @@ test "builActionElem" {
 
     const cases = [_]struct {
         name: []const u8,
-        version: Version,
+        version: operation.Version,
         driver_config: Config,
         options: operation.ActionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
-            .version = Version.version_1_0,
+            .version = .version_1_0,
             .driver_config = .{},
             .options = .{
                 .action = "foo",
@@ -4349,7 +4268,7 @@ test "builActionElem" {
         },
         .{
             .name = "simple-1.1",
-            .version = Version.version_1_1,
+            .version = .version_1_1,
             .driver_config = .{},
             .options = .{
                 .action = "foo",

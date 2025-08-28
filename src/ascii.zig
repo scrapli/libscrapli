@@ -1,6 +1,7 @@
 // zlint-disable unused-decls
 // note: leaving consts in here for future sanity/to not have to look stuff up
 const std = @import("std");
+
 const thelper = @import("test-helper.zig");
 
 pub const control_chars = struct {
@@ -462,6 +463,7 @@ test "stripAsciiAndAnsiControlCharsInPlace" {
 }
 
 pub fn stripAsciiControlCharsInPlace(
+    allocator: std.mem.Allocator,
     haystack: *std.ArrayList(u8),
 ) !void {
     var read_idx: usize = 0;
@@ -498,7 +500,7 @@ pub fn stripAsciiControlCharsInPlace(
         }
     }
 
-    try haystack.resize(write_idx);
+    try haystack.resize(allocator, write_idx);
 }
 
 test "stripAsciiControlCharsInPlace" {
@@ -685,15 +687,20 @@ test "stripAsciiControlCharsInPlace" {
     };
 
     for (cases) |case| {
-        defer case.haystack.deinit();
-
         var haystack = case.haystack;
+        defer haystack.deinit(std.testing.allocator);
 
         try stripAsciiControlCharsInPlace(
+            std.testing.allocator,
             &haystack,
         );
 
-        try thelper.testStrResult("stripAsciiControlCharsInPlace", case.name, haystack.items, case.expected);
+        try thelper.testStrResult(
+            "stripAsciiControlCharsInPlace",
+            case.name,
+            haystack.items,
+            case.expected,
+        );
     }
 }
 
@@ -1234,4 +1241,53 @@ test "stripAnsiiControlSequences" {
 
         try thelper.testStrResult("stripAnsiiControlSequences", case.name, actual, case.expected);
     }
+}
+
+pub fn stripAsciiAndAnsiControlCharsInFile(
+    f: []const u8,
+) !void {
+    const cwd = std.fs.cwd();
+    var in = try cwd.openFile(
+        f,
+        .{
+            .mode = .read_only,
+        },
+    );
+    defer in.close();
+
+    var r_buffer: [8192]u8 = undefined;
+    var reader = in.reader(&r_buffer);
+
+    var tmp_file = try cwd.createFile(
+        "tmp_output",
+        .{
+            .read = true,
+            .truncate = true,
+        },
+    );
+    defer tmp_file.close();
+
+    var w_buffer: [8192]u8 = undefined;
+    var writer = tmp_file.writer(&w_buffer);
+
+    var buf: [8192]u8 = undefined;
+    while (true) {
+        const n = reader.read(&buf) catch |err| {
+            switch (err) {
+                error.EndOfStream => {
+                    break;
+                },
+                else => {
+                    return err;
+                },
+            }
+        };
+
+        const new_size = stripAsciiAndAnsiControlCharsInPlace(buf[0..n], 0);
+        try writer.interface.writeAll(buf[0..new_size]);
+    }
+
+    try writer.interface.flush();
+
+    try cwd.rename("tmp_output", f);
 }

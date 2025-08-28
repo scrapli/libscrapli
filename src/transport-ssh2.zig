@@ -1,10 +1,14 @@
 const std = @import("std");
+
 const auth = @import("auth.zig");
-const logging = @import("logging.zig");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
+const logging = @import("logging.zig");
+const strings = @import("strings.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
+// TODO i think transport imports waiter and ssh2/bin import it too. so just need transport
+// to *not* import and the implementaitons can import the waiter
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
     @cInclude("sys/socket.h");
@@ -130,7 +134,7 @@ fn libssh2DisconnectSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger
                 break;
             }
 
-            std.time.sleep(default_eagain_delay_ns);
+            std.Thread.sleep(default_eagain_delay_ns);
 
             continue;
         } else {
@@ -159,7 +163,7 @@ fn libssh2FreeSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void
                 break;
             }
 
-            std.time.sleep(default_eagain_delay_ns);
+            std.Thread.sleep(default_eagain_delay_ns);
 
             continue;
         } else {
@@ -188,7 +192,7 @@ fn libssh2CloseChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
                 break;
             }
 
-            std.time.sleep(default_eagain_delay_ns);
+            std.Thread.sleep(default_eagain_delay_ns);
 
             continue;
         } else {
@@ -217,7 +221,7 @@ fn libssh2FreeChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
                 break;
             }
 
-            std.time.sleep(default_eagain_delay_ns);
+            std.Thread.sleep(default_eagain_delay_ns);
 
             continue;
         } else {
@@ -328,7 +332,7 @@ const ProxyWrapper = struct {
             const result = self.pipe_to_channel();
             if (result) {} else |err| switch (err) {
                 error.WouldBlock => {
-                    std.time.sleep(default_eagain_delay_ns);
+                    std.Thread.sleep(default_eagain_delay_ns);
 
                     continue;
                 },
@@ -374,7 +378,7 @@ const ProxyWrapper = struct {
         while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
             self.channel_to_pipe() catch |err| switch (err) {
                 error.WouldBlock => {
-                    std.time.sleep(default_eagain_delay_ns);
+                    std.Thread.sleep(default_eagain_delay_ns);
                     continue;
                 },
                 else => return err,
@@ -432,6 +436,7 @@ pub const Transport = struct {
     log: logging.Logger,
 
     options: *Options,
+    waiter: transport_waiter.Waiter,
 
     auth_callback_data: *AuthCallbackData,
 
@@ -479,6 +484,7 @@ pub const Transport = struct {
             .allocator = allocator,
             .log = log,
             .options = options,
+            .waiter = try transport_waiter.Waiter.init(allocator),
             .auth_callback_data = a,
             .session_lock = std.Thread.Mutex{},
         };
@@ -506,6 +512,8 @@ pub const Transport = struct {
         if (self.proxy_wrapper) |proxy_wrapper| {
             proxy_wrapper.deinit();
         }
+
+        self.waiter.deinit();
 
         self.allocator.destroy(self);
     }
@@ -742,7 +750,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1006,7 +1014,7 @@ pub const Transport = struct {
             if (rc == 1) {
                 return true;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             } else {
@@ -1040,7 +1048,7 @@ pub const Transport = struct {
                 passphrase.?,
             );
         } else {
-            _passphrase = try std.fmt.allocPrintZ(
+            _passphrase = try strings.allocPrintZ(
                 self.allocator,
                 "",
                 .{},
@@ -1086,7 +1094,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1145,7 +1153,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1207,7 +1215,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1262,7 +1270,7 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(session);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1326,7 +1334,7 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(self.initial_session.?);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1461,7 +1469,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1514,7 +1522,7 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.time.sleep(default_eagain_delay_ns);
+                std.Thread.sleep(default_eagain_delay_ns);
 
                 continue;
             }
@@ -1552,7 +1560,7 @@ pub const Transport = struct {
         }
     }
 
-    fn _writeStandard(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+    fn _writeStandard(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport _writeStandard requested", .{});
 
         self.session_lock.lock();
@@ -1561,7 +1569,7 @@ pub const Transport = struct {
         const n = ssh2.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
 
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            return self._writeStandard(w, buf);
+            return self._writeStandard(buf);
         }
 
         if (n < 0) {
@@ -1585,7 +1593,7 @@ pub const Transport = struct {
         }
     }
 
-    fn _writeProxied(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+    fn _writeProxied(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport _writeProxied requested", .{});
 
         self.session_lock.lock();
@@ -1594,7 +1602,7 @@ pub const Transport = struct {
         const n = ssh2.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
 
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            return self._writeProxied(w, buf);
+            return self._writeProxied(buf);
         }
 
         if (n < 0) {
@@ -1636,17 +1644,17 @@ pub const Transport = struct {
         }
     }
 
-    pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+    pub fn write(self: *Transport, buf: []const u8) !void {
         self.log.info("ssh2.Transport write requested", .{});
 
         if (self.options.proxy_jump_options == null) {
-            return self._writeStandard(w, buf);
+            return self._writeStandard(buf);
         } else {
-            return self._writeProxied(w, buf);
+            return self._writeProxied(buf);
         }
     }
 
-    fn _readStandard(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+    fn _readStandard(self: *Transport, buf: []u8) !usize {
         self.log.debug("ssh2.Transport _readStandard requested", .{});
 
         self.session_lock.lock();
@@ -1670,7 +1678,7 @@ pub const Transport = struct {
         self.session_lock.unlock();
 
         if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            try w.wait(self.socket.?);
+            try self.waiter.wait(self.socket.?);
 
             return 0;
         } else if (n < 0) {
@@ -1686,7 +1694,7 @@ pub const Transport = struct {
         return @intCast(n);
     }
 
-    fn _readProxied(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+    fn _readProxied(self: *Transport, buf: []u8) !usize {
         self.log.debug("ssh2.Transport _readProxied requested", .{});
 
         self.session_lock.lock();
@@ -1714,13 +1722,13 @@ pub const Transport = struct {
             if (res) {
                 // re-read since we copied data from the cahnnel to the pipe, so now something
                 // should be available for libssh2_channel-read_ex
-                return self._readProxied(w, buf);
+                return self._readProxied(buf);
             } else |_| {
                 // didn't copy data, wait on the socket so libssh2 has something to read on
                 // the next iteration
             }
 
-            try w.wait(self.socket.?);
+            try self.waiter.wait(self.socket.?);
 
             return 0;
         } else if (n < 0) {
@@ -1736,14 +1744,18 @@ pub const Transport = struct {
         return @intCast(n);
     }
 
-    pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+    pub fn read(self: *Transport, buf: []u8) !usize {
         self.log.debug("ssh2.Transport read requested", .{});
 
         if (self.options.proxy_jump_options == null) {
-            return self._readStandard(w, buf);
+            return self._readStandard(buf);
         } else {
-            return self._readProxied(w, buf);
+            return self._readProxied(buf);
         }
+    }
+
+    pub fn unblock(self: *Transport) !void {
+        try self.waiter.unblock();
     }
 };
 
@@ -1779,4 +1791,18 @@ fn kbdInteractiveCallback(
             responses[0].length = @intCast(auth_callback_data_ptr.password.len);
         }
     }
+}
+
+test "transportInit" {
+    const o = try Options.init(std.testing.allocator, .{});
+    const t = try Transport.init(
+        std.testing.allocator,
+        logging.Logger{
+            .allocator = std.testing.allocator,
+        },
+        o,
+    );
+
+    t.deinit();
+    o.deinit();
 }

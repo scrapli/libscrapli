@@ -1,16 +1,17 @@
 const std = @import("std");
-const logging = @import("logging.zig");
-const session = @import("session.zig");
+
 const auth = @import("auth.zig");
 const bytes = @import("bytes.zig");
 const bytes_check = @import("bytes-check.zig");
-const re = @import("re.zig");
-const transport = @import("transport.zig");
-const platform = @import("cli-platform.zig");
-const operation = @import("cli-operation.zig");
-const mode = @import("cli-mode.zig");
-const result = @import("cli-result.zig");
 const errors = @import("errors.zig");
+const logging = @import("logging.zig");
+const mode = @import("cli-mode.zig");
+const operation = @import("cli-operation.zig");
+const platform = @import("cli-platform.zig");
+const re = @import("re.zig");
+const result = @import("cli-result.zig");
+const session = @import("session.zig");
+const transport = @import("transport.zig");
 
 const default_ssh_port: u16 = 22;
 const default_telnet_port: u16 = 23;
@@ -247,7 +248,7 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        var op_buf = std.ArrayList(u8).init(allocator);
+        var op_buf = std.array_list.Managed(u8).init(allocator);
         defer op_buf.deinit();
 
         if (self.definition.on_close_callback != null or
@@ -349,7 +350,7 @@ pub const Driver = struct {
                 err,
                 @src(),
                 self.log,
-                "cli.Driver enterMode: failed determining prompt from '{s}' | {d}",
+                "cli.Driver enterMode: failed determining prompt from '{s}' | {X}",
                 .{
                     res.results.items[0],
                     res.results.items[0],
@@ -369,17 +370,17 @@ pub const Driver = struct {
         var visited = std.StringHashMap(bool).init(self.allocator);
         defer visited.deinit();
 
-        const steps = try mode.getPathToMode(
+        var steps = try mode.getPathToMode(
             self.allocator,
             self.definition.modes,
             self.current_mode,
             options.requested_mode,
             &visited,
         );
-        defer steps.deinit();
+        defer steps.deinit(self.allocator);
 
         self.log.debug(
-            "cli.Driver enterMode: determined steps to requested mode '{s}' are: '{s}'",
+            "cli.Driver enterMode: determined steps to requested mode '{s}' are: '{any}'",
             .{ options.requested_mode, steps.items },
         );
 
@@ -537,7 +538,7 @@ pub const Driver = struct {
     ) !*result.Result {
         self.log.info("cli.Driver sendInputs requested", .{});
         self.log.debug(
-            "cli.Driver sendInputs: inputs '{s}'",
+            "cli.Driver sendInputs: inputs '{any}'",
             .{options.inputs},
         );
 
@@ -672,7 +673,7 @@ pub const Driver = struct {
         callbacks: []const operation.ReadCallback,
         bufs: *bytes.ProcessedBuf,
         buf_pos: usize,
-        triggered_callbacks: *std.ArrayList([]const u8),
+        triggered_callbacks: *std.array_list.Managed([]const u8),
     ) !void {
         while (true) {
             _ = try self.session.readTimeout(
@@ -777,7 +778,7 @@ pub const Driver = struct {
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
-        var triggered_callbacks = std.ArrayList([]const u8).init(allocator);
+        var triggered_callbacks = std.array_list.Managed([]const u8).init(allocator);
         defer triggered_callbacks.deinit();
 
         try self._readWithCallbacks(
@@ -877,7 +878,7 @@ test "readCallbackShouldExecute" {
             .buf = "foo bar baz",
             .cb_name = "cb1",
             .contains = "bloop",
-            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .triggered_callbacks = .{},
             .expected = false,
         },
         .{
@@ -885,7 +886,7 @@ test "readCallbackShouldExecute" {
             .buf = "foo bar baz",
             .cb_name = "cb1",
             .contains = "bar",
-            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .triggered_callbacks = .{},
             .expected = true,
         },
         .{
@@ -894,7 +895,7 @@ test "readCallbackShouldExecute" {
             .cb_name = "cb1",
             .contains = "bar",
             .not_contains = "baz",
-            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .triggered_callbacks = .{},
             .expected = false,
         },
         .{
@@ -902,7 +903,7 @@ test "readCallbackShouldExecute" {
             .buf = "foo bar baz",
             .cb_name = "cb1",
             .contains_pattern = "\\sbar\\s",
-            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .triggered_callbacks = .{},
             .expected = true,
         },
         .{
@@ -911,7 +912,7 @@ test "readCallbackShouldExecute" {
             .cb_name = "cb1",
             .contains_pattern = "\\sbar\\s",
             .not_contains = "baz",
-            .triggered_callbacks = std.ArrayList([]const u8).init(std.testing.allocator),
+            .triggered_callbacks = .{},
             .expected = false,
         },
     };

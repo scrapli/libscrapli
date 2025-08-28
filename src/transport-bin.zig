@@ -1,9 +1,10 @@
 const std = @import("std");
+
 const auth = @import("auth.zig");
+const errors = @import("errors.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
 const strings = @import("strings.zig");
-const errors = @import("errors.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 const c = @cImport({
@@ -13,7 +14,7 @@ const c = @cImport({
     @cInclude("sys/ioctl.h");
 });
 
-extern fn setsid() callconv(.C) i32;
+extern fn setsid() callconv(.c) i32;
 
 const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
@@ -122,12 +123,17 @@ pub const Transport = struct {
     log: logging.Logger,
 
     options: *Options,
+    waiter: transport_waiter.Waiter,
 
     f: ?std.fs.File = null,
+
+    r_buffer: [1024]u8 = undefined,
     reader: ?std.fs.File.Reader = null,
+
+    w_buffer: [1024]u8 = undefined,
     writer: ?std.fs.File.Writer = null,
 
-    open_args: std.ArrayList(strings.MaybeHeapString),
+    open_args: std.array_list.Managed(strings.MaybeHeapString),
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -142,7 +148,8 @@ pub const Transport = struct {
             .allocator = allocator,
             .log = log,
             .options = options,
-            .open_args = std.ArrayList(strings.MaybeHeapString).init(allocator),
+            .waiter = try transport_waiter.Waiter.init(allocator),
+            .open_args = std.array_list.Managed(strings.MaybeHeapString).init(allocator),
         };
 
         return t;
@@ -156,6 +163,8 @@ pub const Transport = struct {
         }
 
         self.open_args.deinit();
+        self.waiter.deinit();
+
         self.allocator.destroy(self);
     }
 
@@ -414,7 +423,10 @@ pub const Transport = struct {
             open_args[idx] = arg.string;
         }
 
-        self.log.debug("bin.Transport open: using args '{s}'", .{open_args});
+        const joined_open_args = try std.mem.join(self.allocator, " ", open_args);
+        defer self.allocator.free(joined_open_args);
+
+        self.log.debug("bin.Transport open: using args '{s}'", .{joined_open_args});
 
         self.f = openPty(
             self.allocator,
@@ -432,8 +444,8 @@ pub const Transport = struct {
             );
         };
 
-        self.reader = self.f.?.reader();
-        self.writer = self.f.?.writer();
+        self.reader = self.f.?.reader(&self.r_buffer);
+        self.writer = self.f.?.writer(&self.w_buffer);
     }
 
     pub fn close(self: *Transport) void {
@@ -459,7 +471,7 @@ pub const Transport = struct {
             );
         }
 
-        self.writer.?.writeAll(buf) catch |err| {
+        _ = self.writer.?.interface.write(buf) catch |err| {
             return errors.wrapCriticalError(
                 err,
                 @src(),
@@ -468,9 +480,11 @@ pub const Transport = struct {
                 .{},
             );
         };
+
+        try self.writer.?.interface.flush();
     }
 
-    pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+    pub fn read(self: *Transport, buf: []u8) !usize {
         self.log.debug("bin.Transport read requested", .{});
 
         if (self.reader == null) {
@@ -483,39 +497,39 @@ pub const Transport = struct {
             );
         }
 
-        const n = self.reader.?.read(buf) catch |err| {
-            switch (err) {
-                error.WouldBlock => {
-                    try w.wait(self.f.?.handle);
+        try self.waiter.wait(self.f.?.handle);
 
-                    return 0;
-                },
-                else => {
-                    // a warning as this can happen during close so we dont necessarily want to
-                    // log a crit
-                    return errors.wrapWarnError(
-                        err,
-                        @src(),
-                        self.log,
-                        "bin.Transport read: failed reading from pty",
-                        .{},
-                    );
-                },
-            }
+        const n = self.reader.?.read(buf) catch |err| {
+            // a warning as this can happen during close so we dont necessarily want to
+            // log a crit
+            return errors.wrapWarnError(
+                err,
+                @src(),
+                self.log,
+                "bin.Transport read: failed reading from pty",
+                .{},
+            );
         };
 
         if (n == 0) {
+            // TODO it seems this is actaully allowed/safe in 0.15.0+ stuff? seems to only happen
+            // at session startup
+
             // this should kill the read loop, but the main program will be killed from session
-            return errors.wrapWarnError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "bin.Transport read: read from pty returned zero bytes read",
-                .{},
-            );
+            // return errors.wrapWarnError(
+            //     errors.ScrapliError.Transport,
+            //     @src(),
+            //     self.log,
+            //     "bin.Transport read: read from pty returned zero bytes read",
+            //     .{},
+            // );
         }
 
         return n;
+    }
+
+    pub fn unblock(self: *Transport) !void {
+        try self.waiter.unblock();
     }
 };
 
@@ -567,7 +581,7 @@ fn openPty(
 
         var env_map_iter = env_map.iterator();
         while (env_map_iter.next()) |pair| {
-            envs[i] = try std.fmt.allocPrintZ(
+            envs[i] = try strings.allocPrintZ(
                 allocator,
                 "{s}={s}",
                 .{ pair.key_ptr.*, pair.value_ptr.* },
@@ -669,4 +683,18 @@ fn setnoecho(fd: std.posix.fd_t) !void {
     term.lflag.ECHO = false;
 
     try std.posix.tcsetattr(fd, std.posix.TCSA.NOW, term);
+}
+
+test "transportInit" {
+    const o = try Options.init(std.testing.allocator, .{});
+    const t = try Transport.init(
+        std.testing.allocator,
+        logging.Logger{
+            .allocator = std.testing.allocator,
+        },
+        o,
+    );
+
+    t.deinit();
+    o.deinit();
 }
