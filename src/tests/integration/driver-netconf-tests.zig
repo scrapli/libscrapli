@@ -2,9 +2,7 @@ const std = @import("std");
 
 const scrapli = @import("scrapli");
 const netconf = scrapli.netconf;
-const ascii = scrapli.ascii;
 const flags = scrapli.flags;
-const file = scrapli.file;
 const helper = scrapli.test_helper;
 
 fn GetRecordTestDriver(record_path: []const u8) !*netconf.Driver {

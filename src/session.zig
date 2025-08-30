@@ -5,7 +5,6 @@ const auth = @import("auth.zig");
 const bytes = @import("bytes.zig");
 const bytes_check = @import("bytes-check.zig");
 const errors = @import("errors.zig");
-const file = @import("file.zig");
 const logging = @import("logging.zig");
 const operation = @import("cli-operation.zig");
 const queue = @import("queue.zig");
@@ -703,6 +702,7 @@ pub const Session = struct {
         checkf: bytes_check.CheckF,
         checkargs: bytes_check.CheckArgs,
         bufs: *bytes.ProcessedBuf,
+        search_depth: u64,
     ) !bytes_check.MatchPositions {
         self.log.info("session.Session readTimeout requested", .{});
 
@@ -772,7 +772,7 @@ pub const Session = struct {
 
             const searchable_buf = bytes.getBufSearchView(
                 bufs.processed.items[op_processed_buf_starting_len..],
-                self.options.operation_max_search_depth,
+                search_depth,
             );
 
             var match_indexes = try checkf(checkargs, searchable_buf);
@@ -804,6 +804,7 @@ pub const Session = struct {
             bytes_check.nonZeroBuf,
             .{},
             &bufs,
+            self.options.operation_max_search_depth,
         );
 
         return bufs.toOwnedSlices();
@@ -831,6 +832,7 @@ pub const Session = struct {
                 .pattern = self.compiled_prompt_pattern,
             },
             &bufs,
+            self.options.operation_max_search_depth,
         );
 
         // pcre2Find returns a slice from the haystack, so we need to persist that in memory
@@ -882,26 +884,38 @@ pub const Session = struct {
         // SAFETY: will always be set or we'll error
         var match_indexes: bytes_check.MatchPositions = undefined;
 
+        var search_depth = self.options.operation_max_search_depth;
+        if (input.len >= search_depth) {
+            // if/when a user has an enormous input we obviously need to have a searchable buf that
+            // is larger than that, but we *probably* also will end up having the device writing
+            // backspace chars into what we read back from the device so we need to account for that
+            // if this still doesnt work users can always set a really high max search depth *or*
+            // use ignore input handling
+            search_depth = input.len * 4;
+        }
+
         switch (input_handling) {
-            operation.InputHandling.exact => {
+            .exact => {
                 match_indexes = try self.readTimeout(
                     timer,
                     cancel,
                     bytes_check.exactInBuf,
                     checkArgs,
                     bufs,
+                    search_depth,
                 );
             },
-            operation.InputHandling.fuzzy => {
+            .fuzzy => {
                 match_indexes = try self.readTimeout(
                     timer,
                     cancel,
                     bytes_check.fuzzyInBuf,
                     checkArgs,
                     bufs,
+                    search_depth,
                 );
             },
-            operation.InputHandling.ignore => {
+            .ignore => {
                 // ignore, not reading input; to not break our saftey rule above we return here
                 // when in "ignore" handling mode
                 try self.writeReturn();
@@ -959,6 +973,7 @@ pub const Session = struct {
             bytes_check.patternInBuf,
             checkArgs,
             &bufs,
+            self.options.operation_max_search_depth,
         );
 
         try self.last_consumed_prompt.appendSlice(
@@ -1065,6 +1080,7 @@ pub const Session = struct {
             bytes_check.exactInBuf,
             checkArgs,
             &bufs,
+            self.options.operation_max_search_depth,
         );
 
         if (!options.hidden_response) {
@@ -1085,6 +1101,7 @@ pub const Session = struct {
             bytes_check.patternInBuf,
             checkArgs,
             &bufs,
+            self.options.operation_max_search_depth,
         );
 
         try self.last_consumed_prompt.appendSlice(
