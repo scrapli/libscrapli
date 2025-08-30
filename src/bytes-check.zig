@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const bytes = @import("bytes.zig");
 const re = @import("re.zig");
 
@@ -13,7 +14,7 @@ pub const MatchPositions = struct {
             return 0;
         }
 
-        return self.end - self.start + 1;
+        return self.end - self.start;
     }
 };
 

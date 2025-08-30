@@ -63,8 +63,7 @@ pub const Mode = struct {
                 return error.Regex;
             }
 
-            // TODO wtf am i having to ptrcast for??
-            m.compiled_prompt_pattern = @ptrCast(compiled);
+            m.compiled_prompt_pattern = compiled;
         }
 
         if (options.prompt_excludes) |prompt_excludes| {

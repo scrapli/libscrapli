@@ -1,4 +1,4 @@
-eos1show ip route
+eos1#show ip route
 
 VRF: default
 Source Codes:

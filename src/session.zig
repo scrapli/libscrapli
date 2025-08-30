@@ -340,32 +340,13 @@ pub const Session = struct {
         if (self.options.record_destination) |rd| {
             switch (rd) {
                 .f => {
-                    // TODO gotta unfuck.... no idea wtf is going on and/or if we need tod o
-                    // better about just the recorder shit in general
                     // when just given a file path we'll "own" that lifecycle and close/cleanup
                     // as well as ensure we strip asci/ansi bits (so the file is easy to read etc.
                     // and especially for tests!); otherwise we'll leave it to the user
-
-                    // flush the writer then close everything
                     try self.recorder.?.interface.flush();
                     self.recorder.?.file.close();
 
-                    // then we'll re-read and strip for sanity reasons
-                    // var r_buffer: [1024]u8 = undefined;
-                    // var f = try file.ReaderFromPath(
-                    //     self.allocator,
-                    //     &r_buffer,
-                    //     rd.f,
-                    // );
-
-                    // var out: [1024]u8 = undefined;
-                    // const n = try f.read(&out);
                     try ascii.stripAsciiAndAnsiControlCharsInFile(rd.f);
-                    // try file.writeToPath(
-                    //     self.allocator,
-                    //     rd.f,
-                    //     out[0..new_size],
-                    // );
                 },
                 else => {},
             }
@@ -798,7 +779,8 @@ pub const Session = struct {
 
             if (!(match_indexes.start == 0 and match_indexes.end == 0)) {
                 match_indexes.start += (bufs.processed.items.len - searchable_buf.len);
-                match_indexes.end += (bufs.processed.items.len - searchable_buf.len);
+                match_indexes.end += (bufs.processed.items.len - searchable_buf.len) + 1;
+
                 return match_indexes;
             }
         }
@@ -981,7 +963,7 @@ pub const Session = struct {
 
         try self.last_consumed_prompt.appendSlice(
             self.allocator,
-            bufs.processed.items[prompt_indexes.start .. prompt_indexes.end + 1],
+            bufs.processed.items[prompt_indexes.start..prompt_indexes.end],
         );
 
         if (!options.retain_trailing_prompt) {

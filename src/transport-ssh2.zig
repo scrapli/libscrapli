@@ -7,8 +7,6 @@ const logging = @import("logging.zig");
 const strings = @import("strings.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
-// TODO i think transport imports waiter and ssh2/bin import it too. so just need transport
-// to *not* import and the implementaitons can import the waiter
 const c = @cImport({
     @cDefine("_XOPEN_SOURCE", "500");
     @cInclude("sys/socket.h");

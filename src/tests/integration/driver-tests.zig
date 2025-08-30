@@ -284,7 +284,9 @@ test "driver open-timeout" {
     defer std.testing.allocator.free(fixture_filename);
 
     var d = try GetTestDriver(fixture_filename);
-    d.session.options.operation_timeout_ns = 1_000_000;
+
+    // open is more time than others just for setup and such
+    d.session.options.operation_timeout_ns = 500_000;
 
     defer d.deinit();
 
@@ -450,8 +452,7 @@ test "driver get-prompt-timeout" {
         close_res.deinit();
     }
 
-    // so the test is faster of course
-    d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
+    d.session.options.operation_timeout_ns = 100_000;
 
     try std.testing.expectError(
         errors.ScrapliError.TimeoutExceeded,
@@ -617,8 +618,7 @@ test "driver enter-mode-timeout" {
     const open_res = try d.open(std.testing.allocator, .{});
     defer open_res.deinit();
 
-    // so the test is faster of course
-    d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
+    d.session.options.operation_timeout_ns = 100_000;
 
     try std.testing.expectError(
         errors.ScrapliError.TimeoutExceeded,
@@ -834,8 +834,7 @@ test "driver send-input-timeout" {
         const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        // so the test is faster of course
-        d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
+        d.session.options.operation_timeout_ns = 100_000;
 
         try std.testing.expectError(
             errors.ScrapliError.TimeoutExceeded,
@@ -1062,8 +1061,7 @@ test "driver send-inputs-timeout" {
         const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        // so the test is faster of course
-        d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
+        d.session.options.operation_timeout_ns = 100_000;
 
         try std.testing.expectError(
             errors.ScrapliError.TimeoutExceeded,
@@ -1368,8 +1366,7 @@ test "driver send-prompted-input-cancellation" {
         const open_res = try d.open(std.testing.allocator, .{});
         defer open_res.deinit();
 
-        // so the test is faster of course
-        d.session.options.operation_timeout_ns = 250 * std.time.ms_per_s;
+        d.session.options.operation_timeout_ns = 100_000;
 
         try std.testing.expectError(
             errors.ScrapliError.TimeoutExceeded,

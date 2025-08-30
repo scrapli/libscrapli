@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const ascii = @import("ascii.zig");
 const bytes = @import("bytes.zig");
 const file = @import("file.zig");
 const flags = @import("flags.zig");
@@ -47,6 +48,10 @@ fn processCommon(
 
     if (update) {
         try file.writeToPath(std.testing.allocator, golden_filename, _actual);
+
+        // sometimes we can have things like ETX that do not have an ESC in the sequence... just for
+        // testing reasons we'll remove that (since when using recorder we also remove!)
+        try ascii.stripAsciiAndAnsiControlCharsInFile(golden_filename);
 
         std.testing.allocator.free(_actual);
 

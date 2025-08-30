@@ -1,6 +1,7 @@
 const std = @import("std");
-const netconf = @import("netconf.zig");
+
 const ffi_driver = @import("ffi-driver.zig");
+const netconf_operation = @import("netconf-operation.zig");
 
 // for forcing inclusion in the ffi.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -151,15 +152,7 @@ export fn ls_option_session_record_destination(
                 return 1;
             };
 
-            // TODO same shit; also used to be a var and we would update .context so... gotta
-            // figure out that because that is how we know to close the file. really this should
-            // (session recorder things) all be fixed to just be a callback and nothing else --
-            // then the rest can be handled by a user in zig or py/go
-            // var w_buffer: [1024]u8 = undefined;
-            // const recorder = out_f.writer(&w_buffer);
-            // recorder.context = out_f;
-
-            rd.session.recorder = &out_f;
+            rd.session.recorder = out_f.writer(&rd.session.recorder_buf);
         },
         .netconf => |rd| {
             rd.session.options.record_destination = .{
@@ -171,7 +164,6 @@ export fn ls_option_session_record_destination(
                 },
             };
 
-            // TODO see above
             var out_f = std.fs.cwd().createFile(
                 rd.session.options.record_destination.?.f,
                 .{},
@@ -179,10 +171,7 @@ export fn ls_option_session_record_destination(
                 return 1;
             };
 
-            // var recorder = out_f.writer();
-            // recorder.context = out_f;
-
-            rd.session.recorder = &out_f;
+            rd.session.recorder = out_f.writer(&rd.session.recorder_buf);
         },
     }
 
@@ -1225,16 +1214,16 @@ export fn ls_option_netconf_preferred_version(
 
             if (std.mem.eql(
                 u8,
-                @tagName(netconf.Version.version_1_0),
+                @tagName(netconf_operation.Version.version_1_0),
                 preferred_version,
             )) {
-                rd.options.preferred_version = netconf.Version.version_1_0;
+                rd.options.preferred_version = netconf_operation.Version.version_1_0;
             } else if (std.mem.eql(
                 u8,
-                @tagName(netconf.Version.version_1_1),
+                @tagName(netconf_operation.Version.version_1_1),
                 preferred_version,
             )) {
-                rd.options.preferred_version = netconf.Version.version_1_1;
+                rd.options.preferred_version = netconf_operation.Version.version_1_1;
             } else {
                 return 1;
             }

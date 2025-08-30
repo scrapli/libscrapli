@@ -614,28 +614,16 @@ pub const Driver = struct {
     ) !void {
         self.log.info("netconf.Driver processServerCapabilities requested", .{});
 
-        // TODO wtf am i doing here?
         var input_stream = std.Io.Reader.fixed(cap_buf);
-        // const input_stream_reader = input_stream.reader();
 
-        // var input_buf: [4096]u8 = undefined;
-        // var input_reader = input_stream.reader();
         var streaming_reader: xml.Reader.Streaming = .init(
             self.allocator,
             &input_stream,
             .{},
         );
         defer streaming_reader.deinit();
+
         const xml_reader = &streaming_reader.interface;
-
-        // var xml_doc = xml.streamingDocument(
-        //     self.allocator,
-        //     input_stream_reader,
-        // );
-        // defer xml_doc.deinit();
-
-        // var xml_reader = xml_doc.reader(self.allocator, .{});
-        // defer xml_reader.deinit();
 
         while (true) {
             const node = try xml_reader.read();
@@ -1432,16 +1420,14 @@ pub const Driver = struct {
     ) ![]const u8 {
         var message_id_buf: [20]u8 = undefined;
 
-        // TODO ?!?!?!?
         var output: std.Io.Writer.Allocating = .init(self.allocator);
         defer output.deinit();
-        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "" });
-        // var out = xml.streamingOutput(sink.writer());
 
-        // var writer = out.writer(
-        //     allocator,
-        //     .{ .indent = "" },
-        // );
+        var writer: xml.Writer = .init(
+            self.allocator,
+            &output.writer,
+            .{ .indent = "" },
+        );
         defer writer.deinit();
 
         try writer.xmlDeclaration("UTF-8", null);

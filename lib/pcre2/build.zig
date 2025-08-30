@@ -82,14 +82,13 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = null,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         },
     );
 
     const lib = b.addLibrary(
         .{
             .name = b.fmt("pcre2-{s}", .{@tagName(codeUnitWidth)}),
-            // TODO... how to do in 0.15.0
-            // .link_libc = true,
             .linkage = .static,
             .root_module = lib_mod,
         },
