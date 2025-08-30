@@ -20,11 +20,19 @@ pub fn build(b: *std.Build) void {
         },
     );
 
-    const lib = b.addStaticLibrary(
+    const lib_mod = b.createModule(
         .{
-            .name = "ssh2",
+            .root_source_file = null,
             .target = target,
             .optimize = optimize,
+        },
+    );
+
+    const lib = b.addLibrary(
+        .{
+            .name = "ssh2",
+            .linkage = .static,
+            .root_module = lib_mod,
         },
     );
 

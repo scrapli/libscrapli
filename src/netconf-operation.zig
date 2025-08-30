@@ -1,3 +1,10 @@
+pub const default_rpc_error_tag = "rpc-error>";
+
+pub const Version = enum {
+    version_1_0,
+    version_1_1,
+};
+
 pub const Kind = enum {
     // not "standard" netconf operations, but operations for us!
     open,

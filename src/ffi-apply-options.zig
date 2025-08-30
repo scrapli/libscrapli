@@ -1,6 +1,7 @@
 const std = @import("std");
-const netconf = @import("netconf.zig");
+
 const ffi_driver = @import("ffi-driver.zig");
+const netconf_operation = @import("netconf-operation.zig");
 
 // for forcing inclusion in the ffi.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -144,17 +145,14 @@ export fn ls_option_session_record_destination(
                 },
             };
 
-            const out_f = std.fs.cwd().createFile(
+            var out_f = std.fs.cwd().createFile(
                 rd.session.options.record_destination.?.f,
                 .{},
             ) catch {
                 return 1;
             };
 
-            var recorder = out_f.writer();
-            recorder.context = out_f;
-
-            rd.session.recorder = recorder;
+            rd.session.recorder = out_f.writer(&rd.session.recorder_buf);
         },
         .netconf => |rd| {
             rd.session.options.record_destination = .{
@@ -166,17 +164,14 @@ export fn ls_option_session_record_destination(
                 },
             };
 
-            const out_f = std.fs.cwd().createFile(
+            var out_f = std.fs.cwd().createFile(
                 rd.session.options.record_destination.?.f,
                 .{},
             ) catch {
                 return 1;
             };
 
-            var recorder = out_f.writer();
-            recorder.context = out_f;
-
-            rd.session.recorder = recorder;
+            rd.session.recorder = out_f.writer(&rd.session.recorder_buf);
         },
     }
 
@@ -1219,16 +1214,16 @@ export fn ls_option_netconf_preferred_version(
 
             if (std.mem.eql(
                 u8,
-                @tagName(netconf.Version.version_1_0),
+                @tagName(netconf_operation.Version.version_1_0),
                 preferred_version,
             )) {
-                rd.options.preferred_version = netconf.Version.version_1_0;
+                rd.options.preferred_version = netconf_operation.Version.version_1_0;
             } else if (std.mem.eql(
                 u8,
-                @tagName(netconf.Version.version_1_1),
+                @tagName(netconf_operation.Version.version_1_1),
                 preferred_version,
             )) {
-                rd.options.preferred_version = netconf.Version.version_1_1;
+                rd.options.preferred_version = netconf_operation.Version.version_1_1;
             } else {
                 return 1;
             }

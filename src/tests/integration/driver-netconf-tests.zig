@@ -1,12 +1,11 @@
 const std = @import("std");
 
-const netconf = @import("../../netconf.zig");
-const ascii = @import("../../ascii.zig");
-const flags = @import("../../flags.zig");
-const file = @import("../../file.zig");
-const helper = @import("../../test-helper.zig");
+const scrapli = @import("scrapli");
+const netconf = scrapli.netconf;
+const flags = scrapli.flags;
+const helper = scrapli.test_helper;
 
-fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*netconf.Driver {
+fn GetRecordTestDriver(record_path: []const u8) !*netconf.Driver {
     return netconf.Driver.init(
         std.testing.allocator,
         "localhost",
@@ -18,7 +17,7 @@ fn GetRecordTestDriver(recorder: std.fs.File.Writer) !*netconf.Driver {
             },
             .session = .{
                 .record_destination = .{
-                    .writer = recorder,
+                    .f = record_path,
                 },
             },
         },
@@ -87,32 +86,10 @@ test "driver-netconf open" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    content,
-                    0,
-                );
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
-            }
-        }
-
         var d: *netconf.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -165,32 +142,10 @@ test "driver-netconf get-config" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                    content,
-                    0,
-                );
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
-            }
-        }
-
         var d: *netconf.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -252,29 +207,10 @@ test "driver-netconf lock" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
-            }
-        }
-
         var d: *netconf.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }
@@ -335,29 +271,10 @@ test "driver-netconf unlock" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var f: std.fs.File = undefined;
-
-        defer {
-            if (record) {
-                f.close();
-
-                var content = file.readFromPath(std.testing.allocator, fixture_filename) catch unreachable;
-                defer std.testing.allocator.free(content);
-
-                const new_size = ascii.stripAsciiAndAnsiControlCharsInPlace(content, 0);
-                file.writeToPath(std.testing.allocator, fixture_filename, content[0..new_size]) catch unreachable;
-            }
-        }
-
         var d: *netconf.Driver = undefined;
 
         if (record) {
-            f = try std.fs.cwd().createFile(
-                fixture_filename,
-                .{},
-            );
-
-            d = try GetRecordTestDriver(f.writer());
+            d = try GetRecordTestDriver(fixture_filename);
         } else {
             d = try GetTestDriver(fixture_filename);
         }

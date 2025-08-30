@@ -136,7 +136,7 @@ export fn ls_cli_open(
             break;
         }
 
-        std.time.sleep(ffi_driver.operation_thread_ready_sleep);
+        std.Thread.sleep(ffi_driver.operation_thread_ready_sleep);
     }
 
     return 0;
@@ -578,7 +578,7 @@ export fn ls_cli_read_callback_should_execute(
     not_contains: [*c]const u8,
     execute: *bool,
 ) u8 {
-    var _triggered_callbacks = std.ArrayList([]const u8).init(std.heap.c_allocator);
+    var triggered_callbacks: std.ArrayList([]const u8) = .{};
 
     const should_execute = cli.readCallbackShouldExecute(
         std.mem.span(buf),
@@ -591,7 +591,7 @@ export fn ls_cli_read_callback_should_execute(
         // doing string contains is way easier there (certainly when considering passing things
         // over ffi), so yea... w/e this is zero allocation operation so just pass empty arraylist
         false,
-        &_triggered_callbacks,
+        &triggered_callbacks,
     ) catch {
         return 1;
     };

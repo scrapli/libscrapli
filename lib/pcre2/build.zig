@@ -77,13 +77,20 @@ pub fn build(b: *std.Build) !void {
     );
 
     // pcre2-8/16/32.so
-
-    const lib = b.addStaticLibrary(
+    const lib_mod = b.createModule(
         .{
-            .name = b.fmt("pcre2-{s}", .{@tagName(codeUnitWidth)}),
+            .root_source_file = null,
             .target = target,
             .optimize = optimize,
             .link_libc = true,
+        },
+    );
+
+    const lib = b.addLibrary(
+        .{
+            .name = b.fmt("pcre2-{s}", .{@tagName(codeUnitWidth)}),
+            .linkage = .static,
+            .root_module = lib_mod,
         },
     );
 

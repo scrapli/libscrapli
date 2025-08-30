@@ -1,7 +1,7 @@
 const std = @import("std");
+
 const ascii = @import("ascii.zig");
 const operation = @import("netconf-operation.zig");
-const netconf = @import("netconf.zig");
 
 const rpcErrorTag = "rpc-error";
 const rpcReplyTag = "rpc-reply";
@@ -86,11 +86,12 @@ test "getSubscriptionId" {
     }
 }
 
+// TODO replace w/ init method
 pub fn NewResult(
     allocator: std.mem.Allocator,
     host: []const u8,
     port: u16,
-    version: netconf.Version,
+    version: operation.Version,
     error_tag: []const u8,
     input: []const u8,
     operation_kind: operation.Kind,
@@ -110,8 +111,8 @@ pub fn NewResult(
         .start_time_ns = std.time.nanoTimestamp(),
         .end_time_ns = 0,
         .result_failure_indicated = false,
-        .result_warning_messages = std.ArrayList([]const u8).init(allocator),
-        .result_error_messages = std.ArrayList([]const u8).init(allocator),
+        .result_warning_messages = .{},
+        .result_error_messages = .{},
     };
 
     return r;
@@ -123,7 +124,7 @@ pub const Result = struct {
     host: []const u8,
     port: u16,
 
-    version: netconf.Version,
+    version: operation.Version,
     error_tag: []const u8,
 
     operation_kind: operation.Kind,
@@ -153,8 +154,8 @@ pub const Result = struct {
         // than copies for them! so, we only need to deinit the array list that
         // holds those pointers!
 
-        self.result_warning_messages.deinit();
-        self.result_error_messages.deinit();
+        self.result_warning_messages.deinit(self.allocator);
+        self.result_error_messages.deinit(self.allocator);
 
         self.allocator.destroy(self);
     }
@@ -224,10 +225,12 @@ pub const Result = struct {
 
                 if (std.mem.eql(u8, sev, rpcErrorSeverityError)) {
                     try self.result_error_messages.append(
+                        self.allocator,
                         ret[message_start_idx.? .. iter_idx + rpcErrorTag.len + 3],
                     );
                 } else {
                     try self.result_warning_messages.append(
+                        self.allocator,
                         ret[message_start_idx.? .. iter_idx + rpcErrorTag.len + 3],
                     );
                 }
@@ -368,8 +371,8 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                netconf.Version.version_1_0,
-                netconf.default_rpc_error_tag,
+                .version_1_0,
+                operation.default_rpc_error_tag,
                 "", // important: this cant be a global const as itll panic when being freed
                 //  in normal cases a user would never be setting this directly as the element
                 //  will be being built by -- or even in the case of rawRpc at least wrapped in
@@ -394,8 +397,8 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                netconf.Version.version_1_0,
-                netconf.default_rpc_error_tag,
+                .version_1_0,
+                operation.default_rpc_error_tag,
                 "",
                 operation.Kind.get,
             ),
@@ -431,8 +434,8 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                netconf.Version.version_1_0,
-                netconf.default_rpc_error_tag,
+                .version_1_0,
+                operation.default_rpc_error_tag,
                 "",
                 operation.Kind.get,
             ),
@@ -469,8 +472,8 @@ test "parseRpcErrors" {
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
-                netconf.Version.version_1_0,
-                netconf.default_rpc_error_tag,
+                .version_1_0,
+                operation.default_rpc_error_tag,
                 "",
                 operation.Kind.get,
             ),

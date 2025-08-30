@@ -10,15 +10,15 @@ pub const Result = struct {
 
     operation_kind: operation.Kind,
 
-    failed_indicators: ?std.ArrayList([]const u8),
+    failed_indicators: ?std.array_list.Managed([]const u8),
 
-    inputs: std.ArrayList([]const u8),
+    inputs: std.array_list.Managed([]const u8),
 
-    results_raw: std.ArrayList([]const u8),
-    results: std.ArrayList([]const u8),
+    results_raw: std.array_list.Managed([]const u8),
+    results: std.array_list.Managed([]const u8),
 
     start_time_ns: i128,
-    splits_ns: std.ArrayList(i128),
+    splits_ns: std.array_list.Managed(i128),
 
     // set to true at first failure indication, further failures would not be captured
     result_failure_indicated: bool,
@@ -33,7 +33,7 @@ pub const Result = struct {
         host: []const u8,
         port: u16,
         operation_kind: operation.Kind,
-        failed_indicators: ?std.ArrayList([]const u8),
+        failed_indicators: ?std.array_list.Managed([]const u8),
     ) !*Result {
         const res = try allocator.create(Result);
 
@@ -43,11 +43,11 @@ pub const Result = struct {
             .port = port,
             .operation_kind = operation_kind,
             .failed_indicators = failed_indicators,
-            .inputs = std.ArrayList([]const u8).init(allocator),
-            .results_raw = std.ArrayList([]const u8).init(allocator),
-            .results = std.ArrayList([]const u8).init(allocator),
+            .inputs = std.array_list.Managed([]const u8).init(allocator),
+            .results_raw = std.array_list.Managed([]const u8).init(allocator),
+            .results = std.array_list.Managed([]const u8).init(allocator),
             .start_time_ns = std.time.nanoTimestamp(),
-            .splits_ns = std.ArrayList(i128).init(allocator),
+            .splits_ns = std.array_list.Managed(i128).init(allocator),
             .result_failure_indicated = false,
             .result_failure_indicator = -1,
         };

@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const logging = @import("logging.zig");
 
 pub const ScrapliError = error{
@@ -37,6 +38,33 @@ pub fn wrapCriticalError(
     }
 
     return err;
+}
+
+test "wrapCriticalErrorNullLog" {
+    const e = error.Foo;
+
+    wrapCriticalError(
+        e,
+        @src(),
+        null,
+        "a message about '{s}'",
+        .{"foo"},
+    ) catch {};
+}
+
+test "wrapCriticalErrorLog" {
+    const e = error.Foo;
+    const l = logging.Logger{
+        .allocator = std.testing.allocator,
+    };
+
+    wrapCriticalError(
+        e,
+        @src(),
+        l,
+        "a message about '{s}'",
+        .{"foo"},
+    ) catch {};
 }
 
 pub fn wrapWarnError(

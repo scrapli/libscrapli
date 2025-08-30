@@ -1,7 +1,9 @@
 const std = @import("std");
+
+const ascii = @import("ascii.zig");
 const bytes = @import("bytes.zig");
-const flags = @import("flags.zig");
 const file = @import("file.zig");
+const flags = @import("flags.zig");
 const re = @import("re.zig");
 
 const user_at_host_pattern = "\\w+@[\\w\\d\\.]+";
@@ -46,6 +48,10 @@ fn processCommon(
 
     if (update) {
         try file.writeToPath(std.testing.allocator, golden_filename, _actual);
+
+        // sometimes we can have things like ETX that do not have an ESC in the sequence... just for
+        // testing reasons we'll remove that (since when using recorder we also remove!)
+        try ascii.stripAsciiAndAnsiControlCharsInFile(golden_filename);
 
         std.testing.allocator.free(_actual);
 
@@ -537,10 +543,10 @@ pub fn inlineInitArrayList(
     comptime T: type,
     items: []const T,
 ) !std.ArrayList(T) {
-    var al = std.ArrayList(T).init(allocator);
+    var al: std.ArrayList(T) = .{};
 
     for (items) |item| {
-        try al.append(item);
+        try al.append(allocator, item);
     }
 
     return al;

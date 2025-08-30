@@ -32,17 +32,17 @@ clean-zig-cache: ## Nukes the local zig cache dir if its > 16gb
 	bash -c "[ -d .zig-cache ] && [ $$(du -s .zig-cache | awk '{print $$1}') -gt $$((16 * 1024 * 1024)) ] && rm -rf .zig-cache" || true
 
 build: fmt clean-zig-cache ## Build the shared objects.
-	zig build -freference-trace --summary all
+	zig build ffi -freference-trace --summary all
 
 build-release: fmt clean-zig-cache ## Build the shared objects w/ release optimization
-	rm -rf zig-out && zig build -Doptimize=ReleaseSafe -freference-trace --summary all -- --release --all-targets
+	rm -rf zig-out && zig build ffi -Doptimize=ReleaseSafe -freference-trace --summary all -- --all-targets
 	find zig-out -type f \( -name 'libscrapli.*.dylib' -o -name 'libscrapli.so.*' \) -exec sha256sum {} + > "zig-out/checksums.txt"
 
 build-examples: fmt clean-zig-cache ## Build the example binaries
 	zig build -freference-trace --summary all -- --examples --skip-ffi-lib
 
-build-main: fmt clean-zig-cache ## Build the "main" binary in repo root
-	zig build -freference-trace --summary all -- --main --skip-ffi-lib
+build-main: fmt clean-zig-cache ## Build the "main" binary in repo root, useful for testing stuff out
+	zig build main -freference-trace --summary all
 
 run-main: fmt build-main ## Build and run the "main" binary in repo root
 	./zig-out/bin/scrapli

@@ -6,6 +6,7 @@ const result = @import("cli-result.zig");
 const result_netconf = @import("netconf-result.zig");
 const logging = @import("logging.zig");
 const errors = @import("errors.zig");
+const queue = @import("queue.zig");
 
 const ffi_operations = @import("ffi-operations.zig");
 
@@ -30,9 +31,9 @@ pub const FfiDriver = struct {
     operation_lock: std.Thread.Mutex,
     operation_condition: std.Thread.Condition,
     operation_predicate: u32,
-    operation_queue: std.fifo.LinearFifo(
+    operation_queue: queue.LinearFifo(
         ffi_operations.OperationOptions,
-        std.fifo.LinearFifoBufferType.Dynamic,
+        queue.LinearFifoBufferType.Dynamic,
     ),
     operation_results: std.AutoHashMap(
         u32,
@@ -63,9 +64,9 @@ pub const FfiDriver = struct {
             .operation_lock = std.Thread.Mutex{},
             .operation_condition = std.Thread.Condition{},
             .operation_predicate = 0,
-            .operation_queue = std.fifo.LinearFifo(
+            .operation_queue = queue.LinearFifo(
                 ffi_operations.OperationOptions,
-                std.fifo.LinearFifoBufferType.Dynamic,
+                queue.LinearFifoBufferType.Dynamic,
             ).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
@@ -100,9 +101,9 @@ pub const FfiDriver = struct {
             .operation_lock = std.Thread.Mutex{},
             .operation_condition = std.Thread.Condition{},
             .operation_predicate = 0,
-            .operation_queue = std.fifo.LinearFifo(
+            .operation_queue = queue.LinearFifo(
                 ffi_operations.OperationOptions,
-                std.fifo.LinearFifoBufferType.Dynamic,
+                queue.LinearFifoBufferType.Dynamic,
             ).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
@@ -195,7 +196,7 @@ pub const FfiDriver = struct {
                 break;
             }
 
-            std.time.sleep(operation_thread_ready_sleep);
+            std.Thread.sleep(operation_thread_ready_sleep);
         }
     }
 

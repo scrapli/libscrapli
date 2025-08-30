@@ -1,11 +1,11 @@
 const std = @import("std");
+
 const auth = @import("auth.zig");
-const transport_bin = @import("transport-bin.zig");
-const transport_telnet = @import("transport-telnet.zig");
-const transport_ssh2 = @import("transport-ssh2.zig");
-const transport_test = @import("transport-test.zig");
-const transport_waiter = @import("transport-waiter.zig");
 const logging = @import("logging.zig");
+const transport_bin = @import("transport-bin.zig");
+const transport_ssh2 = @import("transport-ssh2.zig");
+const transport_telnet = @import("transport-telnet.zig");
+const transport_test = @import("transport-test.zig");
 
 pub const Kind = enum {
     bin,
@@ -260,6 +260,23 @@ pub const Transport = struct {
         }
     }
 
+    // unblocks the transport waiter to stop any in flight reads; useful before closing the
+    // session to free up the session read loop.
+    pub fn unblock(self: *Transport) !void {
+        switch (self.implementation) {
+            Kind.bin => |t| {
+                try t.unblock();
+            },
+            Kind.telnet => |t| {
+                try t.unblock();
+            },
+            Kind.ssh2 => |t| {
+                try t.unblock();
+            },
+            Kind.test_ => {},
+        }
+    }
+
     // close can never error, worst case we just tear down and free the underlying handle/session
     // this allows the session to ensure that the transport gets closed during deinit so its always
     // nicely tidied up.
@@ -280,7 +297,7 @@ pub const Transport = struct {
         }
     }
 
-    pub fn write(self: *Transport, w: transport_waiter.Waiter, buf: []const u8) !void {
+    pub fn write(self: *Transport, buf: []const u8) !void {
         switch (self.implementation) {
             Kind.bin => |t| {
                 try t.write(buf);
@@ -289,7 +306,7 @@ pub const Transport = struct {
                 try t.write(buf);
             },
             Kind.ssh2 => |t| {
-                try t.write(w, buf);
+                try t.write(buf);
             },
             Kind.test_ => |t| {
                 try t.write(buf);
@@ -297,18 +314,18 @@ pub const Transport = struct {
         }
     }
 
-    pub fn read(self: *Transport, w: transport_waiter.Waiter, buf: []u8) !usize {
+    pub fn read(self: *Transport, buf: []u8) !usize {
         var n: usize = 0;
 
         switch (self.implementation) {
             Kind.bin => |t| {
-                n = try t.read(w, buf);
+                n = try t.read(buf);
             },
             Kind.telnet => |t| {
-                n = try t.read(w, buf);
+                n = try t.read(buf);
             },
             Kind.ssh2 => |t| {
-                n = try t.read(w, buf);
+                n = try t.read(buf);
             },
             Kind.test_ => |t| {
                 n = try t.read(buf);
@@ -318,3 +335,23 @@ pub const Transport = struct {
         return n;
     }
 };
+
+test "transportInit" {
+    const o = try Options.init(
+        std.testing.allocator,
+        .{
+            .bin = .{},
+        },
+    );
+
+    const t = try Transport.init(
+        std.testing.allocator,
+        logging.Logger{
+            .allocator = std.testing.allocator,
+        },
+        o,
+    );
+
+    t.deinit();
+    o.deinit();
+}

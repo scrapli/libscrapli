@@ -1,12 +1,8 @@
 const std = @import("std");
-const re = @import("re.zig");
-const hashmaps = @import("hashmaps.zig");
-const errors = @import("errors.zig");
 
-const pcre2 = @cImport({
-    @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
-    @cInclude("pcre2.h");
-});
+const errors = @import("errors.zig");
+const hashmaps = @import("hashmaps.zig");
+const re = @import("re.zig");
 
 pub const unknown_mode = "__unknown__";
 pub const default_mode = "__default__";
@@ -44,7 +40,7 @@ pub const Mode = struct {
     allocator: std.mem.Allocator,
     prompt_exact: ?[]const u8,
     prompt_pattern: ?[]const u8,
-    compiled_prompt_pattern: ?*pcre2.pcre2_code_8,
+    compiled_prompt_pattern: ?*re.pcre2CompiledPattern,
     prompt_excludes: ?[]const []const u8,
     accessible_modes: std.StringHashMap([]Operation),
 
@@ -423,10 +419,10 @@ pub fn getPathToMode(
     requested_mode_name: []const u8,
     visited: *std.StringHashMap(bool),
 ) !std.ArrayList([]const u8) {
-    var steps = std.ArrayList([]const u8).init(allocator);
+    var steps: std.ArrayList([]const u8) = .{};
 
     if (std.mem.eql(u8, current_mode_name, requested_mode_name)) {
-        try steps.append(current_mode_name);
+        try steps.append(allocator, current_mode_name);
         return steps;
     }
 
@@ -451,11 +447,12 @@ pub fn getPathToMode(
             requested_mode_name,
             visited,
         );
-        defer sub_path.deinit();
+
+        defer sub_path.deinit(allocator);
 
         if (sub_path.items.len > 0) {
-            try steps.append(current_mode_name);
-            try steps.appendSlice(sub_path.items);
+            try steps.append(allocator, current_mode_name);
+            try steps.appendSlice(allocator, sub_path.items);
             break;
         }
     }
@@ -750,14 +747,14 @@ test "getPathToMode" {
         var visited = std.StringHashMap(bool).init(std.testing.allocator);
         defer visited.deinit();
 
-        const actual = try getPathToMode(
+        var actual = try getPathToMode(
             std.testing.allocator,
             case.modes,
             case.current_mode_name,
             case.requested_mode_name,
             &visited,
         );
-        defer actual.deinit();
+        defer actual.deinit(std.testing.allocator);
 
         for (0.., case.expected) |idx, expected| {
             try std.testing.expectEqualStrings(expected, actual.items[idx]);
