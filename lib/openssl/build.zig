@@ -4,15 +4,20 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream = b.dependency("openssl", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    const upstream = b.dependency(
+        "openssl",
+        .{
+            .target = target,
+            .optimize = optimize,
+        },
+    );
     const generate = std.Build.Step.Run.create(b, "Generate openssl files");
     generate.has_side_effects = true;
     generate.expectExitCode(0);
     generate.addCheck(
-        .{ .expect_stdout_match = "Files were successfully generated\n" },
+        .{
+            .expect_stdout_match = "Files were successfully generated\n",
+        },
     );
     generate.setCwd(upstream.path(""));
     generate.addArg("sh");
@@ -49,16 +54,21 @@ fn libssl(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
-    const upstream = b.dependency("openssl", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    const upstream = b.dependency(
+        "openssl",
+        .{
+            .target = target,
+            .optimize = optimize,
+        },
+    );
 
     const lib_mod = b.createModule(
         .{
             .root_source_file = null,
+            .strip = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         },
     );
 
@@ -71,8 +81,6 @@ fn libssl(
     );
 
     lib.pie = true;
-    lib.root_module.strip = true;
-    lib.linkLibC();
     lib.addIncludePath(upstream.path("."));
     lib.addIncludePath(upstream.path("include"));
     lib.addCSourceFiles(.{
@@ -195,8 +203,10 @@ fn libcrypto(
     const lib_mod = b.createModule(
         .{
             .root_source_file = null,
+            .strip = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         },
     );
 
@@ -209,8 +219,6 @@ fn libcrypto(
     );
 
     lib.pie = true;
-    lib.root_module.strip = true;
-    lib.linkLibC();
     lib.addIncludePath(upstream.path("include"));
     lib.addIncludePath(upstream.path("."));
     lib.addIncludePath(upstream.path("providers/common/include"));
