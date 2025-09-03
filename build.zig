@@ -347,6 +347,7 @@ fn buildScrapliFFI(
                     .module = xml.module("xml"),
                 },
             },
+            .link_libc = true,
         },
     );
 
@@ -483,6 +484,7 @@ fn buildFFITarget(
             .name = "scrapli",
             .root_module = try buildScrapliFFI(b, target, optimize),
             .linkage = .dynamic,
+            .use_llvm = true,
         },
     );
 

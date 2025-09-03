@@ -606,6 +606,8 @@ pub const Transport = struct {
         host: []const u8,
         port: u16,
     ) !void {
+        self.log.debug("ssh2.Transport initSocket requested", .{});
+
         // doing this here rather than init because it feels more "open-y" than "init-y"
         const resolved_addresses = std.net.getAddressList(
             self.allocator,
@@ -684,6 +686,8 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
     ) !void {
+        self.log.debug("ssh2.Transport initSession requested", .{});
+
         self.initial_session = ssh2.libssh2_session_init_ex(
             null,
             null,
@@ -768,6 +772,8 @@ pub const Transport = struct {
         host: []const u8,
         port: u16,
     ) !void {
+        self.log.debug("ssh2.Transport initKnownHost requested", .{});
+
         if (self.options.known_hosts_path == null) {
             return;
         }
@@ -889,6 +895,8 @@ pub const Transport = struct {
         session: *ssh2.struct__LIBSSH2_SESSION,
         auth_options: *auth.Options,
     ) !void {
+        self.log.debug("ssh2.Transport authenticate requested", .{});
+
         const _username = try self.allocator.dupeZ(u8, auth_options.username.?);
         defer self.allocator.free(_username);
 
