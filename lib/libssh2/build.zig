@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = null,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         },
     );
 
@@ -38,40 +39,24 @@ pub fn build(b: *std.Build) void {
 
     lib.root_module.addCMacro("LIBSSH2_OPENSSL", "");
 
-    if (target.result.os.tag == .windows) {
-        lib.root_module.addCMacro("_CRT_SECURE_NO_DEPRECATE", "1");
-        lib.root_module.addCMacro("HAVE_LIBCRYPT32", "");
-        lib.root_module.addCMacro("HAVE_WINSOCK2_H", "");
-        lib.root_module.addCMacro("HAVE_IOCTLSOCKET", "");
-        lib.root_module.addCMacro("HAVE_SELECT", "");
-        lib.root_module.addCMacro("LIBSSH2_DH_GEX_NEW", "1");
-
-        if (target.result.isGnuLibC()) {
-            lib.root_module.addCMacro("HAVE_UNISTD_H", "");
-            lib.root_module.addCMacro("HAVE_INTTYPES_H", "");
-            lib.root_module.addCMacro("HAVE_SYS_TIME_H", "");
-            lib.root_module.addCMacro("HAVE_GETTIMEOFDAY", "");
-        }
-    } else {
-        lib.root_module.addCMacro("HAVE_UNISTD_H", "");
-        lib.root_module.addCMacro("HAVE_INTTYPES_H", "");
-        lib.root_module.addCMacro("HAVE_STDLIB_H", "");
-        lib.root_module.addCMacro("HAVE_SYS_SELECT_H", "");
-        lib.root_module.addCMacro("HAVE_SYS_UIO_H", "");
-        lib.root_module.addCMacro("HAVE_SYS_SOCKET_H", "");
-        lib.root_module.addCMacro("HAVE_SYS_IOCTL_H", "");
-        lib.root_module.addCMacro("HAVE_SYS_TIME_H", "");
-        lib.root_module.addCMacro("HAVE_SYS_UN_H", "");
-        lib.root_module.addCMacro("HAVE_LONGLONG", "");
-        lib.root_module.addCMacro("HAVE_GETTIMEOFDAY", "");
-        lib.root_module.addCMacro("HAVE_INET_ADDR", "");
-        lib.root_module.addCMacro("HAVE_POLL", "");
-        lib.root_module.addCMacro("HAVE_SELECT", "");
-        lib.root_module.addCMacro("HAVE_SOCKET", "");
-        lib.root_module.addCMacro("HAVE_STRTOLL", "");
-        lib.root_module.addCMacro("HAVE_SNPRINTF", "");
-        lib.root_module.addCMacro("HAVE_O_NONBLOCK", "");
-    }
+    lib.root_module.addCMacro("HAVE_UNISTD_H", "");
+    lib.root_module.addCMacro("HAVE_INTTYPES_H", "");
+    lib.root_module.addCMacro("HAVE_STDLIB_H", "");
+    lib.root_module.addCMacro("HAVE_SYS_SELECT_H", "");
+    lib.root_module.addCMacro("HAVE_SYS_UIO_H", "");
+    lib.root_module.addCMacro("HAVE_SYS_SOCKET_H", "");
+    lib.root_module.addCMacro("HAVE_SYS_IOCTL_H", "");
+    lib.root_module.addCMacro("HAVE_SYS_TIME_H", "");
+    lib.root_module.addCMacro("HAVE_SYS_UN_H", "");
+    lib.root_module.addCMacro("HAVE_LONGLONG", "");
+    lib.root_module.addCMacro("HAVE_GETTIMEOFDAY", "");
+    lib.root_module.addCMacro("HAVE_INET_ADDR", "");
+    lib.root_module.addCMacro("HAVE_POLL", "");
+    lib.root_module.addCMacro("HAVE_SELECT", "");
+    lib.root_module.addCMacro("HAVE_SOCKET", "");
+    lib.root_module.addCMacro("HAVE_STRTOLL", "");
+    lib.root_module.addCMacro("HAVE_SNPRINTF", "");
+    lib.root_module.addCMacro("HAVE_O_NONBLOCK", "");
 
     lib.addIncludePath(upstream.path("include"));
     lib.addIncludePath(upstream.path("config"));
@@ -136,8 +121,6 @@ pub fn build(b: *std.Build) void {
 
     lib.linkLibrary(openssl.artifact("ssl"));
     lib.linkLibrary(openssl.artifact("crypto"));
-
-    lib.linkLibC();
 
     b.installArtifact(lib);
 }
