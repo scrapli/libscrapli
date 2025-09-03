@@ -2,11 +2,11 @@
 const std = @import("std");
 
 const bytes = @import("bytes.zig");
-const ffi_driver = @import("ffi-driver.zig");
-const ffi_operations = @import("ffi-operations.zig");
-const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
 const cli = @import("cli.zig");
 const errors = @import("errors.zig");
+const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
+const ffi_driver = @import("ffi-driver.zig");
+const ffi_operations = @import("ffi-operations.zig");
 
 // for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
@@ -17,7 +17,7 @@ pub const noop = true;
 export fn ls_cli_get_ntc_templates_platform(
     d_ptr: usize,
     ntc_template_platform: *[]u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -44,7 +44,7 @@ export fn ls_cli_get_ntc_templates_platform(
 export fn ls_cli_get_genie_platform(
     d_ptr: usize,
     genie_platform: *[]u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -71,7 +71,7 @@ export fn ls_cli_open(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
-) u8 {
+) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
@@ -146,7 +146,7 @@ export fn ls_cli_close(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
-) u8 {
+) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -199,7 +199,7 @@ export fn ls_cli_fetch_operation_sizes(
     operation_result_size: *u64,
     operation_failure_indicator_size: *u64,
     operation_error_size: *u64,
-) u8 {
+) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.dequeueOperation(operation_id, false) catch |err| {
@@ -257,7 +257,7 @@ export fn ls_cli_fetch_operation(
     operation_result: *[]u8,
     operation_result_failed_indicator: *[]u8,
     operation_error: *[]u8,
-) u8 {
+) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.dequeueOperation(operation_id, true) catch |err| {
@@ -366,7 +366,7 @@ export fn ls_cli_enter_mode(
     operation_id: *u32,
     cancel: *bool,
     requested_mode: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const _operation_id = d.queueOperation(
@@ -402,7 +402,7 @@ export fn ls_cli_get_prompt(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const _operation_id = d.queueOperation(
@@ -442,7 +442,7 @@ export fn ls_cli_send_input(
     input_handling: [*c]const u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const options = ffi_args_to_options.SendInputOptionsFromArgs(
@@ -493,7 +493,7 @@ export fn ls_cli_send_prompted_input(
     input_handling: [*c]const u8,
     hidden_response: bool,
     retain_trailing_prompt: bool,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const options = ffi_args_to_options.SendPromptedInputOptionsFromArgs(
@@ -539,7 +539,7 @@ export fn ls_cli_read_any(
     d_ptr: usize,
     operation_id: *u32,
     cancel: *bool,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const _operation_id = d.queueOperation(
@@ -577,7 +577,7 @@ export fn ls_cli_read_callback_should_execute(
     contains_pattern: [*c]const u8,
     not_contains: [*c]const u8,
     execute: *bool,
-) u8 {
+) callconv(.c) u8 {
     var triggered_callbacks: std.ArrayList([]const u8) = .{};
 
     const should_execute = cli.readCallbackShouldExecute(
