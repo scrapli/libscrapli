@@ -35,7 +35,7 @@ build: fmt clean-zig-cache ## Build the shared objects.
 	zig build ffi -freference-trace --summary all
 
 build-release: fmt clean-zig-cache ## Build the shared objects w/ release optimization
-	rm -rf zig-out && zig build ffi -Doptimize=ReleaseSafe -freference-trace --summary all -- --all-targets
+	rm -rf zig-out && zig build ffi -Doptimize=ReleaseSmall -freference-trace --summary all -- --all-targets
 	find zig-out -type f \( -name 'libscrapli.*.dylib' -o -name 'libscrapli.so.*' \) -exec sha256sum {} + > "zig-out/checksums.txt"
 
 build-examples: fmt clean-zig-cache ## Build the example binaries
