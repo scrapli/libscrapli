@@ -2,15 +2,16 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const ffi_driver = @import("ffi-driver.zig");
+const errors = @import("errors.zig");
 const ffi_apply_options = @import("ffi-apply-options.zig");
+const ffi_driver = @import("ffi-driver.zig");
 const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
-
 const logging = @import("logging.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
-const errors = @import("errors.zig");
+
+const c = @cImport(@cInclude("signal.h"));
 
 pub export const _force_include_apply_options = &ffi_apply_options.noop;
 pub export const _force_include_root_driver = &ffi_root_cli.noop;
@@ -34,7 +35,8 @@ pub const std_options = std.Options{
 };
 
 const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
-var debug_allocator = std.heap.DebugAllocator(.{}){};
+var da: std.heap.DebugAllocator(.{}) = .init;
+const debug_allocator = da.allocator();
 
 fn isDebugMode() bool {
     if (builtin.mode == .Debug) {
@@ -46,20 +48,25 @@ fn isDebugMode() bool {
 
 pub fn getAllocator() std.mem.Allocator {
     if (isDebugMode()) {
-        return debug_allocator.allocator();
+        return debug_allocator;
     } else {
         return std.heap.c_allocator;
     }
 }
 
+fn segfaultHandler(_: c_int) callconv(.c) void {
+    std.debug.dumpCurrentStackTrace(@returnAddress());
+    std.process.exit(1);
+}
+
 // all exported functions are named using c standard and prepended with "ls" for libscrapli for
 // namespacing reasons.
-export fn ls_assert_no_leaks() bool {
+export fn ls_assert_no_leaks() callconv(.c) bool {
     if (!isDebugMode()) {
         return true;
     }
 
-    switch (debug_allocator.deinit()) {
+    switch (da.deinit()) {
         .leak => return false,
         .ok => return true,
     }
@@ -102,7 +109,11 @@ export fn ls_cli_alloc(
     host: [*c]const u8,
     port: u16,
     transport_kind: [*c]const u8,
-) usize {
+) callconv(.c) usize {
+    // TODO maybe only if debug? at least if/when can fix ci stuff being weird and not able to repro
+    // things locally anywhere
+    _ = c.signal(c.SIGSEGV, segfaultHandler);
+
     var log = logging.Logger{
         .allocator = getAllocator(),
     };
@@ -151,7 +162,10 @@ export fn ls_netconf_alloc(
     host: [*c]const u8,
     port: u16,
     transport_kind: [*c]const u8,
-) usize {
+) callconv(.c) usize {
+    // TODO see ls_cli_alloc comment
+    _ = c.signal(c.SIGSEGV, segfaultHandler);
+
     var log = logging.Logger{
         .allocator = getAllocator(),
         .f = null,
@@ -197,7 +211,7 @@ export fn ls_netconf_alloc(
 
 export fn ls_shared_get_poll_fd(
     d_ptr: usize,
-) u32 {
+) callconv(.c) u32 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     return @intCast(d.poll_fds[0]);
@@ -205,7 +219,7 @@ export fn ls_shared_get_poll_fd(
 
 export fn ls_shared_free(
     d_ptr: usize,
-) void {
+) callconv(.c) void {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.deinit();
@@ -217,7 +231,7 @@ export fn ls_session_read(
     d_ptr: usize,
     buf: *[]u8,
     read_n: *u64,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     // SAFETY: will always be set!
@@ -247,7 +261,7 @@ export fn ls_session_write(
     d_ptr: usize,
     buf: [*c]const u8,
     redacted: bool,
-) u8 {
+) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     // SAFETY: will always be set!
@@ -281,7 +295,7 @@ export fn ls_session_write_and_return(
     d_ptr: usize,
     buf: [*c]const u8,
     redacted: bool,
-) u8 {
+) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     // SAFETY: will always be set!

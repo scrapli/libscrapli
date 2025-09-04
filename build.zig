@@ -6,7 +6,7 @@ const version = std.SemanticVersion{
     .major = 0,
     .minor = 0,
     .patch = 1,
-    .pre = "beta.13",
+    .pre = "beta.14",
 };
 
 const ffi_targets: []const std.Target.Query = &.{
