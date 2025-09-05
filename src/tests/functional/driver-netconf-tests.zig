@@ -3,10 +3,6 @@ const std = @import("std");
 const os = @import("builtin").os.tag;
 
 const scrapli = @import("scrapli");
-
-const xml = @import("xml");
-const yaml = @import("yaml");
-
 const netconf = scrapli.netconf;
 const transport = scrapli.transport;
 const result = scrapli.netconf_result;
@@ -16,6 +12,8 @@ const ssh2_transport = scrapli.transport_ssh2;
 const flags = scrapli.flags;
 const file = scrapli.file;
 const helper = scrapli.test_helper;
+const xml = @import("xml");
+const yaml = @import("yaml");
 
 fn GetDriver(
     transportKind: transport.Kind,
@@ -248,19 +246,20 @@ test "driver-netconf open" {
             compareAllocatorlessCapability,
         );
 
-        // TODO have to figure out wtf is goin on w/ the writer/yamlblah i gave up
-        // var output: std.ArrayList(u8) = .{};
-        // defer output.deinit(std.testing.allocator);
+        var output: std.Io.Writer.Allocating = .init(std.testing.allocator);
+        defer output.deinit();
 
-        // const writer = output.writer(std.testing.allocator);
-        // try yaml.stringify(std.testing.allocator, yamlable_capabilities, writer);
+        try yaml.stringify(std.testing.allocator, yamlable_capabilities, &output.writer);
 
-        // try helper.processFixutreTestStrResult(
-        //     test_name,
-        //     case.name,
-        //     golden_filename,
-        //     output.items,
-        // );
+        const loaded_output = try output.toOwnedSlice();
+        defer std.testing.allocator.free(loaded_output);
+
+        try helper.processFixutreTestStrResult(
+            test_name,
+            case.name,
+            golden_filename,
+            loaded_output,
+        );
     }
 }
 

@@ -14,7 +14,7 @@ pub const ScrapliError = error{
     // error that we hit but in some cases we have to create our own since otherwise we
     // just have a return code from libssh2 or pcre2 etc
     Driver,
-    Sesssion,
+    Session,
     Transport,
     Operation,
 };

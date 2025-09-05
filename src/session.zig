@@ -537,7 +537,7 @@ pub const Session = struct {
 
             if (error_message) |msg| {
                 return errors.wrapCriticalError(
-                    errors.ScrapliError.Sesssion,
+                    errors.ScrapliError.Session,
                     @src(),
                     self.log,
                     "session.Session authenticate: open failed, error: '{s}'",
@@ -560,7 +560,7 @@ pub const Session = struct {
                 .username_prompted => {
                     if (self.auth_options.username == null) {
                         return errors.wrapCriticalError(
-                            errors.ScrapliError.Sesssion,
+                            errors.ScrapliError.Session,
                             @src(),
                             self.log,
                             "session.Session authenticate: username prompt seen " ++
@@ -573,7 +573,7 @@ pub const Session = struct {
 
                     if (auth_username_prompt_seen_count > 2) {
                         return errors.wrapCriticalError(
-                            errors.ScrapliError.Sesssion,
+                            errors.ScrapliError.Session,
                             @src(),
                             self.log,
                             "session.Session authenticate: username prompt seen " ++
@@ -591,7 +591,7 @@ pub const Session = struct {
                 .password_prompted => {
                     if (self.auth_options.password == null) {
                         return errors.wrapCriticalError(
-                            errors.ScrapliError.Sesssion,
+                            errors.ScrapliError.Session,
                             @src(),
                             self.log,
                             "session.Session authenticate: password prompt seen " ++
@@ -604,7 +604,7 @@ pub const Session = struct {
 
                     if (auth_password_prompt_seen_count > 2) {
                         return errors.wrapCriticalError(
-                            errors.ScrapliError.Sesssion,
+                            errors.ScrapliError.Session,
                             @src(),
                             self.log,
                             "session.Session authenticate: password prompt seen multiple times, " ++
@@ -636,7 +636,7 @@ pub const Session = struct {
                 .passphrase_prompted => {
                     if (self.auth_options.private_key_passphrase == null) {
                         return errors.wrapCriticalError(
-                            errors.ScrapliError.Sesssion,
+                            errors.ScrapliError.Session,
                             @src(),
                             self.log,
                             "session.Session authenticate: private key passphrase prompt " ++
@@ -649,7 +649,7 @@ pub const Session = struct {
 
                     if (auth_passphrase_prompt_seen_count > 2) {
                         return errors.wrapCriticalError(
-                            errors.ScrapliError.Sesssion,
+                            errors.ScrapliError.Session,
                             @src(),
                             self.log,
                             "session.Session authenticate: private key passphrase prompt " ++

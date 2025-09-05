@@ -110,9 +110,9 @@ export fn ls_cli_alloc(
     port: u16,
     transport_kind: [*c]const u8,
 ) callconv(.c) usize {
-    // TODO maybe only if debug? at least if/when can fix ci stuff being weird and not able to repro
-    // things locally anywhere
-    _ = c.signal(c.SIGSEGV, segfaultHandler);
+    if (isDebugMode()) {
+        _ = c.signal(c.SIGSEGV, segfaultHandler);
+    }
 
     var log = logging.Logger{
         .allocator = getAllocator(),
@@ -163,8 +163,9 @@ export fn ls_netconf_alloc(
     port: u16,
     transport_kind: [*c]const u8,
 ) callconv(.c) usize {
-    // TODO see ls_cli_alloc comment
-    _ = c.signal(c.SIGSEGV, segfaultHandler);
+    if (isDebugMode()) {
+        _ = c.signal(c.SIGSEGV, segfaultHandler);
+    }
 
     var log = logging.Logger{
         .allocator = getAllocator(),

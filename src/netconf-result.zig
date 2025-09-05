@@ -86,38 +86,6 @@ test "getSubscriptionId" {
     }
 }
 
-// TODO replace w/ init method
-pub fn NewResult(
-    allocator: std.mem.Allocator,
-    host: []const u8,
-    port: u16,
-    version: operation.Version,
-    error_tag: []const u8,
-    input: []const u8,
-    operation_kind: operation.Kind,
-) !*Result {
-    const r = try allocator.create(Result);
-
-    r.* = Result{
-        .allocator = allocator,
-        .host = host,
-        .port = port,
-        .version = version,
-        .error_tag = error_tag,
-        .operation_kind = operation_kind,
-        .input = input,
-        .result_raw = "",
-        .result = "",
-        .start_time_ns = std.time.nanoTimestamp(),
-        .end_time_ns = 0,
-        .result_failure_indicated = false,
-        .result_warning_messages = .{},
-        .result_error_messages = .{},
-    };
-
-    return r;
-}
-
 pub const Result = struct {
     allocator: std.mem.Allocator,
 
@@ -140,6 +108,37 @@ pub const Result = struct {
     result_failure_indicated: bool,
     result_warning_messages: std.ArrayList([]const u8),
     result_error_messages: std.ArrayList([]const u8),
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        host: []const u8,
+        port: u16,
+        version: operation.Version,
+        error_tag: []const u8,
+        input: []const u8,
+        operation_kind: operation.Kind,
+    ) !*Result {
+        const r = try allocator.create(Result);
+
+        r.* = Result{
+            .allocator = allocator,
+            .host = host,
+            .port = port,
+            .version = version,
+            .error_tag = error_tag,
+            .operation_kind = operation_kind,
+            .input = input,
+            .result_raw = "",
+            .result = "",
+            .start_time_ns = std.time.nanoTimestamp(),
+            .end_time_ns = 0,
+            .result_failure_indicated = false,
+            .result_warning_messages = .{},
+            .result_error_messages = .{},
+        };
+
+        return r;
+    }
 
     pub fn deinit(
         self: *Result,
@@ -367,7 +366,7 @@ test "parseRpcErrors" {
     }{
         .{
             .name = "simple-no-errors",
-            .result = try NewResult(
+            .result = try Result.init(
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
@@ -393,7 +392,7 @@ test "parseRpcErrors" {
         },
         .{
             .name = "simple-with-single-error",
-            .result = try NewResult(
+            .result = try Result.init(
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
@@ -430,7 +429,7 @@ test "parseRpcErrors" {
         },
         .{
             .name = "simple-with-single-warning",
-            .result = try NewResult(
+            .result = try Result.init(
                 std.testing.allocator,
                 "1.2.3.4",
                 830,
@@ -468,7 +467,7 @@ test "parseRpcErrors" {
         },
         .{
             .name = "simple-not-pretty-with-single-warning",
-            .result = try NewResult(
+            .result = try Result.init(
                 std.testing.allocator,
                 "1.2.3.4",
                 830,

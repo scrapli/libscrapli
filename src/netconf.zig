@@ -323,7 +323,7 @@ pub const Driver = struct {
             .{@tagName(operation_kind)},
         );
 
-        return result.NewResult(
+        return result.Result.init(
             allocator,
             self.host,
             self.options.port.?,
@@ -491,12 +491,22 @@ pub const Driver = struct {
             return self.NewResult(allocator, "", operation.Kind.close);
         }
 
-        const res = try self.closeSession(
+        const res = self.closeSession(
             allocator,
             .{
                 .cancel = options.cancel,
             },
-        );
+        ) catch |err| {
+            switch (err) {
+                // if we run into an EOF we basically failed successfully :)
+                errors.ScrapliError.EOF => {
+                    return self.NewResult(allocator, "", operation.Kind.close);
+                },
+                else => {
+                    return err;
+                },
+            }
+        };
         errdefer res.deinit();
 
         try self._close();
