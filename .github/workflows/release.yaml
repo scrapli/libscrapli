@@ -55,6 +55,10 @@ jobs:
         run: |
           make build-release
 
+      - name: make release tarball
+        run: |
+          tar czf libscrapli-${{ github.ref_name }}.tar.gz .
+
       - name: extract version number from files
         run: |
           LIB_VERSION=$(basename $(ls zig-out/aarch64-linux-gnu) | grep -o -E "\d+\.\d+\.\d+(.*)?")
@@ -64,6 +68,7 @@ jobs:
       # linux variants (and equally .dylib for macos) and gh doesnt appreciate this!
       - name: upload built shared objects to release
         run: |
+          gh release upload ${{ github.ref_name }} libscrapli-${{ github.ref_name }}.tar.gz --clobber
           gh release upload ${{ github.ref_name }} zig-out/checksums.txt
 
           mv zig-out/aarch64-linux-gnu/libscrapli.so.${{ env.LIB_VERSION }} zig-out/aarch64-linux-gnu/libscrapli-aarch64-linux-gnu.so.${{ env.LIB_VERSION }}
