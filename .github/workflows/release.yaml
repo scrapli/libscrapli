@@ -44,6 +44,17 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      # do this before building but after updating versions so there is a tar of the
+      - name: make release tarball
+        run: |
+          tar czf libscrapli-${{ github.ref_name }}.tar.gz .
+
+      - name: upload tarball to release
+        run: |
+          gh release upload ${{ github.ref_name }} libscrapli-${{ github.ref_name }}.tar.gz --clobber
+        env:
+          GITHUB_TOKEN: ${{ github.TOKEN }}
+
       # never got around to figuring out how to ensure the openssl generate step runs *once* even
       # when being built against all the targets, so this is a quick/easy hack to ensure that :)
       - name: ensure openssl generate step cached
@@ -55,10 +66,6 @@ jobs:
         run: |
           make build-release
 
-      - name: make release tarball
-        run: |
-          tar czf libscrapli-${{ github.ref_name }}.tar.gz .
-
       - name: extract version number from files
         run: |
           LIB_VERSION=$(basename $(ls zig-out/aarch64-linux-gnu) | grep -o -E "\d+\.\d+\.\d+(.*)?")
@@ -68,7 +75,6 @@ jobs:
       # linux variants (and equally .dylib for macos) and gh doesnt appreciate this!
       - name: upload built shared objects to release
         run: |
-          gh release upload ${{ github.ref_name }} libscrapli-${{ github.ref_name }}.tar.gz --clobber
           gh release upload ${{ github.ref_name }} zig-out/checksums.txt
 
           mv zig-out/aarch64-linux-gnu/libscrapli.so.${{ env.LIB_VERSION }} zig-out/aarch64-linux-gnu/libscrapli-aarch64-linux-gnu.so.${{ env.LIB_VERSION }}
