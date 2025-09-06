@@ -13,9 +13,11 @@ else
     PRE="\"$PRE\""
 fi
 
-sed -i -E "s|(\.major =)(.*)|\1 ${MAJOR},|g" build.zig
-sed -i -E "s|(.minor =)(.*)|\1 ${MINOR},|g" build.zig
-sed -i -E "s|(.patch =)(.*)|\1 ${PATCH},|g" build.zig
-sed -i -E "s|(.pre =)(.*)|\1 ${PRE},|g" build.zig
+sed -i.bak -E "s|(\.major =)(.*)|\1 ${MAJOR},|g" build.zig
+sed -i.bak -E "s|(.minor =)(.*)|\1 ${MINOR},|g" build.zig
+sed -i.bak -E "s|(.patch =)(.*)|\1 ${PATCH},|g" build.zig
+sed -i.bak -E "s|(.pre =)(.*)|\1 ${PRE},|g" build.zig
+rm build.zig.bak
 
-sed -i -E "s|(\.version = )(.*)|\1\"${VERSION}\",|g" build.zig.zon
+sed -i.bak -E "s|(\.version = )(.*)|\1\"${VERSION}\",|g" build.zig.zon
+rm build.zig.zon.bak
