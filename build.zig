@@ -3,10 +3,11 @@ const std = @import("std");
 const flags = @import("src/flags.zig");
 
 const version = std.SemanticVersion{
+    // set on release in ci
     .major = 0,
     .minor = 0,
-    .patch = 1,
-    .pre = "beta.14",
+    .patch = 0,
+    .pre = null,
 };
 
 const ffi_targets: []const std.Target.Query = &.{

@@ -1,6 +1,6 @@
 .{
     .name = .libscrapli,
-    .version = "0.0.1",
+    .version = "0.0.0",
     .fingerprint = 0xb0e01d3de97bbf58,
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
