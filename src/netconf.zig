@@ -1941,7 +1941,7 @@ pub const Driver = struct {
             },
         ) catch |err| {
             switch (err) {
-                errors.ScrapliError.Transport, errors.ScrapliError.Driver => {
+                error.EOF, errors.ScrapliError.Transport, errors.ScrapliError.Driver => {
                     // we may read an EOF and miss the reply when using ssh2 transport (due i think
                     // in part or whole to being in non blocking mode). so... we lie. if we hit eof
                     // *or* a parsing error (which can happen when we only read part of the close
@@ -1954,20 +1954,22 @@ pub const Driver = struct {
                         operation.Kind.close,
                     );
 
-                    try res.record([2][]const u8{
-                        try std.fmt.allocPrint(
-                            allocator,
-                            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
-                        ,
-                            .{self.message_id - 1},
-                        ),
-                        try std.fmt.allocPrint(
-                            allocator,
-                            \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
-                        ,
-                            .{self.message_id - 1},
-                        ),
-                    });
+                    try res.record(
+                        [2][]const u8{
+                            try std.fmt.allocPrint(
+                                allocator,
+                                \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
+                            ,
+                                .{self.message_id - 1},
+                            ),
+                            try std.fmt.allocPrint(
+                                allocator,
+                                \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
+                            ,
+                                .{self.message_id - 1},
+                            ),
+                        },
+                    );
 
                     return res;
                 },
