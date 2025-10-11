@@ -1,6 +1,6 @@
 FROM debian:bookworm-slim AS builder
 
-ARG ZIG_VERSION="0.14.1"
+ARG ZIG_VERSION="0.15.1"
 
 RUN apt-get update -y && \
     apt-get install -yq --no-install-recommends \

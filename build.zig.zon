@@ -15,8 +15,8 @@
             .hash = "xml-0.1.0-ZTbP35UoAgDk1IhivGX2bzjEqMCBy2Q5QQBdrUoNURiJ",
         },
         .yaml = .{
-            .url = "https://github.com/carlmontanari/zig-yaml/archive/6732a58.tar.gz",
-            .hash = "zig_yaml-0.2.0-C1161purAgDKo0oJHjoclOXJ452HbNN2S8b_WQcYxqCi",
+            .url = "https://github.com/kubkon/zig-yaml/archive/a6c2cd8.tar.gz",
+            .hash = "zig_yaml-0.2.0-C1161pmrAgDnipDTh_4v4RQD27XN5GNaVlzzvlXf1jfW",
         },
     },
     .paths = .{
