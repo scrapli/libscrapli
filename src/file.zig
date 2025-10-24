@@ -81,12 +81,16 @@ pub fn readFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     defer allocator.free(resolved_path);
 
     const f = try std.fs.openFileAbsolute(resolved_path, .{});
-    const content = try f.readToEndAlloc(
-        allocator,
-        std.math.maxInt(usize),
-    );
 
-    return content;
+    var r_buf: [1024]u8 = undefined;
+    var r = f.reader(&r_buf);
+
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(allocator);
+
+    try std.Io.Reader.appendRemainingUnlimited(&r.interface, allocator, &out);
+
+    return try out.toOwnedSlice(allocator);
 }
 
 pub fn writeToPath(allocator: std.mem.Allocator, path: []const u8, data: []const u8) !void {

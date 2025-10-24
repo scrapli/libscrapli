@@ -55,7 +55,11 @@ pub fn getAllocator() std.mem.Allocator {
 }
 
 fn segfaultHandler(_: c_int) callconv(.c) void {
-    std.debug.dumpCurrentStackTrace(@returnAddress());
+    std.debug.dumpCurrentStackTrace(
+        .{
+            .first_address = @returnAddress(),
+        },
+    );
     std.process.exit(1);
 }
 

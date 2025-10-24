@@ -133,7 +133,7 @@ pub fn main() !void {
                     .{ border, friendly_name, @errorName(err), border },
                 );
                 if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace.*);
+                    std.debug.dumpStackTrace(trace);
                 }
                 if (env.fail_first) {
                     break;
@@ -142,6 +142,7 @@ pub fn main() !void {
         }
 
         if (env.verbose) {
+            // std.debug.print(">>> NS TAKEN {any}\n", .{ns_taken});
             const ms = @as(f64, @floatFromInt(ns_taken)) / 1_000_000.0;
             printer.status(status, "{s} ({d:.2}ms)\n", .{ friendly_name, ms });
         } else {
@@ -208,9 +209,10 @@ const Printer = struct {
 
     fn fmt(self: Printer, comptime format: []const u8, args: anytype) void {
         var stdout_buffer: [1024]u8 = undefined;
-        var out = self.f.writer(&stdout_buffer).interface;
-        out.print(format, args) catch unreachable;
-        out.flush() catch {};
+        var out = self.f.writer(&stdout_buffer);
+        const writer = &out.interface;
+        writer.print(format, args) catch unreachable;
+        writer.flush() catch {};
     }
 
     fn status(self: Printer, s: Status, comptime format: []const u8, args: anytype) void {
@@ -222,12 +224,13 @@ const Printer = struct {
         };
 
         var stdout_buffer: [1024]u8 = undefined;
-        var out = self.f.writer(&stdout_buffer).interface;
+        var out = self.f.writer(&stdout_buffer);
+        const writer = &out.interface;
 
-        out.printAscii(color, .{}) catch unreachable;
-        out.print(format, args) catch unreachable;
-        out.print("\x1b[0m", .{}) catch unreachable;
-        out.flush() catch {};
+        writer.printAscii(color, .{}) catch unreachable;
+        writer.print(format, args) catch unreachable;
+        writer.print("\x1b[0m", .{}) catch unreachable;
+        writer.flush() catch {};
     }
 };
 

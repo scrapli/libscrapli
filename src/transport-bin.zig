@@ -499,7 +499,11 @@ pub const Transport = struct {
 
         try self.waiter.wait(self.f.?.handle);
 
-        const n = self.reader.?.read(buf) catch |err| {
+        const ri = &self.reader.?.interface;
+
+        var w: std.Io.Writer = .fixed(buf);
+
+        const n = ri.stream(&w, .unlimited) catch |err| {
             // a warning as this can happen during close so we dont necessarily want to
             // log a crit
             return errors.wrapWarnError(
@@ -510,20 +514,6 @@ pub const Transport = struct {
                 .{},
             );
         };
-
-        if (n == 0) {
-            // TODO it seems this is actaully allowed/safe in 0.15.0+ stuff? seems to only happen
-            // at session startup
-
-            // this should kill the read loop, but the main program will be killed from session
-            // return errors.wrapWarnError(
-            //     errors.ScrapliError.Transport,
-            //     @src(),
-            //     self.log,
-            //     "bin.Transport read: read from pty returned zero bytes read",
-            //     .{},
-            // );
-        }
 
         return n;
     }

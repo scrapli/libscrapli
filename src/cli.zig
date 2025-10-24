@@ -130,11 +130,11 @@ pub const Driver = struct {
 
         if (opts.port == null) {
             switch (opts.transport.*) {
-                transport.Kind.bin, transport.Kind.ssh2, transport.Kind.test_ => {
-                    d.port = default_ssh_port;
-                },
                 transport.Kind.telnet => {
                     d.port = default_telnet_port;
+                },
+                else => {
+                    d.port = default_ssh_port;
                 },
             }
         } else {

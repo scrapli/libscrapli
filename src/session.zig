@@ -1127,7 +1127,7 @@ pub const Session = struct {
 test "sessionInit" {
     const o = try Options.init(std.testing.allocator, .{});
     const a_o = try auth.Options.init(std.testing.allocator, .{});
-    const t_o = try transport.Options.init(std.testing.allocator, .{ .ssh2 = .{} });
+    const t_o = try transport.Options.init(std.testing.allocator, .{ .bin = .{} });
 
     const s = try Session.init(
         std.testing.allocator,

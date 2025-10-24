@@ -42,7 +42,7 @@ build-examples: fmt clean-zig-cache ## Build the example binaries
 	zig build -freference-trace --summary all -- --examples --skip-ffi-lib
 
 build-main: fmt clean-zig-cache ## Build the "main" binary in repo root, useful for testing stuff out
-	zig build main -freference-trace --summary all
+	zig build main -Doptimize=ReleaseSafe -freference-trace --summary all
 
 run-main: fmt build-main ## Build and run the "main" binary in repo root
 	./zig-out/bin/scrapli

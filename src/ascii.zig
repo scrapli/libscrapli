@@ -1270,21 +1270,17 @@ pub fn stripAsciiAndAnsiControlCharsInFile(
     var w_buffer: [8192]u8 = undefined;
     var writer = tmp_file.writer(&w_buffer);
 
+    // TODO do i need to do this better -- w/ a writer to the out file maybe?
     var buf: [8192]u8 = undefined;
     while (true) {
-        const n = reader.read(&buf) catch |err| {
-            switch (err) {
-                error.EndOfStream => {
-                    break;
-                },
-                else => {
-                    return err;
-                },
-            }
-        };
+        const n = try reader.interface.readSliceShort(&buf);
 
         const new_size = stripAsciiAndAnsiControlCharsInPlace(buf[0..n], 0);
         try writer.interface.writeAll(buf[0..new_size]);
+
+        if (n < 8192) {
+            break;
+        }
     }
 
     try writer.interface.flush();

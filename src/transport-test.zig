@@ -88,18 +88,12 @@ pub const Transport = struct {
     }
 
     pub fn read(self: *Transport, buf: []u8) !usize {
-        const n = self.reader.?.read(buf) catch {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                null,
-                "transport read failed",
-                .{},
-            );
-        };
+        const ri = &self.reader.?.interface;
+
+        var w: std.Io.Writer = .fixed(buf);
 
         // we'll just read 0 bytes when eof, would be probably bad to not report eof upstream in
         // a "normal" transport, but doesnt matter for the test one
-        return n;
+        return ri.stream(&w, .unlimited);
     }
 };
