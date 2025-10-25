@@ -25,9 +25,10 @@ pub fn build(b: *std.Build) void {
             .root_source_file = null,
             .target = target,
             .optimize = optimize,
-            .link_libc = true,
         },
     );
+    lib_mod.linkLibrary(openssl.artifact("ssl"));
+    lib_mod.linkLibrary(openssl.artifact("crypto"));
 
     const lib = b.addLibrary(
         .{
@@ -118,9 +119,6 @@ pub fn build(b: *std.Build) void {
             },
         },
     );
-
-    lib.linkLibrary(openssl.artifact("ssl"));
-    lib.linkLibrary(openssl.artifact("crypto"));
 
     b.installArtifact(lib);
 }

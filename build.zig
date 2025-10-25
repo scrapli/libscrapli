@@ -28,13 +28,16 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const scrapli = try buildScrapli(b, target, optimize);
+    // TODO become a flag/option
+    const staticLinkage = true;
+
+    const scrapli = try buildScrapli(b, target, optimize, staticLinkage);
 
     try buildCheck(b, scrapli);
     try buildTests(b, scrapli);
     try buildMain(b, target, optimize, scrapli);
     try buildExamples(b, target, optimize, scrapli);
-    try buildFFI(b, target, optimize);
+    try buildFFI(b, target, optimize, staticLinkage);
 }
 
 fn getPcre2Dep(
@@ -97,9 +100,8 @@ fn buildScrapli(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    staticLinkage: bool,
 ) !*std.Build.Module {
-    const pcre2 = getPcre2Dep(b, target, optimize);
-    const libssh2 = getLibssh2Dep(b, target, optimize);
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
 
@@ -122,8 +124,28 @@ fn buildScrapli(
         },
     );
 
-    scrapli.linkLibrary(pcre2.artifact("pcre2-8"));
-    scrapli.linkLibrary(libssh2.artifact("ssh2"));
+    if (staticLinkage) {
+        const pcre2 = getPcre2Dep(b, target, optimize);
+        const libssh2 = getLibssh2Dep(b, target, optimize);
+
+        scrapli.linkLibrary(pcre2.artifact("pcre2-8"));
+        scrapli.linkLibrary(libssh2.artifact("ssh2"));
+    } else {
+        // TODO probably needs to be a switch for arch, then i guess there are
+        // probably just common paths we should put for darwin/linux?
+        scrapli.addIncludePath(
+            .{
+                .cwd_relative = "/opt/homebrew/include",
+            },
+        );
+        scrapli.addLibraryPath(
+            .{
+                .cwd_relative = "/opt/homebrew/lib",
+            },
+        );
+        scrapli.linkSystemLibrary("pcre2-8", .{});
+        scrapli.linkSystemLibrary("ssh2", .{});
+    }
 
     return scrapli;
 }
@@ -326,9 +348,8 @@ fn buildScrapliFFI(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    staticLinkage: bool,
 ) !*std.Build.Module {
-    const pcre2 = getPcre2Dep(b, target, optimize);
-    const libssh2 = getLibssh2Dep(b, target, optimize);
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
 
@@ -352,8 +373,28 @@ fn buildScrapliFFI(
         },
     );
 
-    scrapli.linkLibrary(pcre2.artifact("pcre2-8"));
-    scrapli.linkLibrary(libssh2.artifact("ssh2"));
+    if (staticLinkage) {
+        const pcre2 = getPcre2Dep(b, target, optimize);
+        const libssh2 = getLibssh2Dep(b, target, optimize);
+
+        scrapli.linkLibrary(pcre2.artifact("pcre2-8"));
+        scrapli.linkLibrary(libssh2.artifact("ssh2"));
+    } else {
+        // TODO probably needs to be a switch for arch, then i guess there are
+        // probably just common paths we should put for darwin/linux?
+        scrapli.addIncludePath(
+            .{
+                .cwd_relative = "/opt/homebrew/include",
+            },
+        );
+        scrapli.addLibraryPath(
+            .{
+                .cwd_relative = "/opt/homebrew/lib",
+            },
+        );
+        scrapli.linkSystemLibrary("pcre2-8", .{});
+        scrapli.linkSystemLibrary("ssh2", .{});
+    }
 
     return scrapli;
 }
@@ -458,19 +499,20 @@ fn buildFFI(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    staticLinkage: bool,
 ) !void {
     const ffi = b.step("ffi", "Build libscrapli ffi objects");
 
     const all_targets = flags.parseCustomFlag("--all-targets", false);
 
     if (!all_targets) {
-        try buildFFITarget(b, ffi, target, optimize);
+        try buildFFITarget(b, ffi, target, optimize, staticLinkage);
 
         return;
     }
 
     for (ffi_targets) |ffi_target| {
-        try buildFFITarget(b, ffi, b.resolveTargetQuery(ffi_target), optimize);
+        try buildFFITarget(b, ffi, b.resolveTargetQuery(ffi_target), optimize, staticLinkage);
     }
 }
 
@@ -479,11 +521,12 @@ fn buildFFITarget(
     ffi: *std.Build.Step,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    staticLinkage: bool,
 ) !void {
     const libscrapli = b.addLibrary(
         .{
             .name = "scrapli",
-            .root_module = try buildScrapliFFI(b, target, optimize),
+            .root_module = try buildScrapliFFI(b, target, optimize, staticLinkage),
             .linkage = .dynamic,
             .use_llvm = true,
         },

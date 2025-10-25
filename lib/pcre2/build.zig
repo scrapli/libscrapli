@@ -85,33 +85,21 @@ pub fn build(b: *std.Build) !void {
             .link_libc = true,
         },
     );
-
-    const lib = b.addLibrary(
-        .{
-            .name = b.fmt("pcre2-{s}", .{@tagName(codeUnitWidth)}),
-            .linkage = .static,
-            .root_module = lib_mod,
-        },
-    );
-
-    lib.root_module.addCMacro("HAVE_CONFIG_H", "");
-    lib.root_module.addCMacro("PCRE2_CODE_UNIT_WIDTH", @tagName(codeUnitWidth));
+    lib_mod.addIncludePath(pcre2_header_dir.getDirectory());
+    lib_mod.addIncludePath(b.path("pcre2/src"));
+    lib_mod.addConfigHeader(config_header);
+    lib_mod.addCMacro("HAVE_CONFIG_H", "");
+    lib_mod.addCMacro("PCRE2_CODE_UNIT_WIDTH", @tagName(codeUnitWidth));
     if (linkage == .static) {
-        lib.root_module.addCMacro("PCRE2_STATIC", "");
+        lib_mod.addCMacro("PCRE2_STATIC", "");
     }
-
-    lib.addConfigHeader(config_header);
-    lib.addIncludePath(pcre2_header_dir.getDirectory());
-    lib.addIncludePath(b.path("pcre2/src"));
-
-    lib.addCSourceFile(.{
+    lib_mod.addCSourceFile(.{
         .file = b.addWriteFiles().addCopyFile(
             b.path("pcre2/src/pcre2_chartables.c.dist"),
             "pcre2_chartables.c",
         ),
     });
-
-    lib.addCSourceFiles(
+    lib_mod.addCSourceFiles(
         .{
             .flags = &.{
                 "-fPIC",
@@ -149,6 +137,14 @@ pub fn build(b: *std.Build) !void {
         },
     );
 
+    const lib = b.addLibrary(
+        .{
+            .name = b.fmt("pcre2-{s}", .{@tagName(codeUnitWidth)}),
+            .linkage = .static,
+            .root_module = lib_mod,
+        },
+    );
     lib.installHeader(pcre2_header, "pcre2.h");
+
     b.installArtifact(lib);
 }

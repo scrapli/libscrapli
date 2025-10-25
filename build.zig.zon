@@ -11,8 +11,9 @@
             .path = "lib/libssh2",
         },
         .xml = .{
-            .url = "https://github.com/ianprime0509/zig-xml/archive/b0723c1.tar.gz",
-            .hash = "xml-0.1.0-ZTbP35UoAgDk1IhivGX2bzjEqMCBy2Q5QQBdrUoNURiJ",
+            .path = "../zig-xml",
+            // .url = "https://github.com/ianprime0509/zig-xml/archive/b0723c1.tar.gz",
+            // .hash = "xml-0.1.0-ZTbP35UoAgDk1IhivGX2bzjEqMCBy2Q5QQBdrUoNURiJ",
         },
         .yaml = .{
             .path = "../zig-yaml",

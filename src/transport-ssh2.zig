@@ -449,8 +449,8 @@ pub const Transport = struct {
 
     // the session/channel to the host in normal operation, or to the "initial" host in proxy jump
     // operations
-    initial_session: ?*anyopaque = null,
-    // initial_session: ?*ssh2.LIBSSH2_SESSION = null,
+    // initial_session: ?*anyopaque = null,
+    initial_session: ?*ssh2.LIBSSH2_SESSION = null,
     initial_channel: ?*ssh2.LIBSSH2_CHANNEL = null,
 
     proxy_session: ?*anyopaque = null,
@@ -703,23 +703,21 @@ pub const Transport = struct {
         _ = operation_timeout_ns;
         std.debug.print("cb data > {any}\n", .{self.auth_callback_data});
         // self.initial_session = ssh2.libssh2_session_init_ex(
-        // const foo = ssh2.libssh2_session_init_ex(
         //     null,
         //     null,
         //     null,
-        //     // self.auth_callback_data,
-        //     null,
+        //     self.auth_callback_data,
         // );
         // std.debug.print(">>>> {any} \n", .{foo});
-        // if (self.initial_session == null) {
-        //     return errors.wrapCriticalError(
-        //         errors.ScrapliError.Transport,
-        //         @src(),
-        //         self.log,
-        //         "ssh2.Transport initSession: failed creating libssh2 session",
-        //         .{},
-        //     );
-        // }
+        if (self.initial_session == null) {
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "ssh2.Transport initSession: failed creating libssh2 session",
+                .{},
+            );
+        }
 
         // // set blocking status (0 non-block, 1 block)
         // ssh2.libssh2_session_set_blocking(self.initial_session, 0);
