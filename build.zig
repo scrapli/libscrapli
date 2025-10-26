@@ -64,6 +64,10 @@ fn getLibssh2Dep(
         .{
             .target = target,
             .optimize = optimize,
+            .zlib = false,
+            .strip = true,
+            .linkage = .dynamic,
+            .@"openssl-linkage" = .dynamic,
         },
     );
 }
