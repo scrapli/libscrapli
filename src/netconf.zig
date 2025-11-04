@@ -135,6 +135,8 @@ pub const Options = struct {
 
 pub const Driver = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+
     log: logging.Logger,
 
     host: []const u8,
@@ -174,6 +176,7 @@ pub const Driver = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         host: []const u8,
         config: Config,
     ) !*Driver {
@@ -212,6 +215,7 @@ pub const Driver = struct {
 
         const s = try session.Session.init(
             allocator,
+            io,
             log,
             delimiter_version_1_0,
             opts.session,
@@ -223,6 +227,7 @@ pub const Driver = struct {
 
         d.* = Driver{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .host = host,
             .options = opts,
@@ -325,6 +330,7 @@ pub const Driver = struct {
 
         return result.Result.init(
             allocator,
+            self.io,
             self.host,
             self.options.port.?,
             self.negotiated_version,
@@ -2727,7 +2733,13 @@ pub const Driver = struct {
                     return errors.ScrapliError.EOF;
                 }
 
-                std.Thread.sleep(self.options.message_poll_interval_ns);
+                std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(self.options.message_poll_interval_ns),
+                    },
+                    self.io,
+                ) catch {};
 
                 continue;
             }
@@ -2885,6 +2897,7 @@ test "processFoundMessageVersion1_0" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             .{},
         );
@@ -2961,6 +2974,7 @@ test "processFoundMessageVersion1_1" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             .{},
         );
@@ -3095,6 +3109,7 @@ test "buildRawRpcElement" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3237,6 +3252,7 @@ test "buildGetConfigElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3352,6 +3368,7 @@ test "builEditConfigElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3411,6 +3428,7 @@ test "builCopyConfigElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3470,6 +3488,7 @@ test "builDeleteConfigElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3529,6 +3548,7 @@ test "buildLockElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3588,6 +3608,7 @@ test "buildUnlockElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3647,6 +3668,7 @@ test "buildGetElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3706,6 +3728,7 @@ test "buildCloseSessionElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3771,6 +3794,7 @@ test "buildKillSessionElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3830,6 +3854,7 @@ test "buildCommitElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3889,6 +3914,7 @@ test "buildDiscardElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -3961,6 +3987,7 @@ test "buildCancelCommitElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -4020,6 +4047,7 @@ test "buildValidateElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -4083,6 +4111,7 @@ test "buildGetSchemaElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -4142,6 +4171,7 @@ test "buildGetDataElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -4219,6 +4249,7 @@ test "builEditDataElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
@@ -4282,6 +4313,7 @@ test "builActionElem" {
     for (cases) |case| {
         const d = try Driver.init(
             std.testing.allocator,
+            std.testing.io,
             "localhost",
             case.driver_config,
         );
