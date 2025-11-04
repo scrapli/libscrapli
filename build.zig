@@ -64,10 +64,6 @@ fn getLibssh2Dep(
         .{
             .target = target,
             .optimize = optimize,
-            .zlib = false,
-            .strip = true,
-            .linkage = .dynamic,
-            .@"openssl-linkage" = .dynamic,
         },
     );
 }
@@ -288,6 +284,7 @@ fn buildMain(
             .root_source_file = b.path("main.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         },
     );
 
@@ -321,6 +318,7 @@ fn buildExamples(
                 ),
                 .target = target,
                 .optimize = optimize,
+                .link_libc = true,
             },
         );
 

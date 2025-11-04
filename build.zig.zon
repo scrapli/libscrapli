@@ -8,7 +8,7 @@
             .path = "lib/pcre2",
         },
         .libssh2 = .{
-            .path = "../allyourcodebase/libssh2",
+            .path = "lib/libssh2",
         },
         .xml = .{
             .path = "../zig-xml",
