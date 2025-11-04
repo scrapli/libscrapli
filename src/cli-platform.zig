@@ -1,11 +1,13 @@
 const std = @import("std");
-const cli = @import("cli.zig");
-const mode = @import("cli-mode.zig");
+
 const yaml = @import("yaml");
-const strings = @import("strings.zig");
-const result = @import("cli-result.zig");
+
+const cli = @import("cli.zig");
 const file = @import("file.zig");
+const mode = @import("cli-mode.zig");
 const operation = @import("cli-operation.zig");
+const result = @import("cli-result.zig");
+const strings = @import("strings.zig");
 
 pub const OnXCallback = *const fn (
     d: *cli.Driver,
@@ -371,6 +373,7 @@ pub const YamlDefinition = struct {
 
     pub fn ToDefinition(
         allocator: std.mem.Allocator,
+        io: std.Io,
         source: YamlSource,
     ) !*Definition {
         var definition_string = switch (source) {
@@ -382,6 +385,7 @@ pub const YamlDefinition = struct {
                 .allocator = allocator,
                 .string = try file.readFromPath(
                     allocator,
+                    io,
                     source.file,
                 ),
             },

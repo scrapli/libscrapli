@@ -97,6 +97,8 @@ pub const Options = struct {
 
 pub const Session = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+
     log: logging.Logger,
     options: *Options,
     auth_options: *auth.Options,
@@ -126,6 +128,7 @@ pub const Session = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         log: logging.Logger,
         prompt_pattern: []const u8,
         options: *Options,
@@ -136,6 +139,7 @@ pub const Session = struct {
 
         const t = try transport.Transport.init(
             allocator,
+            io,
             log,
             transport_options,
         );
@@ -162,6 +166,7 @@ pub const Session = struct {
 
         s.* = Session{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .options = options,
             .auth_options = auth_options,
@@ -325,7 +330,13 @@ pub const Session = struct {
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            std.Thread.sleep(self.options.min_read_delay_ns);
+            std.Io.Clock.Duration.sleep(
+                .{
+                    .clock = .awake,
+                    .raw = .fromNanoseconds(self.options.min_read_delay_ns),
+                },
+                self.io,
+            ) catch {};
         }
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
@@ -345,7 +356,7 @@ pub const Session = struct {
                     try self.recorder.?.interface.flush();
                     self.recorder.?.file.close();
 
-                    try ascii.stripAsciiAndAnsiControlCharsInFile(rd.f);
+                    try ascii.stripAsciiAndAnsiControlCharsInFile(self.io, rd.f);
                 },
                 else => {},
             }
@@ -744,7 +755,15 @@ pub const Session = struct {
                 );
             }
 
-            defer std.Thread.sleep(cur_read_delay_ns);
+            defer {
+                std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(cur_read_delay_ns),
+                    },
+                    self.io,
+                ) catch {};
+            }
 
             const n = try self.read(buf);
 
@@ -1131,6 +1150,7 @@ test "sessionInit" {
 
     const s = try Session.init(
         std.testing.allocator,
+        std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },

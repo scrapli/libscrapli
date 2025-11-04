@@ -60,6 +60,7 @@ fn processCommon(
 
     const expected = try file.readFromPath(
         std.testing.allocator,
+        std.testing.io,
         golden_filename,
     );
     defer std.testing.allocator.free(expected);

@@ -1244,6 +1244,7 @@ test "stripAnsiiControlSequences" {
 }
 
 pub fn stripAsciiAndAnsiControlCharsInFile(
+    io: std.Io,
     f: []const u8,
 ) !void {
     const cwd = std.fs.cwd();
@@ -1256,7 +1257,7 @@ pub fn stripAsciiAndAnsiControlCharsInFile(
     defer in.close();
 
     var r_buffer: [8192]u8 = undefined;
-    var reader = in.reader(&r_buffer);
+    var reader = in.reader(io, &r_buffer);
 
     var tmp_file = try cwd.createFile(
         "tmp_output",

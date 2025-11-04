@@ -5,7 +5,7 @@ const c = @cImport({
     @cInclude("fcntl.h");
 });
 
-// tried this in zig and couldn't get it to work... no idea
+// tried this in "pure" zig and couldn't get it to work... no idea
 // fn setNonBlocking(fd: std.posix.fd_t) !void {
 //     var flags = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
 //
@@ -66,6 +66,7 @@ pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8
 // buf is passed in for lifetime reasons of course, so needs to be outside of this
 pub fn ReaderFromPath(
     allocator: std.mem.Allocator,
+    io: std.Io,
     buf: []u8,
     path: []const u8,
 ) !std.fs.File.Reader {
@@ -73,17 +74,17 @@ pub fn ReaderFromPath(
     defer allocator.free(resolved_path);
 
     const f = try std.fs.openFileAbsolute(resolved_path, .{});
-    return f.reader(buf);
+    return f.reader(io, buf);
 }
 
-pub fn readFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+pub fn readFromPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
     const resolved_path = try resolveAbsolutePath(allocator, path);
     defer allocator.free(resolved_path);
 
     const f = try std.fs.openFileAbsolute(resolved_path, .{});
 
     var r_buf: [1024]u8 = undefined;
-    var r = f.reader(&r_buf);
+    var r = f.reader(io, &r_buf);
 
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(allocator);

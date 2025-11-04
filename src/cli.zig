@@ -70,6 +70,7 @@ pub const Options = struct {
 
 pub const Driver = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     log: logging.Logger,
     definition: *platform.Definition,
     host: []const u8,
@@ -80,6 +81,7 @@ pub const Driver = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         host: []const u8,
         config: Config,
     ) !*Driver {
@@ -95,12 +97,14 @@ pub const Driver = struct {
         const definition = switch (config.definition) {
             .string => |d| try platform.YamlDefinition.ToDefinition(
                 allocator,
+                io,
                 .{
                     .string = d,
                 },
             ),
             .file => |d| try platform.YamlDefinition.ToDefinition(
                 allocator,
+                io,
                 .{
                     .file = d,
                 },
@@ -112,6 +116,7 @@ pub const Driver = struct {
 
         d.* = Driver{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .definition = definition,
             .host = host,
@@ -119,6 +124,7 @@ pub const Driver = struct {
             .options = opts,
             .session = try session.Session.init(
                 allocator,
+                io,
                 log,
                 definition.prompt_pattern,
                 opts.session,
@@ -165,6 +171,7 @@ pub const Driver = struct {
 
         return result.Result.init(
             allocator,
+            self.io,
             self.host,
             self.port,
             operation_kind,

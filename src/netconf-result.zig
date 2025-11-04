@@ -88,6 +88,7 @@ test "getSubscriptionId" {
 
 pub const Result = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     host: []const u8,
     port: u16,
@@ -111,6 +112,7 @@ pub const Result = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         host: []const u8,
         port: u16,
         version: operation.Version,
@@ -118,10 +120,13 @@ pub const Result = struct {
         input: []const u8,
         operation_kind: operation.Kind,
     ) !*Result {
+        const now = try std.Io.Clock.real.now(io);
+
         const r = try allocator.create(Result);
 
         r.* = Result{
             .allocator = allocator,
+            .io = io,
             .host = host,
             .port = port,
             .version = version,
@@ -130,7 +135,7 @@ pub const Result = struct {
             .input = input,
             .result_raw = "",
             .result = "",
-            .start_time_ns = std.time.nanoTimestamp(),
+            .start_time_ns = now.toNanoseconds(),
             .end_time_ns = 0,
             .result_failure_indicated = false,
             .result_warning_messages = .{},
@@ -280,7 +285,9 @@ pub const Result = struct {
         self: *Result,
         ret: [2][]const u8,
     ) !void {
-        self.end_time_ns = std.time.nanoTimestamp();
+        const now = try std.Io.Clock.real.now(self.io);
+
+        self.end_time_ns = now.toNanoseconds();
         self.result_raw = ret[0];
         self.result = ret[1];
 
@@ -368,6 +375,7 @@ test "parseRpcErrors" {
             .name = "simple-no-errors",
             .result = try Result.init(
                 std.testing.allocator,
+                std.testing.io,
                 "1.2.3.4",
                 830,
                 .version_1_0,
@@ -394,6 +402,7 @@ test "parseRpcErrors" {
             .name = "simple-with-single-error",
             .result = try Result.init(
                 std.testing.allocator,
+                std.testing.io,
                 "1.2.3.4",
                 830,
                 .version_1_0,
@@ -431,6 +440,7 @@ test "parseRpcErrors" {
             .name = "simple-with-single-warning",
             .result = try Result.init(
                 std.testing.allocator,
+                std.testing.io,
                 "1.2.3.4",
                 830,
                 .version_1_0,
@@ -469,6 +479,7 @@ test "parseRpcErrors" {
             .name = "simple-not-pretty-with-single-warning",
             .result = try Result.init(
                 std.testing.allocator,
+                std.testing.io,
                 "1.2.3.4",
                 830,
                 .version_1_0,

@@ -1,9 +1,11 @@
 const std = @import("std");
+
 const bytes = @import("bytes.zig");
 const operation = @import("cli-operation.zig");
 
 pub const Result = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     host: []const u8,
     port: u16,
@@ -30,15 +32,19 @@ pub const Result = struct {
     /// arraylist and will *not* free any of that memory!
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         host: []const u8,
         port: u16,
         operation_kind: operation.Kind,
         failed_indicators: ?std.array_list.Managed([]const u8),
     ) !*Result {
+        const now = try std.Io.Clock.real.now(io);
+
         const res = try allocator.create(Result);
 
         res.* = Result{
             .allocator = allocator,
+            .io = io,
             .host = host,
             .port = port,
             .operation_kind = operation_kind,
@@ -46,7 +52,7 @@ pub const Result = struct {
             .inputs = std.array_list.Managed([]const u8).init(allocator),
             .results_raw = std.array_list.Managed([]const u8).init(allocator),
             .results = std.array_list.Managed([]const u8).init(allocator),
-            .start_time_ns = std.time.nanoTimestamp(),
+            .start_time_ns = now.toNanoseconds(),
             .splits_ns = std.array_list.Managed(i128).init(allocator),
             .result_failure_indicated = false,
             .result_failure_indicator = -1,
@@ -82,7 +88,9 @@ pub const Result = struct {
             trim_processed: bool = true,
         },
     ) !void {
-        try self.splits_ns.append(std.time.nanoTimestamp());
+        const now = try std.Io.Clock.real.now(self.io);
+
+        try self.splits_ns.append(now.toNanoseconds());
         try self.inputs.append(data.input);
         try self.results_raw.append(data.rets[0]);
 
