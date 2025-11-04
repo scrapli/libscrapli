@@ -118,7 +118,11 @@ fn libssh2ChannelProcessStartup(channel: ?*ssh2.LIBSSH2_CHANNEL, netconf: bool) 
     );
 }
 
-fn libssh2DisconnectSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void {
+fn libssh2DisconnectSession(
+    io: std.Io,
+    session: ?*ssh2.LIBSSH2_SESSION,
+    log: logging.Logger,
+) void {
     var counter: usize = 0;
 
     while (true) {
@@ -136,7 +140,13 @@ fn libssh2DisconnectSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger
                 break;
             }
 
-            std.Thread.sleep(default_eagain_delay_ns);
+            std.Io.Clock.Duration.sleep(
+                .{
+                    .clock = .awake,
+                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                },
+                io,
+            ) catch {};
 
             continue;
         } else {
@@ -147,7 +157,11 @@ fn libssh2DisconnectSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger
     }
 }
 
-fn libssh2FreeSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void {
+fn libssh2FreeSession(
+    io: std.Io,
+    session: ?*ssh2.LIBSSH2_SESSION,
+    log: logging.Logger,
+) void {
     var counter: usize = 0;
 
     while (true) {
@@ -165,7 +179,13 @@ fn libssh2FreeSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void
                 break;
             }
 
-            std.Thread.sleep(default_eagain_delay_ns);
+            std.Io.Clock.Duration.sleep(
+                .{
+                    .clock = .awake,
+                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                },
+                io,
+            ) catch {};
 
             continue;
         } else {
@@ -176,7 +196,11 @@ fn libssh2FreeSession(session: ?*ssh2.LIBSSH2_SESSION, log: logging.Logger) void
     }
 }
 
-fn libssh2CloseChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
+fn libssh2CloseChannel(
+    io: std.Io,
+    chan: ?*ssh2.LIBSSH2_CHANNEL,
+    log: logging.Logger,
+) void {
     var counter: usize = 0;
 
     while (true) {
@@ -194,7 +218,13 @@ fn libssh2CloseChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
                 break;
             }
 
-            std.Thread.sleep(default_eagain_delay_ns);
+            std.Io.Clock.Duration.sleep(
+                .{
+                    .clock = .awake,
+                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                },
+                io,
+            ) catch {};
 
             continue;
         } else {
@@ -205,7 +235,11 @@ fn libssh2CloseChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
     }
 }
 
-fn libssh2FreeChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
+fn libssh2FreeChannel(
+    io: std.Io,
+    chan: ?*ssh2.LIBSSH2_CHANNEL,
+    log: logging.Logger,
+) void {
     var counter: usize = 0;
 
     while (true) {
@@ -223,7 +257,13 @@ fn libssh2FreeChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
                 break;
             }
 
-            std.Thread.sleep(default_eagain_delay_ns);
+            std.Io.Clock.Duration.sleep(
+                .{
+                    .clock = .awake,
+                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                },
+                io,
+            ) catch std.Io.SleepError{};
 
             continue;
         } else {
@@ -235,7 +275,7 @@ fn libssh2FreeChannel(chan: ?*ssh2.LIBSSH2_CHANNEL, log: logging.Logger) void {
 }
 
 const AuthCallbackData = struct {
-    password: ?[:0]u8 = null,
+    password: [:0]u8,
 };
 
 const ProxyWrapper = struct {
@@ -334,7 +374,13 @@ const ProxyWrapper = struct {
             const result = self.pipe_to_channel();
             if (result) {} else |err| switch (err) {
                 error.WouldBlock => {
-                    std.Thread.sleep(default_eagain_delay_ns);
+                    try std.Io.Clock.Duration.sleep(
+                        .{
+                            .clock = .awake,
+                            .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        },
+                        self.io,
+                    );
 
                     continue;
                 },
@@ -380,7 +426,14 @@ const ProxyWrapper = struct {
         while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
             self.channel_to_pipe() catch |err| switch (err) {
                 error.WouldBlock => {
-                    std.Thread.sleep(default_eagain_delay_ns);
+                    try std.Io.Clock.Duration.sleep(
+                        .{
+                            .clock = .awake,
+                            .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        },
+                        self.io,
+                    );
+
                     continue;
                 },
                 else => return err,
@@ -435,6 +488,8 @@ pub const Options = struct {
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+
     log: logging.Logger,
 
     options: *Options,
@@ -460,6 +515,7 @@ pub const Transport = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
@@ -479,10 +535,14 @@ pub const Transport = struct {
         const t = try allocator.create(Transport);
         const a = try allocator.create(AuthCallbackData);
 
-        a.* = AuthCallbackData{};
+        a.* = AuthCallbackData{
+            // SAFETY: used in C callback, so think this is expected/fine
+            .password = undefined,
+        };
 
         t.* = Transport{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
@@ -1035,7 +1095,13 @@ pub const Transport = struct {
             if (rc == 1) {
                 return true;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.Thread.sleep(default_eagain_delay_ns);
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
 
                 continue;
             } else {
@@ -1115,7 +1181,13 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.Thread.sleep(default_eagain_delay_ns);
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
 
                 continue;
             }
@@ -1174,7 +1246,13 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.Thread.sleep(default_eagain_delay_ns);
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
 
                 continue;
             }
@@ -1236,7 +1314,13 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.Thread.sleep(default_eagain_delay_ns);
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
 
                 continue;
             }
@@ -1291,7 +1375,13 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(session);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.Thread.sleep(default_eagain_delay_ns);
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
 
                 continue;
             }
@@ -1355,7 +1445,13 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(self.initial_session.?);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.Thread.sleep(default_eagain_delay_ns);
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
 
                 continue;
             }
@@ -1490,7 +1586,13 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.Thread.sleep(default_eagain_delay_ns);
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
 
                 continue;
             }
@@ -1543,7 +1645,13 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                std.Thread.sleep(default_eagain_delay_ns);
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
 
                 continue;
             }
@@ -1804,7 +1912,9 @@ fn kbdInteractiveCallback(
         if (abstract) |abstract_ptr| {
             const auth_callback_data_ptr: *AuthCallbackData = @ptrCast(@alignCast(abstract_ptr.*));
 
-            const password_copy: [*c]u8 = @ptrCast(c.malloc(auth_callback_data_ptr.password.len + 1));
+            const password_copy: [*c]u8 = @ptrCast(
+                c.malloc(auth_callback_data_ptr.password.len + 1),
+            );
 
             @memcpy(
                 password_copy[0..auth_callback_data_ptr.password.len],
