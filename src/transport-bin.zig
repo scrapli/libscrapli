@@ -120,6 +120,8 @@ pub const Options = struct {
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+
     log: logging.Logger,
 
     options: *Options,
@@ -137,6 +139,7 @@ pub const Transport = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
@@ -146,6 +149,7 @@ pub const Transport = struct {
 
         t.* = Transport{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
@@ -195,6 +199,7 @@ pub const Transport = struct {
         }
 
         try self.open_args.append(
+            // TODO -- equivalent of go exec.LookPath
             strings.MaybeHeapString{
                 .allocator = null,
                 .string = self.options.bin,
@@ -444,7 +449,7 @@ pub const Transport = struct {
             );
         };
 
-        self.reader = self.f.?.reader(&self.r_buffer);
+        self.reader = self.f.?.reader(self.io, &self.r_buffer);
         self.writer = self.f.?.writer(&self.w_buffer);
     }
 
@@ -540,7 +545,7 @@ fn openPty(
 
     const s_name = c.ptsname(master_fd.handle);
 
-    const slave_fd = try std.fs.openFileAbsoluteZ(s_name, .{
+    const slave_fd = try std.fs.openFileAbsolute(std.mem.span(s_name), .{
         .mode = .read_write,
         .allow_ctty = true,
     });
@@ -679,6 +684,7 @@ test "transportInit" {
     const o = try Options.init(std.testing.allocator, .{});
     const t = try Transport.init(
         std.testing.allocator,
+        std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },

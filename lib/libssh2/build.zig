@@ -120,5 +120,7 @@ pub fn build(b: *std.Build) void {
         },
     );
 
+    lib.linkLibC();
+
     b.installArtifact(lib);
 }

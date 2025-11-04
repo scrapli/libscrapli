@@ -38,6 +38,7 @@ pub const Options = struct {
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     options: *Options,
 
@@ -46,12 +47,14 @@ pub const Transport = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         options: *Options,
     ) !*Transport {
         const t = try allocator.create(Transport);
 
         t.* = Transport{
             .allocator = allocator,
+            .io = io,
             .options = options,
             .reader = null,
         };
@@ -73,6 +76,7 @@ pub const Transport = struct {
 
         self.reader = try file.ReaderFromPath(
             self.allocator,
+            self.io,
             &self.r_buffer,
             self.options.f.?,
         );

@@ -180,6 +180,7 @@ fn libssl(
         },
     );
     lib.pie = true;
+    lib.linkLibC();
     if (lib.rootModuleTarget().isDarwinLibC()) {
         lib_mod.addIncludePath(b.path("include"));
     }
@@ -1173,7 +1174,7 @@ fn libcrypto(
         },
     );
     lib.pie = true;
-
+    lib.linkLibC();
     if (lib.rootModuleTarget().isDarwinLibC()) {
         lib.root_module.addIncludePath(b.path("include"));
     }
