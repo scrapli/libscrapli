@@ -48,16 +48,25 @@ pub const Options = struct {
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+
     log: logging.Logger,
 
     options: *Options,
     waiter: transport_waiter.Waiter,
 
-    stream: ?std.net.Stream,
+    stream: ?std.Io.net.Stream,
     initial_buf: std.array_list.Managed(u8),
+
+    r_buffer: [1024]u8 = undefined,
+    reader: ?std.Io.net.Stream.Reader = null,
+
+    w_buffer: [1024]u8 = undefined,
+    writer: ?std.Io.net.Stream.Writer = null,
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
@@ -67,6 +76,7 @@ pub const Transport = struct {
 
         t.* = Transport{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
@@ -182,18 +192,18 @@ pub const Transport = struct {
 
             var control_char_buf: [1]u8 = undefined;
 
-            const n = try self.read(&control_char_buf);
+            const ri = &self.reader.?.interface;
 
-            if (n == 0) {
-                // we may get 0 bytes while the server is figuring its life out
-                continue;
-            } else if (n != 1) {
-                // this would be bad obv
-                self.log.critical(
-                    "telnet.Transport handleControlChars: expected to read one control char but read {d}",
-                    .{n},
-                );
+            var w: std.Io.Writer = .fixed(&control_char_buf);
+
+            // only wait if the internal reader buffer is zero *or* the internal buffer seek is less
+            // than the end position of the internal buffer -- meaning there is *not* stuff to read
+            // on the internal buffer
+            if (ri.end == 0 or (ri.seek >= ri.end)) {
+                try self.waiter.wait(self.stream.?.socket.handle);
             }
+
+            try ri.streamExact(&w, 1);
 
             const done = try self.handleControlCharResponse(
                 &control_buf,
@@ -216,10 +226,27 @@ pub const Transport = struct {
     ) !void {
         self.log.info("telnet.Transport open requested", .{});
 
-        self.stream = std.net.tcpConnectToHost(
-            self.allocator,
-            host,
-            port,
+        var lookupB: [16]std.Io.net.HostName.LookupResult = undefined;
+        var lookupQ = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookupB);
+        var canonicalNameB: [255]u8 = undefined;
+        self.io.vtable.netLookup(
+            self.io.userdata,
+            try std.Io.net.HostName.init(host),
+            &lookupQ,
+            .{
+                .port = port,
+                .canonical_name_buffer = &canonicalNameB,
+            },
+        );
+
+        const addr = try lookupQ.getOne(self.io);
+
+        self.stream = addr.address.connect(
+            self.io,
+            .{
+                .mode = .stream,
+                .protocol = .tcp,
+            },
         ) catch |err| {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -230,7 +257,7 @@ pub const Transport = struct {
             );
         };
 
-        file.setNonBlocking(self.stream.?.handle) catch {
+        file.setNonBlocking(self.stream.?.socket.handle) catch {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
@@ -239,6 +266,9 @@ pub const Transport = struct {
                 .{},
             );
         };
+
+        self.reader = self.stream.?.reader(self.io, &self.r_buffer);
+        self.writer = self.stream.?.writer(self.io, &self.w_buffer);
 
         try self.handleControlChars(
             timer,
@@ -251,7 +281,7 @@ pub const Transport = struct {
         self.log.info("telnet.Transport close requested", .{});
 
         if (self.stream != null) {
-            self.stream.?.close();
+            self.stream.?.close(self.io);
             self.stream = null;
         }
     }
@@ -269,15 +299,18 @@ pub const Transport = struct {
             );
         }
 
-        self.stream.?.writeAll(buf) catch |err| {
+        _ = self.writer.?.interface.write(buf) catch |err| {
             return errors.wrapCriticalError(
                 err,
                 @src(),
                 self.log,
-                "telnet.Transport write: transport write failed",
+                "bin.Transport write: writing to stream failed",
                 .{},
             );
         };
+
+        const wi = &self.writer.?.interface;
+        try wi.flush();
     }
 
     pub fn read(self: *Transport, buf: []u8) !usize {
@@ -304,23 +337,27 @@ pub const Transport = struct {
             return n;
         }
 
-        const n = self.stream.?.read(buf) catch |err| {
-            switch (err) {
-                error.WouldBlock => {
-                    try self.waiter.wait(self.stream.?.handle);
+        const ri = &self.reader.?.interface;
 
-                    return 0;
-                },
-                else => {
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Transport,
-                        @src(),
-                        self.log,
-                        "telnet.Transport read: transport read failed",
-                        .{},
-                    );
-                },
-            }
+        // only wait if the internal reader buffer is zero *or* the internal buffer seek is less
+        // than the end position of the internal buffer -- meaning there is *not* stuff to read
+        // on the internal buffer
+        if (ri.end == 0 or (ri.seek >= ri.end)) {
+            try self.waiter.wait(self.stream.?.socket.handle);
+        }
+
+        var w: std.Io.Writer = .fixed(buf);
+
+        const n = ri.stream(&w, .unlimited) catch |err| {
+            // a warning as this can happen during close so we dont necessarily want to
+            // log a crit
+            return errors.wrapWarnError(
+                err,
+                @src(),
+                self.log,
+                "telnet.Transport read: failed reading from stream",
+                .{},
+            );
         };
 
         return n;
@@ -335,6 +372,7 @@ test "transportInit" {
     const o = try Options.init(std.testing.allocator, .{});
     const t = try Transport.init(
         std.testing.allocator,
+        std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
