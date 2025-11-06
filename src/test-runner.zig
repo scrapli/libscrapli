@@ -90,21 +90,24 @@ pub fn main() !void {
         slowest.startTiming();
 
         const is_unnamed_test = isUnnamed(t);
+
+        if (is_unnamed_test) {
+            continue;
+        }
+
         if (env.filter) |f| {
             if (!is_unnamed_test and std.mem.indexOf(u8, t.name, f) == null) {
                 continue;
             }
         }
 
-        const friendly_name = friendlyName(t.name);
-        current_test = friendly_name;
         std.testing.allocator_instance = .{};
+
+        const friendly_name = friendlyName(t.name);
+
+        current_test = friendly_name;
         const result = t.func();
         current_test = null;
-
-        if (is_unnamed_test) {
-            continue;
-        }
 
         const ns_taken = slowest.endTiming(friendly_name);
 
@@ -142,7 +145,6 @@ pub fn main() !void {
         }
 
         if (env.verbose) {
-            // std.debug.print(">>> NS TAKEN {any}\n", .{ns_taken});
             const ms = @as(f64, @floatFromInt(ns_taken)) / 1_000_000.0;
             printer.status(status, "{s} ({d:.2}ms)\n", .{ friendly_name, ms });
         } else {
@@ -162,11 +164,13 @@ pub fn main() !void {
 
     const total_tests = pass + fail;
     const status = if (fail == 0) Status.pass else Status.fail;
+
     printer.status(
         status,
         "\n{d} of {d} test{s} passed\n",
         .{ pass, total_tests, if (total_tests != 1) "s" else "" },
     );
+
     if (skip > 0) {
         printer.status(
             .skip,
@@ -181,9 +185,11 @@ pub fn main() !void {
             .{ leak, if (leak != 1) "s" else "" },
         );
     }
+
     printer.fmt("\n", .{});
     try slowest.display(printer);
     printer.fmt("\n", .{});
+
     std.posix.exit(if (fail == 0) 0 else 1);
 }
 
@@ -281,8 +287,12 @@ const SlowTracker = struct {
             // Capacity is fixed to the # of slow tests we want to track
             // If we've tracked fewer tests than this capacity, than always add
             slowest.add(
-                TestInfo{ .ns = ns, .name = test_name },
+                TestInfo{
+                    .ns = ns,
+                    .name = test_name,
+                },
             ) catch @panic("failed to track test timing");
+
             return ns;
         }
 
@@ -298,9 +308,14 @@ const SlowTracker = struct {
 
         // the previous fastest of our slow tests, has been pushed off.
         _ = slowest.removeMin();
+
         slowest.add(
-            TestInfo{ .ns = ns, .name = test_name },
+            TestInfo{
+                .ns = ns,
+                .name = test_name,
+            },
         ) catch @panic("failed to track test timing");
+
         return ns;
     }
 

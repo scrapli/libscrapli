@@ -42,7 +42,7 @@ test {
 
     comptime {
         _ = @import("tests/integration/driver-tests.zig");
-        // _ = @import("tests/integration/driver-netconf-tests.zig");
+        _ = @import("tests/integration/driver-netconf-tests.zig");
     }
 
     // comptime {
