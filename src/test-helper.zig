@@ -51,7 +51,7 @@ fn processCommon(
 
         // sometimes we can have things like ETX that do not have an ESC in the sequence... just for
         // testing reasons we'll remove that (since when using recorder we also remove!)
-        try ascii.stripAsciiAndAnsiControlCharsInFile(golden_filename);
+        try ascii.stripAsciiAndAnsiControlCharsInFile(std.testing.io, golden_filename);
 
         std.testing.allocator.free(_actual);
 

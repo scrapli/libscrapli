@@ -59,6 +59,7 @@ fn GetRecordTestDriver(record_path: []const u8) !*cli.Driver {
 
     return cli.Driver.init(
         std.testing.allocator,
+        std.testing.io,
         "localhost",
         .{
             .definition = .{
@@ -90,6 +91,7 @@ fn GetTestDriver(f: []const u8) !*cli.Driver {
 
     return cli.Driver.init(
         std.testing.allocator,
+        std.testing.io,
         "dummy",
         .{
             .definition = .{
@@ -325,7 +327,8 @@ test "driver open-cancellation" {
 
     cancelled_ptr.* = false;
 
-    const start_time = std.time.microTimestamp();
+    var now = try std.Io.Clock.real.now(std.testing.io);
+    const start_time = now.toNanoseconds();
 
     var open_thread = try std.Thread.spawn(
         .{},
@@ -338,12 +341,19 @@ test "driver open-cancellation" {
         },
     );
 
-    std.Thread.sleep(10_000);
+    try std.Io.Clock.Duration.sleep(
+        .{
+            .clock = .awake,
+            .raw = .fromNanoseconds(10_000),
+        },
+        std.testing.io,
+    );
 
     cancel_ptr.* = true;
     open_thread.join();
 
-    const done_time = std.time.microTimestamp();
+    now = try std.Io.Clock.real.now(std.testing.io);
+    const done_time = now.toNanoseconds();
 
     // time bits here to assert that the thread did join/finish quickly since we cancelled, also
     // check the cancelled_ptr to ensure the thread did in fact end up having the function call
@@ -496,7 +506,8 @@ test "driver get-prompt-cancellation" {
 
     cancelled_ptr.* = false;
 
-    const start_time = std.time.microTimestamp();
+    var now = try std.Io.Clock.real.now(std.testing.io);
+    const start_time = now.toNanoseconds();
 
     var getPrompt_thread = try std.Thread.spawn(
         .{},
@@ -509,12 +520,19 @@ test "driver get-prompt-cancellation" {
         },
     );
 
-    std.Thread.sleep(1_000);
+    try std.Io.Clock.Duration.sleep(
+        .{
+            .clock = .awake,
+            .raw = .fromNanoseconds(10_000),
+        },
+        std.testing.io,
+    );
 
     cancel_ptr.* = true;
     getPrompt_thread.join();
 
-    const done_time = std.time.microTimestamp();
+    now = try std.Io.Clock.real.now(std.testing.io);
+    const done_time = now.toNanoseconds();
 
     // time bits here to assert that the thread did join/finish quickly since we cancelled, also
     // check the cancelled_ptr to ensure the thread did in fact end up having the function call
@@ -662,7 +680,8 @@ test "driver enter-mode-cancellation" {
 
     cancelled_ptr.* = false;
 
-    const start_time = std.time.microTimestamp();
+    var now = try std.Io.Clock.real.now(std.testing.io);
+    const start_time = now.toNanoseconds();
 
     var enterMode_thread = try std.Thread.spawn(
         .{},
@@ -678,12 +697,19 @@ test "driver enter-mode-cancellation" {
         },
     );
 
-    std.Thread.sleep(1_000);
+    try std.Io.Clock.Duration.sleep(
+        .{
+            .clock = .awake,
+            .raw = .fromNanoseconds(10_000),
+        },
+        std.testing.io,
+    );
 
     cancel_ptr.* = true;
     enterMode_thread.join();
 
-    const done_time = std.time.microTimestamp();
+    now = try std.Io.Clock.real.now(std.testing.io);
+    const done_time = now.toNanoseconds();
 
     // time bits here to assert that the thread did join/finish quickly since we cancelled, also
     // check the cancelled_ptr to ensure the thread did in fact end up having the function call
@@ -887,7 +913,8 @@ test "driver send-input-cancellation" {
 
         cancelled_ptr.* = false;
 
-        const start_time = std.time.microTimestamp();
+        var now = try std.Io.Clock.real.now(std.testing.io);
+        const start_time = now.toNanoseconds();
 
         var send_input_thread = try std.Thread.spawn(
             .{},
@@ -903,12 +930,19 @@ test "driver send-input-cancellation" {
             },
         );
 
-        std.Thread.sleep(1_000);
+        try std.Io.Clock.Duration.sleep(
+            .{
+                .clock = .awake,
+                .raw = .fromNanoseconds(10_000),
+            },
+            std.testing.io,
+        );
 
         cancel_ptr.* = true;
         send_input_thread.join();
 
-        const done_time = std.time.microTimestamp();
+        now = try std.Io.Clock.real.now(std.testing.io);
+        const done_time = now.toNanoseconds();
 
         // time bits here to assert that the thread did join/finish quickly since we cancelled, also
         // check the cancelled_ptr to ensure the thread did in fact end up having the function call
@@ -1119,7 +1153,8 @@ test "driver send-inputs-cancellation" {
 
         cancelled_ptr.* = false;
 
-        const start_time = std.time.microTimestamp();
+        var now = try std.Io.Clock.real.now(std.testing.io);
+        const start_time = now.toNanoseconds();
 
         var send_inputs_thread = try std.Thread.spawn(
             .{},
@@ -1135,12 +1170,19 @@ test "driver send-inputs-cancellation" {
             },
         );
 
-        std.Thread.sleep(1_000);
+        try std.Io.Clock.Duration.sleep(
+            .{
+                .clock = .awake,
+                .raw = .fromNanoseconds(10_000),
+            },
+            std.testing.io,
+        );
 
         cancel_ptr.* = true;
         send_inputs_thread.join();
 
-        const done_time = std.time.microTimestamp();
+        now = try std.Io.Clock.real.now(std.testing.io);
+        const done_time = now.toNanoseconds();
 
         // time bits here to assert that the thread did join/finish quickly since we cancelled, also
         // check the cancelled_ptr to ensure the thread did in fact end up having the function call
@@ -1297,7 +1339,8 @@ test "driver send-prompted-input-timeout" {
 
         cancelled_ptr.* = false;
 
-        const start_time = std.time.microTimestamp();
+        var now = try std.Io.Clock.real.now(std.testing.io);
+        const start_time = now.toNanoseconds();
 
         var send_inputs_thread = try std.Thread.spawn(
             .{},
@@ -1315,12 +1358,19 @@ test "driver send-prompted-input-timeout" {
             },
         );
 
-        std.Thread.sleep(1_000);
+        try std.Io.Clock.Duration.sleep(
+            .{
+                .clock = .awake,
+                .raw = .fromNanoseconds(10_000),
+            },
+            std.testing.io,
+        );
 
         cancel_ptr.* = true;
         send_inputs_thread.join();
 
-        const done_time = std.time.microTimestamp();
+        now = try std.Io.Clock.real.now(std.testing.io);
+        const done_time = now.toNanoseconds();
 
         // time bits here to assert that the thread did join/finish quickly since we cancelled, also
         // check the cancelled_ptr to ensure the thread did in fact end up having the function call
