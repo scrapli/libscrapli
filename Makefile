@@ -10,16 +10,16 @@ lint: ## Lint all zig files
 	zlint -V
 
 test: fmt ## Run unit tests
-	zig build test --summary all
+	zig build test --summary all -Doptimize=Debug
 
 test-integration: fmt ## Run integration tests
-	zig build test --summary all -- --integration
+	zig build test --summary all -Doptimize=Debug -- --integration
 
 test-functional: fmt ## Run functional tests
-	zig build test --summary all -- --functional
+	zig build test --summary all -Doptimize=Debug -- --functional
 
 test-functional-ci: fmt ## Run functional tests (w/ limited ci platforms); ensures TERM set, since this is normally unset in GH actions
-	TERM=screen-256color zig build test --summary all -- --functional --ci
+	TERM=screen-256color zig build test --summary all -Doptimize=Debug -- --functional --ci
 
 test-coverage: fmt ## Run integration tests plus coverage (goes to zig-out/cover)
 	rm -rf zig-out/cover || true
