@@ -240,7 +240,6 @@ pub const Transport = struct {
         );
 
         const addr = try lookupQ.getOne(self.io);
-
         self.stream = addr.address.connect(
             self.io,
             .{
@@ -252,7 +251,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "telnet.Transport open: failed connecting to host '{s}', err: {}",
+                "telnet.Transport open: failed connecting to host '{s}', err: {any}",
                 .{ host, err },
             );
         };

@@ -15,14 +15,8 @@ pub const Kind = enum {
 
     pub fn toString(self: Kind) []const u8 {
         switch (self) {
-            .bin => {
-                return "bin";
-            },
-            .telnet => {
-                return "telnet";
-            },
-            .ssh2 => {
-                return "ssh2";
+            .bin, .telnet, .ssh2 => {
+                return @tagName(self);
             },
             .test_ => {
                 return "test";
@@ -173,6 +167,7 @@ pub const Transport = struct {
                     .implementation = Implementation{
                         .ssh2 = try transport_ssh2.Transport.init(
                             allocator,
+                            io,
                             log,
                             options.ssh2,
                         ),

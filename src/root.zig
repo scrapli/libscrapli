@@ -45,8 +45,8 @@ test {
         _ = @import("tests/integration/driver-netconf-tests.zig");
     }
 
-    // comptime {
-    //     _ = @import("tests/functional/driver-tests.zig");
-    //     _ = @import("tests/functional/driver-netconf-tests.zig");
-    // }
+    comptime {
+        // _ = @import("tests/functional/driver-tests.zig");
+        // _ = @import("tests/functional/driver-netconf-tests.zig");
+    }
 }
