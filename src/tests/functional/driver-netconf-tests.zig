@@ -88,6 +88,7 @@ fn GetDriver(
 
     return netconf.Driver.init(
         std.testing.allocator,
+        std.testing.io,
         host,
         config,
     );

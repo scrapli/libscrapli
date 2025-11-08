@@ -46,7 +46,7 @@ test {
     }
 
     comptime {
-        // _ = @import("tests/functional/driver-tests.zig");
-        // _ = @import("tests/functional/driver-netconf-tests.zig");
+        _ = @import("tests/functional/driver-tests.zig");
+        _ = @import("tests/functional/driver-netconf-tests.zig");
     }
 }
