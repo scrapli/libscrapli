@@ -42,7 +42,9 @@ pub const Transport = struct {
 
     options: *Options,
 
-    r_buffer: [1024]u8 = undefined,
+    // the internal buffer needs to be same size/smaller than the reads we execute which is always
+    // 1 in the test transport
+    r_buffer: [1]u8 = undefined,
     reader: ?std.fs.File.Reader,
 
     pub fn init(
@@ -80,10 +82,20 @@ pub const Transport = struct {
             &self.r_buffer,
             self.options.f.?,
         );
+
+        file.setNonBlocking(self.reader.?.file.handle) catch {
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                null,
+                "test.Transport open: failed ensuring file set to non blocking",
+                .{},
+            );
+        };
     }
 
     pub fn close(self: *Transport) void {
-        _ = self;
+        self.reader.?.file.close(self.io);
     }
 
     pub fn write(self: *Transport, buf: []const u8) !void {
@@ -96,8 +108,18 @@ pub const Transport = struct {
 
         var w: std.Io.Writer = .fixed(buf);
 
-        // we'll just read 0 bytes when eof, would be probably bad to not report eof upstream in
-        // a "normal" transport, but doesnt matter for the test one
-        return ri.stream(&w, .unlimited);
+        const n = ri.stream(&w, .unlimited) catch |err| {
+            // a warning as this can happen during close so we dont necessarily want to
+            // log a crit
+            return errors.wrapWarnError(
+                err,
+                @src(),
+                null,
+                "telnet.Transport read: failed reading from stream",
+                .{},
+            );
+        };
+
+        return n;
     }
 };

@@ -245,6 +245,13 @@ pub const Session = struct {
             self.close() catch {};
         }
 
+        // if close didnt happen and the read thread state was already set to stop, we may have not
+        // shut down the read thread completely, so make sure we do that too
+        if (self.read_thread) |t| {
+            t.join();
+            self.read_thread = null;
+        }
+
         self.last_consumed_prompt.deinit(self.allocator);
 
         if (self.compiled_username_pattern != null) {
@@ -340,11 +347,12 @@ pub const Session = struct {
         }
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
-        // break any blocking read, then the readloop can nicely exit
+        // stop the waiter (which happens in transport.read), then the readloop can nicely exit
         try self.transport.unblock();
 
         if (self.read_thread) |t| {
             t.join();
+            self.read_thread = null;
         }
 
         if (self.options.record_destination) |rd| {

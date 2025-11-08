@@ -274,93 +274,77 @@ test "driver open" {
     }
 }
 
-// test "driver open-timeout" {
-//     const test_name = "driver-open-timeout";
+test "driver open-timeout" {
+    const test_name = "driver-open-timeout";
 
-//     const fixture_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/fixtures/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(fixture_filename);
+    const fixture_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/fixtures/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(fixture_filename);
 
-//     var d = try GetTestDriver(fixture_filename);
+    var d = try GetTestDriver(fixture_filename);
 
-//     // open is more time than others just for setup and such
-//     d.session.options.operation_timeout_ns = 500_000;
+    // open is more time than others just for setup and such
+    d.session.options.operation_timeout_ns = 500_000;
 
-//     defer d.deinit();
+    defer d.deinit();
 
-//     try std.testing.expectError(
-//         errors.ScrapliError.TimeoutExceeded,
-//         d.open(std.testing.allocator, .{}),
-//     );
-// }
+    try std.testing.expectError(
+        errors.ScrapliError.TimeoutExceeded,
+        d.open(std.testing.allocator, .{}),
+    );
+}
 
-// test "driver open-cancellation" {
-//     const test_name = "driver-open-cancellation";
+test "driver open-cancellation" {
+    const test_name = "driver-open-cancellation";
 
-//     const fixture_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/fixtures/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(fixture_filename);
+    const fixture_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/fixtures/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(fixture_filename);
 
-//     const golden_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/golden/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(golden_filename);
+    const golden_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/golden/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(golden_filename);
 
-//     var d = try GetTestDriver(fixture_filename);
+    var d = try GetTestDriver(fixture_filename);
 
-//     defer d.deinit();
-//     const cancel_ptr = try std.testing.allocator.create(bool);
-//     defer std.testing.allocator.destroy(cancel_ptr);
+    defer d.deinit();
+    const cancel_ptr = try std.testing.allocator.create(bool);
+    defer std.testing.allocator.destroy(cancel_ptr);
 
-//     cancel_ptr.* = false;
+    cancel_ptr.* = false;
 
-//     const cancelled_ptr = try std.testing.allocator.create(bool);
-//     defer std.testing.allocator.destroy(cancelled_ptr);
+    const cancelled_ptr = try std.testing.allocator.create(bool);
+    defer std.testing.allocator.destroy(cancelled_ptr);
 
-//     cancelled_ptr.* = false;
+    cancelled_ptr.* = false;
 
-//     var now = try std.Io.Clock.real.now(std.testing.io);
-//     const start_time = now.toNanoseconds();
+    var open_thread = try std.Thread.spawn(
+        .{},
+        runDriverOpenInThread,
+        .{
+            d,
+            cancelled_ptr,
+            std.testing.allocator,
+            operation.OpenOptions{ .cancel = cancel_ptr },
+        },
+    );
 
-//     var open_thread = try std.Thread.spawn(
-//         .{},
-//         runDriverOpenInThread,
-//         .{
-//             d,
-//             cancelled_ptr,
-//             std.testing.allocator,
-//             operation.OpenOptions{ .cancel = cancel_ptr },
-//         },
-//     );
+    cancel_ptr.* = true;
+    open_thread.join();
 
-//     try std.Io.Clock.Duration.sleep(
-//         .{
-//             .clock = .awake,
-//             .raw = .fromNanoseconds(10_000),
-//         },
-//         std.testing.io,
-//     );
-
-//     cancel_ptr.* = true;
-//     open_thread.join();
-
-//     now = try std.Io.Clock.real.now(std.testing.io);
-//     const done_time = now.toNanoseconds();
-
-//     // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-//     // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-//     // cancelled
-//     try std.testing.expect(done_time - start_time < 5_000);
-//     try std.testing.expect(cancelled_ptr.*);
-// }
+    // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+    // we did in fact return early due to cancellation
+    try std.testing.expect(cancelled_ptr.*);
+}
 
 test "driver get-prompt" {
     const test_name = "driver-get-prompt";
@@ -429,117 +413,101 @@ test "driver get-prompt" {
     }
 }
 
-// test "driver get-prompt-timeout" {
-//     const test_name = "driver-get-prompt-timeout";
+test "driver get-prompt-timeout" {
+    const test_name = "driver-get-prompt-timeout";
 
-//     const fixture_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/fixtures/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(fixture_filename);
+    const fixture_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/fixtures/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(fixture_filename);
 
-//     const golden_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/golden/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(golden_filename);
+    const golden_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/golden/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(golden_filename);
 
-//     const d = try GetTestDriver(fixture_filename);
+    const d = try GetTestDriver(fixture_filename);
 
-//     defer d.deinit();
+    defer d.deinit();
 
-//     const open_res = try d.open(std.testing.allocator, .{});
-//     defer open_res.deinit();
+    const open_res = try d.open(std.testing.allocator, .{});
+    defer open_res.deinit();
 
-//     defer {
-//         const close_res = d.close(
-//             std.testing.allocator,
-//             .{},
-//         ) catch unreachable;
-//         close_res.deinit();
-//     }
+    defer {
+        const close_res = d.close(
+            std.testing.allocator,
+            .{},
+        ) catch unreachable;
+        close_res.deinit();
+    }
 
-//     d.session.options.operation_timeout_ns = 100_000;
+    d.session.options.operation_timeout_ns = 100_000;
 
-//     try std.testing.expectError(
-//         errors.ScrapliError.TimeoutExceeded,
-//         d.getPrompt(
-//             std.testing.allocator,
-//             .{},
-//         ),
-//     );
-// }
+    try std.testing.expectError(
+        errors.ScrapliError.TimeoutExceeded,
+        d.getPrompt(
+            std.testing.allocator,
+            .{},
+        ),
+    );
+}
 
-// test "driver get-prompt-cancellation" {
-//     const test_name = "driver-get-prompt-cancellation";
+test "driver get-prompt-cancellation" {
+    const test_name = "driver-get-prompt-cancellation";
 
-//     const fixture_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/fixtures/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(fixture_filename);
+    const fixture_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/fixtures/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(fixture_filename);
 
-//     const golden_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/golden/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(golden_filename);
+    const golden_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/golden/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(golden_filename);
 
-//     const d = try GetTestDriver(fixture_filename);
+    const d = try GetTestDriver(fixture_filename);
 
-//     defer d.deinit();
+    defer d.deinit();
 
-//     const open_res = try d.open(std.testing.allocator, .{});
-//     defer open_res.deinit();
+    const open_res = try d.open(std.testing.allocator, .{});
+    defer open_res.deinit();
 
-//     const cancel_ptr = try std.testing.allocator.create(bool);
-//     defer std.testing.allocator.destroy(cancel_ptr);
+    const cancel_ptr = try std.testing.allocator.create(bool);
+    defer std.testing.allocator.destroy(cancel_ptr);
 
-//     cancel_ptr.* = false;
+    cancel_ptr.* = false;
 
-//     const cancelled_ptr = try std.testing.allocator.create(bool);
-//     defer std.testing.allocator.destroy(cancelled_ptr);
+    const cancelled_ptr = try std.testing.allocator.create(bool);
+    defer std.testing.allocator.destroy(cancelled_ptr);
 
-//     cancelled_ptr.* = false;
+    cancelled_ptr.* = false;
 
-//     var now = try std.Io.Clock.real.now(std.testing.io);
-//     const start_time = now.toNanoseconds();
+    var getPrompt_thread = try std.Thread.spawn(
+        .{},
+        runDriverGetPromptInThread,
+        .{
+            d,
+            cancelled_ptr,
+            std.testing.allocator,
+            operation.GetPromptOptions{ .cancel = cancel_ptr },
+        },
+    );
 
-//     var getPrompt_thread = try std.Thread.spawn(
-//         .{},
-//         runDriverGetPromptInThread,
-//         .{
-//             d,
-//             cancelled_ptr,
-//             std.testing.allocator,
-//             operation.GetPromptOptions{ .cancel = cancel_ptr },
-//         },
-//     );
+    cancel_ptr.* = true;
+    getPrompt_thread.join();
 
-//     try std.Io.Clock.Duration.sleep(
-//         .{
-//             .clock = .awake,
-//             .raw = .fromNanoseconds(10_000),
-//         },
-//         std.testing.io,
-//     );
-
-//     cancel_ptr.* = true;
-//     getPrompt_thread.join();
-
-//     now = try std.Io.Clock.real.now(std.testing.io);
-//     const done_time = now.toNanoseconds();
-
-//     // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-//     // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-//     // cancelled
-//     try std.testing.expect(done_time - start_time < 5_000);
-//     try std.testing.expect(cancelled_ptr.*);
-// }
+    // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+    // we did in fact return early due to cancellation
+    try std.testing.expect(cancelled_ptr.*);
+}
 
 test "driver enter-mode" {
     const test_name = "driver-enter-mode";
@@ -618,105 +586,89 @@ test "driver enter-mode" {
     }
 }
 
-// test "driver enter-mode-timeout" {
-//     const test_name = "driver-enter-mode-timeout";
+test "driver enter-mode-timeout" {
+    const test_name = "driver-enter-mode-timeout";
 
-//     const fixture_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/fixtures/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(fixture_filename);
+    const fixture_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/fixtures/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(fixture_filename);
 
-//     var d = try GetTestDriver(fixture_filename);
+    var d = try GetTestDriver(fixture_filename);
 
-//     defer d.deinit();
+    defer d.deinit();
 
-//     const open_res = try d.open(std.testing.allocator, .{});
-//     defer open_res.deinit();
+    const open_res = try d.open(std.testing.allocator, .{});
+    defer open_res.deinit();
 
-//     d.session.options.operation_timeout_ns = 100_000;
+    d.session.options.operation_timeout_ns = 100_000;
 
-//     try std.testing.expectError(
-//         errors.ScrapliError.TimeoutExceeded,
-//         d.enterMode(
-//             std.testing.allocator,
-//             .{ .requested_mode = "configuration" },
-//         ),
-//     );
-// }
+    try std.testing.expectError(
+        errors.ScrapliError.TimeoutExceeded,
+        d.enterMode(
+            std.testing.allocator,
+            .{ .requested_mode = "configuration" },
+        ),
+    );
+}
 
-// test "driver enter-mode-cancellation" {
-//     const test_name = "driver-enter-mode-cancellation";
+test "driver enter-mode-cancellation" {
+    const test_name = "driver-enter-mode-cancellation";
 
-//     const fixture_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/fixtures/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(fixture_filename);
+    const fixture_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/fixtures/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(fixture_filename);
 
-//     const golden_filename = try std.fmt.allocPrint(
-//         std.testing.allocator,
-//         "src/tests/integration/golden/driver/{s}.txt",
-//         .{test_name},
-//     );
-//     defer std.testing.allocator.free(golden_filename);
+    const golden_filename = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "src/tests/integration/golden/driver/{s}.txt",
+        .{test_name},
+    );
+    defer std.testing.allocator.free(golden_filename);
 
-//     const d = try GetTestDriver(fixture_filename);
+    const d = try GetTestDriver(fixture_filename);
 
-//     defer d.deinit();
+    defer d.deinit();
 
-//     const open_res = try d.open(std.testing.allocator, .{});
-//     defer open_res.deinit();
+    const open_res = try d.open(std.testing.allocator, .{});
+    defer open_res.deinit();
 
-//     const cancel_ptr = try std.testing.allocator.create(bool);
-//     defer std.testing.allocator.destroy(cancel_ptr);
+    const cancel_ptr = try std.testing.allocator.create(bool);
+    defer std.testing.allocator.destroy(cancel_ptr);
 
-//     cancel_ptr.* = false;
+    cancel_ptr.* = false;
 
-//     const cancelled_ptr = try std.testing.allocator.create(bool);
-//     defer std.testing.allocator.destroy(cancelled_ptr);
+    const cancelled_ptr = try std.testing.allocator.create(bool);
+    defer std.testing.allocator.destroy(cancelled_ptr);
 
-//     cancelled_ptr.* = false;
+    cancelled_ptr.* = false;
 
-//     var now = try std.Io.Clock.real.now(std.testing.io);
-//     const start_time = now.toNanoseconds();
+    var enterMode_thread = try std.Thread.spawn(
+        .{},
+        runDriverEnterModeInThread,
+        .{
+            d,
+            cancelled_ptr,
+            std.testing.allocator,
+            operation.EnterModeOptions{
+                .cancel = cancel_ptr,
+                .requested_mode = "configuration",
+            },
+        },
+    );
 
-//     var enterMode_thread = try std.Thread.spawn(
-//         .{},
-//         runDriverEnterModeInThread,
-//         .{
-//             d,
-//             cancelled_ptr,
-//             std.testing.allocator,
-//             operation.EnterModeOptions{
-//                 .cancel = cancel_ptr,
-//                 .requested_mode = "configuration",
-//             },
-//         },
-//     );
+    cancel_ptr.* = true;
+    enterMode_thread.join();
 
-//     try std.Io.Clock.Duration.sleep(
-//         .{
-//             .clock = .awake,
-//             .raw = .fromNanoseconds(10_000),
-//         },
-//         std.testing.io,
-//     );
-
-//     cancel_ptr.* = true;
-//     enterMode_thread.join();
-
-//     now = try std.Io.Clock.real.now(std.testing.io);
-//     const done_time = now.toNanoseconds();
-
-//     // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-//     // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-//     // cancelled
-//     try std.testing.expect(done_time - start_time < 5_000);
-//     try std.testing.expect(cancelled_ptr.*);
-// }
+    // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+    // we did in fact return early due to cancellation
+    try std.testing.expect(cancelled_ptr.*);
+}
 
 test "driver send-input" {
     const test_name = "driver-send-input";
@@ -827,130 +779,114 @@ test "driver send-input" {
     }
 }
 
-// test "driver send-input-timeout" {
-//     const test_name = "driver-send-input-timeout";
+test "driver send-input-timeout" {
+    const test_name = "driver-send-input-timeout";
 
-//     const cases = [_]struct {
-//         name: []const u8,
-//     }{
-//         .{
-//             .name = "cant-find-initial-prompt",
-//         },
-//         .{
-//             .name = "cant-find-input",
-//         },
-//         .{
-//             .name = "cant-find-final-prompt",
-//         },
-//     };
+    const cases = [_]struct {
+        name: []const u8,
+    }{
+        .{
+            .name = "cant-find-initial-prompt",
+        },
+        .{
+            .name = "cant-find-input",
+        },
+        .{
+            .name = "cant-find-final-prompt",
+        },
+    };
 
-//     for (cases) |case| {
-//         const fixture_filename = try std.fmt.allocPrint(
-//             std.testing.allocator,
-//             "src/tests/integration/fixtures/driver/{s}-{s}.txt",
-//             .{ test_name, case.name },
-//         );
-//         defer std.testing.allocator.free(fixture_filename);
+    for (cases) |case| {
+        const fixture_filename = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "src/tests/integration/fixtures/driver/{s}-{s}.txt",
+            .{ test_name, case.name },
+        );
+        defer std.testing.allocator.free(fixture_filename);
 
-//         var d = try GetTestDriver(fixture_filename);
+        var d = try GetTestDriver(fixture_filename);
 
-//         defer d.deinit();
+        defer d.deinit();
 
-//         const open_res = try d.open(std.testing.allocator, .{});
-//         defer open_res.deinit();
+        const open_res = try d.open(std.testing.allocator, .{});
+        defer open_res.deinit();
 
-//         d.session.options.operation_timeout_ns = 100_000;
+        d.session.options.operation_timeout_ns = 100_000;
 
-//         try std.testing.expectError(
-//             errors.ScrapliError.TimeoutExceeded,
-//             d.sendInput(
-//                 std.testing.allocator,
-//                 .{
-//                     .input = "show run int vlan 1",
-//                 },
-//             ),
-//         );
-//     }
-// }
+        try std.testing.expectError(
+            errors.ScrapliError.TimeoutExceeded,
+            d.sendInput(
+                std.testing.allocator,
+                .{
+                    .input = "show run int vlan 1",
+                },
+            ),
+        );
+    }
+}
 
-// test "driver send-input-cancellation" {
-//     const test_name = "driver-send-input-cancellation";
+test "driver send-input-cancellation" {
+    const test_name = "driver-send-input-cancellation";
 
-//     const cases = [_]struct {
-//         name: []const u8,
-//     }{
-//         .{
-//             .name = "at-find-initial-prompt",
-//         },
-//         .{
-//             .name = "at-find-input",
-//         },
-//         .{
-//             .name = "at-find-final-prompt",
-//         },
-//     };
+    const cases = [_]struct {
+        name: []const u8,
+    }{
+        .{
+            .name = "at-find-initial-prompt",
+        },
+        .{
+            .name = "at-find-input",
+        },
+        .{
+            .name = "at-find-final-prompt",
+        },
+    };
 
-//     for (cases) |case| {
-//         const fixture_filename = try std.fmt.allocPrint(
-//             std.testing.allocator,
-//             "src/tests/integration/fixtures/driver/{s}-{s}.txt",
-//             .{ test_name, case.name },
-//         );
-//         defer std.testing.allocator.free(fixture_filename);
+    for (cases) |case| {
+        const fixture_filename = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "src/tests/integration/fixtures/driver/{s}-{s}.txt",
+            .{ test_name, case.name },
+        );
+        defer std.testing.allocator.free(fixture_filename);
 
-//         var d = try GetTestDriver(fixture_filename);
+        var d = try GetTestDriver(fixture_filename);
 
-//         defer d.deinit();
+        defer d.deinit();
 
-//         const open_res = try d.open(std.testing.allocator, .{});
-//         defer open_res.deinit();
+        const open_res = try d.open(std.testing.allocator, .{});
+        defer open_res.deinit();
 
-//         const cancel_ptr = try std.testing.allocator.create(bool);
-//         defer std.testing.allocator.destroy(cancel_ptr);
+        const cancel_ptr = try std.testing.allocator.create(bool);
+        defer std.testing.allocator.destroy(cancel_ptr);
 
-//         const cancelled_ptr = try std.testing.allocator.create(bool);
-//         defer std.testing.allocator.destroy(cancelled_ptr);
+        const cancelled_ptr = try std.testing.allocator.create(bool);
+        defer std.testing.allocator.destroy(cancelled_ptr);
 
-//         cancelled_ptr.* = false;
+        cancelled_ptr.* = false;
 
-//         var now = try std.Io.Clock.real.now(std.testing.io);
-//         const start_time = now.toNanoseconds();
+        var send_input_thread = try std.Thread.spawn(
+            .{},
+            runDriverSendInputInThread,
+            .{
+                d,
+                cancelled_ptr,
+                std.testing.allocator,
+                operation.SendInputOptions{
+                    .cancel = cancel_ptr,
+                    .input = "show ip route",
+                },
+            },
+        );
 
-//         var send_input_thread = try std.Thread.spawn(
-//             .{},
-//             runDriverSendInputInThread,
-//             .{
-//                 d,
-//                 cancelled_ptr,
-//                 std.testing.allocator,
-//                 operation.SendInputOptions{
-//                     .cancel = cancel_ptr,
-//                     .input = "show ip route",
-//                 },
-//             },
-//         );
+        cancel_ptr.* = true;
+        send_input_thread.join();
 
-//         try std.Io.Clock.Duration.sleep(
-//             .{
-//                 .clock = .awake,
-//                 .raw = .fromNanoseconds(10_000),
-//             },
-//             std.testing.io,
-//         );
-
-//         cancel_ptr.* = true;
-//         send_input_thread.join();
-
-//         now = try std.Io.Clock.real.now(std.testing.io);
-//         const done_time = now.toNanoseconds();
-
-//         // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-//         // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-//         // cancelled
-//         try std.testing.expect(done_time - start_time < 5_000);
-//         try std.testing.expect(cancelled_ptr.*);
-//     }
-// }
+        // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+        // we did in fact return early due to cancellation
+        try std.testing.expect(cancelled_ptr.*);
+    }
+}
 
 test "driver send-inputs" {
     const test_name = "driver-send-inputs";
@@ -1062,135 +998,119 @@ test "driver send-inputs" {
     }
 }
 
-// test "driver send-inputs-timeout" {
-//     const test_name = "driver-send-inputs-timeout";
+test "driver send-inputs-timeout" {
+    const test_name = "driver-send-inputs-timeout";
 
-//     const cases = [_]struct {
-//         name: []const u8,
-//     }{
-//         .{
-//             .name = "cant-find-initial-prompt",
-//         },
-//         .{
-//             .name = "cant-find-input",
-//         },
-//         .{
-//             .name = "cant-find-final-prompt",
-//         },
-//     };
+    const cases = [_]struct {
+        name: []const u8,
+    }{
+        .{
+            .name = "cant-find-initial-prompt",
+        },
+        .{
+            .name = "cant-find-input",
+        },
+        .{
+            .name = "cant-find-final-prompt",
+        },
+    };
 
-//     for (cases) |case| {
-//         const fixture_filename = try std.fmt.allocPrint(
-//             std.testing.allocator,
-//             "src/tests/integration/fixtures/driver/{s}-{s}.txt",
-//             .{ test_name, case.name },
-//         );
-//         defer std.testing.allocator.free(fixture_filename);
+    for (cases) |case| {
+        const fixture_filename = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "src/tests/integration/fixtures/driver/{s}-{s}.txt",
+            .{ test_name, case.name },
+        );
+        defer std.testing.allocator.free(fixture_filename);
 
-//         var d = try GetTestDriver(fixture_filename);
+        var d = try GetTestDriver(fixture_filename);
 
-//         defer d.deinit();
+        defer d.deinit();
 
-//         const open_res = try d.open(std.testing.allocator, .{});
-//         defer open_res.deinit();
+        const open_res = try d.open(std.testing.allocator, .{});
+        defer open_res.deinit();
 
-//         d.session.options.operation_timeout_ns = 100_000;
+        d.session.options.operation_timeout_ns = 100_000;
 
-//         try std.testing.expectError(
-//             errors.ScrapliError.TimeoutExceeded,
-//             d.sendInputs(
-//                 std.testing.allocator,
-//                 .{
-//                     .inputs = &[_][]const u8{
-//                         "show run int vlan 1",
-//                         "show run | i hostname",
-//                     },
-//                 },
-//             ),
-//         );
-//     }
-// }
+        try std.testing.expectError(
+            errors.ScrapliError.TimeoutExceeded,
+            d.sendInputs(
+                std.testing.allocator,
+                .{
+                    .inputs = &[_][]const u8{
+                        "show run int vlan 1",
+                        "show run | i hostname",
+                    },
+                },
+            ),
+        );
+    }
+}
 
-// test "driver send-inputs-cancellation" {
-//     const test_name = "driver-send-inputs-cancellation";
+test "driver send-inputs-cancellation" {
+    const test_name = "driver-send-inputs-cancellation";
 
-//     const cases = [_]struct {
-//         name: []const u8,
-//     }{
-//         .{
-//             .name = "at-find-initial-prompt",
-//         },
-//         .{
-//             .name = "at-find-input",
-//         },
-//         .{
-//             .name = "at-find-final-prompt",
-//         },
-//     };
+    const cases = [_]struct {
+        name: []const u8,
+    }{
+        .{
+            .name = "at-find-initial-prompt",
+        },
+        .{
+            .name = "at-find-input",
+        },
+        .{
+            .name = "at-find-final-prompt",
+        },
+    };
 
-//     for (cases) |case| {
-//         const fixture_filename = try std.fmt.allocPrint(
-//             std.testing.allocator,
-//             "src/tests/integration/fixtures/driver/{s}-{s}.txt",
-//             .{ test_name, case.name },
-//         );
-//         defer std.testing.allocator.free(fixture_filename);
+    for (cases) |case| {
+        const fixture_filename = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "src/tests/integration/fixtures/driver/{s}-{s}.txt",
+            .{ test_name, case.name },
+        );
+        defer std.testing.allocator.free(fixture_filename);
 
-//         var d = try GetTestDriver(fixture_filename);
+        var d = try GetTestDriver(fixture_filename);
 
-//         defer d.deinit();
+        defer d.deinit();
 
-//         const open_res = try d.open(std.testing.allocator, .{});
-//         defer open_res.deinit();
+        const open_res = try d.open(std.testing.allocator, .{});
+        defer open_res.deinit();
 
-//         const cancel_ptr = try std.testing.allocator.create(bool);
-//         defer std.testing.allocator.destroy(cancel_ptr);
+        const cancel_ptr = try std.testing.allocator.create(bool);
+        defer std.testing.allocator.destroy(cancel_ptr);
 
-//         cancel_ptr.* = false;
+        cancel_ptr.* = false;
 
-//         const cancelled_ptr = try std.testing.allocator.create(bool);
-//         defer std.testing.allocator.destroy(cancelled_ptr);
+        const cancelled_ptr = try std.testing.allocator.create(bool);
+        defer std.testing.allocator.destroy(cancelled_ptr);
 
-//         cancelled_ptr.* = false;
+        cancelled_ptr.* = false;
 
-//         var now = try std.Io.Clock.real.now(std.testing.io);
-//         const start_time = now.toNanoseconds();
+        var send_inputs_thread = try std.Thread.spawn(
+            .{},
+            runDriverSendInputsInThread,
+            .{
+                d,
+                cancelled_ptr,
+                std.testing.allocator,
+                operation.SendInputsOptions{
+                    .cancel = cancel_ptr,
+                    .inputs = &[_][]const u8{ "show run int vlan 1", "show run | i hostname" },
+                },
+            },
+        );
 
-//         var send_inputs_thread = try std.Thread.spawn(
-//             .{},
-//             runDriverSendInputsInThread,
-//             .{
-//                 d,
-//                 cancelled_ptr,
-//                 std.testing.allocator,
-//                 operation.SendInputsOptions{
-//                     .cancel = cancel_ptr,
-//                     .inputs = &[_][]const u8{ "show run int vlan 1", "show run | i hostname" },
-//                 },
-//             },
-//         );
+        cancel_ptr.* = true;
+        send_inputs_thread.join();
 
-//         try std.Io.Clock.Duration.sleep(
-//             .{
-//                 .clock = .awake,
-//                 .raw = .fromNanoseconds(10_000),
-//             },
-//             std.testing.io,
-//         );
-
-//         cancel_ptr.* = true;
-//         send_inputs_thread.join();
-
-//         now = try std.Io.Clock.real.now(std.testing.io);
-//         const done_time = now.toNanoseconds();
-
-//         // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-//         // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-//         // cancelled
-//         try std.testing.expect(done_time - start_time < 5_000);
-//         try std.testing.expect(cancelled_ptr.*);
-//     }
-// }
+        // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+        // we did in fact return early due to cancellation
+        try std.testing.expect(cancelled_ptr.*);
+    }
+}
 
 test "driver send-prompted-input" {
     const test_name = "driver-send-prompted-input";
@@ -1294,139 +1214,123 @@ test "driver send-prompted-input" {
     }
 }
 
-// test "driver send-prompted-input-timeout" {
-//     const test_name = "driver-send-prompted-input-timeout";
+test "driver send-prompted-input-timeout" {
+    const test_name = "driver-send-prompted-input-timeout";
 
-//     const cases = [_]struct {
-//         name: []const u8,
-//     }{
-//         .{
-//             .name = "at-find-initial-prompt",
-//         },
-//         .{
-//             .name = "at-find-input",
-//         },
-//         .{
-//             .name = "at-find-prompt",
-//         },
-//         .{
-//             .name = "at-find-final-prompt",
-//         },
-//     };
+    const cases = [_]struct {
+        name: []const u8,
+    }{
+        .{
+            .name = "at-find-initial-prompt",
+        },
+        .{
+            .name = "at-find-input",
+        },
+        .{
+            .name = "at-find-prompt",
+        },
+        .{
+            .name = "at-find-final-prompt",
+        },
+    };
 
-//     for (cases) |case| {
-//         const fixture_filename = try std.fmt.allocPrint(
-//             std.testing.allocator,
-//             "src/tests/integration/fixtures/driver/{s}-{s}.txt",
-//             .{ test_name, case.name },
-//         );
-//         defer std.testing.allocator.free(fixture_filename);
+    for (cases) |case| {
+        const fixture_filename = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "src/tests/integration/fixtures/driver/{s}-{s}.txt",
+            .{ test_name, case.name },
+        );
+        defer std.testing.allocator.free(fixture_filename);
 
-//         var d = try GetTestDriver(fixture_filename);
+        var d = try GetTestDriver(fixture_filename);
 
-//         defer d.deinit();
+        defer d.deinit();
 
-//         const open_res = try d.open(std.testing.allocator, .{});
-//         defer open_res.deinit();
+        const open_res = try d.open(std.testing.allocator, .{});
+        defer open_res.deinit();
 
-//         const cancel_ptr = try std.testing.allocator.create(bool);
-//         defer std.testing.allocator.destroy(cancel_ptr);
+        const cancel_ptr = try std.testing.allocator.create(bool);
+        defer std.testing.allocator.destroy(cancel_ptr);
 
-//         cancel_ptr.* = false;
+        cancel_ptr.* = false;
 
-//         const cancelled_ptr = try std.testing.allocator.create(bool);
-//         defer std.testing.allocator.destroy(cancelled_ptr);
+        const cancelled_ptr = try std.testing.allocator.create(bool);
+        defer std.testing.allocator.destroy(cancelled_ptr);
 
-//         cancelled_ptr.* = false;
+        cancelled_ptr.* = false;
 
-//         var now = try std.Io.Clock.real.now(std.testing.io);
-//         const start_time = now.toNanoseconds();
+        var send_inputs_thread = try std.Thread.spawn(
+            .{},
+            runDriverSendPromptedInputInThread,
+            .{
+                d,
+                cancelled_ptr,
+                std.testing.allocator,
+                operation.SendPromptedInputOptions{
+                    .cancel = cancel_ptr,
+                    .input = "write erase",
+                    .prompt_exact = "Proceed with erasing startup configuration? [confirm]",
+                    .response = "",
+                },
+            },
+        );
 
-//         var send_inputs_thread = try std.Thread.spawn(
-//             .{},
-//             runDriverSendPromptedInputInThread,
-//             .{
-//                 d,
-//                 cancelled_ptr,
-//                 std.testing.allocator,
-//                 operation.SendPromptedInputOptions{
-//                     .cancel = cancel_ptr,
-//                     .input = "write erase",
-//                     .prompt_exact = "Proceed with erasing startup configuration? [confirm]",
-//                     .response = "",
-//                 },
-//             },
-//         );
+        cancel_ptr.* = true;
+        send_inputs_thread.join();
 
-//         try std.Io.Clock.Duration.sleep(
-//             .{
-//                 .clock = .awake,
-//                 .raw = .fromNanoseconds(10_000),
-//             },
-//             std.testing.io,
-//         );
+        // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+        // we did in fact return early due to cancellation
+        try std.testing.expect(cancelled_ptr.*);
+    }
+}
 
-//         cancel_ptr.* = true;
-//         send_inputs_thread.join();
+test "driver send-prompted-input-cancellation" {
+    const test_name = "driver-send-prompted-input-cancellation";
 
-//         now = try std.Io.Clock.real.now(std.testing.io);
-//         const done_time = now.toNanoseconds();
+    const cases = [_]struct {
+        name: []const u8,
+    }{
+        .{
+            .name = "at-find-initial-prompt",
+        },
+        .{
+            .name = "at-find-input",
+        },
+        .{
+            .name = "at-find-prompt",
+        },
+        .{
+            .name = "at-find-final-prompt",
+        },
+    };
 
-//         // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-//         // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-//         // cancelled
-//         try std.testing.expect(done_time - start_time < 5_000);
-//         try std.testing.expect(cancelled_ptr.*);
-//     }
-// }
+    for (cases) |case| {
+        const fixture_filename = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "src/tests/integration/fixtures/driver/{s}-{s}.txt",
+            .{ test_name, case.name },
+        );
+        defer std.testing.allocator.free(fixture_filename);
 
-// test "driver send-prompted-input-cancellation" {
-//     const test_name = "driver-send-prompted-input-cancellation";
+        var d = try GetTestDriver(fixture_filename);
 
-//     const cases = [_]struct {
-//         name: []const u8,
-//     }{
-//         .{
-//             .name = "at-find-initial-prompt",
-//         },
-//         .{
-//             .name = "at-find-input",
-//         },
-//         .{
-//             .name = "at-find-prompt",
-//         },
-//         .{
-//             .name = "at-find-final-prompt",
-//         },
-//     };
+        defer d.deinit();
 
-//     for (cases) |case| {
-//         const fixture_filename = try std.fmt.allocPrint(
-//             std.testing.allocator,
-//             "src/tests/integration/fixtures/driver/{s}-{s}.txt",
-//             .{ test_name, case.name },
-//         );
-//         defer std.testing.allocator.free(fixture_filename);
+        const open_res = try d.open(std.testing.allocator, .{});
+        defer open_res.deinit();
 
-//         var d = try GetTestDriver(fixture_filename);
+        d.session.options.operation_timeout_ns = 100_000;
 
-//         defer d.deinit();
-
-//         const open_res = try d.open(std.testing.allocator, .{});
-//         defer open_res.deinit();
-
-//         d.session.options.operation_timeout_ns = 100_000;
-
-//         try std.testing.expectError(
-//             errors.ScrapliError.TimeoutExceeded,
-//             d.sendPromptedInput(
-//                 std.testing.allocator,
-//                 .{
-//                     .input = "clear logging",
-//                     .prompt_exact = "Clear logging buffer [confirm]",
-//                     .response = "",
-//                 },
-//             ),
-//         );
-//     }
-// }
+        try std.testing.expectError(
+            errors.ScrapliError.TimeoutExceeded,
+            d.sendPromptedInput(
+                std.testing.allocator,
+                .{
+                    .input = "clear logging",
+                    .prompt_exact = "Clear logging buffer [confirm]",
+                    .response = "",
+                },
+            ),
+        );
+    }
+}
