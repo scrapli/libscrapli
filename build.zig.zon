@@ -19,6 +19,10 @@
             .url = "https://github.com/carlmontanari/zig-yaml/archive/58ef208.tar.gz",
             .hash = "zig_yaml-0.2.0-C1161imvAgCwr7ctsIzyGbUHFvl-Dh0kH0m3QoeRuHO5",
         },
+        .zlinter = .{
+            .url = "https://github.com/kurtwagner/zlinter/archive/84768f7.tar.gz",
+            .hash = "zlinter-0.0.1-OjQ08bpYCwBILPAD9yNGh3i9tg39-tKHNgS_MztuwSfP",
+        },
     },
     .paths = .{
         "build.zig",

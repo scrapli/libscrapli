@@ -5,6 +5,16 @@ on:
   workflow_call: {}
   workflow_dispatch:
     inputs:
+      debug_unit:
+        description: "start tmate before unit tests"
+        type: boolean
+        required: false
+        default: false
+      debug_integration:
+        description: "start tmate before integration tests"
+        type: boolean
+        required: false
+        default: false
       debug_functional:
         description: "start tmate before functional tests"
         type: boolean
@@ -30,6 +40,10 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      - name: setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_unit }}
+
       - name: run the unit tests
         run: |
           make test
@@ -51,6 +65,10 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+
+      - name: setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_integration }}
 
       - name: run the integration tests
         run: |

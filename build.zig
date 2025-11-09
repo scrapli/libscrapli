@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const zlinter = @import("zlinter");
+
 const flags = @import("src/flags.zig");
 
 const version = std.SemanticVersion{
@@ -34,6 +36,7 @@ pub fn build(b: *std.Build) !void {
     const scrapli = try buildScrapli(b, target, optimize, staticLinkage);
 
     try buildCheck(b, scrapli);
+    try buildLint(b);
     try buildTests(b, scrapli);
     try buildMain(b, target, optimize, scrapli);
     try buildExamples(b, target, optimize, scrapli);
@@ -163,6 +166,21 @@ fn buildCheck(
     );
 
     check.dependOn(&scrapli_check.step);
+}
+
+fn buildLint(
+    b: *std.Build,
+) !void {
+    const lint = b.step("lint", "Lint scrapli");
+    lint.dependOn(
+        step: {
+            var builder = zlinter.builder(b, .{});
+            inline for (@typeInfo(zlinter.BuiltinLintRule).@"enum".fields) |f| {
+                builder.addRule(.{ .builtin = @enumFromInt(f.value) }, .{});
+            }
+            break :step builder.build();
+        },
+    );
 }
 
 fn buildTests(
