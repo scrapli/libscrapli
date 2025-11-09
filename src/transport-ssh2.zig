@@ -681,37 +681,40 @@ pub const Transport = struct {
         );
 
         while (true) {
-            const addr = try lookupQ.getOne(self.io);
+            const addr = lookupQ.getOne(self.io) catch {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport initSocket: failed initializing socket, " ++
+                        "all resolved addresses failed",
+                    .{},
+                );
+            };
+            std.debug.print("ADDR > {any}\n", .{addr});
             const stream = addr.address.connect(
                 self.io,
                 .{
                     .mode = .stream,
                     .protocol = .tcp,
                 },
-            ) catch |err| {
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "ssh2.Transport open: failed connecting to host '{s}', err: {any}",
-                    .{ host, err },
-                );
+            ) catch {
+                // copying this note from OG scrapli as the same thing is true here
+                // It seems that very occasionally when resolving a hostname (i.e. localhost during
+                // functional tests against vrouter devices), a v6 address family will be the first
+                // af the socket getaddrinfo returns, in this case, because the qemu hostfwd is not
+                // listening on ::1, instead only listening on 127.0.0.1 the connection will fail.
+                // Presumably this is something that can happen in real life too... something gets
+                // resolved with a v6 address but is denying connections or just not listening on
+                // that ipv6 address. This little connect wrapper is intended to deal with these
+                //  weird scenarios.
+
+                continue;
             };
 
             self.socket = stream.socket.handle;
 
             return;
-        }
-
-        if (self.socket == null) {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport initSocket: failed initializing socket, " ++
-                    "all resolved addresses failed",
-                .{},
-            );
         }
     }
 
