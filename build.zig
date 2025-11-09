@@ -539,7 +539,6 @@ fn buildFFITarget(
             .name = "scrapli",
             .root_module = try buildScrapliFFI(b, target, optimize, dependency_linkage),
             .linkage = .dynamic,
-            .use_llvm = true,
         },
     );
 

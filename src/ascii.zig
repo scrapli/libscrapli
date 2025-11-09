@@ -1247,18 +1247,21 @@ pub fn stripAsciiAndAnsiControlCharsInFile(
     io: std.Io,
     f: []const u8,
 ) !void {
-    const cwd = std.fs.cwd();
-    var in = try cwd.openFile(
+    const io_cwd = std.Io.Dir.cwd();
+    var in = try io_cwd.openFile(
+        io,
         f,
         .{
             .mode = .read_only,
         },
     );
-    defer in.close();
+    defer in.close(io);
 
     var r_buffer: [8192]u8 = undefined;
     var reader = in.reader(io, &r_buffer);
 
+    // nov 2025, afaik this hasnt been moved to std.Io things yet
+    const cwd = std.fs.cwd();
     var tmp_file = try cwd.createFile(
         "tmp_output",
         .{
@@ -1271,7 +1274,6 @@ pub fn stripAsciiAndAnsiControlCharsInFile(
     var w_buffer: [8192]u8 = undefined;
     var writer = tmp_file.writer(&w_buffer);
 
-    // TODO do i need to do this better -- w/ a writer to the out file maybe?
     var buf: [8192]u8 = undefined;
     while (true) {
         const n = try reader.interface.readSliceShort(&buf);

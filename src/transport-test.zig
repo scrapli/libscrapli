@@ -42,8 +42,8 @@ pub const Transport = struct {
 
     options: *Options,
 
-    // the internal buffer needs to be same size/smaller than the reads we execute which is always
-    // 1 in the test transport
+    // we do a zillion reads, but w/e having the intermediate buffer be 1 seems to be marginally
+    // faster than having it be bigger for some reason
     r_buffer: [1]u8 = undefined,
     reader: ?std.fs.File.Reader,
 
@@ -106,19 +106,7 @@ pub const Transport = struct {
     pub fn read(self: *Transport, buf: []u8) !usize {
         const ri = &self.reader.?.interface;
 
-        var w: std.Io.Writer = .fixed(buf);
-
-        const n = ri.stream(&w, .unlimited) catch |err| {
-            // a warning as this can happen during close so we dont necessarily want to
-            // log a crit
-            return errors.wrapWarnError(
-                err,
-                @src(),
-                null,
-                "telnet.Transport read: failed reading from stream",
-                .{},
-            );
-        };
+        const n = try ri.readSliceShort(buf);
 
         return n;
     }

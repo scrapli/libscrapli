@@ -110,7 +110,7 @@ pub fn main() !void {
             .session = .{
                 // uncomment to log/record to a file
                 // .record_destination = .{
-                //     .f = "out.txt",
+                //     .f = "out.log",
                 // },
             },
             .transport = .{

@@ -130,7 +130,7 @@ pub const Transport = struct {
     f: ?std.fs.File = null,
 
     r_buffer: [1024]u8 = undefined,
-    reader: ?std.fs.File.Reader = null,
+    reader: ?std.Io.File.Reader = null,
 
     w_buffer: [1024]u8 = undefined,
     writer: ?std.fs.File.Writer = null,
@@ -435,6 +435,7 @@ pub const Transport = struct {
 
         self.f = openPty(
             self.allocator,
+            self.io,
             open_args,
             self.options.term_width,
             self.options.term_height,
@@ -502,9 +503,14 @@ pub const Transport = struct {
             );
         }
 
+        const ri = &self.reader.?.interface;
+
         try self.waiter.wait(self.f.?.handle);
 
-        const ri = &self.reader.?.interface;
+        // i think because this is not a "stream" (like telnet transport) we actually need to call
+        // this in order to get things off the pty and into the intermediate buffer. we know that
+        // there will be *something* to fill because of our waiter, so that should be good...
+        try ri.fillMore();
 
         var w: std.Io.Writer = .fixed(buf);
 
@@ -530,25 +536,34 @@ pub const Transport = struct {
 
 fn openPty(
     allocator: std.mem.Allocator,
+    io: std.Io,
     open_args: [][]const u8,
     term_width: u16,
     term_height: u16,
     netconf: bool,
 ) !std.fs.File {
-    const master_fd = try std.fs.openFileAbsolute("/dev/ptmx", .{
-        .mode = .read_write,
-        .allow_ctty = false,
-    });
+    // nov 2025, afaik this hasnt been moved to std.Io things yet
+    const master_fd = try std.fs.openFileAbsolute(
+        "/dev/ptmx",
+        .{
+            .mode = .read_write,
+            .allow_ctty = false,
+        },
+    );
 
     if (c.grantpt(master_fd.handle) < 0) return error.PtyError;
     if (c.unlockpt(master_fd.handle) < 0) return error.PtyError;
 
     const s_name = c.ptsname(master_fd.handle);
 
-    const slave_fd = try std.fs.openFileAbsolute(std.mem.span(s_name), .{
-        .mode = .read_write,
-        .allow_ctty = true,
-    });
+    const slave_fd = try std.Io.File.openAbsolute(
+        io,
+        std.mem.span(s_name),
+        .{
+            .mode = .read_write,
+            .allow_ctty = true,
+        },
+    );
 
     // ensure the pty is non blocking
     try file.setNonBlocking(master_fd.handle);
@@ -608,7 +623,7 @@ fn openPty(
 
 fn openPtyChild(
     master_fd: std.fs.File,
-    slave_fd: std.fs.File,
+    slave_fd: std.Io.File,
     args: [:null]?[*:0]const u8,
     envs: [:null]?[*:0]const u8,
     term_width: u16,

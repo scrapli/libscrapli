@@ -148,7 +148,10 @@ pub fn main() !void {
             },
             // uncomment and import the logger package like: `const logging = scrapli.logging;`
             // for a simple logger setup
-            // .logger = logging.Logger{ .allocator = allocator, .f = logging.stdLogf, },
+            // .logger = logging.Logger{
+            //     .allocator = allocator,
+            //     .f = logging.stdLogf,
+            // },
             .port = try getPort(),
             .auth = .{
                 .username = "admin",
@@ -157,12 +160,12 @@ pub fn main() !void {
             .session = .{
                 // uncomment to log/record to a file
                 // .record_destination = .{
-                //     .f = "out.txt",
+                //     .f = "out.log",
                 // },
             },
             .transport = .{
                 // comment out to use bin transport if desired
-                .ssh2 = .{},
+                .bin = .{},
             },
         },
     );

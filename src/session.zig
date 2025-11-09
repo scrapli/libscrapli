@@ -474,6 +474,11 @@ pub const Session = struct {
         var buf = try allocator.alloc(u8, self.options.read_size);
         defer allocator.free(buf);
 
+        // need to unblock the transport waiter after signaling the read thread to stop, this will
+        // stop the waiter (which happens in transport.read), then the readloop can nicely exit;
+        // we only need to do this here in addition to close because we
+        errdefer self.transport.unblock() catch {};
+
         // in the case of auth, if we error out, we almost certainly need to stop the read loop
         // as the transport is probably gone from under our feet anyway.
         errdefer self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
