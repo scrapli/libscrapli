@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // TODO become a flag/option
+    // TODO become a flag/option, and acutally get this all figured out :)
     const staticLinkage = true;
 
     const scrapli = try buildScrapli(b, target, optimize, staticLinkage);

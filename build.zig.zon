@@ -11,14 +11,13 @@
             .path = "lib/libssh2",
         },
         .xml = .{
-            .path = "../zig-xml",
-            // .url = "https://github.com/ianprime0509/zig-xml/archive/b0723c1.tar.gz",
-            // .hash = "xml-0.1.0-ZTbP35UoAgDk1IhivGX2bzjEqMCBy2Q5QQBdrUoNURiJ",
+            .url = "https://github.com/carlmontanari/zig-xml/archive/cd6703a.tar.gz",
+            .hash = "xml-0.1.0-ZTbP35UoAgBojaHeY1SNlU1m8p9F82i1Qxgiulrp2v4E",
         },
         .yaml = .{
-            .path = "../zig-yaml",
-            // .url = "https://github.com/kubkon/zig-yaml/archive/a6c2cd8.tar.gz",
-            // .hash = "zig_yaml-0.2.0-C1161pmrAgDnipDTh_4v4RQD27XN5GNaVlzzvlXf1jfW",
+            // pinning here till real 0.16.x release + merge to upstream
+            .url = "https://github.com/carlmontanari/zig-yaml/archive/58ef208.tar.gz",
+            .hash = "zig_yaml-0.2.0-C1161imvAgCwr7ctsIzyGbUHFvl-Dh0kH0m3QoeRuHO5",
         },
     },
     .paths = .{
