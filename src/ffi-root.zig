@@ -54,12 +54,18 @@ pub fn getAllocator() std.mem.Allocator {
     }
 }
 
+// this may need to be revisited, but doing it this way there is no requirement for
+// deinit to free anything so this seems safest/most ideal for the ffi side of things
+var threaded: std.Io.Threaded = .init_single_threaded;
+const io = threaded.io();
+
 fn segfaultHandler(_: c_int) callconv(.c) void {
     std.debug.dumpCurrentStackTrace(
         .{
             .first_address = @returnAddress(),
         },
     );
+
     std.process.exit(1);
 }
 
@@ -137,6 +143,7 @@ export fn ls_cli_alloc(
 
     const d = ffi_driver.FfiDriver.init(
         getAllocator(),
+        io,
         std.mem.span(host),
         .{
             .definition = .{
@@ -190,6 +197,7 @@ export fn ls_netconf_alloc(
 
     const d = ffi_driver.FfiDriver.init_netconf(
         getAllocator(),
+        io,
         std.mem.span(host),
         .{
             .logger = log,

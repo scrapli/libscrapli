@@ -47,13 +47,8 @@ build-main: fmt clean-zig-cache ## Build the "main" binary in repo root, useful 
 run-main: fmt build-main ## Build and run the "main" binary in repo root
 	./zig-out/bin/scrapli
 
-build-clab-launcher: ## Builds the clab launcher image
-	docker build \
-		-f src/tests/functional/clab/launcher/Dockerfile \
-		-t clab-launcher:latest \
-		src/tests/functional/clab/launcher
-
 run-clab: ## Runs the clab functional testing topo; uses the clab launcher to run nicely on darwin
+	rm -r .clab/* || true
 	docker network rm clab || true
 	docker network create \
 		--driver bridge \
@@ -69,12 +64,42 @@ run-clab: ## Runs the clab functional testing topo; uses the clab launcher to ru
 		-d \
 		--rm \
 		--name clab-launcher \
+		--platform=linux/arm64 \
 		--privileged \
 		--pid=host \
 		--stop-signal=SIGINT \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v /run/netns:/run/netns \
-		-v "$$(pwd)/src/tests/functional/clab:$$(pwd)/src/tests/functional/clab" \
-		-e "LAUNCHER_WORKDIR=$$(pwd)/src/tests/functional/clab" \
+		-v "$$(pwd):$$(pwd)" \
+		-e "WORKDIR=$$(pwd)/.clab" \
 		-e "HOST_ARCH=$$(uname -m)" \
-		clab-launcher:latest
+		ghcr.io/scrapli/scrapli_clab/launcher:0.0.7
+
+run-clab-ci: ## Runs the clab functional testing topo with the ci specific topology - omits ceos
+	mkdir .clab || true
+	rm -r .clab/* || true
+	docker network rm clab || true
+	docker network create \
+	    --driver bridge \
+	    --subnet=172.20.20.0/24 \
+	    --gateway=172.20.20.1 \
+	    --ipv6 \
+	    --subnet=2001:172:20:20::/64 \
+	    --gateway=2001:172:20:20::1 \
+	    --opt com.docker.network.driver.mtu=65535 \
+	    --label containerlab \
+	    clab
+	docker run \
+        -d \
+        --rm \
+        --name clab-launcher \
+        --privileged \
+        --pid=host \
+        --stop-signal=SIGINT \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v /run/netns:/run/netns \
+        -v "$$(pwd):$$(pwd)" \
+        -e "WORKDIR=$$(pwd)/.clab" \
+        -e "HOST_ARCH=$$(uname -m)" \
+        -e "CLAB_TOPO=topo.ci.$$(uname -m).yaml" \
+        ghcr.io/scrapli/scrapli_clab/launcher:0.0.7

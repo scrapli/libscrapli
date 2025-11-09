@@ -1,14 +1,13 @@
 const std = @import("std");
 
 const cli = @import("cli.zig");
+const errors = @import("errors.zig");
+const ffi_operations = @import("ffi-operations.zig");
+const logging = @import("logging.zig");
 const netconf = @import("netconf.zig");
+const queue = @import("queue.zig");
 const result = @import("cli-result.zig");
 const result_netconf = @import("netconf-result.zig");
-const logging = @import("logging.zig");
-const errors = @import("errors.zig");
-const queue = @import("queue.zig");
-
-const ffi_operations = @import("ffi-operations.zig");
 
 pub const operation_thread_ready_sleep: u64 = 2_500;
 
@@ -19,6 +18,7 @@ pub const RealDriver = union(enum) {
 
 pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     real_driver: RealDriver,
 
@@ -42,6 +42,7 @@ pub const FfiDriver = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         host: []const u8,
         config: cli.Config,
     ) !*FfiDriver {
@@ -49,9 +50,11 @@ pub const FfiDriver = struct {
 
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
+            .io = io,
             .real_driver = RealDriver{
                 .cli = try cli.Driver.init(
                     allocator,
+                    io,
                     host,
                     config,
                 ),
@@ -79,6 +82,7 @@ pub const FfiDriver = struct {
 
     pub fn init_netconf(
         allocator: std.mem.Allocator,
+        io: std.Io,
         host: []const u8,
         config: netconf.Config,
     ) !*FfiDriver {
@@ -86,9 +90,11 @@ pub const FfiDriver = struct {
 
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
+            .io = io,
             .real_driver = RealDriver{
                 .netconf = try netconf.Driver.init(
                     allocator,
+                    io,
                     host,
                     config,
                 ),
@@ -196,7 +202,13 @@ pub const FfiDriver = struct {
                 break;
             }
 
-            std.Thread.sleep(operation_thread_ready_sleep);
+            std.Io.Clock.Duration.sleep(
+                .{
+                    .clock = .awake,
+                    .raw = .fromNanoseconds(operation_thread_ready_sleep),
+                },
+                self.io,
+            ) catch {};
         }
     }
 

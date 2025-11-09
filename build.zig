@@ -28,16 +28,19 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // TODO become a flag/option, and acutally get this all figured out :)
-    const staticLinkage = true;
+    const dependency_linkage = b.option(
+        std.builtin.LinkMode,
+        "dependency-linkage",
+        "static|dynamic",
+    ) orelse .static;
 
-    const scrapli = try buildScrapli(b, target, optimize, staticLinkage);
+    const scrapli = try buildScrapli(b, target, optimize, dependency_linkage);
 
     try buildCheck(b, scrapli);
     try buildTests(b, scrapli);
     try buildMain(b, target, optimize, scrapli);
     try buildExamples(b, target, optimize, scrapli);
-    try buildFFI(b, target, optimize, staticLinkage);
+    try buildFFI(b, target, optimize, dependency_linkage);
 }
 
 fn getPcre2Dep(
@@ -100,7 +103,7 @@ fn buildScrapli(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    staticLinkage: bool,
+    dependency_linkage: std.builtin.LinkMode,
 ) !*std.Build.Module {
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
@@ -124,27 +127,30 @@ fn buildScrapli(
         },
     );
 
-    if (staticLinkage) {
-        const pcre2 = getPcre2Dep(b, target, optimize);
-        const libssh2 = getLibssh2Dep(b, target, optimize);
+    switch (dependency_linkage) {
+        .static => {
+            const pcre2 = getPcre2Dep(b, target, optimize);
+            const libssh2 = getLibssh2Dep(b, target, optimize);
 
-        scrapli.linkLibrary(pcre2.artifact("pcre2-8"));
-        scrapli.linkLibrary(libssh2.artifact("ssh2"));
-    } else {
-        // TODO probably needs to be a switch for arch, then i guess there are
-        // probably just common paths we should put for darwin/linux?
-        scrapli.addIncludePath(
-            .{
-                .cwd_relative = "/opt/homebrew/include",
-            },
-        );
-        scrapli.addLibraryPath(
-            .{
-                .cwd_relative = "/opt/homebrew/lib",
-            },
-        );
-        scrapli.linkSystemLibrary("pcre2-8", .{});
-        scrapli.linkSystemLibrary("ssh2", .{});
+            scrapli.linkLibrary(pcre2.artifact("pcre2-8"));
+            scrapli.linkLibrary(libssh2.artifact("ssh2"));
+        },
+        else => {
+            // TODO probably needs to be a switch for arch, then i guess there are
+            // probably just common paths we should put for darwin/linux?
+            scrapli.addIncludePath(
+                .{
+                    .cwd_relative = "/opt/homebrew/include",
+                },
+            );
+            scrapli.addLibraryPath(
+                .{
+                    .cwd_relative = "/opt/homebrew/lib",
+                },
+            );
+            scrapli.linkSystemLibrary("pcre2-8", .{});
+            scrapli.linkSystemLibrary("ssh2", .{});
+        },
     }
 
     return scrapli;
@@ -350,7 +356,7 @@ fn buildScrapliFFI(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    staticLinkage: bool,
+    dependency_linkage: std.builtin.LinkMode,
 ) !*std.Build.Module {
     const yaml = getZigYamlDep(b, target, optimize);
     const xml = getZigXmlDep(b, target, optimize);
@@ -375,27 +381,30 @@ fn buildScrapliFFI(
         },
     );
 
-    if (staticLinkage) {
-        const pcre2 = getPcre2Dep(b, target, optimize);
-        const libssh2 = getLibssh2Dep(b, target, optimize);
+    switch (dependency_linkage) {
+        .static => {
+            const pcre2 = getPcre2Dep(b, target, optimize);
+            const libssh2 = getLibssh2Dep(b, target, optimize);
 
-        scrapli.linkLibrary(pcre2.artifact("pcre2-8"));
-        scrapli.linkLibrary(libssh2.artifact("ssh2"));
-    } else {
-        // TODO probably needs to be a switch for arch, then i guess there are
-        // probably just common paths we should put for darwin/linux?
-        scrapli.addIncludePath(
-            .{
-                .cwd_relative = "/opt/homebrew/include",
-            },
-        );
-        scrapli.addLibraryPath(
-            .{
-                .cwd_relative = "/opt/homebrew/lib",
-            },
-        );
-        scrapli.linkSystemLibrary("pcre2-8", .{});
-        scrapli.linkSystemLibrary("ssh2", .{});
+            scrapli.linkLibrary(pcre2.artifact("pcre2-8"));
+            scrapli.linkLibrary(libssh2.artifact("ssh2"));
+        },
+        else => {
+            // TODO probably needs to be a switch for arch, then i guess there are
+            // probably just common paths we should put for darwin/linux?
+            scrapli.addIncludePath(
+                .{
+                    .cwd_relative = "/opt/homebrew/include",
+                },
+            );
+            scrapli.addLibraryPath(
+                .{
+                    .cwd_relative = "/opt/homebrew/lib",
+                },
+            );
+            scrapli.linkSystemLibrary("pcre2-8", .{});
+            scrapli.linkSystemLibrary("ssh2", .{});
+        },
     }
 
     return scrapli;
@@ -501,20 +510,20 @@ fn buildFFI(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    staticLinkage: bool,
+    dependency_linkage: std.builtin.LinkMode,
 ) !void {
     const ffi = b.step("ffi", "Build libscrapli ffi objects");
 
     const all_targets = flags.parseCustomFlag("--all-targets", false);
 
     if (!all_targets) {
-        try buildFFITarget(b, ffi, target, optimize, staticLinkage);
+        try buildFFITarget(b, ffi, target, optimize, dependency_linkage);
 
         return;
     }
 
     for (ffi_targets) |ffi_target| {
-        try buildFFITarget(b, ffi, b.resolveTargetQuery(ffi_target), optimize, staticLinkage);
+        try buildFFITarget(b, ffi, b.resolveTargetQuery(ffi_target), optimize, dependency_linkage);
     }
 }
 
@@ -523,12 +532,12 @@ fn buildFFITarget(
     ffi: *std.Build.Step,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    staticLinkage: bool,
+    dependency_linkage: std.builtin.LinkMode,
 ) !void {
     const libscrapli = b.addLibrary(
         .{
             .name = "scrapli",
-            .root_module = try buildScrapliFFI(b, target, optimize, staticLinkage),
+            .root_module = try buildScrapliFFI(b, target, optimize, dependency_linkage),
             .linkage = .dynamic,
             .use_llvm = true,
         },

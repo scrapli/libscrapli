@@ -136,7 +136,13 @@ export fn ls_cli_open(
             break;
         }
 
-        std.Thread.sleep(ffi_driver.operation_thread_ready_sleep);
+        std.Io.Clock.Duration.sleep(
+            .{
+                .clock = .awake,
+                .raw = .fromNanoseconds(ffi_driver.operation_thread_ready_sleep),
+            },
+            d.io,
+        ) catch {};
     }
 
     return 0;
