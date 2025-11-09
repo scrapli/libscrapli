@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const scrapli = @import("scrapli");
-
 const netconf = scrapli.netconf;
 const strings = scrapli.strings;
 
@@ -78,6 +77,11 @@ pub fn main() !void {
         std.log.info("leak check results >> {any}\n", .{gpa_allocator.deinit()});
     }
 
+    var threaded: std.Io.Threaded = .init(allocator);
+    defer threaded.deinit();
+
+    const io = threaded.io();
+
     var host = try getEnvVarOrDefault(
         host_env_var_name,
         default_host,
@@ -92,6 +96,7 @@ pub fn main() !void {
 
     const d = try netconf.Driver.init(
         allocator,
+        io,
         host.string,
         .{
             // uncomment and import the logger package like: `const logging = scrapli.logging;`
