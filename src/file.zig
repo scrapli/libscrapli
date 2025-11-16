@@ -1,30 +1,17 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
-const c = @cImport({
-    @cDefine("_XOPEN_SOURCE", "500");
-    @cInclude("fcntl.h");
-});
-
-// tried this in "pure" zig and couldn't get it to work... no idea
-// fn setNonBlocking(fd: std.posix.fd_t) !void {
-//     var flags = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
-//
-//     flags |= std.posix.SOCK.NONBLOCK;
-//
-//     _ = try std.posix.fcntl(fd, std.posix.F.SETFL, flags);
-// }
 pub fn setNonBlocking(fd: std.posix.fd_t) !void {
-    var got_flags = c.fcntl(fd, c.F_GETFL);
-    if (got_flags == -1) {
-        return error.SetNonBlockingFailed;
-    }
+    var flags = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
 
-    got_flags |= c.O_NONBLOCK;
+    // would have thought there would be a portable std.posix.O.NONBLOCK but
+    // seems that doesnt exist on darwin but this does work on darwin? then
+    // darwin was content doing c.O_NONBLOCK but for some reason fnctl things
+    // were not getting transalted nicely on linux-gnu... so this should work
+    // on darwin+linux(gnu/musl)
+    flags |= @as(usize, 1 << @bitOffsetOf(std.posix.O, "NONBLOCK"));
 
-    const set_flags_ret = c.fcntl(fd, c.F_SETFL, got_flags);
-    if (set_flags_ret == -1) {
-        return error.SetNonBlockingFailed;
-    }
+    _ = try std.posix.fcntl(fd, std.posix.F.SETFL, flags);
 }
 
 pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
