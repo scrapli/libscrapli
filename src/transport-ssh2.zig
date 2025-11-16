@@ -691,7 +691,7 @@ pub const Transport = struct {
                     .{},
                 );
             };
-            std.debug.print("ADDR > {any}\n", .{addr});
+
             const stream = addr.address.connect(
                 self.io,
                 .{
