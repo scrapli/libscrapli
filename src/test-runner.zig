@@ -29,7 +29,7 @@ pub const std_options = std.Options{
     },
 };
 
-// use in custom panic handler
+// used in custom panic handler
 var current_test: ?[]const u8 = null;
 
 pub fn main() !void {

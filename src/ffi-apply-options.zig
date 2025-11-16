@@ -13,7 +13,7 @@ pub const noop = true;
 export fn ls_option_session_read_size(
     d_ptr: usize,
     value: u64,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -31,7 +31,7 @@ export fn ls_option_session_read_size(
 export fn ls_option_session_read_min_delay_ns(
     d_ptr: usize,
     value: u64,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -49,7 +49,7 @@ export fn ls_option_session_read_min_delay_ns(
 export fn ls_option_session_read_max_delay_ns(
     d_ptr: usize,
     value: u64,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -67,7 +67,7 @@ export fn ls_option_session_read_max_delay_ns(
 export fn ls_option_session_return_char(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -95,7 +95,7 @@ export fn ls_option_session_return_char(
 export fn ls_option_session_operation_timeout_ns(
     d_ptr: usize,
     value: u64,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -113,7 +113,7 @@ export fn ls_option_session_operation_timeout_ns(
 export fn ls_option_session_operation_max_search_depth(
     d_ptr: usize,
     value: u64,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -131,7 +131,7 @@ export fn ls_option_session_operation_max_search_depth(
 export fn ls_option_session_record_destination(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -185,7 +185,7 @@ export fn ls_option_session_record_destination(
 export fn ls_option_auth_username(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -213,7 +213,7 @@ export fn ls_option_auth_username(
 export fn ls_option_auth_password(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -241,7 +241,7 @@ export fn ls_option_auth_password(
 export fn ls_option_auth_private_key_path(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -269,7 +269,7 @@ export fn ls_option_auth_private_key_path(
 export fn ls_option_auth_private_key_passphrase(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -298,7 +298,7 @@ export fn ls_option_auth_set_lookup_key_value(
     d_ptr: usize,
     key: [*c]const u8,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -325,7 +325,7 @@ export fn ls_option_auth_set_lookup_key_value(
 
 export fn ls_option_auth_force_in_session_auth(
     d_ptr: usize,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -342,7 +342,7 @@ export fn ls_option_auth_force_in_session_auth(
 
 export fn ls_option_auth_bypass_in_session_auth(
     d_ptr: usize,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -360,7 +360,7 @@ export fn ls_option_auth_bypass_in_session_auth(
 export fn ls_option_auth_username_pattern(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -388,7 +388,7 @@ export fn ls_option_auth_username_pattern(
 export fn ls_option_auth_password_pattern(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -416,7 +416,7 @@ export fn ls_option_auth_password_pattern(
 export fn ls_option_auth_private_key_passphrase_pattern(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -448,7 +448,7 @@ export fn ls_option_auth_private_key_passphrase_pattern(
 export fn ls_option_transport_bin_bin(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -490,7 +490,7 @@ export fn ls_option_transport_bin_bin(
 export fn ls_option_transport_bin_extra_open_args(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -532,7 +532,7 @@ export fn ls_option_transport_bin_extra_open_args(
 export fn ls_option_transport_bin_override_open_args(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -574,7 +574,7 @@ export fn ls_option_transport_bin_override_open_args(
 export fn ls_option_transport_bin_ssh_config_path(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -616,7 +616,7 @@ export fn ls_option_transport_bin_ssh_config_path(
 export fn ls_option_transport_bin_known_hosts_path(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -657,7 +657,7 @@ export fn ls_option_transport_bin_known_hosts_path(
 
 export fn ls_option_transport_bin_enable_strict_key(
     d_ptr: usize,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -689,7 +689,7 @@ export fn ls_option_transport_bin_enable_strict_key(
 export fn ls_option_transport_bin_term_height(
     d_ptr: usize,
     value: u16,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -721,7 +721,7 @@ export fn ls_option_transport_bin_term_height(
 export fn ls_option_transport_bin_term_width(
     d_ptr: usize,
     value: u16,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -757,7 +757,7 @@ export fn ls_option_transport_bin_term_width(
 export fn ls_option_transport_ssh2_known_hosts_path(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -798,7 +798,7 @@ export fn ls_option_transport_ssh2_known_hosts_path(
 
 export fn ls_option_transport_ssh2_libssh2trace(
     d_ptr: usize,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -830,7 +830,7 @@ export fn ls_option_transport_ssh2_libssh2trace(
 export fn ls_option_transport_ssh2_proxy_jump_host(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -898,7 +898,7 @@ export fn ls_option_transport_ssh2_proxy_jump_host(
 export fn ls_option_transport_ssh2_proxy_jump_port(
     d_ptr: usize,
     value: u16,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -930,7 +930,7 @@ export fn ls_option_transport_ssh2_proxy_jump_port(
 export fn ls_option_transport_ssh2_proxy_jump_username(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -972,7 +972,7 @@ export fn ls_option_transport_ssh2_proxy_jump_username(
 export fn ls_option_transport_ssh2_proxy_jump_password(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -1014,7 +1014,7 @@ export fn ls_option_transport_ssh2_proxy_jump_password(
 export fn ls_option_transport_ssh2_proxy_jump_private_key_path(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -1056,7 +1056,7 @@ export fn ls_option_transport_ssh2_proxy_jump_private_key_path(
 export fn ls_option_transport_ssh2_proxy_jump_private_key_passphrase(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -1097,7 +1097,7 @@ export fn ls_option_transport_ssh2_proxy_jump_private_key_passphrase(
 
 export fn ls_option_transport_ssh2_proxy_jump_libssh2trace(
     d_ptr: usize,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -1133,7 +1133,7 @@ export fn ls_option_transport_ssh2_proxy_jump_libssh2trace(
 export fn ls_option_transport_test_f(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -1179,7 +1179,7 @@ export fn ls_option_transport_test_f(
 export fn ls_option_netconf_error_tag(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -1202,7 +1202,7 @@ export fn ls_option_netconf_error_tag(
 export fn ls_option_netconf_preferred_version(
     d_ptr: usize,
     value: [*c]const u8,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {
@@ -1236,7 +1236,7 @@ export fn ls_option_netconf_preferred_version(
 export fn ls_option_netconf_message_poll_interval(
     d_ptr: usize,
     value: u64,
-) u8 {
+) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     switch (d.real_driver) {

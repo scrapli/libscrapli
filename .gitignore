@@ -28,9 +28,6 @@ private/
 .zig-cache
 zig-out
 
-# for notes/stuff/whatever
-.private
-
 # pcre2 that will be cloned during builds
 lib/pcre2/pcre2
 

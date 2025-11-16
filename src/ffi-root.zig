@@ -13,9 +13,9 @@ const transport = @import("transport.zig");
 
 const c = @cImport(@cInclude("signal.h"));
 
-pub export const _force_include_apply_options = &ffi_apply_options.noop;
-pub export const _force_include_root_driver = &ffi_root_cli.noop;
-pub export const _force_include_root_driver_netconf = &ffi_root_netconf.noop;
+pub export const _ls_force_include_apply_options = &ffi_apply_options.noop;
+pub export const _ls_force_include_root_cli = &ffi_root_cli.noop;
+pub export const _ls_force_include_root_netconf = &ffi_root_netconf.noop;
 
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
