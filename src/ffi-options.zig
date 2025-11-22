@@ -45,7 +45,7 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
 // because we check the length -- if the length is non zero then we know it was something,
 // there shouldnt be any fields here where an empty string is a valid user input
 pub const FFIOptions = extern struct {
-    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.c) void = null,
+    loggerCallback: ?*const fn (level: u8, message: *[]u8) callconv(.c) void = null,
     logger_level: [*c]const u8 = undefined,
     logger_level_len: usize = 0,
 
@@ -143,7 +143,7 @@ pub const FFIOptions = extern struct {
         },
     },
 
-    fn AuthOptionsInputs(self: *FFIOptions) auth.OptionsInputs {
+    fn authOptionsInputs(self: *FFIOptions) auth.OptionsInputs {
         var o = auth.OptionsInputs{};
 
         if (self.auth.username_len > 0) {
@@ -199,7 +199,7 @@ pub const FFIOptions = extern struct {
         return o;
     }
 
-    fn SessionOptionsInputs(self: *FFIOptions) session.OptionsInputs {
+    fn sessionOptionsInputs(self: *FFIOptions) session.OptionsInputs {
         var o = session.OptionsInputs{};
 
         if (self.session.read_size) |d| {
@@ -235,7 +235,7 @@ pub const FFIOptions = extern struct {
         return o;
     }
 
-    fn TransportOptionsInputs(self: *FFIOptions) transport.OptionsInputs {
+    fn transportOptionsInputs(self: *FFIOptions) transport.OptionsInputs {
         switch (getTransport(self.transport_kind[0..self.transport_kind_len])) {
             transport.Kind.bin => {
                 var o = transport.OptionsInputs{
@@ -338,9 +338,9 @@ pub const FFIOptions = extern struct {
         }
     }
 
-    pub fn CliConfig(self: *FFIOptions, allocator: std.mem.Allocator) cli.Config {
+    pub fn cliConfig(self: *FFIOptions, allocator: std.mem.Allocator) cli.Config {
         return cli.Config{
-            .logger = if (self.logger_callback) |cb|
+            .logger = if (self.loggerCallback) |cb|
                 logging.Logger{
                     .allocator = allocator,
                     .f = cb,
@@ -354,15 +354,15 @@ pub const FFIOptions = extern struct {
                 .string = self.cli.definition_str[0..self.cli.definition_str_len],
             },
             .port = if (self.port) |v| v.* else null,
-            .auth = self.AuthOptionsInputs(),
-            .session = self.SessionOptionsInputs(),
-            .transport = self.TransportOptionsInputs(),
+            .auth = self.authOptionsInputs(),
+            .session = self.sessionOptionsInputs(),
+            .transport = self.transportOptionsInputs(),
         };
     }
 
-    pub fn NetconfConfig(self: *FFIOptions, allocator: std.mem.Allocator) netconf.Config {
+    pub fn netconfConfig(self: *FFIOptions, allocator: std.mem.Allocator) netconf.Config {
         var c = netconf.Config{
-            .logger = if (self.logger_callback) |cb|
+            .logger = if (self.loggerCallback) |cb|
                 logging.Logger{
                     .allocator = allocator,
                     .f = cb,
@@ -373,9 +373,9 @@ pub const FFIOptions = extern struct {
             else
                 null,
             .port = if (self.port) |v| v.* else null,
-            .auth = self.AuthOptionsInputs(),
-            .session = self.SessionOptionsInputs(),
-            .transport = self.TransportOptionsInputs(),
+            .auth = self.authOptionsInputs(),
+            .session = self.sessionOptionsInputs(),
+            .transport = self.transportOptionsInputs(),
         };
 
         if (self.netconf.error_tag_len > 0) {

@@ -179,7 +179,7 @@ pub const BoundOnXCallback = struct {
         d: *cli.Driver,
         cancel: ?*bool,
     ) !*result.Result {
-        const res = try d.NewResult(allocator, self.kind);
+        const res = try d.newResult(allocator, self.kind);
         errdefer res.deinit();
 
         for (self.instructions) |instr| {
@@ -237,9 +237,9 @@ pub const Options = struct {
     default_mode: []const u8,
     modes: ?[]mode.Options,
     failure_indicators: ?[][]const u8 = null,
-    on_open_callback: ?OnXCallback = null,
+    onOpenCallback: ?OnXCallback = null,
     bound_on_open_callback: ?*BoundOnXCallback = null,
-    on_close_callback: ?OnXCallback = null,
+    onCloseCallback: ?OnXCallback = null,
     bound_on_close_callback: ?*BoundOnXCallback = null,
     force_in_session_auth: bool = false,
     bypass_in_session_auth: bool = false,
@@ -253,12 +253,12 @@ pub const Definition = struct {
     default_mode: []const u8,
     modes: std.StringHashMap(*mode.Mode),
     failure_indicators: std.array_list.Managed([]const u8),
-    on_open_callback: ?OnXCallback,
+    onOpenCallback: ?OnXCallback,
     // nothing but yaml -> Definition should use bound callbacks, but if you did for some weird
     // reason, Definition expects a heap allocated struct that we will call deinit for (which
     // will destroy that memory)
     bound_on_open_callback: ?*BoundOnXCallback,
-    on_close_callback: ?OnXCallback,
+    onCloseCallback: ?OnXCallback,
     bound_on_close_callback: ?*BoundOnXCallback,
     force_in_session_auth: bool,
     bypass_in_session_auth: bool,
@@ -274,9 +274,9 @@ pub const Definition = struct {
             .default_mode = options.default_mode,
             .modes = std.StringHashMap(*mode.Mode).init(allocator),
             .failure_indicators = std.array_list.Managed([]const u8).init(allocator),
-            .on_open_callback = options.on_open_callback,
+            .onOpenCallback = options.onOpenCallback,
             .bound_on_open_callback = options.bound_on_open_callback,
-            .on_close_callback = options.on_close_callback,
+            .onCloseCallback = options.onCloseCallback,
             .bound_on_close_callback = options.bound_on_close_callback,
             .force_in_session_auth = options.force_in_session_auth,
             .bypass_in_session_auth = options.bypass_in_session_auth,
@@ -371,7 +371,7 @@ pub const YamlDefinition = struct {
     ntc_templates_platform: ?[]const u8,
     genie_platform: ?[]const u8,
 
-    pub fn ToDefinition(
+    pub fn toDefinition(
         allocator: std.mem.Allocator,
         io: std.Io,
         source: YamlSource,

@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const operation = @import("cli-operation.zig");
 
 fn getInputHandling(input_handling: [*c]const u8) operation.InputHandling {
@@ -27,7 +28,7 @@ fn getInputHandling(input_handling: [*c]const u8) operation.InputHandling {
     }
 }
 
-pub fn SendInputOptionsFromArgs(
+pub fn sendInputOptionsFromArgs(
     cancel: *bool,
     input: [*c]const u8,
     requested_mode: [*c]const u8,
@@ -51,7 +52,7 @@ pub fn SendInputOptionsFromArgs(
     return options;
 }
 
-pub fn SendPromptedInputOptionsFromArgs(
+pub fn sendPromptedInputOptionsFromArgs(
     cancel: *bool,
     input: [*c]const u8,
     prompt_exact: [*c]const u8,

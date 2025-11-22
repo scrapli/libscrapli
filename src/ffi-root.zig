@@ -127,7 +127,7 @@ export fn ls_cli_alloc(
         allocator,
         io,
         std.mem.span(host),
-        o.CliConfig(allocator),
+        o.cliConfig(allocator),
     ) catch {
         return 0;
     };
@@ -151,7 +151,7 @@ export fn ls_netconf_alloc(
         getAllocator(),
         io,
         std.mem.span(host),
-        o.*.NetconfConfig(allocator),
+        o.*.netconfConfig(allocator),
     ) catch {
         return 0;
     };

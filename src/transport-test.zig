@@ -76,7 +76,7 @@ pub const Transport = struct {
             @panic("must set file for test transport!");
         }
 
-        self.reader = try file.ReaderFromPath(
+        self.reader = try file.readerFromPath(
             self.allocator,
             self.io,
             &self.r_buffer,

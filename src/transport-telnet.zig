@@ -25,6 +25,7 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
+// zlinter-disable-next-line declaration_naming
 pub const OptionsInputs = struct {};
 
 pub const Options = struct {
@@ -226,20 +227,21 @@ pub const Transport = struct {
     ) !void {
         self.log.info("telnet.Transport open requested", .{});
 
-        var lookupB: [16]std.Io.net.HostName.LookupResult = undefined;
-        var lookupQ = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookupB);
-        var canonicalNameB: [255]u8 = undefined;
+        var lookup_buf: [16]std.Io.net.HostName.LookupResult = undefined;
+        var lookup_queue = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookup_buf);
+        var canonical_name_buf: [255]u8 = undefined;
+
         self.io.vtable.netLookup(
             self.io.userdata,
             try std.Io.net.HostName.init(host),
-            &lookupQ,
+            &lookup_queue,
             .{
                 .port = port,
-                .canonical_name_buffer = &canonicalNameB,
+                .canonical_name_buffer = &canonical_name_buf,
             },
         );
 
-        const addr = try lookupQ.getOne(self.io);
+        const addr = try lookup_queue.getOne(self.io);
         self.stream = addr.address.connect(
             self.io,
             .{

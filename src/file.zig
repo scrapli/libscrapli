@@ -51,7 +51,7 @@ pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8
 }
 
 // buf is passed in for lifetime reasons of course, so needs to be outside of this
-pub fn ReaderFromPath(
+pub fn readerFromPath(
     allocator: std.mem.Allocator,
     io: std.Io,
     buf: []u8,

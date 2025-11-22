@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const UNBLOCK_IDENT = 1;
+const unblock_ident = 1;
 
 pub const KqueueWaiter = struct {
     allocator: std.mem.Allocator,
@@ -13,7 +13,7 @@ pub const KqueueWaiter = struct {
         const kq = try std.posix.kqueue();
 
         const user_event = std.posix.Kevent{
-            .ident = UNBLOCK_IDENT,
+            .ident = unblock_ident,
             .filter = std.c.EVFILT.USER,
             .flags = std.c.EV.ADD | std.c.EV.CLEAR,
             .fflags = 0,
@@ -70,7 +70,7 @@ pub const KqueueWaiter = struct {
         // -- that is the there is data available and our unblock messages
         var out: [2]std.posix.Kevent = undefined;
 
-        const oOut = &out;
+        const o_out = &out;
         const changelist = &[_]std.posix.Kevent{};
 
         while (true) {
@@ -78,7 +78,7 @@ pub const KqueueWaiter = struct {
                 self.kq,
                 changelist.ptr,
                 std.math.cast(c_int, changelist.len) orelse return error.Overflow,
-                oOut.ptr,
+                o_out.ptr,
                 std.math.cast(c_int, out.len) orelse return error.Overflow,
                 null,
             );
@@ -103,7 +103,7 @@ pub const KqueueWaiter = struct {
 
     pub fn unblock(self: *KqueueWaiter) !void {
         const event = std.posix.Kevent{
-            .ident = UNBLOCK_IDENT,
+            .ident = unblock_ident,
             .filter = std.c.EVFILT.USER,
             .flags = 0,
             .fflags = std.c.NOTE.TRIGGER,

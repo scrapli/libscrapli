@@ -317,14 +317,14 @@ const ProxyWrapper = struct {
 
         self.pipe_to_channel_thread = try std.Thread.spawn(
             .{},
-            ProxyWrapper.copy_pipe_to_channel,
+            ProxyWrapper.copyPipeToChannel,
             .{
                 self,
             },
         );
         self.channel_to_pipe_thread = try std.Thread.spawn(
             .{},
-            ProxyWrapper.copy_channel_to_pipe,
+            ProxyWrapper.copyChannelToPipe,
             .{
                 self,
             },
@@ -341,7 +341,7 @@ const ProxyWrapper = struct {
         self.channel_to_pipe_thread = null;
     }
 
-    fn pipe_to_channel(
+    fn pipeToChannel(
         self: *ProxyWrapper,
     ) !void {
         var buf: [4096]u8 = undefined;
@@ -367,10 +367,12 @@ const ProxyWrapper = struct {
         }
     }
 
-    fn copy_pipe_to_channel(self: *ProxyWrapper) !void {
+    fn copyPipeToChannel(self: *ProxyWrapper) !void {
         while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
-            const result = self.pipe_to_channel();
-            if (result) {} else |err| switch (err) {
+            const result = self.pipeToChannel();
+            if (result) {
+                return;
+            } else |err| switch (err) {
                 error.WouldBlock => {
                     try std.Io.Clock.Duration.sleep(
                         .{
@@ -387,7 +389,7 @@ const ProxyWrapper = struct {
         }
     }
 
-    fn channel_to_pipe(
+    fn channelToPipe(
         self: *ProxyWrapper,
     ) !void {
         var buf: [4096]u8 = undefined;
@@ -420,9 +422,9 @@ const ProxyWrapper = struct {
         }
     }
 
-    fn copy_channel_to_pipe(self: *ProxyWrapper) !void {
+    fn copyChannelToPipe(self: *ProxyWrapper) !void {
         while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
-            self.channel_to_pipe() catch |err| switch (err) {
+            self.channelToPipe() catch |err| switch (err) {
                 error.WouldBlock => {
                     try std.Io.Clock.Duration.sleep(
                         .{
@@ -667,21 +669,22 @@ pub const Transport = struct {
     ) !void {
         self.log.debug("ssh2.Transport initSocket requested", .{});
 
-        var lookupB: [16]std.Io.net.HostName.LookupResult = undefined;
-        var lookupQ = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookupB);
-        var canonicalNameB: [255]u8 = undefined;
+        var lookup_buf: [16]std.Io.net.HostName.LookupResult = undefined;
+        var lookup_queue = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookup_buf);
+        var canonica_name_buf: [255]u8 = undefined;
+
         self.io.vtable.netLookup(
             self.io.userdata,
             try std.Io.net.HostName.init(host),
-            &lookupQ,
+            &lookup_queue,
             .{
                 .port = port,
-                .canonical_name_buffer = &canonicalNameB,
+                .canonical_name_buffer = &canonica_name_buf,
             },
         );
 
         while (true) {
-            const addr = lookupQ.getOne(self.io) catch {
+            const addr = lookup_queue.getOne(self.io) catch {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
@@ -1658,15 +1661,15 @@ pub const Transport = struct {
         }
     }
 
-    fn _writeStandard(self: *Transport, buf: []const u8) !void {
-        self.log.debug("ssh2.Transport _writeStandard requested", .{});
+    fn writeStandard(self: *Transport, buf: []const u8) !void {
+        self.log.debug("ssh2.Transport writeStandard requested", .{});
 
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
         const n = c.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
         if (n == c.LIBSSH2_ERROR_EAGAIN) {
-            return self._writeStandard(buf);
+            return self.writeStandard(buf);
         }
 
         if (n < 0) {
@@ -1674,7 +1677,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport _writeStandard: write failed, return code: {d}",
+                "ssh2.Transport writeStandard: write failed, return code: {d}",
                 .{n},
             );
         }
@@ -1684,21 +1687,21 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport _writeStandard: wrote {d} bytes, expected to write {d}",
+                "ssh2.Transport writeStandard: wrote {d} bytes, expected to write {d}",
                 .{ n, buf.len },
             );
         }
     }
 
-    fn _writeProxied(self: *Transport, buf: []const u8) !void {
-        self.log.debug("ssh2.Transport _writeProxied requested", .{});
+    fn writeProxied(self: *Transport, buf: []const u8) !void {
+        self.log.debug("ssh2.Transport writeProxied requested", .{});
 
         self.session_lock.lock();
         defer self.session_lock.unlock();
 
         const n = c.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
         if (n == c.LIBSSH2_ERROR_EAGAIN) {
-            return self._writeProxied(buf);
+            return self.writeProxied(buf);
         }
 
         if (n < 0) {
@@ -1706,7 +1709,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport _writeProxied: write failed, return code: {d}",
+                "ssh2.Transport writeProxied: write failed, return code: {d}",
                 .{n},
             );
         }
@@ -1716,7 +1719,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport _writeProxied: wrote {d} bytes, expected to write {d}",
+                "ssh2.Transport writeProxied: wrote {d} bytes, expected to write {d}",
                 .{ n, buf.len },
             );
         }
@@ -1725,7 +1728,7 @@ pub const Transport = struct {
             // have to copy from the libssh2 channel to the pipe connecting the outer and inner
             // sessions basically
             while (true) {
-                const result = pw.pipe_to_channel();
+                const result = pw.pipeToChannel();
                 if (result) {
                     break;
                 } else |err| {
@@ -1744,14 +1747,14 @@ pub const Transport = struct {
         self.log.info("ssh2.Transport write requested", .{});
 
         if (self.options.proxy_jump_options == null) {
-            return self._writeStandard(buf);
+            return self.writeStandard(buf);
         } else {
-            return self._writeProxied(buf);
+            return self.writeProxied(buf);
         }
     }
 
-    fn _readStandard(self: *Transport, buf: []u8) !usize {
-        self.log.debug("ssh2.Transport _readStandard requested", .{});
+    fn readStandard(self: *Transport, buf: []u8) !usize {
+        self.log.debug("ssh2.Transport readStandard requested", .{});
 
         self.session_lock.lock();
 
@@ -1782,7 +1785,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport _readStandard: transport read failed, rc {d}",
+                "ssh2.Transport readStandard: transport read failed, rc {d}",
                 .{n},
             );
         }
@@ -1790,8 +1793,8 @@ pub const Transport = struct {
         return @intCast(n);
     }
 
-    fn _readProxied(self: *Transport, buf: []u8) !usize {
-        self.log.debug("ssh2.Transport _readProxied requested", .{});
+    fn readProxied(self: *Transport, buf: []u8) !usize {
+        self.log.debug("ssh2.Transport readProxied requested", .{});
 
         self.session_lock.lock();
 
@@ -1811,14 +1814,14 @@ pub const Transport = struct {
 
         // need to make sure we are flushing things the *other* way too -- as in back to the server
         // because if we dont do this our acks and such wont get there
-        self.proxy_wrapper.?.pipe_to_channel() catch {};
+        self.proxy_wrapper.?.pipeToChannel() catch {};
 
         if (n == c.LIBSSH2_ERROR_EAGAIN) {
-            const res = self.proxy_wrapper.?.channel_to_pipe();
+            const res = self.proxy_wrapper.?.channelToPipe();
             if (res) {
                 // re-read since we copied data from the cahnnel to the pipe, so now something
                 // should be available for libssh2_channel-read_ex
-                return self._readProxied(buf);
+                return self.readProxied(buf);
             } else |_| {
                 // didn't copy data, wait on the socket so libssh2 has something to read on
                 // the next iteration
@@ -1832,7 +1835,7 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport _readProxied: transport read failed, rc {d}",
+                "ssh2.Transport readProxied: transport read failed, rc {d}",
                 .{n},
             );
         }
@@ -1844,9 +1847,9 @@ pub const Transport = struct {
         self.log.debug("ssh2.Transport read requested", .{});
 
         if (self.options.proxy_jump_options == null) {
-            return self._readStandard(buf);
+            return self.readStandard(buf);
         } else {
-            return self._readProxied(buf);
+            return self.readProxied(buf);
         }
     }
 

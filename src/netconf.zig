@@ -316,7 +316,7 @@ pub const Driver = struct {
         self.allocator.destroy(self);
     }
 
-    fn NewResult(
+    fn newResult(
         self: *Driver,
         allocator: std.mem.Allocator,
         input: []const u8,
@@ -348,7 +348,7 @@ pub const Driver = struct {
 
         var timer = try std.time.Timer.start();
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             "",
             operation.Kind.open,
@@ -466,7 +466,7 @@ pub const Driver = struct {
         return res;
     }
 
-    fn _close(self: *Driver) !void {
+    fn closeJoinProcessThread(self: *Driver) !void {
         self.process_stop.store(
             ProcessThreadState.stop,
             std.builtin.AtomicOrder.unordered,
@@ -491,9 +491,9 @@ pub const Driver = struct {
         );
 
         if (options.force) {
-            try self._close();
+            try self.closeJoinProcessThread();
 
-            return self.NewResult(allocator, "", operation.Kind.close);
+            return self.newResult(allocator, "", operation.Kind.close);
         }
 
         const res = self.closeSession(
@@ -505,7 +505,7 @@ pub const Driver = struct {
             switch (err) {
                 // if we run into an EOF we basically failed successfully :)
                 errors.ScrapliError.EOF => {
-                    return self.NewResult(allocator, "", operation.Kind.close);
+                    return self.newResult(allocator, "", operation.Kind.close);
                 },
                 else => {
                     return err;
@@ -514,7 +514,7 @@ pub const Driver = struct {
         };
         errdefer res.deinit();
 
-        try self._close();
+        try self.closeJoinProcessThread();
 
         return res;
     }
@@ -763,21 +763,21 @@ pub const Driver = struct {
     ) !void {
         self.log.info("netconf.Driver determineVersion requested", .{});
 
-        const hasVersion_1_0 = try self.hasCapability(
+        const has_version_1_0 = try self.hasCapability(
             null,
             version_1_0_capability_name,
             null,
         );
-        const hasVersion_1_1 = try self.hasCapability(
+        const has_version_1_1 = try self.hasCapability(
             null,
             version_1_1_capability_name,
             null,
         );
 
-        if (hasVersion_1_1) {
+        if (has_version_1_1) {
             // we default to preferring 1.1
             self.negotiated_version = .version_1_1;
-        } else if (hasVersion_1_0) {
+        } else if (has_version_1_0) {
             self.negotiated_version = .version_1_0;
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
@@ -798,7 +798,7 @@ pub const Driver = struct {
 
         switch (self.options.preferred_version.?) {
             .version_1_0 => {
-                if (hasVersion_1_0) {
+                if (has_version_1_0) {
                     self.negotiated_version = .version_1_0;
                 }
 
@@ -811,7 +811,7 @@ pub const Driver = struct {
                 );
             },
             .version_1_1 => {
-                if (hasVersion_1_1) {
+                if (has_version_1_1) {
                     self.negotiated_version = .version_1_1;
                 }
 
@@ -1089,6 +1089,7 @@ pub const Driver = struct {
         }
     }
 
+    // zlinter-disable-next-line function_naming - 1_0 is clearer for reading
     fn processFoundMessageVersion1_0(
         self: *Driver,
         buf: []const u8,
@@ -1119,6 +1120,7 @@ pub const Driver = struct {
         }
     }
 
+    // zlinter-disable-next-line function_naming - 1_1 is clearer for reading
     fn processFoundMessageVersion1_1(
         self: *Driver,
         buf: []const u8,
@@ -1953,7 +1955,7 @@ pub const Driver = struct {
                     // reply from the server), we did indeed close the session... good enough...
                     // format up and send an appropriate response, allocate it and everything so
                     // normal deinit flow is as expected
-                    const res = try self.NewResult(
+                    const res = try self.newResult(
                         allocator,
                         "",
                         operation.Kind.close,
@@ -2674,7 +2676,7 @@ pub const Driver = struct {
             ),
         }
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             input,
             options.getKind(),

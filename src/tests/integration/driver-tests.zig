@@ -205,7 +205,7 @@ test "driver open" {
 
     const cases = [_]struct {
         name: []const u8,
-        on_open_callback: ?*const fn (
+        onOpenCallback: ?*const fn (
             d: *cli.Driver,
             allocator: std.mem.Allocator,
             cancel: ?*bool,
@@ -213,11 +213,11 @@ test "driver open" {
     }{
         .{
             .name = "simple",
-            .on_open_callback = null,
+            .onOpenCallback = null,
         },
         .{
             .name = "with-callback",
-            .on_open_callback = eosOnOpen,
+            .onOpenCallback = eosOnOpen,
         },
     };
 
@@ -246,7 +246,7 @@ test "driver open" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        d.definition.on_open_callback = case.on_open_callback;
+        d.definition.onOpenCallback = case.onOpenCallback;
 
         defer d.deinit();
 
@@ -489,7 +489,7 @@ test "driver get-prompt-cancellation" {
 
     cancelled_ptr.* = false;
 
-    var getPrompt_thread = try std.Thread.spawn(
+    var get_prompt_thread = try std.Thread.spawn(
         .{},
         runDriverGetPromptInThread,
         .{
@@ -501,7 +501,7 @@ test "driver get-prompt-cancellation" {
     );
 
     cancel_ptr.* = true;
-    getPrompt_thread.join();
+    get_prompt_thread.join();
 
     // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
     // we did in fact return early due to cancellation
@@ -647,7 +647,7 @@ test "driver enter-mode-cancellation" {
 
     cancelled_ptr.* = false;
 
-    var enterMode_thread = try std.Thread.spawn(
+    var enter_mode_thread = try std.Thread.spawn(
         .{},
         runDriverEnterModeInThread,
         .{
@@ -662,7 +662,7 @@ test "driver enter-mode-cancellation" {
     );
 
     cancel_ptr.* = true;
-    enterMode_thread.join();
+    enter_mode_thread.join();
 
     // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
     // we did in fact return early due to cancellation

@@ -33,7 +33,7 @@ pub const FfiDriver = struct {
     operation_predicate: u32,
     operation_queue: queue.LinearFifo(
         ffi_operations.OperationOptions,
-        queue.LinearFifoBufferType.Dynamic,
+        .dynamic,
     ),
     operation_results: std.AutoHashMap(
         u32,
@@ -69,7 +69,7 @@ pub const FfiDriver = struct {
             .operation_predicate = 0,
             .operation_queue = queue.LinearFifo(
                 ffi_operations.OperationOptions,
-                queue.LinearFifoBufferType.Dynamic,
+                .dynamic,
             ).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
@@ -109,7 +109,7 @@ pub const FfiDriver = struct {
             .operation_predicate = 0,
             .operation_queue = queue.LinearFifo(
                 ffi_operations.OperationOptions,
-                queue.LinearFifoBufferType.Dynamic,
+                .dynamic,
             ).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,

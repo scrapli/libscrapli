@@ -426,7 +426,7 @@ export fn ls_netconf_raw_rpc(
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .raw_rpc = ffi_args_to_options.RawRpcOptionsFromArgs(
+                    .raw_rpc = ffi_args_to_options.rawRpcOptionsFromArgs(
                         cancel,
                         payload,
                         base_namespace_prefix,
@@ -465,7 +465,7 @@ export fn ls_netconf_get_config(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.GetConfigOptionsFromArgs(
+    const options = ffi_args_to_options.getConfigOptionsFromArgs(
         cancel,
         source,
         filter,
@@ -513,7 +513,7 @@ export fn ls_netconf_edit_config(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.EditConfigOptionsFromArgs(
+    const options = ffi_args_to_options.editConfigOptionsFromArgs(
         cancel,
         config,
         target,
@@ -557,7 +557,7 @@ export fn ls_netconf_copy_config(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.CopyConfigOptionsFromArgs(
+    const options = ffi_args_to_options.copyConfigOptionsFromArgs(
         cancel,
         source,
         target,
@@ -597,7 +597,7 @@ export fn ls_netconf_delete_config(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.DeleteConfigOptionsFromArgs(
+    const options = ffi_args_to_options.deleteConfigOptionsFromArgs(
         cancel,
         target,
     );
@@ -636,7 +636,7 @@ export fn ls_netconf_lock(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.LockUnlockOptionsFromArgs(
+    const options = ffi_args_to_options.lockUnlockOptionsFromArgs(
         cancel,
         target,
     );
@@ -675,7 +675,7 @@ export fn ls_netconf_unlock(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.LockUnlockOptionsFromArgs(
+    const options = ffi_args_to_options.lockUnlockOptionsFromArgs(
         cancel,
         target,
     );
@@ -718,7 +718,7 @@ export fn ls_netconf_get(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.GetOptionsFromArgs(
+    const options = ffi_args_to_options.getOptionsFromArgs(
         cancel,
         filter,
         filter_type,
@@ -908,7 +908,7 @@ export fn ls_netconf_cancel_commit(
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .cancel_commit = ffi_args_to_options.CancelCommitOptionsFromArgs(
+                    .cancel_commit = ffi_args_to_options.cancelCommitOptionsFromArgs(
                         cancel,
                         persist_id,
                     ),
@@ -944,10 +944,12 @@ export fn ls_netconf_validate(
         ffi_operations.OperationOptions{
             .id = 0,
             .operation = .{
-                .netconf = .{ .validate = ffi_args_to_options.ValidateOptionsFromArgs(
-                    cancel,
-                    source,
-                ) },
+                .netconf = .{
+                    .validate = ffi_args_to_options.validateOptionsFromArgs(
+                        cancel,
+                        source,
+                    ),
+                },
             },
         },
     ) catch |err| {
@@ -982,7 +984,7 @@ export fn ls_netconf_get_schema(
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .get_schema = ffi_args_to_options.GetSchemaOptionsFromArgs(
+                    .get_schema = ffi_args_to_options.getSchemaOptionsFromArgs(
                         cancel,
                         identifier,
                         version,
@@ -1030,7 +1032,7 @@ export fn ls_netconf_get_data(
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .get_data = ffi_args_to_options.GetDataOptionsFromArgs(
+                    .get_data = ffi_args_to_options.getDataOptionsFromArgs(
                         cancel,
                         datastore,
                         filter,
@@ -1078,7 +1080,7 @@ export fn ls_netconf_edit_data(
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .edit_data = ffi_args_to_options.EditDataOptionsFromArgs(
+                    .edit_data = ffi_args_to_options.editDataOptionsFromArgs(
                         cancel,
                         datastore,
                         edit_content,

@@ -9,13 +9,13 @@ const assert = std.debug.assert;
 
 pub const LinearFifoBufferType = union(enum) {
     /// The buffer is internal to the fifo; it is of the specified size.
-    Static: usize,
+    static: usize,
 
     /// The buffer is passed as a slice to the initialiser.
-    Slice,
+    slice,
 
     /// The buffer is managed dynamically using a `mem.Allocator`.
-    Dynamic,
+    dynamic,
 };
 
 pub fn LinearFifo(
@@ -25,14 +25,14 @@ pub fn LinearFifo(
     const autoalign = false;
 
     const powers_of_two = switch (buffer_type) {
-        .Static => std.math.isPowerOfTwo(buffer_type.Static),
-        .Slice => false, // Any size slice could be passed in
-        .Dynamic => true, // This could be configurable in future
+        .static => std.math.isPowerOfTwo(buffer_type.Static),
+        .slice => false, // Any size slice could be passed in
+        .dynamic => true, // This could be configurable in future
     };
 
     return struct {
-        allocator: if (buffer_type == .Dynamic) Allocator else void,
-        buf: if (buffer_type == .Static) [buffer_type.Static]T else []T,
+        allocator: if (buffer_type == .dynamic) Allocator else void,
+        buf: if (buffer_type == .static) [buffer_type.Static]T else []T,
         head: usize,
         count: usize,
 
@@ -43,16 +43,16 @@ pub fn LinearFifo(
         // Type of Self argument for slice operations.
         // If buffer is inline (Static) then we need to ensure we haven't
         // returned a slice into a copy on the stack
-        const SliceSelfArg = if (buffer_type == .Static) *Self else Self;
+        const SliceSelfArg: type = if (buffer_type == .static) *Self else Self;
 
         pub const init = switch (buffer_type) {
-            .Static => initStatic,
-            .Slice => initSlice,
-            .Dynamic => initDynamic,
+            .static => initStatic,
+            .slice => initSlice,
+            .dynamic => initDynamic,
         };
 
         fn initStatic() Self {
-            comptime assert(buffer_type == .Static);
+            comptime assert(buffer_type == .static);
             return .{
                 .allocator = {},
                 .buf = undefined,
@@ -62,7 +62,7 @@ pub fn LinearFifo(
         }
 
         fn initSlice(buf: []T) Self {
-            comptime assert(buffer_type == .Slice);
+            comptime assert(buffer_type == .slice);
             return .{
                 .allocator = {},
                 .buf = buf,
@@ -72,7 +72,7 @@ pub fn LinearFifo(
         }
 
         fn initDynamic(allocator: Allocator) Self {
-            comptime assert(buffer_type == .Dynamic);
+            comptime assert(buffer_type == .dynamic);
             return .{
                 .allocator = allocator,
                 .buf = &.{},
@@ -82,7 +82,7 @@ pub fn LinearFifo(
         }
 
         pub fn deinit(self: Self) void {
-            if (buffer_type == .Dynamic) self.allocator.free(self.buf);
+            if (buffer_type == .dynamic) self.allocator.free(self.buf);
         }
 
         pub fn realign(self: *Self) void {
@@ -110,7 +110,7 @@ pub fn LinearFifo(
         /// Reduce allocated capacity to `size`.
         pub fn shrink(self: *Self, size: usize) void {
             assert(size >= self.count);
-            if (buffer_type == .Dynamic) {
+            if (buffer_type == .dynamic) {
                 self.realign();
                 self.buf = self.allocator.realloc(self.buf, size) catch |e| switch (e) {
                     error.OutOfMemory => return, // no problem, capacity is still correct then.
@@ -121,7 +121,7 @@ pub fn LinearFifo(
         /// Ensure that the buffer can fit at least `size` items
         pub fn ensureTotalCapacity(self: *Self, size: usize) !void {
             if (self.buf.len >= size) return;
-            if (buffer_type == .Dynamic) {
+            if (buffer_type == .dynamic) {
                 self.realign();
                 const new_size = if (powers_of_two) math.ceilPowerOfTwo(usize, size) catch return error.OutOfMemory else size;
                 self.buf = try self.allocator.realloc(self.buf, new_size);

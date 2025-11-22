@@ -41,6 +41,7 @@ pub fn build(b: *std.Build) !void {
     );
 
     try buildCheck(b, scrapli);
+    try buildZlinter(b);
     try buildTests(b, scrapli);
     try buildMain(b, target, optimize, scrapli);
     try buildExamples(b, target, optimize, scrapli);
@@ -52,9 +53,9 @@ fn buildScrapli(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     dependency_linkage: std.builtin.LinkMode,
-    isFFI: bool,
+    is_ffi: bool,
 ) !*std.Build.Module {
-    const root_source_file = if (isFFI) "src/ffi-root.zig" else "src/root.zig";
+    const root_source_file = if (is_ffi) "src/ffi-root.zig" else "src/root.zig";
 
     const scrapli = b.addModule(
         "scrapli",
@@ -167,6 +168,56 @@ fn buildCheck(
     );
 
     check.dependOn(&scrapli_check.step);
+}
+
+fn buildZlinter(
+    b: *std.Build,
+) !void {
+    const zlinter = @import("zlinter");
+    const lint_cmd = b.step("lint", "Lint source code.");
+
+    lint_cmd.dependOn(
+        step: {
+            var builder = zlinter.builder(b, .{});
+
+            builder.addPaths(
+                .{
+                    .exclude = &.{
+                        b.path(".private/"),
+                        b.path("main.zig"),
+                        b.path("lib/"),
+                    },
+                },
+            );
+
+            inline for (@typeInfo(zlinter.BuiltinLintRule).@"enum".fields) |f| {
+                const rule: zlinter.BuiltinLintRule = @enumFromInt(f.value);
+
+                switch (rule) {
+                    .function_naming => {
+                        builder.addRule(
+                            .{
+                                .builtin = .function_naming,
+                            },
+                            .{
+                                .exclude_export = true,
+                            },
+                        );
+                    },
+                    else => {
+                        builder.addRule(
+                            .{
+                                .builtin = @enumFromInt(f.value),
+                            },
+                            .{},
+                        );
+                    },
+                }
+            }
+
+            break :step builder.build();
+        },
+    );
 }
 
 fn buildTests(

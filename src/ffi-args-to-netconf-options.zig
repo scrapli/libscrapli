@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const operation = @import("netconf-operation.zig");
 
 fn getDatastoreType(
@@ -164,7 +165,7 @@ fn getConfigFilter(config_filter: [*c]const u8) ?bool {
     return null;
 }
 
-pub fn RawRpcOptionsFromArgs(
+pub fn rawRpcOptionsFromArgs(
     cancel: *bool,
     payload: [*c]const u8,
     base_namespace_prefix: [*c]const u8,
@@ -188,7 +189,7 @@ pub fn RawRpcOptionsFromArgs(
     return options;
 }
 
-pub fn GetConfigOptionsFromArgs(
+pub fn getConfigOptionsFromArgs(
     cancel: *bool,
     source: [*c]const u8,
     filter: [*c]const u8,
@@ -225,7 +226,7 @@ pub fn GetConfigOptionsFromArgs(
     return options;
 }
 
-pub fn EditConfigOptionsFromArgs(
+pub fn editConfigOptionsFromArgs(
     cancel: *bool,
     config: [*c]const u8,
     target: [*c]const u8,
@@ -305,7 +306,7 @@ pub fn EditConfigOptionsFromArgs(
     return options;
 }
 
-pub fn CopyConfigOptionsFromArgs(
+pub fn copyConfigOptionsFromArgs(
     cancel: *bool,
     target: [*c]const u8,
     source: [*c]const u8,
@@ -323,7 +324,7 @@ pub fn CopyConfigOptionsFromArgs(
     };
 }
 
-pub fn DeleteConfigOptionsFromArgs(
+pub fn deleteConfigOptionsFromArgs(
     cancel: *bool,
     target: [*c]const u8,
 ) operation.DeleteConfigOptions {
@@ -336,7 +337,7 @@ pub fn DeleteConfigOptionsFromArgs(
     };
 }
 
-pub fn LockUnlockOptionsFromArgs(
+pub fn lockUnlockOptionsFromArgs(
     cancel: *bool,
     target: [*c]const u8,
 ) operation.LockUnlockOptions {
@@ -349,7 +350,7 @@ pub fn LockUnlockOptionsFromArgs(
     };
 }
 
-pub fn GetOptionsFromArgs(
+pub fn getOptionsFromArgs(
     cancel: *bool,
     filter: [*c]const u8,
     filter_type: [*c]const u8,
@@ -381,7 +382,7 @@ pub fn GetOptionsFromArgs(
     return options;
 }
 
-pub fn ValidateOptionsFromArgs(
+pub fn validateOptionsFromArgs(
     cancel: *bool,
     source: [*c]const u8,
 ) operation.ValidateOptions {
@@ -394,7 +395,7 @@ pub fn ValidateOptionsFromArgs(
     };
 }
 
-pub fn CancelCommitOptionsFromArgs(
+pub fn cancelCommitOptionsFromArgs(
     cancel: *bool,
     persist_id: [*c]const u8,
 ) operation.CancelCommitOptions {
@@ -411,7 +412,7 @@ pub fn CancelCommitOptionsFromArgs(
     return options;
 }
 
-pub fn GetSchemaOptionsFromArgs(
+pub fn getSchemaOptionsFromArgs(
     cancel: *bool,
     identifier: [*c]const u8,
     version: [*c]const u8,
@@ -425,7 +426,7 @@ pub fn GetSchemaOptionsFromArgs(
     };
 }
 
-pub fn GetDataOptionsFromArgs(
+pub fn getDataOptionsFromArgs(
     cancel: *bool,
     datastore: [*c]const u8,
     filter: [*c]const u8,
@@ -480,7 +481,7 @@ pub fn GetDataOptionsFromArgs(
     return options;
 }
 
-pub fn EditDataOptionsFromArgs(
+pub fn editDataOptionsFromArgs(
     cancel: *bool,
     datastore: [*c]const u8,
     edit_content: [*c]const u8,

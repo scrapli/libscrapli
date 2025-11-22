@@ -20,7 +20,7 @@ const nokia_srlinux_platform_path_from_project_root = "src/tests/fixtures/platfo
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
 fn GetDriver(
-    transportKind: transport.Kind,
+    transport_kind: transport.Kind,
     platform: []const u8,
     username: ?[]const u8,
     key: ?[]const u8,
@@ -105,7 +105,7 @@ fn GetDriver(
         config.auth.password = "__lookup::login";
     }
 
-    switch (transportKind) {
+    switch (transport_kind) {
         .bin,
         => {},
         .ssh2 => {
@@ -137,12 +137,12 @@ test "driver open" {
 
     const cases = [_]struct {
         name: []const u8,
-        transportKind: transport.Kind,
+        transport_kind: transport.Kind,
         platform: []const u8,
         username: []const u8,
         key: ?[]const u8 = null,
         passphrase: ?[]const u8 = null,
-        on_open_callback: ?*const fn (
+        onOpenCallback: ?*const fn (
             d: *cli.Driver,
             allocator: std.mem.Allocator,
             cancel: ?*bool,
@@ -150,45 +150,45 @@ test "driver open" {
     }{
         .{
             .name = "simple",
-            .transportKind = transport.Kind.bin,
+            .transport_kind = transport.Kind.bin,
             .platform = "nokia-srlinux",
             .username = "admin",
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.ssh2,
+            .transport_kind = transport.Kind.ssh2,
             .platform = "nokia-srlinux",
             .username = "admin",
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.bin,
+            .transport_kind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin",
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.ssh2,
+            .transport_kind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin",
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.bin,
+            .transport_kind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.ssh2,
+            .transport_kind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.bin,
+            .transport_kind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
@@ -196,7 +196,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.ssh2,
+            .transport_kind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
@@ -217,18 +217,18 @@ test "driver open" {
         const golden_filename = try std.fmt.allocPrint(
             std.testing.allocator,
             "src/tests/functional/golden/driver/{s}-{s}-{s}-{s}.txt",
-            .{ test_name, case.name, case.platform, case.transportKind.toString() },
+            .{ test_name, case.name, case.platform, case.transport_kind.toString() },
         );
         defer std.testing.allocator.free(golden_filename);
 
         var d = try GetDriver(
-            case.transportKind,
+            case.transport_kind,
             case.platform,
             case.username,
             case.key,
             case.passphrase,
         );
-        d.definition.on_open_callback = case.on_open_callback;
+        d.definition.onOpenCallback = case.onOpenCallback;
 
         defer d.deinit();
 

@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub const Waiter = switch (builtin.target.os.tag) {
+pub const Waiter: type = switch (builtin.target.os.tag) {
     .linux => struct {
         w: *@import("transport-waiter-epoll.zig").EpollWaiter,
 

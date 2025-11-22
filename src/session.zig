@@ -110,7 +110,7 @@ pub const Session = struct {
     read_lock: std.Thread.Mutex,
     read_queue: queue.LinearFifo(
         u8,
-        queue.LinearFifoBufferType.Dynamic,
+        .dynamic,
     ),
     read_thread_errored: bool = false,
 
@@ -176,7 +176,7 @@ pub const Session = struct {
             .read_lock = std.Thread.Mutex{},
             .read_queue = queue.LinearFifo(
                 u8,
-                queue.LinearFifoBufferType.Dynamic,
+                .dynamic,
             ).init(allocator),
             .recorder = recorder,
             .prompt_pattern = prompt_pattern,
@@ -723,8 +723,8 @@ pub const Session = struct {
         self: *Session,
         timer: *std.time.Timer,
         cancel: ?*bool,
-        checkf: bytes_check.CheckF,
-        checkargs: bytes_check.CheckArgs,
+        checkF: bytes_check.CheckF,
+        check_args: bytes_check.CheckArgs,
         bufs: *bytes.ProcessedBuf,
         search_depth: u64,
     ) !bytes_check.MatchPositions {
@@ -807,7 +807,7 @@ pub const Session = struct {
                 search_depth,
             );
 
-            var match_indexes = try checkf(checkargs, searchable_buf);
+            var match_indexes = try checkF(check_args, searchable_buf);
 
             if (!(match_indexes.start == 0 and match_indexes.end == 0)) {
                 match_indexes.start += (bufs.processed.items.len - searchable_buf.len);
@@ -898,7 +898,7 @@ pub const Session = struct {
         return [2][]const u8{ try bufs.raw.toOwnedSlice(self.allocator), owned_found_prompt };
     }
 
-    fn _sendInput(
+    fn innerSendInput(
         self: *Session,
         timer: *std.time.Timer,
         cancel: ?*bool,
@@ -906,7 +906,7 @@ pub const Session = struct {
         input_handling: operation.InputHandling,
         bufs: *bytes.ProcessedBuf,
     ) !bytes_check.MatchPositions {
-        const checkArgs = bytes_check.CheckArgs{
+        const check_args = bytes_check.CheckArgs{
             .pattern = self.compiled_prompt_pattern,
             .actual = input,
         };
@@ -932,7 +932,7 @@ pub const Session = struct {
                     timer,
                     cancel,
                     bytes_check.exactInBuf,
-                    checkArgs,
+                    check_args,
                     bufs,
                     search_depth,
                 );
@@ -942,7 +942,7 @@ pub const Session = struct {
                     timer,
                     cancel,
                     bytes_check.fuzzyInBuf,
-                    checkArgs,
+                    check_args,
                     bufs,
                     search_depth,
                 );
@@ -981,7 +981,7 @@ pub const Session = struct {
             try self.last_consumed_prompt.resize(self.allocator, 0);
         }
 
-        _ = try self._sendInput(
+        _ = try self.innerSendInput(
             &timer,
             options.cancel,
             options.input,
@@ -994,7 +994,7 @@ pub const Session = struct {
             try bufs.processed.resize(self.allocator, 0);
         }
 
-        const checkArgs = bytes_check.CheckArgs{
+        const check_args = bytes_check.CheckArgs{
             .pattern = self.compiled_prompt_pattern,
             .actual = options.input,
         };
@@ -1003,7 +1003,7 @@ pub const Session = struct {
             &timer,
             options.cancel,
             bytes_check.patternInBuf,
-            checkArgs,
+            check_args,
             &bufs,
             self.options.operation_max_search_depth,
         );
@@ -1085,7 +1085,7 @@ pub const Session = struct {
             try self.last_consumed_prompt.resize(self.allocator, 0);
         }
 
-        _ = try self._sendInput(
+        _ = try self.innerSendInput(
             &timer,
             options.cancel,
             options.input,
@@ -1093,24 +1093,24 @@ pub const Session = struct {
             &bufs,
         );
 
-        var checkArgs = bytes_check.CheckArgs{
+        var check_args = bytes_check.CheckArgs{
             .actual = options.prompt_exact,
         };
 
         if (compiled_pattern) |cp| {
-            checkArgs.patterns = &[_]?*re.pcre2CompiledPattern{
+            check_args.patterns = &[_]?*re.pcre2CompiledPattern{
                 self.compiled_prompt_pattern,
                 cp,
             };
         } else {
-            checkArgs.pattern = self.compiled_prompt_pattern;
+            check_args.pattern = self.compiled_prompt_pattern;
         }
 
         _ = try self.readTimeout(
             &timer,
             options.cancel,
             bytes_check.exactInBuf,
-            checkArgs,
+            check_args,
             &bufs,
             self.options.operation_max_search_depth,
         );
@@ -1118,7 +1118,7 @@ pub const Session = struct {
         if (!options.hidden_response) {
             try self.writeAndReturn(options.response, true);
         } else {
-            _ = try self._sendInput(
+            _ = try self.innerSendInput(
                 &timer,
                 options.cancel,
                 options.input,
@@ -1131,7 +1131,7 @@ pub const Session = struct {
             &timer,
             options.cancel,
             bytes_check.patternInBuf,
-            checkArgs,
+            check_args,
             &bufs,
             self.options.operation_max_search_depth,
         );
