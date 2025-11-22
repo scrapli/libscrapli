@@ -4,44 +4,36 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream = b.dependency(
-        "openssl",
+    const proc = std.process.Child.run(
         .{
-            .target = target,
-            .optimize = optimize,
+            .cwd = b.build_root.path orelse ".",
+            .argv = &[_][]const u8{"./generate.sh"},
+            .allocator = b.allocator,
         },
-    );
+    ) catch {
+        return std.Build.RunError.ExitCodeFailure;
+    };
 
-    const generate = std.Build.Step.Run.create(b, "Generate openssl files");
-    generate.has_side_effects = true;
-    generate.expectExitCode(0);
-    generate.addCheck(
-        .{
-            .expect_stdout_match = "Files were successfully generated\n",
-        },
-    );
-    generate.setCwd(upstream.path(""));
-    generate.addArg("sh");
-    generate.addFileArg(b.path("generate.sh"));
+    if (proc.term.Exited != 0) {
+        return std.Build.RunError.ExitCodeFailure;
+    }
 
     const crypto = libcrypto(b, target, optimize);
-    crypto.step.dependOn(&generate.step);
     crypto.installHeadersDirectory(
-        upstream.path("include/crypto"),
+        b.path("openssl/include/crypto"),
         "crypto",
         .{},
     );
     crypto.installHeadersDirectory(
-        upstream.path("include/internal"),
+        b.path("openssl/include/internal"),
         "internal",
         .{},
     );
     b.installArtifact(crypto);
 
     const ssl = libssl(b, target, optimize);
-    ssl.step.dependOn(&generate.step);
     ssl.installHeadersDirectory(
-        upstream.path("include/openssl"),
+        b.path("openssl/include/openssl"),
         "openssl",
         .{},
     );
@@ -55,14 +47,6 @@ fn libssl(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
-    const upstream = b.dependency(
-        "openssl",
-        .{
-            .target = target,
-            .optimize = optimize,
-        },
-    );
-
     const lib_mod = b.createModule(
         .{
             .root_source_file = null,
@@ -71,11 +55,11 @@ fn libssl(
             .optimize = optimize,
         },
     );
-    lib_mod.addIncludePath(upstream.path("."));
-    lib_mod.addIncludePath(upstream.path("include"));
+    lib_mod.addIncludePath(b.path("openssl/"));
+    lib_mod.addIncludePath(b.path("openssl/include"));
     lib_mod.addCSourceFiles(
         .{
-            .root = upstream.path(""),
+            .root = b.path("openssl"),
             .flags = cflags,
             .files = &.{
                 "ssl/bio_ssl.c",
@@ -193,14 +177,6 @@ fn libcrypto(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
-    const upstream = b.dependency(
-        "openssl",
-        .{
-            .target = target,
-            .optimize = optimize,
-        },
-    );
-
     const lib_mod = b.createModule(
         .{
             .root_source_file = null,
@@ -209,17 +185,17 @@ fn libcrypto(
             .optimize = optimize,
         },
     );
-    lib_mod.addIncludePath(upstream.path("."));
-    lib_mod.addIncludePath(upstream.path("include"));
-    lib_mod.addIncludePath(upstream.path("providers/common/include"));
-    lib_mod.addIncludePath(upstream.path("providers/implementations/include"));
-    lib_mod.addIncludePath(upstream.path("providers/fips/include"));
+    lib_mod.addIncludePath(b.path("openssl/."));
+    lib_mod.addIncludePath(b.path("openssl/include"));
+    lib_mod.addIncludePath(b.path("openssl/providers/common/include"));
+    lib_mod.addIncludePath(b.path("openssl/providers/implementations/include"));
+    lib_mod.addIncludePath(b.path("openssl/providers/fips/include"));
     lib_mod.addCMacro("OPENSSLDIR", "\"/usr/local/ssl\"");
     lib_mod.addCMacro("ENGINESDIR", "\"/usr/local/lib/engines-3\"");
     lib_mod.addCMacro("MODULESDIR", "\"/usr/local/lib/ossl-modules\"");
     lib_mod.addCSourceFiles(
         .{
-            .root = upstream.path(""),
+            .root = b.path("openssl/"),
             .flags = cflags,
             .files = &.{
                 "crypto/aes/aes_cbc.c",

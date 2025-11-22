@@ -28,8 +28,9 @@ private/
 .zig-cache
 zig-out
 
-# pcre2 that will be cloned during builds
+# pcre2/openssl that will be cloned during builds
 lib/pcre2/pcre2
+lib/openssl/openssl
 
 # ignore any "main.zig" in this repo, this would be used by `zig build --main` and is used to
 # quickly build a main.zig for testing during development
