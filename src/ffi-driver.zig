@@ -80,7 +80,7 @@ pub const FfiDriver = struct {
         return ffi_driver;
     }
 
-    pub fn init_netconf(
+    pub fn initNetconf(
         allocator: std.mem.Allocator,
         io: std.Io,
         host: []const u8,

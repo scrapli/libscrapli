@@ -26,8 +26,8 @@ pub const RecordDestination = union(enum) {
 
 pub const OptionsInputs = struct {
     read_size: u64 = 4_096,
-    min_read_delay_ns: u64 = 5_000,
-    max_read_delay_ns: u64 = 15_000_000,
+    read_min_delay_ns: u64 = 5_000,
+    read_max_delay_ns: u64 = 15_000_000,
     return_char: []const u8 = default_return_char,
     operation_timeout_ns: u64 = 10_000_000_000,
     operation_max_search_depth: u64 = 512,
@@ -36,13 +36,13 @@ pub const OptionsInputs = struct {
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
-    read_size: u64,
-    min_read_delay_ns: u64,
-    max_read_delay_ns: u64,
-    return_char: []const u8,
-    operation_timeout_ns: u64,
-    operation_max_search_depth: u64,
-    record_destination: ?RecordDestination,
+    read_size: u64 = 4_096,
+    read_min_delay_ns: u64 = 5_000,
+    read_max_delay_ns: u64 = 15_000_000,
+    return_char: []const u8 = default_return_char,
+    operation_timeout_ns: u64 = 10_000_000_000,
+    operation_max_search_depth: u64 = 512,
+    record_destination: ?RecordDestination = null,
 
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
@@ -51,8 +51,8 @@ pub const Options = struct {
         o.* = Options{
             .allocator = allocator,
             .read_size = opts.read_size,
-            .min_read_delay_ns = opts.min_read_delay_ns,
-            .max_read_delay_ns = opts.max_read_delay_ns,
+            .read_min_delay_ns = opts.read_min_delay_ns,
+            .read_max_delay_ns = opts.read_max_delay_ns,
             .return_char = opts.return_char,
             .operation_timeout_ns = opts.operation_timeout_ns,
             .operation_max_search_depth = opts.operation_max_search_depth,
@@ -340,7 +340,7 @@ pub const Session = struct {
             std.Io.Clock.Duration.sleep(
                 .{
                     .clock = .awake,
-                    .raw = .fromNanoseconds(self.options.min_read_delay_ns),
+                    .raw = .fromNanoseconds(self.options.read_min_delay_ns),
                 },
                 self.io,
             ) catch {};
@@ -730,7 +730,7 @@ pub const Session = struct {
     ) !bytes_check.MatchPositions {
         self.log.info("session.Session readTimeout requested", .{});
 
-        var cur_read_delay_ns: u64 = self.options.min_read_delay_ns;
+        var cur_read_delay_ns: u64 = self.options.read_min_delay_ns;
 
         // to ensure the check_read_operation_done function doesnt think we are done "early" by
         // finding a match from an earlier prompt we snag the len of the processed buf then we
@@ -783,12 +783,12 @@ pub const Session = struct {
             if (n == 0) {
                 cur_read_delay_ns = Session.getReadBackoff(
                     cur_read_delay_ns,
-                    self.options.max_read_delay_ns,
+                    self.options.read_max_delay_ns,
                 );
 
                 continue;
             } else {
-                cur_read_delay_ns = self.options.min_read_delay_ns;
+                cur_read_delay_ns = self.options.read_min_delay_ns;
             }
 
             try bufs.appendSlice(buf[0..n]);

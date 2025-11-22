@@ -28,9 +28,11 @@ fn GetDriver(
     var config = netconf.Config{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
-        config.auth.lookup_map = &.{
-            .{ .key = "login", .value = "NokiaSrl1!" },
-        };
+        config.auth.lookups = .init(
+            &.{
+                .{ .key = "login", .value = "NokiaSrl1!" },
+            },
+        );
 
         if (username == null) {
             config.auth.username = "admin";
@@ -46,9 +48,11 @@ fn GetDriver(
             config.port = 830;
         }
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
-        config.auth.lookup_map = &.{
-            .{ .key = "login", .value = "admin" },
-        };
+        config.auth.lookups = .init(
+            &.{
+                .{ .key = "login", .value = "admin!" },
+            },
+        );
 
         if (username == null) {
             config.auth.username = "netconf-admin";

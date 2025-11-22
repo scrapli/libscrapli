@@ -76,7 +76,7 @@ pub const Config = struct {
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
     transport: transport.OptionsInputs = .{ .bin = .{} },
-    error_tag: []const u8 = operation.default_rpc_error_tag,
+    error_tag: ?[]const u8 = null,
     preferred_version: ?operation.Version = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
 };
@@ -88,9 +88,9 @@ pub const Options = struct {
     auth: *auth.Options,
     session: *session.Options,
     transport: *transport.Options,
-    error_tag: []const u8,
-    preferred_version: ?operation.Version,
-    message_poll_interval_ns: u64,
+    error_tag: []const u8 = operation.default_rpc_error_tag,
+    preferred_version: ?operation.Version = null,
+    message_poll_interval_ns: u64 = default_message_poll_interval_ns,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
         const o = try allocator.create(Options);
@@ -106,7 +106,6 @@ pub const Options = struct {
                 allocator,
                 config.transport,
             ),
-            .error_tag = config.error_tag,
             .preferred_version = config.preferred_version,
             .message_poll_interval_ns = config.message_poll_interval_ns,
         };

@@ -69,12 +69,11 @@ fn GetRecordTestDriver(record_path: []const u8) !*cli.Driver {
             .auth = .{
                 .username = "admin",
                 .password = "admin",
-                .lookup_map = &.{
-                    .{
-                        .key = "enable",
-                        .value = "libscrapli",
+                .lookups = .init(
+                    &.{
+                        .{ .key = "enable", .value = "libscrapli" },
                     },
-                },
+                ),
             },
             .session = .{
                 .record_destination = .{

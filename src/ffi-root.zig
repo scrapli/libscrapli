@@ -3,17 +3,14 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const errors = @import("errors.zig");
-const ffi_apply_options = @import("ffi-apply-options.zig");
 const ffi_driver = @import("ffi-driver.zig");
+const ffi_options = @import("ffi-options.zig");
 const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
-const logging = @import("logging.zig");
 const session = @import("session.zig");
-const transport = @import("transport.zig");
 
 const c = @cImport(@cInclude("signal.h"));
 
-pub export const _ls_force_include_apply_options = &ffi_apply_options.noop;
 pub export const _ls_force_include_root_cli = &ffi_root_cli.noop;
 pub export const _ls_force_include_root_netconf = &ffi_root_netconf.noop;
 
@@ -82,85 +79,56 @@ export fn ls_assert_no_leaks() callconv(.c) bool {
     }
 }
 
-fn getTransport(transport_kind: []const u8) transport.Kind {
-    if (std.mem.eql(
-        u8,
-        transport_kind,
-        @tagName(transport.Kind.bin),
-    )) {
-        return transport.Kind.bin;
-    } else if (std.mem.eql(
-        u8,
-        transport_kind,
-        @tagName(transport.Kind.telnet),
-    )) {
-        return transport.Kind.telnet;
-    } else if (std.mem.eql(
-        u8,
-        transport_kind,
-        @tagName(transport.Kind.ssh2),
-    )) {
-        return transport.Kind.ssh2;
-    } else if (std.mem.eql(
-        u8,
-        transport_kind,
-        @tagName(transport.Kind.test_),
-    )) {
-        return transport.Kind.test_;
-    } else {
-        @panic("unsupported transport");
-    }
+export fn ls_alloc_driver_options() callconv(.c) usize {
+    const allocator = getAllocator();
+
+    const o = allocator.create(ffi_options.FFIOptions) catch {
+        return 0;
+    };
+
+    o.* = ffi_options.FFIOptions{
+        .cli = .{},
+        .netconf = .{},
+        .session = .{},
+        .auth = .{
+            .lookups = .{},
+        },
+        .transport = .{
+            .bin = .{},
+            .ssh2 = .{},
+            .test_ = .{},
+        },
+    };
+
+    return @intFromPtr(o);
+}
+
+export fn ls_free_driver_options(options_ptr: usize) callconv(.c) void {
+    const allocator = getAllocator();
+
+    const o: *ffi_options.FFIOptions = @ptrFromInt(options_ptr);
+
+    defer allocator.destroy(o);
 }
 
 export fn ls_cli_alloc(
-    definition_string: [*c]const u8,
-    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.c) void,
-    logger_level: [*c]const u8,
     host: [*c]const u8,
-    port: u16,
-    transport_kind: [*c]const u8,
+    options_ptr: usize,
 ) callconv(.c) usize {
     if (isDebugMode()) {
         _ = c.signal(c.SIGSEGV, segfaultHandler);
     }
 
-    var log = logging.Logger{
-        .allocator = getAllocator(),
-    };
+    const allocator = getAllocator();
 
-    if (logger_callback) |cb| {
-        log = logging.Logger{
-            .allocator = getAllocator(),
-            .f = cb,
-            .level = logging.LogLevel.fromString(std.mem.span(logger_level)),
-        };
-    }
-
-    var _port: ?u16 = null;
-    if (port != 0) {
-        _port = port;
-    }
+    const o: *ffi_options.FFIOptions = @ptrFromInt(options_ptr);
 
     const d = ffi_driver.FfiDriver.init(
-        getAllocator(),
+        allocator,
         io,
         std.mem.span(host),
-        .{
-            .definition = .{
-                .string = std.mem.span(definition_string),
-            },
-            .logger = log,
-            .port = _port,
-            .transport = switch (getTransport(std.mem.span(transport_kind))) {
-                transport.Kind.bin => .{ .bin = .{} },
-                transport.Kind.telnet => .{ .telnet = .{} },
-                transport.Kind.ssh2 => .{ .ssh2 = .{} },
-                transport.Kind.test_ => .{ .test_ = .{} },
-            },
-        },
-    ) catch |err| {
-        log.critical("ffi: error during FfiDriver.init {any}", .{err});
-
+        o.CliConfig(allocator),
+    ) catch {
         return 0;
     };
 
@@ -168,54 +136,23 @@ export fn ls_cli_alloc(
 }
 
 export fn ls_netconf_alloc(
-    logger_callback: ?*const fn (level: u8, message: *[]u8) callconv(.c) void,
-    logger_level: [*c]const u8,
     host: [*c]const u8,
-    port: u16,
-    transport_kind: [*c]const u8,
+    options_ptr: usize,
 ) callconv(.c) usize {
     if (isDebugMode()) {
         _ = c.signal(c.SIGSEGV, segfaultHandler);
     }
 
-    var log = logging.Logger{
-        .allocator = getAllocator(),
-        .f = null,
-    };
+    const allocator = getAllocator();
 
-    if (logger_callback) |cb| {
-        log = logging.Logger{
-            .allocator = getAllocator(),
-            .f = cb,
-            .level = logging.LogLevel.fromString(std.mem.span(logger_level)),
-        };
-    }
-    var _port: ?u16 = null;
-    if (port != 0) {
-        _port = port;
-    }
+    const o: *ffi_options.FFIOptions = @ptrFromInt(options_ptr);
 
-    const d = ffi_driver.FfiDriver.init_netconf(
+    const d = ffi_driver.FfiDriver.initNetconf(
         getAllocator(),
         io,
         std.mem.span(host),
-        .{
-            .logger = log,
-            .port = _port,
-            .transport = switch (getTransport(std.mem.span(transport_kind))) {
-                transport.Kind.bin => .{ .bin = .{} },
-                transport.Kind.ssh2 => .{ .ssh2 = .{} },
-                transport.Kind.test_ => .{ .test_ = .{} },
-                else => {
-                    log.critical("ffi: telnet is not a valid transport for netconf", .{});
-
-                    return 0;
-                },
-            },
-        },
-    ) catch |err| {
-        log.critical("ffi: error during FfiDriver.init {any}", .{err});
-
+        o.*.NetconfConfig(allocator),
+    ) catch {
         return 0;
     };
 

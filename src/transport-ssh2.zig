@@ -1506,7 +1506,7 @@ pub const Transport = struct {
                 .password = self.options.proxy_jump_options.?.password,
                 .private_key_path = self.options.proxy_jump_options.?.private_key_path,
                 .private_key_passphrase = self.options.proxy_jump_options.?.private_key_passphrase,
-                .lookup_map = auth_options.lookups,
+                .lookups = auth_options.lookups,
             },
         );
         defer pa.deinit();

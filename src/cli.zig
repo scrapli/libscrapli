@@ -23,8 +23,8 @@ pub const DefinitionSource = union(enum) {
 };
 
 pub const Config = struct {
-    definition: DefinitionSource,
     logger: ?logging.Logger = null,
+    definition: DefinitionSource,
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
@@ -77,7 +77,7 @@ pub const Driver = struct {
     port: u16,
     options: *Options,
     session: *session.Session,
-    current_mode: []const u8,
+    current_mode: []const u8 = mode.unknown_mode,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -131,7 +131,6 @@ pub const Driver = struct {
                 opts.auth,
                 opts.transport,
             ),
-            .current_mode = mode.unknown_mode,
         };
 
         if (opts.port == null) {

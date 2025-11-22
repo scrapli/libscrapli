@@ -39,9 +39,11 @@ fn GetDriver(
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         platform_definition_path = nokia_srlinux_platform_path_from_project_root;
-        config.auth.lookup_map = &.{
-            .{ .key = "login", .value = "NokiaSrl1!" },
-        };
+        config.auth.lookups = .init(
+            &.{
+                .{ .key = "login", .value = "NokiaSrl1!" },
+            },
+        );
 
         if (os == .macos) {
             host = "localhost";
@@ -52,10 +54,12 @@ fn GetDriver(
         }
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
         platform_definition_path = arista_eos_platform_path_from_project_root;
-        config.auth.lookup_map = &.{
-            .{ .key = "login", .value = "admin" },
-            .{ .key = "enable", .value = "libscrapli" },
-        };
+        config.auth.lookups = .init(
+            &.{
+                .{ .key = "login", .value = "admin" },
+                .{ .key = "enable", .value = "libscrapli" },
+            },
+        );
 
         if (os == .macos) {
             host = "localhost";
