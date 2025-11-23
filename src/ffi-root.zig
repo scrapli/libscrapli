@@ -274,3 +274,21 @@ export fn ls_session_write_and_return(
 
     return 0;
 }
+
+export fn ls_session_operation_timeout_ns(
+    d_ptr: usize,
+    value: u64,
+) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            rd.session.options.operation_timeout_ns = value;
+        },
+        .netconf => |rd| {
+            rd.session.options.operation_timeout_ns = value;
+        },
+    }
+
+    return 0;
+}
