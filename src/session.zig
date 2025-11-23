@@ -401,7 +401,7 @@ pub const Session = struct {
                 self.log,
                 @src(),
                 "session.Session readLoop: raw read '{f}'",
-                .{std.ascii.hexEscape(buf, .lower)},
+                .{std.ascii.hexEscape(buf[0..n], .lower)},
             );
 
             if (self.recorder) |*recorder| {
