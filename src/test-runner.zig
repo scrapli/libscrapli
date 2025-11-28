@@ -29,7 +29,7 @@ pub const std_options = std.Options{
     },
 };
 
-// use in custom panic handler
+// used in custom panic handler
 var current_test: ?[]const u8 = null;
 
 pub fn main() !void {
@@ -90,21 +90,24 @@ pub fn main() !void {
         slowest.startTiming();
 
         const is_unnamed_test = isUnnamed(t);
+
+        if (is_unnamed_test) {
+            continue;
+        }
+
         if (env.filter) |f| {
             if (!is_unnamed_test and std.mem.indexOf(u8, t.name, f) == null) {
                 continue;
             }
         }
 
-        const friendly_name = friendlyName(t.name);
-        current_test = friendly_name;
         std.testing.allocator_instance = .{};
+
+        const friendly_name = friendlyName(t.name);
+
+        current_test = friendly_name;
         const result = t.func();
         current_test = null;
-
-        if (is_unnamed_test) {
-            continue;
-        }
 
         const ns_taken = slowest.endTiming(friendly_name);
 
@@ -133,7 +136,7 @@ pub fn main() !void {
                     .{ border, friendly_name, @errorName(err), border },
                 );
                 if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace.*);
+                    std.debug.dumpStackTrace(trace);
                 }
                 if (env.fail_first) {
                     break;
@@ -161,11 +164,13 @@ pub fn main() !void {
 
     const total_tests = pass + fail;
     const status = if (fail == 0) Status.pass else Status.fail;
+
     printer.status(
         status,
         "\n{d} of {d} test{s} passed\n",
         .{ pass, total_tests, if (total_tests != 1) "s" else "" },
     );
+
     if (skip > 0) {
         printer.status(
             .skip,
@@ -180,9 +185,11 @@ pub fn main() !void {
             .{ leak, if (leak != 1) "s" else "" },
         );
     }
+
     printer.fmt("\n", .{});
     try slowest.display(printer);
     printer.fmt("\n", .{});
+
     std.posix.exit(if (fail == 0) 0 else 1);
 }
 
@@ -208,9 +215,10 @@ const Printer = struct {
 
     fn fmt(self: Printer, comptime format: []const u8, args: anytype) void {
         var stdout_buffer: [1024]u8 = undefined;
-        var out = self.f.writer(&stdout_buffer).interface;
-        out.print(format, args) catch unreachable;
-        out.flush() catch {};
+        var out = self.f.writer(&stdout_buffer);
+        const writer = &out.interface;
+        writer.print(format, args) catch unreachable;
+        writer.flush() catch {};
     }
 
     fn status(self: Printer, s: Status, comptime format: []const u8, args: anytype) void {
@@ -222,12 +230,13 @@ const Printer = struct {
         };
 
         var stdout_buffer: [1024]u8 = undefined;
-        var out = self.f.writer(&stdout_buffer).interface;
+        var out = self.f.writer(&stdout_buffer);
+        const writer = &out.interface;
 
-        out.printAscii(color, .{}) catch unreachable;
-        out.print(format, args) catch unreachable;
-        out.print("\x1b[0m", .{}) catch unreachable;
-        out.flush() catch {};
+        writer.printAscii(color, .{}) catch unreachable;
+        writer.print(format, args) catch unreachable;
+        writer.print("\x1b[0m", .{}) catch unreachable;
+        writer.flush() catch {};
     }
 };
 
@@ -278,8 +287,12 @@ const SlowTracker = struct {
             // Capacity is fixed to the # of slow tests we want to track
             // If we've tracked fewer tests than this capacity, than always add
             slowest.add(
-                TestInfo{ .ns = ns, .name = test_name },
+                TestInfo{
+                    .ns = ns,
+                    .name = test_name,
+                },
             ) catch @panic("failed to track test timing");
+
             return ns;
         }
 
@@ -295,9 +308,14 @@ const SlowTracker = struct {
 
         // the previous fastest of our slow tests, has been pushed off.
         _ = slowest.removeMin();
+
         slowest.add(
-            TestInfo{ .ns = ns, .name = test_name },
+            TestInfo{
+                .ns = ns,
+                .name = test_name,
+            },
         ) catch @panic("failed to track test timing");
+
         return ns;
     }
 

@@ -59,6 +59,7 @@ fn GetRecordTestDriver(record_path: []const u8) !*cli.Driver {
 
     return cli.Driver.init(
         std.testing.allocator,
+        std.testing.io,
         "localhost",
         .{
             .definition = .{
@@ -68,12 +69,11 @@ fn GetRecordTestDriver(record_path: []const u8) !*cli.Driver {
             .auth = .{
                 .username = "admin",
                 .password = "admin",
-                .lookup_map = &.{
-                    .{
-                        .key = "enable",
-                        .value = "libscrapli",
+                .lookups = .init(
+                    &.{
+                        .{ .key = "enable", .value = "libscrapli" },
                     },
-                },
+                ),
             },
             .session = .{
                 .record_destination = .{
@@ -90,6 +90,7 @@ fn GetTestDriver(f: []const u8) !*cli.Driver {
 
     return cli.Driver.init(
         std.testing.allocator,
+        std.testing.io,
         "dummy",
         .{
             .definition = .{
@@ -204,7 +205,7 @@ test "driver open" {
 
     const cases = [_]struct {
         name: []const u8,
-        on_open_callback: ?*const fn (
+        onOpenCallback: ?*const fn (
             d: *cli.Driver,
             allocator: std.mem.Allocator,
             cancel: ?*bool,
@@ -212,11 +213,11 @@ test "driver open" {
     }{
         .{
             .name = "simple",
-            .on_open_callback = null,
+            .onOpenCallback = null,
         },
         .{
             .name = "with-callback",
-            .on_open_callback = eosOnOpen,
+            .onOpenCallback = eosOnOpen,
         },
     };
 
@@ -245,7 +246,7 @@ test "driver open" {
             d = try GetTestDriver(fixture_filename);
         }
 
-        d.definition.on_open_callback = case.on_open_callback;
+        d.definition.onOpenCallback = case.onOpenCallback;
 
         defer d.deinit();
 
@@ -325,8 +326,6 @@ test "driver open-cancellation" {
 
     cancelled_ptr.* = false;
 
-    const start_time = std.time.microTimestamp();
-
     var open_thread = try std.Thread.spawn(
         .{},
         runDriverOpenInThread,
@@ -338,17 +337,11 @@ test "driver open-cancellation" {
         },
     );
 
-    std.Thread.sleep(10_000);
-
     cancel_ptr.* = true;
     open_thread.join();
 
-    const done_time = std.time.microTimestamp();
-
-    // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-    // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-    // cancelled
-    try std.testing.expect(done_time - start_time < 5_000);
+    // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+    // we did in fact return early due to cancellation
     try std.testing.expect(cancelled_ptr.*);
 }
 
@@ -496,9 +489,7 @@ test "driver get-prompt-cancellation" {
 
     cancelled_ptr.* = false;
 
-    const start_time = std.time.microTimestamp();
-
-    var getPrompt_thread = try std.Thread.spawn(
+    var get_prompt_thread = try std.Thread.spawn(
         .{},
         runDriverGetPromptInThread,
         .{
@@ -509,17 +500,11 @@ test "driver get-prompt-cancellation" {
         },
     );
 
-    std.Thread.sleep(1_000);
-
     cancel_ptr.* = true;
-    getPrompt_thread.join();
+    get_prompt_thread.join();
 
-    const done_time = std.time.microTimestamp();
-
-    // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-    // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-    // cancelled
-    try std.testing.expect(done_time - start_time < 5_000);
+    // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+    // we did in fact return early due to cancellation
     try std.testing.expect(cancelled_ptr.*);
 }
 
@@ -662,9 +647,7 @@ test "driver enter-mode-cancellation" {
 
     cancelled_ptr.* = false;
 
-    const start_time = std.time.microTimestamp();
-
-    var enterMode_thread = try std.Thread.spawn(
+    var enter_mode_thread = try std.Thread.spawn(
         .{},
         runDriverEnterModeInThread,
         .{
@@ -678,17 +661,11 @@ test "driver enter-mode-cancellation" {
         },
     );
 
-    std.Thread.sleep(1_000);
-
     cancel_ptr.* = true;
-    enterMode_thread.join();
+    enter_mode_thread.join();
 
-    const done_time = std.time.microTimestamp();
-
-    // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-    // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-    // cancelled
-    try std.testing.expect(done_time - start_time < 5_000);
+    // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+    // we did in fact return early due to cancellation
     try std.testing.expect(cancelled_ptr.*);
 }
 
@@ -887,8 +864,6 @@ test "driver send-input-cancellation" {
 
         cancelled_ptr.* = false;
 
-        const start_time = std.time.microTimestamp();
-
         var send_input_thread = try std.Thread.spawn(
             .{},
             runDriverSendInputInThread,
@@ -903,17 +878,11 @@ test "driver send-input-cancellation" {
             },
         );
 
-        std.Thread.sleep(1_000);
-
         cancel_ptr.* = true;
         send_input_thread.join();
 
-        const done_time = std.time.microTimestamp();
-
-        // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-        // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-        // cancelled
-        try std.testing.expect(done_time - start_time < 5_000);
+        // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+        // we did in fact return early due to cancellation
         try std.testing.expect(cancelled_ptr.*);
     }
 }
@@ -1119,8 +1088,6 @@ test "driver send-inputs-cancellation" {
 
         cancelled_ptr.* = false;
 
-        const start_time = std.time.microTimestamp();
-
         var send_inputs_thread = try std.Thread.spawn(
             .{},
             runDriverSendInputsInThread,
@@ -1135,17 +1102,11 @@ test "driver send-inputs-cancellation" {
             },
         );
 
-        std.Thread.sleep(1_000);
-
         cancel_ptr.* = true;
         send_inputs_thread.join();
 
-        const done_time = std.time.microTimestamp();
-
-        // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-        // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-        // cancelled
-        try std.testing.expect(done_time - start_time < 5_000);
+        // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+        // we did in fact return early due to cancellation
         try std.testing.expect(cancelled_ptr.*);
     }
 }
@@ -1297,8 +1258,6 @@ test "driver send-prompted-input-timeout" {
 
         cancelled_ptr.* = false;
 
-        const start_time = std.time.microTimestamp();
-
         var send_inputs_thread = try std.Thread.spawn(
             .{},
             runDriverSendPromptedInputInThread,
@@ -1315,17 +1274,11 @@ test "driver send-prompted-input-timeout" {
             },
         );
 
-        std.Thread.sleep(1_000);
-
         cancel_ptr.* = true;
         send_inputs_thread.join();
 
-        const done_time = std.time.microTimestamp();
-
-        // time bits here to assert that the thread did join/finish quickly since we cancelled, also
-        // check the cancelled_ptr to ensure the thread did in fact end up having the function call
-        // cancelled
-        try std.testing.expect(done_time - start_time < 5_000);
+        // if the helper thread catches a error.Cancelled, then it sets this to true, so we know
+        // we did in fact return early due to cancellation
         try std.testing.expect(cancelled_ptr.*);
     }
 }

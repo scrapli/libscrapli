@@ -120,6 +120,8 @@ pub const Options = struct {
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+
     log: logging.Logger,
 
     options: *Options,
@@ -128,7 +130,7 @@ pub const Transport = struct {
     f: ?std.fs.File = null,
 
     r_buffer: [1024]u8 = undefined,
-    reader: ?std.fs.File.Reader = null,
+    reader: ?std.Io.File.Reader = null,
 
     w_buffer: [1024]u8 = undefined,
     writer: ?std.fs.File.Writer = null,
@@ -137,6 +139,7 @@ pub const Transport = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
@@ -146,6 +149,7 @@ pub const Transport = struct {
 
         t.* = Transport{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
@@ -195,6 +199,7 @@ pub const Transport = struct {
         }
 
         try self.open_args.append(
+            // TODO -- equivalent of go exec.LookPath
             strings.MaybeHeapString{
                 .allocator = null,
                 .string = self.options.bin,
@@ -430,6 +435,7 @@ pub const Transport = struct {
 
         self.f = openPty(
             self.allocator,
+            self.io,
             open_args,
             self.options.term_width,
             self.options.term_height,
@@ -444,7 +450,7 @@ pub const Transport = struct {
             );
         };
 
-        self.reader = self.f.?.reader(&self.r_buffer);
+        self.reader = self.f.?.reader(self.io, &self.r_buffer);
         self.writer = self.f.?.writer(&self.w_buffer);
     }
 
@@ -497,9 +503,18 @@ pub const Transport = struct {
             );
         }
 
+        const ri = &self.reader.?.interface;
+
         try self.waiter.wait(self.f.?.handle);
 
-        const n = self.reader.?.read(buf) catch |err| {
+        // i think because this is not a "stream" (like telnet transport) we actually need to call
+        // this in order to get things off the pty and into the intermediate buffer. we know that
+        // there will be *something* to fill because of our waiter, so that should be good...
+        try ri.fillMore();
+
+        var w: std.Io.Writer = .fixed(buf);
+
+        const n = ri.stream(&w, .unlimited) catch |err| {
             // a warning as this can happen during close so we dont necessarily want to
             // log a crit
             return errors.wrapWarnError(
@@ -511,20 +526,6 @@ pub const Transport = struct {
             );
         };
 
-        if (n == 0) {
-            // TODO it seems this is actaully allowed/safe in 0.15.0+ stuff? seems to only happen
-            // at session startup
-
-            // this should kill the read loop, but the main program will be killed from session
-            // return errors.wrapWarnError(
-            //     errors.ScrapliError.Transport,
-            //     @src(),
-            //     self.log,
-            //     "bin.Transport read: read from pty returned zero bytes read",
-            //     .{},
-            // );
-        }
-
         return n;
     }
 
@@ -535,25 +536,34 @@ pub const Transport = struct {
 
 fn openPty(
     allocator: std.mem.Allocator,
+    io: std.Io,
     open_args: [][]const u8,
     term_width: u16,
     term_height: u16,
     netconf: bool,
 ) !std.fs.File {
-    const master_fd = try std.fs.openFileAbsolute("/dev/ptmx", .{
-        .mode = .read_write,
-        .allow_ctty = false,
-    });
+    // nov 2025, afaik this hasnt been moved to std.Io things yet
+    const master_fd = try std.fs.openFileAbsolute(
+        "/dev/ptmx",
+        .{
+            .mode = .read_write,
+            .allow_ctty = false,
+        },
+    );
 
     if (c.grantpt(master_fd.handle) < 0) return error.PtyError;
     if (c.unlockpt(master_fd.handle) < 0) return error.PtyError;
 
     const s_name = c.ptsname(master_fd.handle);
 
-    const slave_fd = try std.fs.openFileAbsoluteZ(s_name, .{
-        .mode = .read_write,
-        .allow_ctty = true,
-    });
+    const slave_fd = try std.Io.File.openAbsolute(
+        io,
+        std.mem.span(s_name),
+        .{
+            .mode = .read_write,
+            .allow_ctty = true,
+        },
+    );
 
     // ensure the pty is non blocking
     try file.setNonBlocking(master_fd.handle);
@@ -613,7 +623,7 @@ fn openPty(
 
 fn openPtyChild(
     master_fd: std.fs.File,
-    slave_fd: std.fs.File,
+    slave_fd: std.Io.File,
     args: [:null]?[*:0]const u8,
     envs: [:null]?[*:0]const u8,
     term_width: u16,
@@ -689,6 +699,7 @@ test "transportInit" {
     const o = try Options.init(std.testing.allocator, .{});
     const t = try Transport.init(
         std.testing.allocator,
+        std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },

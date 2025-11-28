@@ -26,8 +26,8 @@ pub const RecordDestination = union(enum) {
 
 pub const OptionsInputs = struct {
     read_size: u64 = 4_096,
-    min_read_delay_ns: u64 = 5_000,
-    max_read_delay_ns: u64 = 15_000_000,
+    read_min_delay_ns: u64 = 5_000,
+    read_max_delay_ns: u64 = 15_000_000,
     return_char: []const u8 = default_return_char,
     operation_timeout_ns: u64 = 10_000_000_000,
     operation_max_search_depth: u64 = 512,
@@ -36,13 +36,13 @@ pub const OptionsInputs = struct {
 
 pub const Options = struct {
     allocator: std.mem.Allocator,
-    read_size: u64,
-    min_read_delay_ns: u64,
-    max_read_delay_ns: u64,
-    return_char: []const u8,
-    operation_timeout_ns: u64,
-    operation_max_search_depth: u64,
-    record_destination: ?RecordDestination,
+    read_size: u64 = 4_096,
+    read_min_delay_ns: u64 = 5_000,
+    read_max_delay_ns: u64 = 15_000_000,
+    return_char: []const u8 = default_return_char,
+    operation_timeout_ns: u64 = 10_000_000_000,
+    operation_max_search_depth: u64 = 512,
+    record_destination: ?RecordDestination = null,
 
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
@@ -51,8 +51,8 @@ pub const Options = struct {
         o.* = Options{
             .allocator = allocator,
             .read_size = opts.read_size,
-            .min_read_delay_ns = opts.min_read_delay_ns,
-            .max_read_delay_ns = opts.max_read_delay_ns,
+            .read_min_delay_ns = opts.read_min_delay_ns,
+            .read_max_delay_ns = opts.read_max_delay_ns,
             .return_char = opts.return_char,
             .operation_timeout_ns = opts.operation_timeout_ns,
             .operation_max_search_depth = opts.operation_max_search_depth,
@@ -97,6 +97,8 @@ pub const Options = struct {
 
 pub const Session = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
+
     log: logging.Logger,
     options: *Options,
     auth_options: *auth.Options,
@@ -108,7 +110,7 @@ pub const Session = struct {
     read_lock: std.Thread.Mutex,
     read_queue: queue.LinearFifo(
         u8,
-        queue.LinearFifoBufferType.Dynamic,
+        .dynamic,
     ),
     read_thread_errored: bool = false,
 
@@ -126,6 +128,7 @@ pub const Session = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         log: logging.Logger,
         prompt_pattern: []const u8,
         options: *Options,
@@ -136,6 +139,7 @@ pub const Session = struct {
 
         const t = try transport.Transport.init(
             allocator,
+            io,
             log,
             transport_options,
         );
@@ -162,6 +166,7 @@ pub const Session = struct {
 
         s.* = Session{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .options = options,
             .auth_options = auth_options,
@@ -171,7 +176,7 @@ pub const Session = struct {
             .read_lock = std.Thread.Mutex{},
             .read_queue = queue.LinearFifo(
                 u8,
-                queue.LinearFifoBufferType.Dynamic,
+                .dynamic,
             ).init(allocator),
             .recorder = recorder,
             .prompt_pattern = prompt_pattern,
@@ -238,6 +243,13 @@ pub const Session = struct {
             // shouldn't matter if something errors during close
             // zlint-disable-next-line suppressed-errors
             self.close() catch {};
+        }
+
+        // if close didnt happen and the read thread state was already set to stop, we may have not
+        // shut down the read thread completely, so make sure we do that too
+        if (self.read_thread) |t| {
+            t.join();
+            self.read_thread = null;
         }
 
         self.last_consumed_prompt.deinit(self.allocator);
@@ -325,15 +337,22 @@ pub const Session = struct {
         self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
-            std.Thread.sleep(self.options.min_read_delay_ns);
+            std.Io.Clock.Duration.sleep(
+                .{
+                    .clock = .awake,
+                    .raw = .fromNanoseconds(self.options.read_min_delay_ns),
+                },
+                self.io,
+            ) catch {};
         }
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
-        // break any blocking read, then the readloop can nicely exit
+        // stop the waiter (which happens in transport.read), then the readloop can nicely exit
         try self.transport.unblock();
 
         if (self.read_thread) |t| {
             t.join();
+            self.read_thread = null;
         }
 
         if (self.options.record_destination) |rd| {
@@ -345,7 +364,7 @@ pub const Session = struct {
                     try self.recorder.?.interface.flush();
                     self.recorder.?.file.close();
 
-                    try ascii.stripAsciiAndAnsiControlCharsInFile(rd.f);
+                    try ascii.stripAsciiAndAnsiControlCharsInFile(self.io, rd.f);
                 },
                 else => {},
             }
@@ -382,7 +401,7 @@ pub const Session = struct {
                 self.log,
                 @src(),
                 "session.Session readLoop: raw read '{f}'",
-                .{std.ascii.hexEscape(buf, .lower)},
+                .{std.ascii.hexEscape(buf[0..n], .lower)},
             );
 
             if (self.recorder) |*recorder| {
@@ -454,6 +473,11 @@ pub const Session = struct {
 
         var buf = try allocator.alloc(u8, self.options.read_size);
         defer allocator.free(buf);
+
+        // need to unblock the transport waiter after signaling the read thread to stop, this will
+        // stop the waiter (which happens in transport.read), then the readloop can nicely exit;
+        // we only need to do this here in addition to close because we
+        errdefer self.transport.unblock() catch {};
 
         // in the case of auth, if we error out, we almost certainly need to stop the read loop
         // as the transport is probably gone from under our feet anyway.
@@ -699,14 +723,14 @@ pub const Session = struct {
         self: *Session,
         timer: *std.time.Timer,
         cancel: ?*bool,
-        checkf: bytes_check.CheckF,
-        checkargs: bytes_check.CheckArgs,
+        checkF: bytes_check.CheckF,
+        check_args: bytes_check.CheckArgs,
         bufs: *bytes.ProcessedBuf,
         search_depth: u64,
     ) !bytes_check.MatchPositions {
         self.log.info("session.Session readTimeout requested", .{});
 
-        var cur_read_delay_ns: u64 = self.options.min_read_delay_ns;
+        var cur_read_delay_ns: u64 = self.options.read_min_delay_ns;
 
         // to ensure the check_read_operation_done function doesnt think we are done "early" by
         // finding a match from an earlier prompt we snag the len of the processed buf then we
@@ -744,19 +768,27 @@ pub const Session = struct {
                 );
             }
 
-            defer std.Thread.sleep(cur_read_delay_ns);
+            defer {
+                std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(cur_read_delay_ns),
+                    },
+                    self.io,
+                ) catch {};
+            }
 
             const n = try self.read(buf);
 
             if (n == 0) {
                 cur_read_delay_ns = Session.getReadBackoff(
                     cur_read_delay_ns,
-                    self.options.max_read_delay_ns,
+                    self.options.read_max_delay_ns,
                 );
 
                 continue;
             } else {
-                cur_read_delay_ns = self.options.min_read_delay_ns;
+                cur_read_delay_ns = self.options.read_min_delay_ns;
             }
 
             try bufs.appendSlice(buf[0..n]);
@@ -775,7 +807,7 @@ pub const Session = struct {
                 search_depth,
             );
 
-            var match_indexes = try checkf(checkargs, searchable_buf);
+            var match_indexes = try checkF(check_args, searchable_buf);
 
             if (!(match_indexes.start == 0 and match_indexes.end == 0)) {
                 match_indexes.start += (bufs.processed.items.len - searchable_buf.len);
@@ -866,7 +898,7 @@ pub const Session = struct {
         return [2][]const u8{ try bufs.raw.toOwnedSlice(self.allocator), owned_found_prompt };
     }
 
-    fn _sendInput(
+    fn innerSendInput(
         self: *Session,
         timer: *std.time.Timer,
         cancel: ?*bool,
@@ -874,7 +906,7 @@ pub const Session = struct {
         input_handling: operation.InputHandling,
         bufs: *bytes.ProcessedBuf,
     ) !bytes_check.MatchPositions {
-        const checkArgs = bytes_check.CheckArgs{
+        const check_args = bytes_check.CheckArgs{
             .pattern = self.compiled_prompt_pattern,
             .actual = input,
         };
@@ -900,7 +932,7 @@ pub const Session = struct {
                     timer,
                     cancel,
                     bytes_check.exactInBuf,
-                    checkArgs,
+                    check_args,
                     bufs,
                     search_depth,
                 );
@@ -910,7 +942,7 @@ pub const Session = struct {
                     timer,
                     cancel,
                     bytes_check.fuzzyInBuf,
-                    checkArgs,
+                    check_args,
                     bufs,
                     search_depth,
                 );
@@ -949,7 +981,7 @@ pub const Session = struct {
             try self.last_consumed_prompt.resize(self.allocator, 0);
         }
 
-        _ = try self._sendInput(
+        _ = try self.innerSendInput(
             &timer,
             options.cancel,
             options.input,
@@ -962,7 +994,7 @@ pub const Session = struct {
             try bufs.processed.resize(self.allocator, 0);
         }
 
-        const checkArgs = bytes_check.CheckArgs{
+        const check_args = bytes_check.CheckArgs{
             .pattern = self.compiled_prompt_pattern,
             .actual = options.input,
         };
@@ -971,7 +1003,7 @@ pub const Session = struct {
             &timer,
             options.cancel,
             bytes_check.patternInBuf,
-            checkArgs,
+            check_args,
             &bufs,
             self.options.operation_max_search_depth,
         );
@@ -1053,7 +1085,7 @@ pub const Session = struct {
             try self.last_consumed_prompt.resize(self.allocator, 0);
         }
 
-        _ = try self._sendInput(
+        _ = try self.innerSendInput(
             &timer,
             options.cancel,
             options.input,
@@ -1061,24 +1093,24 @@ pub const Session = struct {
             &bufs,
         );
 
-        var checkArgs = bytes_check.CheckArgs{
+        var check_args = bytes_check.CheckArgs{
             .actual = options.prompt_exact,
         };
 
         if (compiled_pattern) |cp| {
-            checkArgs.patterns = &[_]?*re.pcre2CompiledPattern{
+            check_args.patterns = &[_]?*re.pcre2CompiledPattern{
                 self.compiled_prompt_pattern,
                 cp,
             };
         } else {
-            checkArgs.pattern = self.compiled_prompt_pattern;
+            check_args.pattern = self.compiled_prompt_pattern;
         }
 
         _ = try self.readTimeout(
             &timer,
             options.cancel,
             bytes_check.exactInBuf,
-            checkArgs,
+            check_args,
             &bufs,
             self.options.operation_max_search_depth,
         );
@@ -1086,7 +1118,7 @@ pub const Session = struct {
         if (!options.hidden_response) {
             try self.writeAndReturn(options.response, true);
         } else {
-            _ = try self._sendInput(
+            _ = try self.innerSendInput(
                 &timer,
                 options.cancel,
                 options.input,
@@ -1099,7 +1131,7 @@ pub const Session = struct {
             &timer,
             options.cancel,
             bytes_check.patternInBuf,
-            checkArgs,
+            check_args,
             &bufs,
             self.options.operation_max_search_depth,
         );
@@ -1127,10 +1159,11 @@ pub const Session = struct {
 test "sessionInit" {
     const o = try Options.init(std.testing.allocator, .{});
     const a_o = try auth.Options.init(std.testing.allocator, .{});
-    const t_o = try transport.Options.init(std.testing.allocator, .{ .ssh2 = .{} });
+    const t_o = try transport.Options.init(std.testing.allocator, .{ .bin = .{} });
 
     const s = try Session.init(
         std.testing.allocator,
+        std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },

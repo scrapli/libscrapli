@@ -136,7 +136,13 @@ export fn ls_cli_open(
             break;
         }
 
-        std.Thread.sleep(ffi_driver.operation_thread_ready_sleep);
+        std.Io.Clock.Duration.sleep(
+            .{
+                .clock = .awake,
+                .raw = .fromNanoseconds(ffi_driver.operation_thread_ready_sleep),
+            },
+            d.io,
+        ) catch {};
     }
 
     return 0;
@@ -445,7 +451,7 @@ export fn ls_cli_send_input(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.SendInputOptionsFromArgs(
+    const options = ffi_args_to_options.sendInputOptionsFromArgs(
         cancel,
         input,
         requested_mode,
@@ -496,7 +502,7 @@ export fn ls_cli_send_prompted_input(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    const options = ffi_args_to_options.SendPromptedInputOptionsFromArgs(
+    const options = ffi_args_to_options.sendPromptedInputOptionsFromArgs(
         cancel,
         input,
         prompt_exact,

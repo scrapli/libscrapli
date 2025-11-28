@@ -38,20 +38,25 @@ pub const Options = struct {
 
 pub const Transport = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     options: *Options,
 
-    r_buffer: [1024]u8 = undefined,
+    // we do a zillion reads, but w/e having the intermediate buffer be 1 seems to be marginally
+    // faster than having it be bigger for some reason
+    r_buffer: [1]u8 = undefined,
     reader: ?std.fs.File.Reader,
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         options: *Options,
     ) !*Transport {
         const t = try allocator.create(Transport);
 
         t.* = Transport{
             .allocator = allocator,
+            .io = io,
             .options = options,
             .reader = null,
         };
@@ -71,15 +76,26 @@ pub const Transport = struct {
             @panic("must set file for test transport!");
         }
 
-        self.reader = try file.ReaderFromPath(
+        self.reader = try file.readerFromPath(
             self.allocator,
+            self.io,
             &self.r_buffer,
             self.options.f.?,
         );
+
+        file.setNonBlocking(self.reader.?.file.handle) catch {
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                null,
+                "test.Transport open: failed ensuring file set to non blocking",
+                .{},
+            );
+        };
     }
 
     pub fn close(self: *Transport) void {
-        _ = self;
+        self.reader.?.file.close(self.io);
     }
 
     pub fn write(self: *Transport, buf: []const u8) !void {
@@ -88,18 +104,10 @@ pub const Transport = struct {
     }
 
     pub fn read(self: *Transport, buf: []u8) !usize {
-        const n = self.reader.?.read(buf) catch {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                null,
-                "transport read failed",
-                .{},
-            );
-        };
+        const ri = &self.reader.?.interface;
 
-        // we'll just read 0 bytes when eof, would be probably bad to not report eof upstream in
-        // a "normal" transport, but doesnt matter for the test one
+        const n = try ri.readSliceShort(buf);
+
         return n;
     }
 };

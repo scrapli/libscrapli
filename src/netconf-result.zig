@@ -3,11 +3,11 @@ const std = @import("std");
 const ascii = @import("ascii.zig");
 const operation = @import("netconf-operation.zig");
 
-const rpcErrorTag = "rpc-error";
-const rpcReplyTag = "rpc-reply";
-const rpcErrorSeverityTag = "error-severity";
-const rpcErrorSeverityWarning = "warning";
-const rpcErrorSeverityError = "error";
+const rpc_error_tag = "rpc-error";
+const rpc_reply_tag = "rpc-reply";
+const rpc_error_severity_tag = "error-severity";
+const rpc_error_severity_warning = "warning";
+const rpc_error_severity_error = "error";
 
 const subscription_id_close_tag = "</subscription-id>";
 
@@ -88,6 +88,7 @@ test "getSubscriptionId" {
 
 pub const Result = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     host: []const u8,
     port: u16,
@@ -111,6 +112,7 @@ pub const Result = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         host: []const u8,
         port: u16,
         version: operation.Version,
@@ -118,10 +120,13 @@ pub const Result = struct {
         input: []const u8,
         operation_kind: operation.Kind,
     ) !*Result {
+        const now = try std.Io.Clock.real.now(io);
+
         const r = try allocator.create(Result);
 
         r.* = Result{
             .allocator = allocator,
+            .io = io,
             .host = host,
             .port = port,
             .version = version,
@@ -130,7 +135,7 @@ pub const Result = struct {
             .input = input,
             .result_raw = "",
             .result = "",
-            .start_time_ns = std.time.nanoTimestamp(),
+            .start_time_ns = now.toNanoseconds(),
             .end_time_ns = 0,
             .result_failure_indicated = false,
             .result_warning_messages = .{},
@@ -180,8 +185,8 @@ pub const Result = struct {
             // check if the message is ending so we dont go out of bounds
             if (std.mem.eql(
                 u8,
-                ret[iter_idx + 2 .. iter_idx + 2 + rpcReplyTag.len],
-                rpcReplyTag,
+                ret[iter_idx + 2 .. iter_idx + 2 + rpc_reply_tag.len],
+                rpc_reply_tag,
             )) {
                 return;
             }
@@ -190,11 +195,11 @@ pub const Result = struct {
             if (message_start_idx == null) {
                 if (std.mem.eql(
                     u8,
-                    ret[iter_idx + 1 .. iter_idx + 1 + rpcErrorTag.len],
-                    rpcErrorTag,
+                    ret[iter_idx + 1 .. iter_idx + 1 + rpc_error_tag.len],
+                    rpc_error_tag,
                 )) {
                     message_start_idx = iter_idx;
-                    iter_idx = iter_idx + 2 + rpcErrorTag.len;
+                    iter_idx = iter_idx + 2 + rpc_error_tag.len;
                 } else {
                     iter_idx += 1;
                 }
@@ -206,31 +211,31 @@ pub const Result = struct {
             // "/" char when checking
             if (std.mem.eql(
                 u8,
-                ret[iter_idx + 2 .. iter_idx + 2 + rpcErrorTag.len],
-                rpcErrorTag,
+                ret[iter_idx + 2 .. iter_idx + 2 + rpc_error_tag.len],
+                rpc_error_tag,
             )) {
                 // default to error if we failed to parse the severity from the message
-                var sev: []const u8 = rpcErrorSeverityError;
+                var sev: []const u8 = rpc_error_severity_error;
 
                 if (message_severity_start_idx != null and message_severity_end_idx != null) {
                     if (std.mem.eql(
                         u8,
                         ret[message_severity_start_idx.?..message_severity_end_idx.?],
-                        rpcErrorSeverityWarning,
+                        rpc_error_severity_warning,
                     )) {
-                        sev = rpcErrorSeverityWarning;
+                        sev = rpc_error_severity_warning;
                     }
                 }
 
-                if (std.mem.eql(u8, sev, rpcErrorSeverityError)) {
+                if (std.mem.eql(u8, sev, rpc_error_severity_error)) {
                     try self.result_error_messages.append(
                         self.allocator,
-                        ret[message_start_idx.? .. iter_idx + rpcErrorTag.len + 3],
+                        ret[message_start_idx.? .. iter_idx + rpc_error_tag.len + 3],
                     );
                 } else {
                     try self.result_warning_messages.append(
                         self.allocator,
-                        ret[message_start_idx.? .. iter_idx + rpcErrorTag.len + 3],
+                        ret[message_start_idx.? .. iter_idx + rpc_error_tag.len + 3],
                     );
                 }
 
@@ -238,7 +243,7 @@ pub const Result = struct {
                 message_severity_start_idx = null;
                 message_severity_end_idx = null;
 
-                iter_idx += 2 + rpcErrorTag.len;
+                iter_idx += 2 + rpc_error_tag.len;
 
                 continue;
             }
@@ -246,12 +251,12 @@ pub const Result = struct {
             // otherwise we just need to find the severity element
             if (std.mem.eql(
                 u8,
-                ret[iter_idx + 1 .. iter_idx + 1 + rpcErrorSeverityTag.len],
-                rpcErrorSeverityTag,
+                ret[iter_idx + 1 .. iter_idx + 1 + rpc_error_severity_tag.len],
+                rpc_error_severity_tag,
             )) {
-                message_severity_start_idx = iter_idx + 2 + rpcErrorSeverityTag.len;
+                message_severity_start_idx = iter_idx + 2 + rpc_error_severity_tag.len;
 
-                iter_idx = iter_idx + 2 + rpcErrorSeverityTag.len;
+                iter_idx = iter_idx + 2 + rpc_error_severity_tag.len;
 
                 while (true) {
                     if (ret[iter_idx] != ascii.control_chars.open_element_char) {
@@ -262,8 +267,8 @@ pub const Result = struct {
 
                     if (std.mem.eql(
                         u8,
-                        ret[iter_idx + 2 .. iter_idx + 2 + rpcErrorSeverityTag.len],
-                        rpcErrorSeverityTag,
+                        ret[iter_idx + 2 .. iter_idx + 2 + rpc_error_severity_tag.len],
+                        rpc_error_severity_tag,
                     )) {
                         message_severity_end_idx = iter_idx;
 
@@ -280,7 +285,9 @@ pub const Result = struct {
         self: *Result,
         ret: [2][]const u8,
     ) !void {
-        self.end_time_ns = std.time.nanoTimestamp();
+        const now = try std.Io.Clock.real.now(self.io);
+
+        self.end_time_ns = now.toNanoseconds();
         self.result_raw = ret[0];
         self.result = ret[1];
 
@@ -368,6 +375,7 @@ test "parseRpcErrors" {
             .name = "simple-no-errors",
             .result = try Result.init(
                 std.testing.allocator,
+                std.testing.io,
                 "1.2.3.4",
                 830,
                 .version_1_0,
@@ -394,6 +402,7 @@ test "parseRpcErrors" {
             .name = "simple-with-single-error",
             .result = try Result.init(
                 std.testing.allocator,
+                std.testing.io,
                 "1.2.3.4",
                 830,
                 .version_1_0,
@@ -431,6 +440,7 @@ test "parseRpcErrors" {
             .name = "simple-with-single-warning",
             .result = try Result.init(
                 std.testing.allocator,
+                std.testing.io,
                 "1.2.3.4",
                 830,
                 .version_1_0,
@@ -469,6 +479,7 @@ test "parseRpcErrors" {
             .name = "simple-not-pretty-with-single-warning",
             .result = try Result.init(
                 std.testing.allocator,
+                std.testing.io,
                 "1.2.3.4",
                 830,
                 .version_1_0,

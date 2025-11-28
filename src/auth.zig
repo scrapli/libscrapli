@@ -19,17 +19,69 @@ pub const State = enum {
     _continue,
 };
 
+pub const LookupItems = struct {
+    items: [16]LookupKeyValue = undefined,
+    count: usize = 0,
+
+    pub fn init(kvs: []const LookupKeyValue) LookupItems {
+        var out = LookupItems{
+            .items = undefined,
+            .count = 0,
+        };
+
+        for (kvs) |kv| {
+            out.items[out.count] = kv;
+            out.count += 1;
+        }
+
+        return out;
+    }
+
+    fn cloneOwned(self: *const LookupItems, allocator: std.mem.Allocator) !LookupItems {
+        var out = LookupItems{
+            .items = undefined,
+            .count = self.count,
+        };
+
+        for (self.items[0..self.count], 0..) |kv, i| {
+            const key_copy = try allocator.dupe(u8, kv.key);
+            const value_copy = try allocator.dupe(u8, kv.value);
+
+            out.items[i] = .{
+                .key = key_copy,
+                .value = value_copy,
+            };
+        }
+
+        return out;
+    }
+
+    fn deinitOwned(self: *LookupItems, allocator: std.mem.Allocator) void {
+        for (self.items[0..self.count]) |kv| {
+            allocator.free(kv.key);
+            allocator.free(kv.value);
+        }
+    }
+};
+
 pub const LookupKeyValue = struct {
     key: []const u8,
     value: []const u8,
 };
 
+// it would be worth investigating not doing this weird input then option struct -- the main reason
+// for this is so that we can have easily passed, non-allocated, values here, then when we init the
+// "real" struct we do our duping and stuff, this is just to make it easier for users to pass things
+// and not think about what needs to be heap allocated vs not
 pub const OptionsInputs = struct {
     username: ?[]const u8 = null,
     password: ?[]const u8 = null,
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
-    lookup_map: ?[]const LookupKeyValue = null,
+    // for now(? forever?) lookups are limited to 16 times. adding a lookup callback in the future
+    // would be next step i think, but for now this should be more than ok and the fixed size and
+    // the count indicator makes this very easy to work with on the ffi bits.
+    lookups: LookupItems = .{},
     // when true, regardless of the transport, do the in session auth bits -- that means we check
     // for user/password/passphrase and finally for expected prompt. normally this would be skipped
     // when using libssh2 since we would auth in channel, but this flag can force this behavior. may
@@ -40,9 +92,9 @@ pub const OptionsInputs = struct {
     // would let you write some custom on open function to handle banners or whatever even when
     // using the telnet/bin transports.
     bypass_in_session_auth: bool = false,
-    username_pattern: []const u8 = default_username_pattern,
-    password_pattern: []const u8 = default_password_pattern,
-    passphrase_pattern: []const u8 = default_passphrase_pattern,
+    username_pattern: ?[]const u8 = null,
+    password_pattern: ?[]const u8 = null,
+    private_key_passphrase_pattern: ?[]const u8 = null,
 };
 
 pub const Options = struct {
@@ -51,12 +103,12 @@ pub const Options = struct {
     password: ?[]const u8,
     private_key_path: ?[]const u8,
     private_key_passphrase: ?[]const u8,
-    lookups: ?[]const LookupKeyValue,
+    lookups: LookupItems,
     force_in_session_auth: bool,
     bypass_in_session_auth: bool,
-    username_pattern: []const u8,
-    password_pattern: []const u8,
-    private_key_passphrase_pattern: []const u8,
+    username_pattern: []const u8 = default_username_pattern,
+    password_pattern: []const u8 = default_password_pattern,
+    private_key_passphrase_pattern: []const u8 = default_passphrase_pattern,
 
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
@@ -68,12 +120,9 @@ pub const Options = struct {
             .password = opts.password,
             .private_key_path = opts.private_key_path,
             .private_key_passphrase = opts.private_key_passphrase,
-            .lookups = opts.lookup_map,
+            .lookups = try opts.lookups.cloneOwned(allocator),
             .force_in_session_auth = opts.force_in_session_auth,
             .bypass_in_session_auth = opts.bypass_in_session_auth,
-            .username_pattern = opts.username_pattern,
-            .password_pattern = opts.password_pattern,
-            .private_key_passphrase_pattern = opts.passphrase_pattern,
         };
 
         if (o.username != null) {
@@ -92,32 +141,16 @@ pub const Options = struct {
             o.private_key_passphrase = try o.allocator.dupe(u8, o.private_key_passphrase.?);
         }
 
-        if (o.lookups != null) {
-            const lm = try o.allocator.alloc(
-                LookupKeyValue,
-                o.lookups.?.len,
-            );
-
-            for (0..o.lookups.?.len) |idx| {
-                lm[idx] = .{
-                    .key = try o.allocator.dupe(u8, o.lookups.?[idx].key),
-                    .value = try o.allocator.dupe(u8, o.lookups.?[idx].value),
-                };
-            }
-
-            o.lookups = lm;
+        if (opts.username_pattern) |p| {
+            o.username_pattern = try o.allocator.dupe(u8, p);
         }
 
-        if (&o.username_pattern[0] != &default_username_pattern[0]) {
-            o.username_pattern = try o.allocator.dupe(u8, o.username_pattern);
+        if (opts.password_pattern) |p| {
+            o.password_pattern = try o.allocator.dupe(u8, p);
         }
 
-        if (&o.password_pattern[0] != &default_password_pattern[0]) {
-            o.password_pattern = try o.allocator.dupe(u8, o.password_pattern);
-        }
-
-        if (&o.private_key_passphrase_pattern[0] != &default_passphrase_pattern[0]) {
-            o.private_key_passphrase_pattern = try o.allocator.dupe(u8, o.private_key_passphrase_pattern);
+        if (opts.private_key_passphrase_pattern) |p| {
+            o.private_key_passphrase_pattern = try o.allocator.dupe(u8, p);
         }
 
         return o;
@@ -140,14 +173,7 @@ pub const Options = struct {
             self.allocator.free(self.private_key_passphrase.?);
         }
 
-        if (self.lookups != null) {
-            for (self.lookups.?) |lookup_entry| {
-                self.allocator.free(lookup_entry.key);
-                self.allocator.free(lookup_entry.value);
-            }
-
-            self.allocator.free(self.lookups.?);
-        }
+        self.lookups.deinitOwned(self.allocator);
 
         if (&self.username_pattern[0] != &default_username_pattern[0]) {
             self.allocator.free(self.username_pattern);
@@ -164,52 +190,27 @@ pub const Options = struct {
         self.allocator.destroy(self);
     }
 
-    pub fn extendLookupMap(self: *Options, k: []const u8, v: []const u8) !void {
-        var cur_size: usize = 0;
-
-        if (self.lookups != null) {
-            cur_size = self.lookups.?.len;
-        }
-
-        const lm = try self.allocator.alloc(LookupKeyValue, cur_size + 1);
-
-        if (cur_size > 1) {
-            @memcpy(lm[0..cur_size], self.lookups.?[0..]);
-        }
-
-        lm[cur_size] = .{
-            .key = try self.allocator.dupe(u8, k),
-            .value = try self.allocator.dupe(u8, v),
-        };
-
-        self.lookups = lm;
-    }
-
     pub fn resolveAuthValue(self: *Options, v: []const u8) ![]const u8 {
         if (!std.mem.startsWith(u8, v, lookup_prefix)) {
             return v;
-        }
-
-        if (self.lookups == null) {
-            return errors.ScrapliError.Driver;
         }
 
         var default_idx: ?usize = null;
 
         const lookup_key = v[lookup_prefix.len..];
 
-        for (0.., self.lookups.?) |idx, lookup_item| {
-            if (std.mem.eql(u8, lookup_item.key, lookup_default_key)) {
+        for (0..self.lookups.count) |idx| {
+            if (std.mem.eql(u8, self.lookups.items[idx].key, lookup_default_key)) {
                 default_idx = idx;
             }
 
-            if (std.mem.eql(u8, lookup_key, lookup_item.key)) {
-                return lookup_item.value;
+            if (std.mem.eql(u8, lookup_key, self.lookups.items[idx].key)) {
+                return self.lookups.items[idx].value;
             }
         }
 
-        if (default_idx != null) {
-            return self.lookups.?[default_idx.?].value;
+        if (default_idx) |idx| {
+            return self.lookups.items[idx].value;
         }
 
         return errors.ScrapliError.Driver;

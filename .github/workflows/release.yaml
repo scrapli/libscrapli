@@ -44,7 +44,8 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
-      # do this before building but after updating versions so there is a tar of the
+      # do this before building but after updating versions so there is a tar of the source but
+      # not including all our zig cache/out stuff
       - name: make release tarball
         run: |
           tar czf libscrapli-${{ github.ref_name }}.tar.gz .

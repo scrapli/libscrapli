@@ -1,30 +1,17 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
-const c = @cImport({
-    @cDefine("_XOPEN_SOURCE", "500");
-    @cInclude("fcntl.h");
-});
-
-// tried this in zig and couldn't get it to work... no idea
-// fn setNonBlocking(fd: std.posix.fd_t) !void {
-//     var flags = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
-//
-//     flags |= std.posix.SOCK.NONBLOCK;
-//
-//     _ = try std.posix.fcntl(fd, std.posix.F.SETFL, flags);
-// }
 pub fn setNonBlocking(fd: std.posix.fd_t) !void {
-    var got_flags = c.fcntl(fd, c.F_GETFL);
-    if (got_flags == -1) {
-        return error.SetNonBlockingFailed;
-    }
+    var flags = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
 
-    got_flags |= c.O_NONBLOCK;
+    // would have thought there would be a portable std.posix.O.NONBLOCK but
+    // seems that doesnt exist on darwin but this does work on darwin? then
+    // darwin was content doing c.O_NONBLOCK but for some reason fnctl things
+    // were not getting transalted nicely on linux-gnu... so this should work
+    // on darwin+linux(gnu/musl)
+    flags |= @as(usize, 1 << @bitOffsetOf(std.posix.O, "NONBLOCK"));
 
-    const set_flags_ret = c.fcntl(fd, c.F_SETFL, got_flags);
-    if (set_flags_ret == -1) {
-        return error.SetNonBlockingFailed;
-    }
+    _ = try std.posix.fcntl(fd, std.posix.F.SETFL, flags);
 }
 
 pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
@@ -64,8 +51,9 @@ pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8
 }
 
 // buf is passed in for lifetime reasons of course, so needs to be outside of this
-pub fn ReaderFromPath(
+pub fn readerFromPath(
     allocator: std.mem.Allocator,
+    io: std.Io,
     buf: []u8,
     path: []const u8,
 ) !std.fs.File.Reader {
@@ -73,20 +61,24 @@ pub fn ReaderFromPath(
     defer allocator.free(resolved_path);
 
     const f = try std.fs.openFileAbsolute(resolved_path, .{});
-    return f.reader(buf);
+    return f.reader(io, buf);
 }
 
-pub fn readFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+pub fn readFromPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
     const resolved_path = try resolveAbsolutePath(allocator, path);
     defer allocator.free(resolved_path);
 
     const f = try std.fs.openFileAbsolute(resolved_path, .{});
-    const content = try f.readToEndAlloc(
-        allocator,
-        std.math.maxInt(usize),
-    );
 
-    return content;
+    var r_buf: [1024]u8 = undefined;
+    var r = f.reader(io, &r_buf);
+
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(allocator);
+
+    try std.Io.Reader.appendRemainingUnlimited(&r.interface, allocator, &out);
+
+    return try out.toOwnedSlice(allocator);
 }
 
 pub fn writeToPath(allocator: std.mem.Allocator, path: []const u8, data: []const u8) !void {

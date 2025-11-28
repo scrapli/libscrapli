@@ -15,14 +15,8 @@ pub const Kind = enum {
 
     pub fn toString(self: Kind) []const u8 {
         switch (self) {
-            .bin => {
-                return "bin";
-            },
-            .telnet => {
-                return "telnet";
-            },
-            .ssh2 => {
-                return "ssh2";
+            .bin, .telnet, .ssh2 => {
+                return @tagName(self);
             },
             .test_ => {
                 return "test";
@@ -131,6 +125,7 @@ pub const Transport = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         log: logging.Logger,
         options: *Options,
     ) !*Transport {
@@ -144,6 +139,7 @@ pub const Transport = struct {
                     .implementation = Implementation{
                         .bin = try transport_bin.Transport.init(
                             allocator,
+                            io,
                             log,
                             options.bin,
                         ),
@@ -157,6 +153,7 @@ pub const Transport = struct {
                     .implementation = Implementation{
                         .telnet = try transport_telnet.Transport.init(
                             allocator,
+                            io,
                             log,
                             options.telnet,
                         ),
@@ -170,6 +167,7 @@ pub const Transport = struct {
                     .implementation = Implementation{
                         .ssh2 = try transport_ssh2.Transport.init(
                             allocator,
+                            io,
                             log,
                             options.ssh2,
                         ),
@@ -183,6 +181,7 @@ pub const Transport = struct {
                     .implementation = Implementation{
                         .test_ = try transport_test.Transport.init(
                             allocator,
+                            io,
                             options.test_,
                         ),
                     },
@@ -346,6 +345,7 @@ test "transportInit" {
 
     const t = try Transport.init(
         std.testing.allocator,
+        std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },

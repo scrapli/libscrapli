@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const scrapli = @import("scrapli");
-
 const cli = scrapli.cli;
 const strings = scrapli.strings;
 
@@ -122,6 +121,11 @@ pub fn main() !void {
         std.log.info("leak check results >> {any}\n", .{gpa_allocator.deinit()});
     }
 
+    var threaded: std.Io.Threaded = .init(allocator);
+    defer threaded.deinit();
+
+    const io = threaded.io();
+
     var host = try getEnvVarOrDefault(
         host_env_var_name,
         default_host,
@@ -136,6 +140,7 @@ pub fn main() !void {
 
     const d = try cli.Driver.init(
         allocator,
+        io,
         host.string,
         .{
             .definition = .{
@@ -143,7 +148,10 @@ pub fn main() !void {
             },
             // uncomment and import the logger package like: `const logging = scrapli.logging;`
             // for a simple logger setup
-            // .logger = logging.Logger{ .allocator = allocator, .f = logging.stdLogf, },
+            // .logger = logging.Logger{
+            //     .allocator = allocator,
+            //     .f = logging.stdLogf,
+            // },
             .port = try getPort(),
             .auth = .{
                 .username = "admin",
@@ -152,7 +160,7 @@ pub fn main() !void {
             .session = .{
                 // uncomment to log/record to a file
                 // .record_destination = .{
-                //     .f = "out.txt",
+                //     .f = "out.log",
                 // },
             },
             .transport = .{

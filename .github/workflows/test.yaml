@@ -5,6 +5,16 @@ on:
   workflow_call: {}
   workflow_dispatch:
     inputs:
+      debug_unit:
+        description: "start tmate before unit tests"
+        type: boolean
+        required: false
+        default: false
+      debug_integration:
+        description: "start tmate before integration tests"
+        type: boolean
+        required: false
+        default: false
       debug_functional:
         description: "start tmate before functional tests"
         type: boolean
@@ -30,6 +40,10 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      - name: setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_unit }}
+
       - name: run the unit tests
         run: |
           make test
@@ -51,6 +65,10 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+
+      - name: setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_integration }}
 
       - name: run the integration tests
         run: |
@@ -74,14 +92,9 @@ jobs:
           echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
           echo "CONTAINERLAB_VERSION=$CONTAINERLAB_VERSION" >> "$GITHUB_ENV"
 
-      - name: install containerlab
+      - name: run scrapli-clab
         run: |
-          bash -c "$(curl -sL https://get.containerlab.dev)" -- -v ${{ env.CONTAINERLAB_VERSION }}
-
-      - name: run containerlab topology
-        run: |
-          sudo clab deploy -t topo.ci.amd64.yaml
-        working-directory: src/tests/functional/clab
+          make run-clab-ci
 
       - name: setup zig
         uses: mlugg/setup-zig@v2
@@ -92,11 +105,11 @@ jobs:
         uses: mxschmitt/action-tmate@v3
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_functional }}
 
-      - name: wait for srl node to be available
+      - name: wait for test nodes to be available
+        working-directory: .clab
         run: |
           ./wait.sh
-        working-directory: src/tests/functional/clab
-        # wait.sh should timeout but seems like it sometimes gets hung in actions
+        # wait.sh should timeout but seems like it sometimes gets hung in actions sometimes
         timeout-minutes: 5
 
       - name: run the functional tests

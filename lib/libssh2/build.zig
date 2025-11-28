@@ -25,9 +25,10 @@ pub fn build(b: *std.Build) void {
             .root_source_file = null,
             .target = target,
             .optimize = optimize,
-            .link_libc = true,
         },
     );
+    lib_mod.linkLibrary(openssl.artifact("ssl"));
+    lib_mod.linkLibrary(openssl.artifact("crypto"));
 
     const lib = b.addLibrary(
         .{
@@ -59,13 +60,11 @@ pub fn build(b: *std.Build) void {
     lib.root_module.addCMacro("HAVE_O_NONBLOCK", "");
 
     lib.addIncludePath(upstream.path("include"));
-    lib.addIncludePath(upstream.path("config"));
 
-    lib.installHeadersDirectory(
-        upstream.path("include"),
-        ".",
-        .{},
-    );
+    // nov 2025, translate c was creating the lisbsh2session struct w/ duplicate fields, this hack
+    // just uses our own header file that doesnt have one of the functions that was causing the
+    // duplicate fields. we dont need it anyway so... yolo?
+    lib.installHeadersDirectory(b.path("include"), ".", .{});
 
     lib.addCSourceFiles(
         .{
@@ -114,13 +113,13 @@ pub fn build(b: *std.Build) void {
                 "-DCRYPTO_BACKEND=OpenSSL",
                 "-DBUILD_EXAMPLES=OFF",
                 "-DBUILD_TESTING=OFF",
+                "-DLIBSSH2_NO_DEPRECATED",
                 "-DLIBSSH2DEBUG", // for enabling debug logging/trace
             },
         },
     );
 
-    lib.linkLibrary(openssl.artifact("ssl"));
-    lib.linkLibrary(openssl.artifact("crypto"));
+    lib.linkLibC();
 
     b.installArtifact(lib);
 }

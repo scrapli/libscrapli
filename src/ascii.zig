@@ -214,229 +214,229 @@ test "stripAsciiAndAnsiControlCharsInPlace" {
     const cases = [_]struct {
         name: []const u8,
         haystack: []const u8,
-        startIdx: usize,
-        expectedNewSize: usize,
+        start_idx: usize,
+        expected_new_size: usize,
         expected: []const u8,
     }{
         .{
             .name = "no change",
             .haystack = "foo",
-            .startIdx = 0,
-            .expectedNewSize = 3,
+            .start_idx = 0,
+            .expected_new_size = 3,
             .expected = "foo",
         },
         .{
             .name = "no start not at beginning",
             .haystack = "foo bar baz",
-            .startIdx = 3,
-            .expectedNewSize = 11,
+            .start_idx = 3,
+            .expected_new_size = 11,
             .expected = "foo bar baz",
         },
         .{
             .name = "NUL",
             .haystack = "foo \x00 bar",
-            .startIdx = 0,
-            .expectedNewSize = 8,
+            .start_idx = 0,
+            .expected_new_size = 8,
             .expected = "foo  bar",
         },
         .{
             .name = "BEL",
             .haystack = "foo \x07 bar",
-            .startIdx = 0,
-            .expectedNewSize = 8,
+            .start_idx = 0,
+            .expected_new_size = 8,
             .expected = "foo  bar",
         },
         .{
             .name = "BS",
             .haystack = "foo \x08 bar",
-            .startIdx = 0,
-            .expectedNewSize = 8,
+            .start_idx = 0,
+            .expected_new_size = 8,
             .expected = "foo  bar",
         },
         // we are *not* tabs, but we could :)
         .{
             .name = "HT",
             .haystack = "foo \x09 bar",
-            .startIdx = 0,
-            .expectedNewSize = 9,
+            .start_idx = 0,
+            .expected_new_size = 9,
             .expected = "foo \x09 bar",
         },
         // we are *not* stripping line feeds, but we could :)
         .{
             .name = "LF",
             .haystack = "foo \x0A bar",
-            .startIdx = 0,
-            .expectedNewSize = 9,
+            .start_idx = 0,
+            .expected_new_size = 9,
             .expected = "foo \x0A bar",
         },
         // we are *not* stripping (vertical) tabs, but we could :)
         .{
             .name = "VT",
             .haystack = "foo \x0B bar",
-            .startIdx = 0,
-            .expectedNewSize = 9,
+            .start_idx = 0,
+            .expected_new_size = 9,
             .expected = "foo \x0B bar",
         },
         .{
             .name = "FF",
             .haystack = "foo \x0C bar",
-            .startIdx = 0,
-            .expectedNewSize = 8,
+            .start_idx = 0,
+            .expected_new_size = 8,
             .expected = "foo  bar",
         },
         // we are *not* stripping carriage returns
         .{
             .name = "CR",
             .haystack = "foo \x0D bar",
-            .startIdx = 0,
-            .expectedNewSize = 9,
+            .start_idx = 0,
+            .expected_new_size = 9,
             .expected = "foo \x0D bar",
         },
         .{
             .name = "DEL",
             .haystack = "foo \x7F bar",
-            .startIdx = 0,
-            .expectedNewSize = 8,
+            .start_idx = 0,
+            .expected_new_size = 8,
             .expected = "foo  bar",
         },
         .{
             .name = "NEL",
             .haystack = "foo \x1BE bar",
-            .startIdx = 0,
-            .expectedNewSize = 8,
+            .start_idx = 0,
+            .expected_new_size = 8,
             .expected = "foo  bar",
         },
         .{
             .name = "DEC",
             .haystack = "foo \x1B7 bar",
-            .startIdx = 0,
-            .expectedNewSize = 8,
+            .start_idx = 0,
+            .expected_new_size = 8,
             .expected = "foo  bar",
         },
         .{
             .name = "color text",
             .haystack = "\x1B[31mRedText\x1B[0m",
-            .startIdx = 0,
-            .expectedNewSize = 7,
+            .start_idx = 0,
+            .expected_new_size = 7,
             .expected = "RedText",
         },
         .{
             .name = "simple prompt",
             .haystack = "[admin@router: \x1b[1m/\x1b[0;0m]$",
-            .startIdx = 0,
-            .expectedNewSize = 18,
+            .start_idx = 0,
+            .expected_new_size = 18,
             .expected = "[admin@router: /]$",
         },
         .{
             .name = "simple save cursor position",
             .haystack = "somestuff\x1b7someotherstuff",
-            .startIdx = 0,
-            .expectedNewSize = 23,
+            .start_idx = 0,
+            .expected_new_size = 23,
             .expected = "somestuffsomeotherstuff",
         },
         .{
             .name = "simple dont mess with newlines",
             .haystack = "Hello\x1B[31mRed\x1B[0m\\nWorld\x07",
-            .startIdx = 0,
-            .expectedNewSize = 15,
+            .start_idx = 0,
+            .expected_new_size = 15,
             .expected = "HelloRed\\nWorld",
         },
         .{
             .name = "strip cursor controls",
             .haystack = "\x1B[m\x1B[27m\x1B[24mroot@server[~]# \x1B[K\x1B[?2004h",
-            .startIdx = 0,
-            .expectedNewSize = 16,
+            .start_idx = 0,
+            .expected_new_size = 16,
             .expected = "root@server[~]# ",
         },
         .{
             .name = "some pager output",
             .haystack = "\x1b[7mCTRL+C\x1b[0m \x1b[7mESC\x1b[0m \x1b[7mq\x1b[0m Quit \x1b[7mSPACE\x1b[0m \x1b[7mn\x1b[0m Next Page \x1b[7mENTER\x1b[0m Next Entry \x1b[7ma\x1b[0m All\x1b[1A\x1b[59C\x1b[27m",
-            .startIdx = 0,
-            .expectedNewSize = 58,
+            .start_idx = 0,
+            .expected_new_size = 58,
             .expected = "CTRL+C ESC q Quit SPACE n Next Page ENTER Next Entry a All",
         },
         .{
             .name = "underline",
             .haystack = "\x1B[4mcake\x1B[0m",
-            .startIdx = 0,
-            .expectedNewSize = 4,
+            .start_idx = 0,
+            .expected_new_size = 4,
             .expected = "cake",
         },
         .{
             .name = "underline with some leading stuff",
             .haystack = "foo\x1B[4mcake\x1B[0m",
-            .startIdx = 0,
-            .expectedNewSize = 7,
+            .start_idx = 0,
+            .expected_new_size = 7,
             .expected = "foocake",
         },
         .{
             .name = "lots of arguments",
             .haystack = "\x1B[00;38;5;244m\x1B[m\x1B[00;38;5;33mfoo\x1B[0m",
-            .startIdx = 0,
-            .expectedNewSize = 3,
+            .start_idx = 0,
+            .expected_new_size = 3,
             .expected = "foo",
         },
         .{
             .name = "lots of arguments with text at the end",
             .haystack = "foo\x1B[0;33;49;3;9;4mbar",
-            .startIdx = 0,
-            .expectedNewSize = 6,
+            .start_idx = 0,
+            .expected_new_size = 6,
             .expected = "foobar",
         },
         .{
             .name = "lots of save restore cursor",
             .haystack = "\x1b7c\x1b8\x1b[1C\x1b7o\x1b8\x1b[1C\x1b7n\x1b8\x1b[1C\x1b7f\x1b8\x1b[1C\x1b7i\x1b8\x1b[1C\x1b7g\x1b8\x1b[1C\x1b7u\x1b8\x1b[1C\x1b7r\x1b8\x1b[1C\x1b7e\x1b8\x1b[1C",
-            .startIdx = 0,
-            .expectedNewSize = 9,
+            .start_idx = 0,
+            .expected_new_size = 9,
             .expected = "configure",
         },
         .{
             .name = "terminal title",
             .haystack = "\x1b[?2004h\x1b]0;user@line5-cpe-0: ~\x07user@line5-cpe-0:~$",
-            .startIdx = 0,
-            .expectedNewSize = 19,
+            .start_idx = 0,
+            .expected_new_size = 19,
             .expected = "user@line5-cpe-0:~$",
         },
         .{
             .name = "more os control codes",
             .haystack = "\x1b[?6l\x1b[1;80r\x1b[?7h\x1b[2J\x1b[1;1H\x1b[1920;1920H\x1b[6n\x1b[1;1HYour previous successful login (as manager) was on 2024-05-24 11:29:02     \n from X.X.X.X\n\x1b[1;80r\x1b[80;1H\x1b[80;1H\x1b[2K\x1b[80;1H\x1b[?25h\x1b[80;1H\x1b[80;1HHOSTNAME# \x1b[80;1H\x1b[80;20H\x1b[80;1H\x1b[?25h\x1b[80;20H\x1b[1;0H\x1b[1M\x1b[80;1H\x1b[1L\x1b[80;20H\x1b[80;1H\x1b[2K\x1b[80;1H\x1b[?25h\x1b[80;1H\x1b[1;80r\x1b[80;1H\x1b[1;80r\x1b[80;1H\x1b[80;1H\x1b[2K\x1b[80;1H\x1b[?25h\x1b[80;1H\x1b[80;1HHOSTNAME# \x1b[80;1H\x1b[80;20H\x1b[80;1H\x1b[?25h\x1b[80;20H",
-            .startIdx = 0,
-            .expectedNewSize = 110,
+            .start_idx = 0,
+            .expected_new_size = 110,
             .expected = "Your previous successful login (as manager) was on 2024-05-24 11:29:02     \n from X.X.X.X\nHOSTNAME# HOSTNAME# ",
         },
         .{
             .name = "clear screen",
             .haystack = "Last login: Thu Sep 26 10:29:38 2024 \nFOO BAR BAZ.\n\nroot@truenas[~]# \x1B[K\x1B[?2004h\x08ls -al",
-            .startIdx = 0,
-            .expectedNewSize = 75,
+            .start_idx = 0,
+            .expected_new_size = 75,
             .expected = "Last login: Thu Sep 26 10:29:38 2024 \nFOO BAR BAZ.\n\nroot@truenas[~]# ls -al",
         },
         .{
             .name = "powerlevel 10k prompt",
             .haystack = "\x1B[0m\x1B[27m\x1B[24m\x1B[J\x1B[0m\x1B[49m\x1B[39m\x1B[A\x1B[0m\x1B[48;5;238m\x1B[38;5;180m carl@c1-1\x1B[0m\x1B[38;5;180m\x1B[48;5;238m\x1B[48;5;238m\x1B[38;5;180m \x1B[0m\x1B[38;5;180m\x1B[48;5;238m\x1B[48;5;238m\x1B[38;5;246m|\x1B[0m\x1B[38;5;246m\x1B[48;5;238m\x1B[48;5;238m\x1B[38;5;31m \x1B[1m\x1B[38;5;31m\x1B[48;5;238m\x1B[38;5;39m~\x1B[0m\x1B[38;5;39m\x1B[48;5;238m\x1B[48;5;238m\x1B[38;5;31m\x1B[0m\x1B[38;5;31m\x1B[48;5;238m\x1B[48;5;238m\x1B[38;5;31m \x1B[0m\x1B[38;5;31m\x1B[48;5;238m\x1B[49m\x1B[38;5;238m\x1B[0m\x1B[38;5;238m\x1B[49m\x1B[39m\x1B[38;5;242m...........................................\x1B[0m\x1B[38;5;242m\x1B[48;5;238m\x1B[38;5;134m kubernetes-admin@c1\x1B[0m\x1B[38;5;134m\x1B[48;5;238m\x1B[48;5;238m\x1B[38;5;134m\x1B[0m\x1B[38;5;134m\x1B[48;5;238m\x1B[48;5;238m\x1B[38;5;134m \x1B[0m\x1B[38;5;134m\x1B[48;5;238m\x1B[49m\x1B[39m\x1B[0m\x1B[49m\x1B[39m\x1B[0m\x1B[49m\x1B[38;5;76m\x1B[0m\x1B[38;5;76m\x1B[49m\x1B[38;5;76m\x1B[0m\x1B[38;5;76m\x1B[49m\x1B[30m\x1B[0m\x1B[30m\x1B[49m\x1B[39m \x1B[0m\x1B[49m\x1B[39m\x1B[K\x1B[?1h\x1B[?25h\x1B[?2004h",
-            .startIdx = 0,
-            .expectedNewSize = 80,
+            .start_idx = 0,
+            .expected_new_size = 80,
             .expected = " carl@c1-1 | ~ ........................................... kubernetes-admin@c1  ",
         },
         .{
             .name = "multi byte char",
             .haystack = "foo ❯ bar",
-            .startIdx = 0,
-            .expectedNewSize = 11,
+            .start_idx = 0,
+            .expected_new_size = 11,
             .expected = "foo ❯ bar",
         },
         .{
             .name = "eos prompt",
             .haystack = "\x0A\x1B\x5B\x35\x6e\x65\x6F\x73\x31\x3E",
-            .startIdx = 0,
-            .expectedNewSize = 6,
+            .start_idx = 0,
+            .expected_new_size = 6,
             .expected = "\neos1>",
         },
         .{
             .name = "more eos prompt/login",
             .haystack = "Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.\x1B\x4D\x1B\x4D\x1B\x4C \x1B\x4D(admin@localhost) Password: \x1B\x4D\x1B\x4C Last login: Thu Dec 26 22:02:14 2024 from 172.20.20.1\x1B\x4D\x1B\x4D\x1B\x4C \x1B\x5B5neos1>\x1B\x4D\x1B\x4C eos1>",
-            .startIdx = 0,
-            .expectedNewSize = 179,
+            .start_idx = 0,
+            .expected_new_size = 179,
             .expected = "Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts. (admin@localhost) Password:  Last login: Thu Dec 26 22:02:14 2024 from 172.20.20.1 eos1> eos1>",
         },
     };
@@ -447,16 +447,16 @@ test "stripAsciiAndAnsiControlCharsInPlace" {
 
         @memcpy(haystack, case.haystack);
 
-        const actualNewSize = stripAsciiAndAnsiControlCharsInPlace(
+        const actual_new_size = stripAsciiAndAnsiControlCharsInPlace(
             haystack,
-            case.startIdx,
+            case.start_idx,
         );
 
-        try std.testing.expectEqual(case.expectedNewSize, actualNewSize);
+        try std.testing.expectEqual(case.expected_new_size, actual_new_size);
         try thelper.testStrResult(
             "stripAsciiAndAnsiControlCharsInPlace",
             case.name,
-            haystack[0..actualNewSize],
+            haystack[0..actual_new_size],
             case.expected,
         );
     }
@@ -1244,20 +1244,24 @@ test "stripAnsiiControlSequences" {
 }
 
 pub fn stripAsciiAndAnsiControlCharsInFile(
+    io: std.Io,
     f: []const u8,
 ) !void {
-    const cwd = std.fs.cwd();
-    var in = try cwd.openFile(
+    const io_cwd = std.Io.Dir.cwd();
+    var in = try io_cwd.openFile(
+        io,
         f,
         .{
             .mode = .read_only,
         },
     );
-    defer in.close();
+    defer in.close(io);
 
     var r_buffer: [8192]u8 = undefined;
-    var reader = in.reader(&r_buffer);
+    var reader = in.reader(io, &r_buffer);
 
+    // nov 2025, afaik this hasnt been moved to std.Io things yet
+    const cwd = std.fs.cwd();
     var tmp_file = try cwd.createFile(
         "tmp_output",
         .{
@@ -1272,19 +1276,14 @@ pub fn stripAsciiAndAnsiControlCharsInFile(
 
     var buf: [8192]u8 = undefined;
     while (true) {
-        const n = reader.read(&buf) catch |err| {
-            switch (err) {
-                error.EndOfStream => {
-                    break;
-                },
-                else => {
-                    return err;
-                },
-            }
-        };
+        const n = try reader.interface.readSliceShort(&buf);
 
         const new_size = stripAsciiAndAnsiControlCharsInPlace(buf[0..n], 0);
         try writer.interface.writeAll(buf[0..new_size]);
+
+        if (n < 8192) {
+            break;
+        }
     }
 
     try writer.interface.flush();

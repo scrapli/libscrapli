@@ -23,8 +23,8 @@ pub const DefinitionSource = union(enum) {
 };
 
 pub const Config = struct {
-    definition: DefinitionSource,
     logger: ?logging.Logger = null,
+    definition: DefinitionSource,
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
@@ -70,16 +70,18 @@ pub const Options = struct {
 
 pub const Driver = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     log: logging.Logger,
     definition: *platform.Definition,
     host: []const u8,
     port: u16,
     options: *Options,
     session: *session.Session,
-    current_mode: []const u8,
+    current_mode: []const u8 = mode.unknown_mode,
 
     pub fn init(
         allocator: std.mem.Allocator,
+        io: std.Io,
         host: []const u8,
         config: Config,
     ) !*Driver {
@@ -93,14 +95,16 @@ pub const Driver = struct {
         logging.traceWithSrc(log, @src(), "cli.Driver initializing", .{});
 
         const definition = switch (config.definition) {
-            .string => |d| try platform.YamlDefinition.ToDefinition(
+            .string => |d| try platform.YamlDefinition.toDefinition(
                 allocator,
+                io,
                 .{
                     .string = d,
                 },
             ),
-            .file => |d| try platform.YamlDefinition.ToDefinition(
+            .file => |d| try platform.YamlDefinition.toDefinition(
                 allocator,
+                io,
                 .{
                     .file = d,
                 },
@@ -112,6 +116,7 @@ pub const Driver = struct {
 
         d.* = Driver{
             .allocator = allocator,
+            .io = io,
             .log = log,
             .definition = definition,
             .host = host,
@@ -119,22 +124,22 @@ pub const Driver = struct {
             .options = opts,
             .session = try session.Session.init(
                 allocator,
+                io,
                 log,
                 definition.prompt_pattern,
                 opts.session,
                 opts.auth,
                 opts.transport,
             ),
-            .current_mode = mode.unknown_mode,
         };
 
         if (opts.port == null) {
             switch (opts.transport.*) {
-                transport.Kind.bin, transport.Kind.ssh2, transport.Kind.test_ => {
-                    d.port = default_ssh_port;
-                },
                 transport.Kind.telnet => {
                     d.port = default_telnet_port;
+                },
+                else => {
+                    d.port = default_ssh_port;
                 },
             }
         } else {
@@ -153,7 +158,7 @@ pub const Driver = struct {
         self.allocator.destroy(self);
     }
 
-    pub fn NewResult(
+    pub fn newResult(
         self: *Driver,
         allocator: std.mem.Allocator,
         operation_kind: operation.Kind,
@@ -165,6 +170,7 @@ pub const Driver = struct {
 
         return result.Result.init(
             allocator,
+            self.io,
             self.host,
             self.port,
             operation_kind,
@@ -179,7 +185,7 @@ pub const Driver = struct {
     ) !*result.Result {
         self.log.info("cli.Driver open requested", .{});
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.open,
         );
@@ -208,14 +214,14 @@ pub const Driver = struct {
             ),
         );
 
-        if (self.definition.on_open_callback != null or
+        if (self.definition.onOpenCallback != null or
             self.definition.bound_on_open_callback != null)
         {
             self.log.info("cli.Driver open: on open callback set, executing...", .{});
 
-            if (self.definition.on_open_callback != null) {
+            if (self.definition.onOpenCallback) |cb| {
                 try res.recordExtend(
-                    try self.definition.on_open_callback.?(
+                    try cb(
                         self,
                         allocator,
                         options.cancel,
@@ -242,7 +248,7 @@ pub const Driver = struct {
     ) !*result.Result {
         self.log.info("cli.Driver close requested", .{});
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.open,
         );
@@ -251,14 +257,14 @@ pub const Driver = struct {
         var op_buf = std.array_list.Managed(u8).init(allocator);
         defer op_buf.deinit();
 
-        if (self.definition.on_close_callback != null or
+        if (self.definition.onCloseCallback != null or
             self.definition.bound_on_close_callback != null)
         {
             self.log.info("cli.Driver close: on close callback set, executing...", .{});
 
-            if (self.definition.on_open_callback != null) {
+            if (self.definition.onCloseCallback) |cb| {
                 try res.recordExtend(
-                    try self.definition.on_close_callback.?(
+                    try cb(
                         self,
                         allocator,
                         options.cancel,
@@ -287,7 +293,7 @@ pub const Driver = struct {
     ) !*result.Result {
         self.log.info("cli.Driver getPrompt requested", .{});
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.get_prompt,
         );
@@ -323,7 +329,7 @@ pub const Driver = struct {
             );
         }
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.enter_mode,
         );
@@ -498,7 +504,7 @@ pub const Driver = struct {
             .{options.input},
         );
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.send_input,
         );
@@ -559,7 +565,7 @@ pub const Driver = struct {
             ret.deinit();
         }
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.send_inputs,
         );
@@ -602,7 +608,7 @@ pub const Driver = struct {
             .{ options.input, options.response },
         );
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.send_prompted_input,
         );
@@ -650,7 +656,7 @@ pub const Driver = struct {
     ) !*result.Result {
         self.log.info("cli.Driver readAny requested", .{});
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.read_any,
         );
@@ -666,7 +672,7 @@ pub const Driver = struct {
         return res;
     }
 
-    fn _readWithCallbacks(
+    fn innerReadWithCallbacks(
         self: *Driver,
         timer: *std.time.Timer,
         cancel: ?*bool,
@@ -739,7 +745,7 @@ pub const Driver = struct {
 
                 try triggered_callbacks.append(callback.options.name);
 
-                return self._readWithCallbacks(
+                return self.innerReadWithCallbacks(
                     timer,
                     cancel,
                     callbacks,
@@ -763,7 +769,7 @@ pub const Driver = struct {
             .{options.initial_input},
         );
 
-        var res = try self.NewResult(
+        var res = try self.newResult(
             allocator,
             operation.Kind.read_with_callbacks,
         );
@@ -781,7 +787,7 @@ pub const Driver = struct {
         var triggered_callbacks = std.array_list.Managed([]const u8).init(allocator);
         defer triggered_callbacks.deinit();
 
-        try self._readWithCallbacks(
+        try self.innerReadWithCallbacks(
             &t,
             options.cancel,
             options.callbacks,

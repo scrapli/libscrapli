@@ -7,7 +7,6 @@ const std = @import("std");
 const os = @import("builtin").os.tag;
 
 const scrapli = @import("scrapli");
-
 const cli = scrapli.cli;
 const transport = scrapli.transport;
 const ssh2_transport = scrapli.transport_ssh2;
@@ -15,14 +14,13 @@ const telnet_transport = scrapli.transport_telnet;
 const operation = scrapli.cli_operation;
 const result = scrapli.cli_result;
 const flags = scrapli.flags;
-
 const helper = scrapli.test_helper;
 
 const nokia_srlinux_platform_path_from_project_root = "src/tests/fixtures/platform_nokia_srlinux_no_open_close_callbacks.yaml";
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
 fn GetDriver(
-    transportKind: transport.Kind,
+    transport_kind: transport.Kind,
     platform: []const u8,
     username: ?[]const u8,
     key: ?[]const u8,
@@ -41,9 +39,11 @@ fn GetDriver(
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         platform_definition_path = nokia_srlinux_platform_path_from_project_root;
-        config.auth.lookup_map = &.{
-            .{ .key = "login", .value = "NokiaSrl1!" },
-        };
+        config.auth.lookups = .init(
+            &.{
+                .{ .key = "login", .value = "NokiaSrl1!" },
+            },
+        );
 
         if (os == .macos) {
             host = "localhost";
@@ -54,10 +54,12 @@ fn GetDriver(
         }
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
         platform_definition_path = arista_eos_platform_path_from_project_root;
-        config.auth.lookup_map = &.{
-            .{ .key = "login", .value = "admin" },
-            .{ .key = "enable", .value = "libscrapli" },
-        };
+        config.auth.lookups = .init(
+            &.{
+                .{ .key = "login", .value = "admin" },
+                .{ .key = "enable", .value = "libscrapli" },
+            },
+        );
 
         if (os == .macos) {
             host = "localhost";
@@ -103,7 +105,7 @@ fn GetDriver(
         config.auth.password = "__lookup::login";
     }
 
-    switch (transportKind) {
+    switch (transport_kind) {
         .bin,
         => {},
         .ssh2 => {
@@ -124,6 +126,7 @@ fn GetDriver(
 
     return cli.Driver.init(
         std.testing.allocator,
+        std.testing.io,
         host,
         config,
     );
@@ -134,12 +137,12 @@ test "driver open" {
 
     const cases = [_]struct {
         name: []const u8,
-        transportKind: transport.Kind,
+        transport_kind: transport.Kind,
         platform: []const u8,
         username: []const u8,
         key: ?[]const u8 = null,
         passphrase: ?[]const u8 = null,
-        on_open_callback: ?*const fn (
+        onOpenCallback: ?*const fn (
             d: *cli.Driver,
             allocator: std.mem.Allocator,
             cancel: ?*bool,
@@ -147,45 +150,45 @@ test "driver open" {
     }{
         .{
             .name = "simple",
-            .transportKind = transport.Kind.bin,
+            .transport_kind = transport.Kind.bin,
             .platform = "nokia-srlinux",
             .username = "admin",
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.ssh2,
+            .transport_kind = transport.Kind.ssh2,
             .platform = "nokia-srlinux",
             .username = "admin",
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.bin,
+            .transport_kind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin",
         },
         .{
             .name = "simple",
-            .transportKind = transport.Kind.ssh2,
+            .transport_kind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin",
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.bin,
+            .transport_kind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
         },
         .{
             .name = "simple-with-key",
-            .transportKind = transport.Kind.ssh2,
+            .transport_kind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin-sshkey",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key",
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.bin,
+            .transport_kind = transport.Kind.bin,
             .platform = "arista-eos",
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
@@ -193,7 +196,7 @@ test "driver open" {
         },
         .{
             .name = "simple-with-key-with-passphrase",
-            .transportKind = transport.Kind.ssh2,
+            .transport_kind = transport.Kind.ssh2,
             .platform = "arista-eos",
             .username = "admin-sshkey-passphrase",
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
@@ -214,18 +217,18 @@ test "driver open" {
         const golden_filename = try std.fmt.allocPrint(
             std.testing.allocator,
             "src/tests/functional/golden/driver/{s}-{s}-{s}-{s}.txt",
-            .{ test_name, case.name, case.platform, case.transportKind.toString() },
+            .{ test_name, case.name, case.platform, case.transport_kind.toString() },
         );
         defer std.testing.allocator.free(golden_filename);
 
         var d = try GetDriver(
-            case.transportKind,
+            case.transport_kind,
             case.platform,
             case.username,
             case.key,
             case.passphrase,
         );
-        d.definition.on_open_callback = case.on_open_callback;
+        d.definition.onOpenCallback = case.onOpenCallback;
 
         defer d.deinit();
 

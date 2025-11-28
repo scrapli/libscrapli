@@ -8,6 +8,7 @@ const helper = scrapli.test_helper;
 fn GetRecordTestDriver(record_path: []const u8) !*netconf.Driver {
     return netconf.Driver.init(
         std.testing.allocator,
+        std.testing.io,
         "localhost",
         .{
             .port = 22830,
@@ -27,6 +28,7 @@ fn GetRecordTestDriver(record_path: []const u8) !*netconf.Driver {
 fn GetTestDriver(f: []const u8) !*netconf.Driver {
     const d = try netconf.Driver.init(
         std.testing.allocator,
+        std.testing.io,
         "dummy",
         .{
             .port = 22830,

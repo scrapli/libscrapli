@@ -6,9 +6,12 @@
 *.dylib
 *.dylib.o
 
-# jetbrains goodies
+# editor goodies
 .idea
 Zig.iml
+.zed
+.vscode
+.devcontainer
 
 # macos stuff
 .DS_Store
@@ -25,16 +28,13 @@ private/
 .zig-cache
 zig-out
 
-# for notes/stuff/whatever
-.private
-
-# functional testing things (containerlab bin will go away once dind fix is merged and released)
-src/tests/functional/clab/clab-libscrapli
-src/tests/functional/clab/*.bak
-src/tests/functional/clab/launcher/containerlab
-# pcre2 that will be cloned during builds
+# pcre2/openssl that will be cloned during builds
 lib/pcre2/pcre2
+lib/openssl/openssl
 
 # ignore any "main.zig" in this repo, this would be used by `zig build --main` and is used to
 # quickly build a main.zig for testing during development
 /main.zig
+
+# where we mount stuff when running clab bits
+.clab
