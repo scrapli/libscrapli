@@ -20,10 +20,10 @@
             .url = "https://github.com/carlmontanari/zig-yaml/archive/b656227.tar.gz",
             .hash = "zig_yaml-0.2.0-C1161iWvAgCOhFsQPJ88xmxyQJQ1d4FuK_Ezp7OHPM_u",
         },
-        .zlinter = .{
-            .url = "git+https://github.com/kurtwagner/zlinter?ref=master#1924b6116295bd160aba7e6dda351b3d2dab2d17",
-            .hash = "zlinter-0.0.1-OjQ08ZSOCwDMJS6N6HJ-fsxHmKl5upJc7Xv8xm_hetKN",
-        },
+        // .zlinter = .{
+        //     .url = "git+https://github.com/kurtwagner/zlinter?ref=master#1924b6116295bd160aba7e6dda351b3d2dab2d17",
+        //     .hash = "zlinter-0.0.1-OjQ08ZSOCwDMJS6N6HJ-fsxHmKl5upJc7Xv8xm_hetKN",
+        // },
     },
     .paths = .{
         "build.zig",
