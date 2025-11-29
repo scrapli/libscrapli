@@ -332,8 +332,10 @@ pub const FFIOptions = extern struct {
 
                 return o;
             },
-            else => {
-                unreachable;
+            transport.Kind.telnet => {
+                return transport.OptionsInputs{
+                    .telnet = .{},
+                };
             },
         }
     }
