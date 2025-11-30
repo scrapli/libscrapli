@@ -76,6 +76,7 @@ pub const FFIOptions = extern struct {
         operation_max_search_depth: ?*u64 = null,
         record_destination: [*c]const u8 = undefined,
         record_destination_len: usize = 0,
+        recordCallback: ?*const fn (buf: *const []u8) callconv(.c) void = null,
     },
 
     auth: extern struct {
@@ -229,6 +230,10 @@ pub const FFIOptions = extern struct {
         if (self.session.record_destination_len > 0) {
             o.record_destination = .{
                 .f = self.session.record_destination[0..self.session.record_destination_len],
+            };
+        } else if (self.session.recordCallback) |cb| {
+            o.record_destination = .{
+                .cb = cb,
             };
         }
 

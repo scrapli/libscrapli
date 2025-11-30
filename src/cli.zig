@@ -691,6 +691,15 @@ pub const Driver = struct {
             );
 
             for (callbacks) |callback| {
+                self.log.debug(
+                    "cli.Driver readWithCallbacks: checking if callback '{s}' should execute " ++
+                        "based on current buffer '{s}'",
+                    .{
+                        callback.options.name,
+                        bufs.processed.items[buf_pos..],
+                    },
+                );
+
                 const execute = readCallbackShouldExecute(
                     // we look from the last "pos" -> the end
                     bufs.processed.items[buf_pos..],

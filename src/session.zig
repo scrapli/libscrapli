@@ -22,6 +22,79 @@ const ReadThreadState = enum(u8) {
 pub const RecordDestination = union(enum) {
     writer: std.fs.File.Writer,
     f: []const u8,
+    cb: *const fn (buf: *const []u8) callconv(.c) void,
+};
+
+const Recorder = struct {
+    rd: ?RecordDestination,
+    recorder: ?std.fs.File.Writer,
+
+    fn init(rd: ?RecordDestination, buf: []u8) !Recorder {
+        if (rd == null) {
+            return Recorder{
+                .rd = rd,
+                .recorder = null,
+            };
+        }
+
+        switch (rd.?) {
+            .f => {
+                const out_f = try std.fs.cwd().createFile(
+                    rd.?.f,
+                    .{},
+                );
+
+                return Recorder{
+                    .rd = rd,
+                    .recorder = out_f.writer(buf),
+                };
+            },
+            .writer => {
+                return Recorder{
+                    .rd = rd,
+                    .recorder = rd.?.writer,
+                };
+            },
+            .cb => {
+                return Recorder{
+                    .rd = rd,
+                    .recorder = null,
+                };
+            },
+        }
+    }
+
+    fn close(self: *Recorder, io: std.Io) !void {
+        if (self.rd) |rd| {
+            switch (rd) {
+                .f => {
+                    // when just given a file path we'll "own" that lifecycle and close/cleanup
+                    // as well as ensure we strip asci/ansi bits (so the file is easy to read etc.
+                    // and especially for tests!); otherwise we'll leave it to the user
+                    try self.recorder.?.interface.flush();
+                    self.recorder.?.file.close();
+
+                    try ascii.stripAsciiAndAnsiControlCharsInFile(io, rd.f);
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn write(self: *Recorder, buf: []u8) !void {
+        if (self.rd) |rd| {
+            switch (rd) {
+                .f, .writer => {
+                    const r = &self.recorder.?.interface;
+                    try r.writeAll(buf);
+                    try r.flush();
+                },
+                .cb => {
+                    rd.cb(&buf);
+                },
+            }
+        }
+    }
 };
 
 pub const OptionsInputs = struct {
@@ -115,7 +188,7 @@ pub const Session = struct {
     read_thread_errored: bool = false,
 
     recorder_buf: [1024]u8 = undefined,
-    recorder: ?std.fs.File.Writer = null,
+    recorder: Recorder,
 
     compiled_username_pattern: ?*re.pcre2CompiledPattern = null,
     compiled_password_pattern: ?*re.pcre2CompiledPattern = null,
@@ -147,23 +220,6 @@ pub const Session = struct {
 
         const s = try allocator.create(Session);
 
-        var recorder: ?std.fs.File.Writer = null;
-        if (options.record_destination) |rd| {
-            switch (rd) {
-                .f => {
-                    const out_f = try std.fs.cwd().createFile(
-                        rd.f,
-                        .{},
-                    );
-
-                    recorder = out_f.writer(&s.recorder_buf);
-                },
-                .writer => {
-                    recorder = rd.writer;
-                },
-            }
-        }
-
         s.* = Session{
             .allocator = allocator,
             .io = io,
@@ -178,7 +234,7 @@ pub const Session = struct {
                 u8,
                 .dynamic,
             ).init(allocator),
-            .recorder = recorder,
+            .recorder = try Recorder.init(options.record_destination, &s.recorder_buf),
             .prompt_pattern = prompt_pattern,
             .last_consumed_prompt = .{},
         };
@@ -355,20 +411,7 @@ pub const Session = struct {
             self.read_thread = null;
         }
 
-        if (self.options.record_destination) |rd| {
-            switch (rd) {
-                .f => {
-                    // when just given a file path we'll "own" that lifecycle and close/cleanup
-                    // as well as ensure we strip asci/ansi bits (so the file is easy to read etc.
-                    // and especially for tests!); otherwise we'll leave it to the user
-                    try self.recorder.?.interface.flush();
-                    self.recorder.?.file.close();
-
-                    try ascii.stripAsciiAndAnsiControlCharsInFile(self.io, rd.f);
-                },
-                else => {},
-            }
-        }
+        try self.recorder.close(self.io);
 
         self.transport.close();
     }
@@ -404,11 +447,7 @@ pub const Session = struct {
                 .{std.ascii.hexEscape(buf[0..n], .lower)},
             );
 
-            if (self.recorder) |*recorder| {
-                const r = &recorder.interface;
-                try r.writeAll(buf[0..n]);
-                try r.flush();
-            }
+            try self.recorder.write(buf[0..n]);
         }
 
         self.log.info("session.Session read thread stopped", .{});
