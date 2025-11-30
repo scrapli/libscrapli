@@ -265,7 +265,39 @@ export fn ls_session_write_and_return(
             errors.ScrapliError.Operation,
             @src(),
             d.getLogger(),
-            "ffi: error during driver write {any}",
+            "ffi: error during driver write and return {any}",
+            .{err},
+        ) catch {};
+
+        return 1;
+    };
+
+    return 0;
+}
+
+export fn ls_session_write_return(
+    d_ptr: usize,
+) callconv(.c) u8 {
+    var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    // SAFETY: will always be set!
+    var s: *session.Session = undefined;
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            s = rd.session;
+        },
+        .netconf => |rd| {
+            s = rd.session;
+        },
+    }
+
+    s.writeReturn() catch |err| {
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during driver write return {any}",
             .{err},
         ) catch {};
 
