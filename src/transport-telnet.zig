@@ -4,6 +4,7 @@ const bytes = @import("bytes.zig");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
+const transport_socket = @import("transport-socket.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 const control_char_iac: u8 = 255;
@@ -227,34 +228,14 @@ pub const Transport = struct {
     ) !void {
         self.log.info("telnet.Transport open requested", .{});
 
-        var lookup_buf: [16]std.Io.net.HostName.LookupResult = undefined;
-        var lookup_queue = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookup_buf);
-        var canonical_name_buf: [255]u8 = undefined;
-
-        self.io.vtable.netLookup(
-            self.io.userdata,
-            try std.Io.net.HostName.init(host),
-            &lookup_queue,
-            .{
-                .port = port,
-                .canonical_name_buffer = &canonical_name_buf,
-            },
-        );
-
-        const addr = try lookup_queue.getOne(self.io);
-        self.stream = addr.address.connect(
-            self.io,
-            .{
-                .mode = .stream,
-                .protocol = .tcp,
-            },
-        ) catch |err| {
+        self.stream = transport_socket.getStream(self.io, host, port) catch {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "telnet.Transport open: failed connecting to host '{s}', err: {any}",
-                .{ host, err },
+                "ssh2.Transport initSocket: failed initializing socket, " ++
+                    "unable to resolve host",
+                .{},
             );
         };
 

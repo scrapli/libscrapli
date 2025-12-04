@@ -5,6 +5,7 @@ const errors = @import("errors.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
 const strings = @import("strings.zig");
+const transport_socket = @import("transport-socket.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 const c = @cImport(
@@ -669,56 +670,18 @@ pub const Transport = struct {
     ) !void {
         self.log.debug("ssh2.Transport initSocket requested", .{});
 
-        var lookup_buf: [16]std.Io.net.HostName.LookupResult = undefined;
-        var lookup_queue = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookup_buf);
-        var canonica_name_buf: [255]u8 = undefined;
+        const stream = transport_socket.getStream(self.io, host, port) catch {
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "ssh2.Transport initSocket: failed initializing socket, " ++
+                    "unable to resolve host",
+                .{},
+            );
+        };
 
-        self.io.vtable.netLookup(
-            self.io.userdata,
-            try std.Io.net.HostName.init(host),
-            &lookup_queue,
-            .{
-                .port = port,
-                .canonical_name_buffer = &canonica_name_buf,
-            },
-        );
-
-        while (true) {
-            const addr = lookup_queue.getOne(self.io) catch {
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "ssh2.Transport initSocket: failed initializing socket, " ++
-                        "all resolved addresses failed",
-                    .{},
-                );
-            };
-
-            const stream = addr.address.connect(
-                self.io,
-                .{
-                    .mode = .stream,
-                    .protocol = .tcp,
-                },
-            ) catch {
-                // copying this note from OG scrapli as the same thing is true here
-                // It seems that very occasionally when resolving a hostname (i.e. localhost during
-                // functional tests against vrouter devices), a v6 address family will be the first
-                // af the socket getaddrinfo returns, in this case, because the qemu hostfwd is not
-                // listening on ::1, instead only listening on 127.0.0.1 the connection will fail.
-                // Presumably this is something that can happen in real life too... something gets
-                // resolved with a v6 address but is denying connections or just not listening on
-                // that ipv6 address. This little connect wrapper is intended to deal with these
-                //  weird scenarios.
-
-                continue;
-            };
-
-            self.socket = stream.socket.handle;
-
-            return;
-        }
+        self.socket = stream.socket.handle;
     }
 
     fn initSession(
