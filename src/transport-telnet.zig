@@ -26,9 +26,11 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
+/// Holds option inputs for the telnet transport.
 // zlinter-disable-next-line declaration_naming
 pub const OptionsInputs = struct {};
 
+/// Holds telnet transport options.
 pub const Options = struct {
     allocator: std.mem.Allocator,
 

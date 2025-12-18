@@ -19,6 +19,7 @@ const ReadThreadState = enum(u8) {
     stop,
 };
 
+/// Defines possible destinations for "recording" session output.
 pub const RecordDestination = union(enum) {
     writer: std.fs.File.Writer,
     f: []const u8,
@@ -97,6 +98,7 @@ const Recorder = struct {
     }
 };
 
+/// Holds option inputs for the session.
 pub const OptionsInputs = struct {
     read_size: u64 = 4_096,
     read_min_delay_ns: u64 = 5_000,
@@ -107,6 +109,7 @@ pub const OptionsInputs = struct {
     record_destination: ?RecordDestination = null,
 };
 
+/// Holds session options.
 pub const Options = struct {
     allocator: std.mem.Allocator,
     read_size: u64 = 4_096,
@@ -117,6 +120,8 @@ pub const Options = struct {
     operation_max_search_depth: u64 = 512,
     record_destination: ?RecordDestination = null,
 
+    /// Initializes the session options. Heap allocating fields we need to live as long as the
+    /// session object so we always have those available.
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
@@ -150,6 +155,7 @@ pub const Options = struct {
         return o;
     }
 
+    /// Deinitializes the session options.
     pub fn deinit(self: *Options) void {
         if (&self.return_char[0] != &default_return_char[0]) {
             self.allocator.free(self.return_char);
@@ -168,6 +174,10 @@ pub const Options = struct {
     }
 };
 
+/// Session is the thing that wraps the transport and provides some logic for taking data from the
+/// transport and storing it until a user requests that data. It also provides conveinence wrappers
+/// for things like sending a return character, handling possible "in session" authentication,
+/// and sending inputs and reading until the next "prompt" is available.
 pub const Session = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -199,6 +209,7 @@ pub const Session = struct {
 
     last_consumed_prompt: std.ArrayList(u8),
 
+    /// Initializes the session object.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -289,6 +300,7 @@ pub const Session = struct {
         return s;
     }
 
+    /// Deinitializes the session object.
     pub fn deinit(self: *Session) void {
         logging.traceWithSrc(self.log, @src(), "session.Session deinitializing", .{});
 
@@ -332,6 +344,8 @@ pub const Session = struct {
         self.allocator.destroy(self);
     }
 
+    /// Opens the session object, starting the background read thread, and ensuring the underlying
+    /// transport is opened, authenticated, and ready to accept reads/writes.
     pub fn open(
         self: *Session,
         allocator: std.mem.Allocator,
@@ -387,6 +401,8 @@ pub const Session = struct {
         );
     }
 
+    /// Closes the session, stopping the read thread, unblocking any in flight reads of the
+    /// transport, flushing the recordre, and finally closing the transport object itself.
     pub fn close(self: *Session) !void {
         self.log.info("session.Session close requested", .{});
 
@@ -453,6 +469,7 @@ pub const Session = struct {
         self.log.info("session.Session read thread stopped", .{});
     }
 
+    /// Reads from the internal queue into the given buffer.
     pub fn read(self: *Session, buf: []u8) !usize {
         self.read_lock.lock();
         defer self.read_lock.unlock();
@@ -466,6 +483,8 @@ pub const Session = struct {
         return self.read_queue.read(buf);
     }
 
+    /// Writes the given buffer to the transport -- redacted ensures we do not show the input in
+    /// the logging output.
     pub fn write(self: *Session, buf: []const u8, redacted: bool) !void {
         self.log.info("session.Session write requested", .{});
 
@@ -478,12 +497,14 @@ pub const Session = struct {
         try self.transport.write(buf);
     }
 
+    /// Writes the configured return character to the transport.
     pub fn writeReturn(self: *Session) !void {
         self.log.info("session.Session writeReturn requested", .{});
 
         try self.write(self.options.return_char, false);
     }
 
+    /// Writes the given buffer to the transport, then sends the return character.
     pub fn writeAndReturn(
         self: *Session,
         buf: []const u8,
@@ -758,6 +779,8 @@ pub const Session = struct {
         return new_val;
     }
 
+    /// Reads until cancellation or timeout exceeded, or, more preferrably, until the expected
+    /// output is seen in the transport output.
     pub fn readTimeout(
         self: *Session,
         timer: *std.time.Timer,
@@ -857,6 +880,7 @@ pub const Session = struct {
         }
     }
 
+    /// Reads any amount of content out of the transport.
     pub fn readAny(
         self: *Session,
         allocator: std.mem.Allocator,
@@ -881,6 +905,8 @@ pub const Session = struct {
         return bufs.toOwnedSlices();
     }
 
+    /// Gets the current "prompt" from the device -- for Cli connections usually -- the prompt is
+    /// defined by the prompt pattern passed in from the higher level Cli or Netconf object.
     pub fn getPrompt(
         self: *Session,
         allocator: std.mem.Allocator,
@@ -1000,6 +1026,11 @@ pub const Session = struct {
         return match_indexes;
     }
 
+    /// Sends the given input to the transport, reading until the input is written, then sending
+    /// return, then reading until the next prompt is read. It returns two buffers -- the "raw"
+    /// buffer, that is the unprocessed content that we read from the device, and the "processed"
+    /// buffer, that is the content that was processed -- i.e. had ascii/ansi control chars
+    /// removed to give only human readable text output.
     pub fn sendInput(
         self: *Session,
         allocator: std.mem.Allocator,
@@ -1066,6 +1097,11 @@ pub const Session = struct {
         return bufs.toOwnedSlices();
     }
 
+    /// Sends an input to the device -- an input that initiates some kind of "prompted" response by
+    /// the user. Typically this is used for writing something like "enable" or "sudo su" and
+    /// handling the password prompt that the device returns, but it can be used to handle anything
+    /// where a user sends input and a non-standard (meaning not matchable by the normal prompt
+    /// pattern) is returned which then requires another input/action from the user.
     pub fn sendPromptedInput(
         self: *Session,
         allocator: std.mem.Allocator,

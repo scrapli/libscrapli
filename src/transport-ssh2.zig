@@ -284,6 +284,7 @@ const ProxyWrapper = struct {
     pipe_to_channel_thread: ?std.Thread = null,
     channel_to_pipe_thread: ?std.Thread = null,
 
+    /// Initializes the ssh2 transport proxy wrapper.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -301,11 +302,14 @@ const ProxyWrapper = struct {
         return pl;
     }
 
+    /// Deinitializes the ssh2 transport proxy wrapper.
     pub fn deinit(self: *ProxyWrapper) void {
         std.posix.close(self.remote_fd);
         self.allocator.destroy(self);
     }
 
+    /// Runs the proxy wrapper -- this is responsible for piping the data between the parent
+    /// session and the proxied one.
     pub fn run(
         self: *ProxyWrapper,
         channel: *c.LIBSSH2_CHANNEL,
@@ -332,6 +336,7 @@ const ProxyWrapper = struct {
         );
     }
 
+    /// Stops piping data between the parent session and the proxied one.
     pub fn stop(self: *ProxyWrapper) void {
         self.stop_flag.store(true, std.builtin.AtomicOrder.unordered);
 
@@ -443,6 +448,8 @@ const ProxyWrapper = struct {
     }
 };
 
+/// Holds options related to the proxy jump target host -- that is, the host that you jump to from
+/// the primary session/host.
 pub const ProxyJumpOptions = struct {
     host: []const u8,
     port: u16 = 22,
@@ -453,6 +460,7 @@ pub const ProxyJumpOptions = struct {
     libssh2_trace: bool = false,
 };
 
+/// Holds option inputs for the ssh2 transport.
 pub const OptionsInputs = struct {
     known_hosts_path: ?[]const u8 = null,
     libssh2_trace: bool = false,
@@ -460,6 +468,7 @@ pub const OptionsInputs = struct {
     proxy_jump_options: ?ProxyJumpOptions = null,
 };
 
+/// Holds ssh2 transport options.
 pub const Options = struct {
     allocator: std.mem.Allocator,
     known_hosts_path: ?[]const u8,
@@ -467,6 +476,7 @@ pub const Options = struct {
     netconf: bool,
     proxy_jump_options: ?ProxyJumpOptions,
 
+    /// Initializes the ssh2 options.
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
@@ -482,11 +492,13 @@ pub const Options = struct {
         return o;
     }
 
+    /// Deinitializes the ssh2 options.
     pub fn deinit(self: *Options) void {
         self.allocator.destroy(self);
     }
 };
 
+/// Is the ssh2 transport object.
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -512,6 +524,7 @@ pub const Transport = struct {
     proxy_channel: ?*c.LIBSSH2_CHANNEL = null,
     proxy_wrapper: ?*ProxyWrapper = null,
 
+    /// Initializes the ssh2 transport.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -552,6 +565,7 @@ pub const Transport = struct {
         return t;
     }
 
+    /// Deinitializes the ssh2 transport.
     pub fn deinit(self: *Transport) void {
         logging.traceWithSrc(self.log, @src(), "ssh2.Transport deinitializing", .{});
 
@@ -578,6 +592,7 @@ pub const Transport = struct {
         self.allocator.destroy(self);
     }
 
+    /// Opens the ssh2 transport object.
     pub fn open(
         self: *Transport,
         timer: *std.time.Timer,
@@ -1601,6 +1616,7 @@ pub const Transport = struct {
         }
     }
 
+    /// Closes the ssh2 transport.
     pub fn close(self: *Transport) void {
         self.log.info("ssh2.Transport close requested", .{});
 
@@ -1706,6 +1722,8 @@ pub const Transport = struct {
         }
     }
 
+    /// Writes content to the transport session -- dispatches to the appropriate write method based
+    /// on being a "normal" or a proxied connection.
     pub fn write(self: *Transport, buf: []const u8) !void {
         self.log.info("ssh2.Transport write requested", .{});
 
@@ -1806,6 +1824,8 @@ pub const Transport = struct {
         return @intCast(n);
     }
 
+    /// Reads content from the transport session -- dispatches to the appropriate write method based
+    /// on being a "normal" or a proxied connection.
     pub fn read(self: *Transport, buf: []u8) !usize {
         self.log.debug("ssh2.Transport read requested", .{});
 
@@ -1816,6 +1836,7 @@ pub const Transport = struct {
         }
     }
 
+    /// Unblocks any in progress reads.
     pub fn unblock(self: *Transport) !void {
         try self.waiter.unblock();
     }

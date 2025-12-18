@@ -7,12 +7,15 @@ const transport_ssh2 = @import("transport-ssh2.zig");
 const transport_telnet = @import("transport-telnet.zig");
 const transport_test = @import("transport-test.zig");
 
+/// Holds all the possible transportation kinds.
 pub const Kind = enum {
     bin,
     telnet,
     ssh2,
     test_,
 
+    /// Returns the nice string name of the transport - cant use the enum tag because of the _ in
+    /// the test transport name to not conflict with the builtin of course.
     pub fn toString(self: Kind) []const u8 {
         switch (self) {
             .bin, .telnet, .ssh2 => {
@@ -25,6 +28,7 @@ pub const Kind = enum {
     }
 };
 
+/// Is a tagged union holding all the possible transportation kinds.
 pub const Implementation = union(Kind) {
     bin: *transport_bin.Transport,
     telnet: *transport_telnet.Transport,
@@ -32,6 +36,7 @@ pub const Implementation = union(Kind) {
     test_: *transport_test.Transport,
 };
 
+/// Holds option inputs for the transport.
 pub const OptionsInputs = union(Kind) {
     bin: transport_bin.OptionsInputs,
     telnet: transport_telnet.OptionsInputs,
@@ -39,6 +44,7 @@ pub const OptionsInputs = union(Kind) {
     test_: transport_test.OptionsInputs,
 };
 
+/// Holds transport options.
 pub const Options = union(Kind) {
     bin: *transport_bin.Options,
     telnet: *transport_telnet.Options,

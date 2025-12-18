@@ -83,6 +83,8 @@ fn processCommon(
     return [2][]const u8{ _actual, _expected };
 }
 
+/// Processes the given actual, applying all required normalize funcs, then compares the processed
+/// actual to the loaded golden content.
 pub fn processFixutreTestStrResult(
     test_name: []const u8,
     case_name: []const u8,
@@ -107,6 +109,9 @@ pub fn processFixutreTestStrResult(
     );
 }
 
+/// Processes the given actual, applying all required normalize funcs, then compares the processed
+/// actual to the loaded golden content. Compares "roughly" meaning all actual should be in the
+/// golden in the same order but may have characters interrupting the actual.
 pub fn processFixutreTestStrResultRoughly(
     test_name: []const u8,
     case_name: []const u8,
@@ -131,6 +136,7 @@ pub fn processFixutreTestStrResultRoughly(
     );
 }
 
+/// Asserts the given actual string matches the expected string.
 pub fn testStrResult(
     test_name: []const u8,
     case_name: []const u8,
@@ -166,6 +172,7 @@ pub fn testStrResult(
     return error.AssertionFailed;
 }
 
+/// Asserts the given actual string roughly matches the expected string.
 pub fn testStrResultRoughly(
     test_name: []const u8,
     case_name: []const u8,
@@ -538,7 +545,7 @@ fn printIndicatorLine(source: []const u8, indicator_index: usize) void {
         std.debug.print("^ ('\\x{x:0>2}')\n", .{source[indicator_index]});
 }
 
-// conveinence func for initializing arraylists for tests
+/// Conveinence func for initializing arraylists for tests
 pub fn inlineInitArrayList(
     allocator: std.mem.Allocator,
     comptime T: type,

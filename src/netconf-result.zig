@@ -86,6 +86,7 @@ test "getSubscriptionId" {
     }
 }
 
+/// Holds result information for Netconf opereations.
 pub const Result = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -110,6 +111,7 @@ pub const Result = struct {
     result_warning_messages: std.ArrayList([]const u8),
     result_error_messages: std.ArrayList([]const u8),
 
+    /// Initializes the result object.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -145,6 +147,7 @@ pub const Result = struct {
         return r;
     }
 
+    /// Deinitializes the reuslt object freeing all allocated bits.
     pub fn deinit(
         self: *Result,
     ) void {
@@ -332,6 +335,8 @@ pub const Result = struct {
         return secs_rounded;
     }
 
+    /// Gets the warnings size, used for ensuring we have properly sized buffers when passing a
+    /// result out of zig into the ffi layer.
     pub fn getWarningsLen(self: *Result) usize {
         var out_size: usize = 0;
 
@@ -347,6 +352,8 @@ pub const Result = struct {
         return out_size;
     }
 
+    /// Gets the errors size, used for ensuring we have properly sized buffers when passing a
+    /// result out of zig into the ffi layer.
     pub fn getErrorsLen(self: *Result) usize {
         var out_size: usize = 0;
 

@@ -3,10 +3,12 @@ const std = @import("std");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 
+/// Holds option inputs for the test transport.
 pub const OptionsInputs = struct {
     f: ?[]const u8 = null,
 };
 
+/// Holds test transport options.
 pub const Options = struct {
     allocator: std.mem.Allocator,
     f: ?[]const u8,

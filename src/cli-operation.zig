@@ -1,8 +1,10 @@
 const cli = @import("cli.zig");
 const mode = @import("cli-mode.zig");
 
+/// Is the max amount of read callbacks we support, static so we can do things without allocations.
 pub const max_ffi_read_with_callbacks_callbacks = 32;
 
+/// Kind defines the cli operation kinds.
 pub const Kind = enum {
     open,
     on_open,
@@ -17,33 +19,43 @@ pub const Kind = enum {
     read_with_callbacks,
 };
 
+/// Controls how libscrapli processes inputs -- exact means we check for exactly the given input in
+/// the output of the channel, fuzzy means all input chars in order but they can be interrupted with
+/// other content in the channel, and ignore of course ignores the input and simply sends the return
+/// without checking.
 pub const InputHandling = enum {
     exact,
     fuzzy,
     ignore,
 };
 
+/// Holds options for opening a connection.
 pub const OpenOptions = struct {
     cancel: ?*bool = null,
 };
 
+/// Holds options for closing a connection.
 pub const CloseOptions = struct {
     cancel: ?*bool = null,
 };
 
+/// Holds options for the ReadAny operation.
 pub const ReadAnyOptions = struct {
     cancel: ?*bool = null,
 };
 
+/// Holds options for the GetPrompt operation.
 pub const GetPromptOptions = struct {
     cancel: ?*bool = null,
 };
 
+/// Holds options for the EnterMode operation.
 pub const EnterModeOptions = struct {
     cancel: ?*bool = null,
     requested_mode: []const u8,
 };
 
+/// Holds options for the SendInput operation.
 pub const SendInputOptions = struct {
     cancel: ?*bool = null,
     input: []const u8,
@@ -61,6 +73,7 @@ pub const SendInputOptions = struct {
     stop_on_indicated_failure: bool = true,
 };
 
+/// Holds options for the SendInputs (plural) operation.
 pub const SendInputsOptions = struct {
     cancel: ?*bool = null,
     inputs: []const []const u8,
@@ -78,6 +91,7 @@ pub const SendInputsOptions = struct {
     stop_on_indicated_failure: bool = true,
 };
 
+/// Holds options for the SendPromptedInput operation.
 pub const SendPromptedInputOptions = struct {
     cancel: ?*bool = null,
     input: []const u8,
@@ -96,6 +110,7 @@ pub const SendPromptedInputOptions = struct {
     abort_input: ?[]const u8 = null,
 };
 
+/// Holds options for a ReadCallback -- used with ReadWithCallbacks.
 pub const ReadCallbackOptions = struct {
     name: []const u8,
     // contains/contains_pattern are mutually exclusive -- if contains is set we use/check that
@@ -113,11 +128,13 @@ pub const ReadCallbackOptions = struct {
     completes: bool = false,
 };
 
+/// Holds a callback and it's options -- used with ReadWithCallbacks.
 pub const ReadCallback = struct {
     options: ReadCallbackOptions,
     callback: *const fn (*cli.Driver) anyerror!void,
 };
 
+/// Holds options for a ReadWithCallbacks operation.
 pub const ReadWithCallbacksOptions = struct {
     cancel: ?*bool = null,
     initial_input: ?[]const u8 = null,

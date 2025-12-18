@@ -3,6 +3,7 @@ const std = @import("std");
 const bytes = @import("bytes.zig");
 const operation = @import("cli-operation.zig");
 
+/// Holds result information for Cli opereations.
 pub const Result = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -61,6 +62,7 @@ pub const Result = struct {
         return res;
     }
 
+    /// Deinitializes the Result object, freeing all heap allocated bits.
     pub fn deinit(
         self: *Result,
     ) void {
@@ -80,6 +82,7 @@ pub const Result = struct {
         self.allocator.destroy(self);
     }
 
+    /// Records an entry in the parent result.
     pub fn record(
         self: *Result,
         data: struct {
@@ -152,6 +155,7 @@ pub const Result = struct {
         self.allocator.destroy(res);
     }
 
+    /// Returns the elapsed time in seconds.
     pub fn elapsedTimeSeconds(
         self: *Result,
     ) f64 {
@@ -186,6 +190,8 @@ pub const Result = struct {
         return secs_rounded;
     }
 
+    /// Gets the input length, used for ensuring we have properly sized buffers when passing a
+    /// result out of zig into the ffi layer.
     pub fn getInputLen(
         self: *Result,
         options: struct {
@@ -206,6 +212,8 @@ pub const Result = struct {
         return out_size;
     }
 
+    /// Gets the raw result length, used for ensuring we have properly sized buffers when passing a
+    /// result out of zig into the ffi layer.
     pub fn getResultRawLen(
         self: *Result,
         options: struct {
@@ -259,6 +267,8 @@ pub const Result = struct {
         return out;
     }
 
+    /// Gets the result length, used for ensuring we have properly sized buffers when passing a
+    /// result out of zig into the ffi layer.
     pub fn getResultLen(
         self: *Result,
         options: struct {

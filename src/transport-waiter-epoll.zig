@@ -6,11 +6,13 @@ const c = @cImport({
     @cInclude("sys/eventfd.h");
 });
 
+/// Is the epoll (linux) waiter for the transports.
 pub const EpollWaiter = struct {
     allocator: std.mem.Allocator,
     ep: std.posix.fd_t,
     ev: std.posix.fd_t,
 
+    /// Initializes the epoll waiter.
     pub fn init(allocator: std.mem.Allocator) !*EpollWaiter {
         const w = try allocator.create(EpollWaiter);
 
@@ -34,6 +36,7 @@ pub const EpollWaiter = struct {
         return w;
     }
 
+    /// Deinitializes the epoll waiter.
     pub fn deinit(self: *EpollWaiter) void {
         _ = std.os.linux.close(self.ep);
         _ = std.os.linux.close(self.ev);
@@ -41,6 +44,7 @@ pub const EpollWaiter = struct {
         self.allocator.destroy(self);
     }
 
+    /// Waits until the given fd has something to read, or if the fd is unblocked.
     pub fn wait(self: EpollWaiter, fd: std.posix.fd_t) !void {
         var event = std.os.linux.epoll_event{
             .events = std.os.linux.EPOLL.IN,
@@ -59,6 +63,7 @@ pub const EpollWaiter = struct {
         _ = std.os.linux.epoll_wait(self.ep, &out, 1, -1);
     }
 
+    /// Unblocks the waiter when it is waiting.
     pub fn unblock(self: EpollWaiter) !void {
         const val: u64 = 1;
         _ = c.write(self.ev, &val, @sizeOf(u64));

@@ -22,6 +22,8 @@ const examples: []const []const u8 = &.{
     "basic-netconf-usage",
 };
 
+/// libscraplis build instructions -- builds the shared libraries, examples, tests, checker,
+/// linter, and a "main" exe if requested.
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -41,7 +43,7 @@ pub fn build(b: *std.Build) !void {
     );
 
     try buildCheck(b, scrapli);
-    // try buildZlinter(b);
+    try buildZlinter(b);
     try buildTests(b, scrapli);
     try buildMain(b, target, optimize, scrapli);
     try buildExamples(b, target, optimize, scrapli);
@@ -186,6 +188,8 @@ fn buildZlinter(
                         b.path(".private/"),
                         b.path("main.zig"),
                         b.path("lib/"),
+                        b.path("examples/"),
+                        b.path("src/test-runner.zig"),
                     },
                 },
             );
@@ -201,6 +205,42 @@ fn buildZlinter(
                             },
                             .{
                                 .exclude_export = true,
+                            },
+                        );
+                    },
+                    .field_ordering => {
+                        builder.addRule(
+                            .{
+                                .builtin = .field_ordering,
+                            },
+                            .{
+                                .enum_field_order = .{
+                                    .order = .alphabetical_ascending,
+                                    .severity = .off,
+                                },
+                            },
+                        );
+                    },
+                    .no_inferred_error_unions => {
+                        builder.addRule(
+                            .{
+                                .builtin = .no_inferred_error_unions,
+                            },
+                            .{
+                                .severity = .off,
+                            },
+                        );
+                    },
+                    .declaration_naming => {
+                        builder.addRule(
+                            .{
+                                .builtin = .declaration_naming,
+                            },
+                            .{
+                                .decl_name_min_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
                             },
                         );
                     },

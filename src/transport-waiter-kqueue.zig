@@ -2,11 +2,13 @@ const std = @import("std");
 
 const unblock_ident = 1;
 
+/// Is the kqueue (darwin) waiter for the transports.
 pub const KqueueWaiter = struct {
     allocator: std.mem.Allocator,
     kq: std.posix.fd_t,
     fd: ?std.posix.fd_t = null,
 
+    /// Initializes the kqueue waiter.
     pub fn init(allocator: std.mem.Allocator) !*KqueueWaiter {
         const w = try allocator.create(KqueueWaiter);
 
@@ -36,6 +38,7 @@ pub const KqueueWaiter = struct {
         return w;
     }
 
+    /// Deinitializes the kqueue waiter.
     pub fn deinit(self: *KqueueWaiter) void {
         std.posix.close(self.kq);
         self.allocator.destroy(self);
@@ -61,6 +64,7 @@ pub const KqueueWaiter = struct {
         );
     }
 
+    /// Waits until the given fd has something to read, or if the fd is unblocked.
     pub fn wait(self: *KqueueWaiter, fd: std.posix.fd_t) !void {
         if (self.fd == null) {
             try self.registerFd(fd);
@@ -101,6 +105,7 @@ pub const KqueueWaiter = struct {
         }
     }
 
+    /// Unblocks the waiter when it is waiting.
     pub fn unblock(self: *KqueueWaiter) !void {
         const event = std.posix.Kevent{
             .ident = unblock_ident,

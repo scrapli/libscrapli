@@ -20,6 +20,7 @@ const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
 
+/// Holds option inputs for the bin transport.
 pub const OptionsInputs = struct {
     bin: []const u8 = default_ssh_bin,
 
@@ -41,6 +42,7 @@ pub const OptionsInputs = struct {
     netconf: bool = false,
 };
 
+/// Holds bin transport options.
 pub const Options = struct {
     allocator: std.mem.Allocator,
     bin: []const u8,
