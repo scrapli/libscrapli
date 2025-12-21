@@ -40,23 +40,6 @@ pub const delimiter_version_1_1 = "##";
 pub const version_1_0_capability_name = "urn:ietf:params:netconf:base:1.0";
 pub const version_1_1_capability_name = "urn:ietf:params:netconf:base:1.1";
 
-const version_1_0_capability =
-    \\<?xml version="1.0" encoding="utf-8"?>
-    \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-    \\  <capabilities>
-    \\      <capability>urn:ietf:params:netconf:base:1.0</capability>
-    \\  </capabilities>
-    \\</hello>]]>]]>
-;
-const version_1_1_capability =
-    \\<?xml version="1.0" encoding="utf-8"?>
-    \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-    \\  <capabilities>
-    \\      <capability>urn:ietf:params:netconf:base:1.1</capability>
-    \\  </capabilities>
-    \\</hello>]]>]]>
-;
-
 const base_capability_name = "urn:ietf:params:xml:ns:netconf:base:1.0";
 const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-defaults:1.0";
 const validate_capability_name = "urn:ietf:params:xml:ns:netconf:capability:validate:1.0";
@@ -70,6 +53,11 @@ const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 
+pub const AdditionalCapabilitiesCallback = *const fn (
+    server_capabilities: ?*std.ArrayList(Capability),
+    negotiated_version: operation.Version,
+) ?*std.ArrayList([]const u8);
+
 pub const Config = struct {
     logger: ?logging.Logger = null,
     port: ?u16 = null,
@@ -79,6 +67,7 @@ pub const Config = struct {
     error_tag: ?[]const u8 = null,
     preferred_version: ?operation.Version = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
+    additional_capabilities_callback: ?AdditionalCapabilitiesCallback = null,
 };
 
 pub const Options = struct {
@@ -91,6 +80,7 @@ pub const Options = struct {
     error_tag: []const u8 = operation.default_rpc_error_tag,
     preferred_version: ?operation.Version = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
+    additional_capabilities_callback: ?AdditionalCapabilitiesCallback = null,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
         const o = try allocator.create(Options);
@@ -108,6 +98,7 @@ pub const Options = struct {
             ),
             .preferred_version = config.preferred_version,
             .message_poll_interval_ns = config.message_poll_interval_ns,
+            .additional_capabilities_callback = config.additional_capabilities_callback,
         };
 
         o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
@@ -826,16 +817,69 @@ pub const Driver = struct {
         }
     }
 
+    fn buildClientCapabilitiesElem(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+    ) ![]const u8 {
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
+
+        var writer: xml.Writer = .init(self.allocator, &output.writer, .{ .indent = "  " });
+        defer writer.deinit();
+
+        try writer.xmlDeclaration("UTF-8", null);
+        try writer.elementStart("hello");
+        try writer.bindNs("", base_capability_name);
+
+        try writer.elementStart("capabilities");
+
+        try writer.elementStart("capability");
+        if (self.negotiated_version == .version_1_1) {
+            try writer.text(version_1_1_capability_name);
+        } else {
+            try writer.text(version_1_0_capability_name);
+        }
+        try writer.elementEnd();
+
+        if (self.options.additional_capabilities_callback) |cb| {
+            const caps_ptr: ?*std.ArrayList(Capability) = if (self.server_capabilities) |*sc| sc else null;
+            const additional_caps_ptr = cb(caps_ptr, self.negotiated_version);
+
+            if (additional_caps_ptr) |ac| {
+                defer {
+                    for (ac.items) |cap| {
+                        self.allocator.free(cap);
+                    }
+                    ac.deinit(self.allocator);
+                    self.allocator.destroy(ac);
+                }
+
+                for (ac.items) |cap| {
+                    try writer.elementStart("capability");
+                    try writer.text(cap);
+                    try writer.elementEnd();
+                }
+            }
+        }
+
+        try writer.elementEnd();
+        try writer.elementEnd();
+        try writer.eof();
+
+        return std.fmt.allocPrint(
+            allocator,
+            "{s}{s}",
+            .{ output.written(), delimiter_version_1_0 },
+        );
+    }
+
     fn sendClientCapabilities(
         self: *Driver,
     ) !void {
         self.log.info("netconf.Driver sendClientCapabilities requested", .{});
 
-        var caps: []const u8 = version_1_0_capability;
-
-        if (self.negotiated_version == .version_1_1) {
-            caps = version_1_1_capability;
-        }
+        const caps = try self.buildClientCapabilitiesElem(self.allocator);
+        defer self.allocator.free(caps);
 
         try self.session.writeAndReturn(caps, false);
     }
@@ -2753,6 +2797,130 @@ pub const Driver = struct {
         }
     }
 };
+
+test "buildClientCapabilitiesElem" {
+    const test_name = "buildClientCapabilitiesElem";
+
+    const cases = [_]struct {
+        name: []const u8,
+        version: operation.Version,
+        driver_config: Config,
+        expected: []const u8,
+    }{
+        .{
+            .name = "simple-1.0",
+            .version = .version_1_0,
+            .driver_config = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+            \\  <capabilities>
+            \\    <capability>urn:ietf:params:netconf:base:1.0</capability>
+            \\  </capabilities>
+            \\</hello>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "simple-1.1",
+            .version = .version_1_1,
+            .driver_config = .{},
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+            \\  <capabilities>
+            \\    <capability>urn:ietf:params:netconf:base:1.1</capability>
+            \\  </capabilities>
+            \\</hello>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "with-additional-capabilities-1.1",
+            .version = .version_1_1,
+            .driver_config = .{
+                .additional_capabilities_callback = struct {
+                    fn callback(
+                        server_capabilities: ?*std.ArrayList(Capability),
+                        negotiated_version: operation.Version,
+                    ) ?*std.ArrayList([]const u8) {
+                        _ = server_capabilities;
+                        _ = negotiated_version;
+                        var list = std.testing.allocator.create(std.ArrayList([]const u8)) catch unreachable;
+                        list.* = .{};
+                        list.append(std.testing.allocator, std.testing.allocator.dupe(u8, "cap1") catch unreachable) catch unreachable;
+                        list.append(std.testing.allocator, std.testing.allocator.dupe(u8, "cap2") catch unreachable) catch unreachable;
+                        return list;
+                    }
+                }.callback,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+            \\  <capabilities>
+            \\    <capability>urn:ietf:params:netconf:base:1.1</capability>
+            \\    <capability>cap1</capability>
+            \\    <capability>cap2</capability>
+            \\  </capabilities>
+            \\</hello>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "with-additional-capabilities-1.0",
+            .version = .version_1_0,
+            .driver_config = .{
+                .additional_capabilities_callback = struct {
+                    fn callback(
+                        server_capabilities: ?*std.ArrayList(Capability),
+                        negotiated_version: operation.Version,
+                    ) ?*std.ArrayList([]const u8) {
+                        _ = server_capabilities;
+                        _ = negotiated_version;
+                        var list = std.testing.allocator.create(std.ArrayList([]const u8)) catch unreachable;
+                        list.* = .{};
+                        list.append(std.testing.allocator, std.testing.allocator.dupe(u8, "cap") catch unreachable) catch unreachable;
+                        return list;
+                    }
+                }.callback,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?>
+            \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+            \\  <capabilities>
+            \\    <capability>urn:ietf:params:netconf:base:1.0</capability>
+            \\    <capability>cap</capability>
+            \\  </capabilities>
+            \\</hello>
+            \\]]>]]>
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            std.testing.io,
+            "localhost",
+            case.driver_config,
+        );
+        defer d.deinit();
+
+        d.negotiated_version = case.version;
+
+        const actual = try d.buildClientCapabilitiesElem(
+            std.testing.allocator,
+        );
+        defer std.testing.allocator.free(actual);
+
+        try test_helper.testStrResult(
+            test_name,
+            case.name,
+            actual,
+            case.expected,
+        );
+    }
+}
 
 test "processFoundMessageIds" {
     const cases = [_]struct {
