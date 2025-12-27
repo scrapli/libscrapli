@@ -53,6 +53,7 @@ fn libssl(
             .strip = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         },
     );
     lib_mod.addIncludePath(b.path("openssl/"));
@@ -164,7 +165,6 @@ fn libssl(
         },
     );
     lib.pie = true;
-    lib.linkLibC();
     if (lib.rootModuleTarget().isDarwinLibC()) {
         lib_mod.addIncludePath(b.path("include"));
     }
@@ -183,6 +183,7 @@ fn libcrypto(
             .strip = true,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         },
     );
     lib_mod.addIncludePath(b.path("openssl/."));
@@ -1150,7 +1151,7 @@ fn libcrypto(
         },
     );
     lib.pie = true;
-    lib.linkLibC();
+
     if (lib.rootModuleTarget().isDarwinLibC()) {
         lib.root_module.addIncludePath(b.path("include"));
     }

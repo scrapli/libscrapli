@@ -25,48 +25,13 @@ pub fn build(b: *std.Build) void {
             .root_source_file = null,
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         },
     );
     lib_mod.linkLibrary(openssl.artifact("ssl"));
     lib_mod.linkLibrary(openssl.artifact("crypto"));
-
-    const lib = b.addLibrary(
-        .{
-            .name = "ssh2",
-            .linkage = .static,
-            .root_module = lib_mod,
-        },
-    );
-
-    lib.root_module.addCMacro("LIBSSH2_OPENSSL", "");
-
-    lib.root_module.addCMacro("HAVE_UNISTD_H", "");
-    lib.root_module.addCMacro("HAVE_INTTYPES_H", "");
-    lib.root_module.addCMacro("HAVE_STDLIB_H", "");
-    lib.root_module.addCMacro("HAVE_SYS_SELECT_H", "");
-    lib.root_module.addCMacro("HAVE_SYS_UIO_H", "");
-    lib.root_module.addCMacro("HAVE_SYS_SOCKET_H", "");
-    lib.root_module.addCMacro("HAVE_SYS_IOCTL_H", "");
-    lib.root_module.addCMacro("HAVE_SYS_TIME_H", "");
-    lib.root_module.addCMacro("HAVE_SYS_UN_H", "");
-    lib.root_module.addCMacro("HAVE_LONGLONG", "");
-    lib.root_module.addCMacro("HAVE_GETTIMEOFDAY", "");
-    lib.root_module.addCMacro("HAVE_INET_ADDR", "");
-    lib.root_module.addCMacro("HAVE_POLL", "");
-    lib.root_module.addCMacro("HAVE_SELECT", "");
-    lib.root_module.addCMacro("HAVE_SOCKET", "");
-    lib.root_module.addCMacro("HAVE_STRTOLL", "");
-    lib.root_module.addCMacro("HAVE_SNPRINTF", "");
-    lib.root_module.addCMacro("HAVE_O_NONBLOCK", "");
-
-    lib.addIncludePath(upstream.path("include"));
-
-    // nov 2025, translate c was creating the lisbsh2session struct w/ duplicate fields, this hack
-    // just uses our own header file that doesnt have one of the functions that was causing the
-    // duplicate fields. we dont need it anyway so... yolo?
-    lib.installHeadersDirectory(b.path("include"), ".", .{});
-
-    lib.addCSourceFiles(
+    lib_mod.addIncludePath(upstream.path("include"));
+    lib_mod.addCSourceFiles(
         .{
             .root = upstream.path(""),
             .files = &.{
@@ -119,7 +84,38 @@ pub fn build(b: *std.Build) void {
         },
     );
 
-    lib.linkLibC();
+    lib_mod.addCMacro("LIBSSH2_OPENSSL", "");
+    lib_mod.addCMacro("HAVE_UNISTD_H", "");
+    lib_mod.addCMacro("HAVE_INTTYPES_H", "");
+    lib_mod.addCMacro("HAVE_STDLIB_H", "");
+    lib_mod.addCMacro("HAVE_SYS_SELECT_H", "");
+    lib_mod.addCMacro("HAVE_SYS_UIO_H", "");
+    lib_mod.addCMacro("HAVE_SYS_SOCKET_H", "");
+    lib_mod.addCMacro("HAVE_SYS_IOCTL_H", "");
+    lib_mod.addCMacro("HAVE_SYS_TIME_H", "");
+    lib_mod.addCMacro("HAVE_SYS_UN_H", "");
+    lib_mod.addCMacro("HAVE_LONGLONG", "");
+    lib_mod.addCMacro("HAVE_GETTIMEOFDAY", "");
+    lib_mod.addCMacro("HAVE_INET_ADDR", "");
+    lib_mod.addCMacro("HAVE_POLL", "");
+    lib_mod.addCMacro("HAVE_SELECT", "");
+    lib_mod.addCMacro("HAVE_SOCKET", "");
+    lib_mod.addCMacro("HAVE_STRTOLL", "");
+    lib_mod.addCMacro("HAVE_SNPRINTF", "");
+    lib_mod.addCMacro("HAVE_O_NONBLOCK", "");
+
+    const lib = b.addLibrary(
+        .{
+            .name = "ssh2",
+            .linkage = .static,
+            .root_module = lib_mod,
+        },
+    );
+
+    // nov 2025, translate c was creating the lisbsh2session struct w/ duplicate fields, this hack
+    // just uses our own header file that doesnt have one of the functions that was causing the
+    // duplicate fields. we dont need it anyway so... yolo?
+    lib.installHeadersDirectory(b.path("include"), ".", .{});
 
     b.installArtifact(lib);
 }

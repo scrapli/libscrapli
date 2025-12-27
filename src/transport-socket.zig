@@ -7,7 +7,7 @@ pub fn getStream(io: std.Io, host: []const u8, port: u16) !std.Io.net.Stream {
     var lookup_queue = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookup_buf);
     var canonica_name_buf: [255]u8 = undefined;
 
-    io.vtable.netLookup(
+    try io.vtable.netLookup(
         io.userdata,
         try std.Io.net.HostName.init(host),
         &lookup_queue,
@@ -44,7 +44,7 @@ pub fn getStream(io: std.Io, host: []const u8, port: u16) !std.Io.net.Stream {
 
                 return stream;
             },
-            .canonical_name, .end => {
+            .canonical_name => {
                 return errors.ScrapliError.Transport;
             },
         }
