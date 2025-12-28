@@ -14,20 +14,21 @@ pub fn setNonBlocking(fd: std.posix.fd_t) !void {
     _ = try std.posix.fcntl(fd, std.posix.F.SETFL, flags);
 }
 
-pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+pub fn resolveAbsolutePath(io: std.Io, allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     if (!std.mem.startsWith(u8, path, "~")) {
-        const resolved = std.fs.realpathAlloc(
-            allocator,
+        const resolved = std.Io.Dir.realPathFileAbsoluteAlloc(
+            io,
             path,
+            allocator,
         ) catch |err| switch (err) {
             error.FileNotFound => {
-                var dir = try std.fs.cwd().openDir(std.fs.path.dirname(path).?, .{});
-                defer dir.close();
+                var dir = try std.Io.Dir.cwd().openDir(io, std.fs.path.dirname(path).?, .{});
+                defer dir.close(io);
 
-                var f = try dir.createFile(std.fs.path.basename(path), .{});
-                defer f.close();
+                var f = try dir.createFile(io, std.fs.path.basename(path), .{});
+                defer f.close(io);
 
-                return resolveAbsolutePath(allocator, path);
+                return resolveAbsolutePath(io, allocator, path);
             },
             else => {
                 return err;
@@ -47,28 +48,28 @@ pub fn resolveAbsolutePath(allocator: std.mem.Allocator, path: []const u8) ![]u8
     );
     defer allocator.free(expanded_path);
 
-    return std.fs.realpathAlloc(allocator, expanded_path);
+    return std.Io.Dir.realPathFileAbsoluteAlloc(io, expanded_path, allocator);
 }
 
-// buf is passed in for lifetime reasons of course, so needs to be outside of this
+// buf is passed in for lifetime reasons of course, so needs to be allocated outside of this
 pub fn readerFromPath(
     allocator: std.mem.Allocator,
     io: std.Io,
     buf: []u8,
     path: []const u8,
-) !std.fs.File.Reader {
-    const resolved_path = try resolveAbsolutePath(allocator, path);
+) !std.Io.File.Reader {
+    const resolved_path = try resolveAbsolutePath(io, allocator, path);
     defer allocator.free(resolved_path);
 
-    const f = try std.fs.openFileAbsolute(resolved_path, .{});
+    const f = try std.Io.Dir.openFileAbsolute(io, resolved_path, .{});
     return f.reader(io, buf);
 }
 
 pub fn readFromPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
-    const resolved_path = try resolveAbsolutePath(allocator, path);
+    const resolved_path = try resolveAbsolutePath(io, allocator, path);
     defer allocator.free(resolved_path);
 
-    const f = try std.fs.openFileAbsolute(resolved_path, .{});
+    const f = try std.Io.Dir.openFileAbsolute(io, resolved_path, .{});
 
     var r_buf: [1024]u8 = undefined;
     var r = f.reader(io, &r_buf);
@@ -81,10 +82,10 @@ pub fn readFromPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) 
     return try out.toOwnedSlice(allocator);
 }
 
-pub fn writeToPath(allocator: std.mem.Allocator, path: []const u8, data: []const u8) !void {
-    const resolved_path = try resolveAbsolutePath(allocator, path);
+pub fn writeToPath(io: std.Io, allocator: std.mem.Allocator, path: []const u8, data: []const u8) !void {
+    const resolved_path = try resolveAbsolutePath(io, allocator, path);
     defer allocator.free(resolved_path);
 
-    const f = try std.fs.createFileAbsolute(resolved_path, .{});
-    try f.writeAll(data);
+    const f = try std.Io.Dir.createFileAbsolute(io, resolved_path, .{});
+    try f.writeStreamingAll(io, data);
 }

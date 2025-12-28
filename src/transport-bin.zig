@@ -129,13 +129,13 @@ pub const Transport = struct {
     options: *Options,
     waiter: transport_waiter.Waiter,
 
-    f: ?std.fs.File = null,
+    f: ?std.Io.File = null,
 
     r_buffer: [1024]u8 = undefined,
     reader: ?std.Io.File.Reader = null,
 
     w_buffer: [1024]u8 = undefined,
-    writer: ?std.fs.File.Writer = null,
+    writer: ?std.Io.File.Writer = null,
 
     open_args: std.array_list.Managed(strings.MaybeHeapString),
 
@@ -453,14 +453,14 @@ pub const Transport = struct {
         };
 
         self.reader = self.f.?.reader(self.io, &self.r_buffer);
-        self.writer = self.f.?.writer(&self.w_buffer);
+        self.writer = self.f.?.writer(self.io, &self.w_buffer);
     }
 
     pub fn close(self: *Transport) void {
         self.log.info("bin.Transport close requested", .{});
 
         if (self.f != null) {
-            self.f.?.close();
+            self.f.?.close(self.io);
         }
 
         self.f = null;
@@ -543,9 +543,9 @@ fn openPty(
     term_width: u16,
     term_height: u16,
     netconf: bool,
-) !std.fs.File {
-    // nov 2025, afaik this hasnt been moved to std.Io things yet
-    const master_fd = try std.fs.openFileAbsolute(
+) !std.Io.File {
+    const master_fd = try std.Io.Dir.openFileAbsolute(
+        io,
         "/dev/ptmx",
         .{
             .mode = .read_write,
@@ -558,7 +558,7 @@ fn openPty(
 
     const s_name = c.ptsname(master_fd.handle);
 
-    const slave_fd = try std.Io.File.openAbsolute(
+    const slave_fd = try std.Io.Dir.openFileAbsolute(
         io,
         std.mem.span(s_name),
         .{
@@ -624,7 +624,7 @@ fn openPty(
 }
 
 fn openPtyChild(
-    master_fd: std.fs.File,
+    master_fd: std.Io.File,
     slave_fd: std.Io.File,
     args: [:null]?[*:0]const u8,
     envs: [:null]?[*:0]const u8,

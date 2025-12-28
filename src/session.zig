@@ -21,16 +21,16 @@ const ReadThreadState = enum(u8) {
 
 /// Defines possible destinations for "recording" session output.
 pub const RecordDestination = union(enum) {
-    writer: std.fs.File.Writer,
+    writer: std.Io.File.Writer,
     f: []const u8,
     cb: *const fn (buf: *const []u8) callconv(.c) void,
 };
 
 const Recorder = struct {
     rd: ?RecordDestination,
-    recorder: ?std.fs.File.Writer,
+    recorder: ?std.Io.File.Writer,
 
-    fn init(rd: ?RecordDestination, buf: []u8) !Recorder {
+    fn init(io: std.Io, rd: ?RecordDestination, buf: []u8) !Recorder {
         if (rd == null) {
             return Recorder{
                 .rd = rd,
@@ -40,14 +40,15 @@ const Recorder = struct {
 
         switch (rd.?) {
             .f => {
-                const out_f = try std.fs.cwd().createFile(
+                const out_f = try std.Io.Dir.cwd().createFile(
+                    io,
                     rd.?.f,
                     .{},
                 );
 
                 return Recorder{
                     .rd = rd,
-                    .recorder = out_f.writer(buf),
+                    .recorder = out_f.writer(io, buf),
                 };
             },
             .writer => {
@@ -73,7 +74,7 @@ const Recorder = struct {
                     // as well as ensure we strip asci/ansi bits (so the file is easy to read etc.
                     // and especially for tests!); otherwise we'll leave it to the user
                     try self.recorder.?.interface.flush();
-                    self.recorder.?.file.close();
+                    self.recorder.?.file.close(io);
 
                     try ascii.stripAsciiAndAnsiControlCharsInFile(io, rd.f);
                 },
@@ -245,7 +246,7 @@ pub const Session = struct {
                 u8,
                 .dynamic,
             ).init(allocator),
-            .recorder = try Recorder.init(options.record_destination, &s.recorder_buf),
+            .recorder = try Recorder.init(io, options.record_destination, &s.recorder_buf),
             .prompt_pattern = prompt_pattern,
             .last_consumed_prompt = .{},
         };

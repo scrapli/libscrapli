@@ -47,7 +47,7 @@ pub const Transport = struct {
     // we do a zillion reads, but w/e having the intermediate buffer be 1 seems to be marginally
     // faster than having it be bigger for some reason
     r_buffer: [1]u8 = undefined,
-    reader: ?std.fs.File.Reader,
+    reader: ?std.Io.File.Reader,
 
     pub fn init(
         allocator: std.mem.Allocator,

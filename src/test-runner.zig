@@ -190,7 +190,7 @@ pub fn main() !void {
     try slowest.display(printer);
     printer.fmt("\n", .{});
 
-    std.posix.exit(if (fail == 0) 0 else 1);
+    std.process.exit(if (fail == 0) 0 else 1);
 }
 
 fn friendlyName(name: []const u8) []const u8 {
@@ -205,17 +205,17 @@ fn friendlyName(name: []const u8) []const u8 {
 }
 
 const Printer = struct {
-    f: std.fs.File,
+    f: std.Io.File,
 
     fn init() Printer {
         return .{
-            .f = std.fs.File.stdout(),
+            .f = std.Io.File.stdout(),
         };
     }
 
     fn fmt(self: Printer, comptime format: []const u8, args: anytype) void {
         var stdout_buffer: [1024]u8 = undefined;
-        var out = self.f.writer(&stdout_buffer);
+        var out = self.f.writer(std.testing.io, &stdout_buffer);
         const writer = &out.interface;
         writer.print(format, args) catch unreachable;
         writer.flush() catch {};
@@ -230,7 +230,7 @@ const Printer = struct {
         };
 
         var stdout_buffer: [1024]u8 = undefined;
-        var out = self.f.writer(&stdout_buffer);
+        var out = self.f.writer(std.testing.io, &stdout_buffer);
         const writer = &out.interface;
 
         writer.printAscii(color, .{}) catch unreachable;

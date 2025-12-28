@@ -14,10 +14,11 @@ pub fn build(b: *std.Build) !void {
     // a dep and then tried to tweak it we would still be hosed if/until they update zig versions
     // and stuff).
     const proc = std.process.Child.run(
+        b.allocator,
+        b.graph.io,
         .{
             .cwd = b.build_root.path orelse ".",
             .argv = &[_][]const u8{"./generate.sh"},
-            .allocator = b.allocator,
         },
     ) catch {
         return std.Build.RunError.ExitCodeFailure;

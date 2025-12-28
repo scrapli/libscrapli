@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) !void {
     );
 
     try buildCheck(b, scrapli);
-    try buildZlinter(b);
+    // try buildZlinter(b);
     try buildTests(b, scrapli);
     try buildMain(b, target, optimize, scrapli);
     try buildExamples(b, target, optimize, scrapli);

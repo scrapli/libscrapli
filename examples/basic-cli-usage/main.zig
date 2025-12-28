@@ -121,7 +121,7 @@ pub fn main() !void {
         std.log.info("leak check results >> {any}\n", .{gpa_allocator.deinit()});
     }
 
-    var threaded: std.Io.Threaded = .init(allocator);
+    var threaded: std.Io.Threaded = .init(allocator, .{});
     defer threaded.deinit();
 
     const io = threaded.io();

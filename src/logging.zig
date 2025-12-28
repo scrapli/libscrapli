@@ -47,7 +47,7 @@ pub fn stdLogf(level: u8, message: *[]u8) callconv(.c) void {
         @intFromEnum(LogLevel.fatal) => {
             std.debug.print("   fatal: {s}\n", .{message.*});
 
-            std.posix.exit(1);
+            std.process.exit(1);
         },
         else => {
             unreachable;

@@ -1260,19 +1260,19 @@ pub fn stripAsciiAndAnsiControlCharsInFile(
     var r_buffer: [8192]u8 = undefined;
     var reader = in.reader(io, &r_buffer);
 
-    // nov 2025, afaik this hasnt been moved to std.Io things yet
-    const cwd = std.fs.cwd();
+    const cwd = std.Io.Dir.cwd();
     var tmp_file = try cwd.createFile(
+        io,
         "tmp_output",
         .{
             .read = true,
             .truncate = true,
         },
     );
-    defer tmp_file.close();
+    defer tmp_file.close(io);
 
     var w_buffer: [8192]u8 = undefined;
-    var writer = tmp_file.writer(&w_buffer);
+    var writer = tmp_file.writer(io, &w_buffer);
 
     var buf: [8192]u8 = undefined;
     while (true) {
@@ -1288,5 +1288,5 @@ pub fn stripAsciiAndAnsiControlCharsInFile(
 
     try writer.interface.flush();
 
-    try cwd.rename("tmp_output", f);
+    try cwd.rename("tmp_output", cwd, f, io);
 }

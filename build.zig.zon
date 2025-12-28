@@ -17,13 +17,13 @@
         },
         .yaml = .{
             // pinning here till real 0.16.x release + merge to upstream
-            .url = "https://github.com/carlmontanari/zig-yaml/archive/b2086d2.tar.gz",
-            .hash = "zig_yaml-0.2.0-C1161litAgC7vHZjxdY7EbEcihU2tc9z0m_HgNR2MHL8",
+            .url = "https://github.com/carlmontanari/zig-yaml/archive/ee8a229.tar.gz",
+            .hash = "zig_yaml-0.2.0-C1161vOtAgBlWxOdwTcAQaB8nLXn329Vn5xT-Q1dLszi",
         },
-        .zlinter = .{
-            .url = "git+https://github.com/kurtwagner/zlinter?ref=master#be35c4d432ea9362159d48ebf5e51972f0b5eea8",
-            .hash = "zlinter-0.0.1-OjQ08Y-qCwApKbGny8tTCsF5arUiSgCoWtP0XXh-vPwM",
-        },
+        // .zlinter = .{
+        //     .url = "git+https://github.com/kurtwagner/zlinter?ref=master#be35c4d432ea9362159d48ebf5e51972f0b5eea8",
+        //     .hash = "zlinter-0.0.1-OjQ08Y-qCwApKbGny8tTCsF5arUiSgCoWtP0XXh-vPwM",
+        // },
     },
     .paths = .{
         "build.zig",
