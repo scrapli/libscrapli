@@ -34,10 +34,10 @@ fn GetDriver(
             },
         );
 
-        if (username == null) {
-            config.auth.username = "admin";
+        if (username) |u| {
+            config.auth.username = u;
         } else {
-            config.auth.username = username.?;
+            config.auth.username = "admin";
         }
 
         if (os == .macos) {
@@ -50,14 +50,14 @@ fn GetDriver(
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
         config.auth.lookups = .init(
             &.{
-                .{ .key = "login", .value = "admin!" },
+                .{ .key = "login", .value = "admin" },
             },
         );
 
-        if (username == null) {
-            config.auth.username = "netconf-admin";
+        if (username) |u| {
+            config.auth.username = u;
         } else {
-            config.auth.username = username.?;
+            config.auth.username = "netconf-admin";
         }
 
         if (os == .macos) {
@@ -334,12 +334,6 @@ test "driver-netconf get-config" {
 
         // netconf output needs to get tested/asserted better at some point, for now
         // we'll just ignore errors here
-        helper.processFixutreTestStrResult(
-            test_name,
-            case.name,
-            golden_filename,
-            actual_res.result,
-        ) catch {};
     }
 }
 

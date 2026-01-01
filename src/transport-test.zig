@@ -79,7 +79,6 @@ pub const Transport = struct {
         }
 
         self.reader = try file.readerFromPath(
-            self.allocator,
             self.io,
             &self.r_buffer,
             self.options.f.?,

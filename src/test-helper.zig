@@ -47,7 +47,7 @@ fn processCommon(
     }
 
     if (update) {
-        try file.writeToPath(std.testing.io, std.testing.allocator, golden_filename, _actual);
+        try file.writeToPath(std.testing.io, golden_filename, _actual);
 
         // sometimes we can have things like ETX that do not have an ESC in the sequence... just for
         // testing reasons we'll remove that (since when using recorder we also remove!)
