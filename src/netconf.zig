@@ -32,6 +32,20 @@ pub const Capability = struct {
     }
 };
 
+/// Defines possible callbacks for crafting client capabilities in response to the server's
+/// hello message. This exists as a taggged union to more easily support native zig users with
+/// nicer zig typing, as well as py/go/whatever other future ffi users w/ a callback with
+/// a c compatible signature.
+pub const ClientCapabilitiesCallback = union(enum) {
+    z: *const fn (
+        server_capabilities: std.ArrayList(Capability),
+        negotiated_version: operation.Version,
+    ) anyerror![]const u8,
+    ffi: *const fn (
+        cap_buf: *[]const u8,
+    ) callconv(.c) *[]const u8,
+};
+
 const default_netconf_port = 830;
 
 pub const delimiter_version_1_0 = "]]>]]>";
@@ -75,9 +89,12 @@ pub const Config = struct {
     port: ?u16 = null,
     auth: auth.OptionsInputs = .{},
     session: session.OptionsInputs = .{},
-    transport: transport.OptionsInputs = .{ .bin = .{} },
+    transport: transport.OptionsInputs = .{
+        .bin = .{},
+    },
     error_tag: ?[]const u8 = null,
     preferred_version: ?operation.Version = null,
+    capabilities_callback: ?ClientCapabilitiesCallback = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
 };
 
@@ -90,6 +107,7 @@ pub const Options = struct {
     transport: *transport.Options,
     error_tag: []const u8 = operation.default_rpc_error_tag,
     preferred_version: ?operation.Version = null,
+    capabilities_callback: ?ClientCapabilitiesCallback,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
@@ -107,6 +125,7 @@ pub const Options = struct {
                 config.transport,
             ),
             .preferred_version = config.preferred_version,
+            .capabilities_callback = config.capabilities_callback,
             .message_poll_interval_ns = config.message_poll_interval_ns,
         };
 
@@ -442,7 +461,7 @@ pub const Driver = struct {
 
         try self.processServerCapabilities(cap_buf);
         try self.determineVersion();
-        try self.sendClientCapabilities();
+        try self.sendClientCapabilities(cap_buf);
 
         self.process_stop.store(
             ProcessThreadState.run,
@@ -828,6 +847,7 @@ pub const Driver = struct {
 
     fn sendClientCapabilities(
         self: *Driver,
+        cap_buf: []const u8,
     ) !void {
         self.log.info("netconf.Driver sendClientCapabilities requested", .{});
 
@@ -835,6 +855,26 @@ pub const Driver = struct {
 
         if (self.negotiated_version == .version_1_1) {
             caps = version_1_1_capability;
+        }
+
+        if (self.options.capabilities_callback) |cb_obj| {
+            self.log.debug(
+                "netconf.Driver sendClientCapabilities using user capabilities callback",
+                .{},
+            );
+
+            switch (cb_obj) {
+                .z => |cb| {
+                    caps = try cb(self.server_capabilities.?, self.negotiated_version);
+                },
+                .ffi => |cb| {
+                    var cap_buf_v = cap_buf;
+
+                    const ffi_caps = cb(&cap_buf_v);
+
+                    caps = ffi_caps.*;
+                },
+            }
         }
 
         try self.session.writeAndReturn(caps, false);
