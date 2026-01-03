@@ -851,11 +851,35 @@ pub const Driver = struct {
     ) !void {
         self.log.info("netconf.Driver sendClientCapabilities requested", .{});
 
-        var caps: []const u8 = version_1_0_capability;
+        var output: std.Io.Writer.Allocating = .init(self.allocator);
+        defer output.deinit();
 
-        if (self.negotiated_version == .version_1_1) {
-            caps = version_1_1_capability;
+        var writer: xml.Writer = .init(
+            self.allocator,
+            &output.writer,
+            .{
+                .indent = "  ",
+            },
+        );
+        defer writer.deinit();
+
+        try writer.xmlDeclaration("UTF-8", null);
+        try writer.elementStart("hello");
+        try writer.bindNs("", base_capability_name);
+
+        try writer.elementStart("capabilities");
+        try writer.elementStart("capability");
+
+        switch (self.negotiated_version) {
+            .version_1_1 => {
+                try writer.text(version_1_1_capability_name);
+            },
+            else => {
+                try writer.text(version_1_0_capability_name);
+            },
         }
+
+        try writer.elementEnd();
 
         if (self.options.capabilities_callback) |cb_obj| {
             self.log.debug(
@@ -865,17 +889,36 @@ pub const Driver = struct {
 
             switch (cb_obj) {
                 .z => |cb| {
-                    caps = try cb(self.server_capabilities.?, self.negotiated_version);
+                    try writer.embed(
+                        try cb(
+                            self.server_capabilities.?,
+                            self.negotiated_version,
+                        ),
+                    );
                 },
                 .ffi => |cb| {
                     var cap_buf_v = cap_buf;
 
                     const ffi_caps = cb(&cap_buf_v);
 
-                    caps = ffi_caps.*;
+                    try writer.embed(ffi_caps.*);
                 },
             }
         }
+
+        try writer.elementEnd();
+        try writer.elementEnd();
+        try writer.eof();
+
+        const caps = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}{s}",
+            .{
+                output.written(),
+                delimiter_version_1_0,
+            },
+        );
+        defer self.allocator.free(caps);
 
         try self.session.writeAndReturn(caps, false);
     }
