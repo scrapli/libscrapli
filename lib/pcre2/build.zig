@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) !void {
     // super janky, but lets us be decoupled from upstream (because even if we used upstream as
     // a dep and then tried to tweak it we would still be hosed if/until they update zig versions
     // and stuff).
-    const proc = std.process.Child.run(
+    const proc = std.process.run(
         b.allocator,
         b.graph.io,
         .{
@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) !void {
         return std.Build.RunError.ExitCodeFailure;
     };
 
-    if (proc.term.Exited != 0) {
+    if (proc.term.exited != 0) {
         return std.Build.RunError.ExitCodeFailure;
     }
 

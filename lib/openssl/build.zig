@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const proc = std.process.Child.run(
+    const proc = std.process.run(
         b.allocator,
         b.graph.io,
         .{
@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) !void {
         return std.Build.RunError.ExitCodeFailure;
     };
 
-    if (proc.term.Exited != 0) {
+    if (proc.term.exited != 0) {
         return std.Build.RunError.ExitCodeFailure;
     }
 
