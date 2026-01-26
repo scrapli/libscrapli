@@ -40,7 +40,7 @@ fn isDebugMode() bool {
         return true;
     }
 
-    return std.posix.getenv(libscrapli_ffi_debug_mode_env_var) != null;
+    return std.c.getenv(libscrapli_ffi_debug_mode_env_var) != null;
 }
 
 pub fn getAllocator() std.mem.Allocator {

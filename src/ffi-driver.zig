@@ -22,7 +22,7 @@ pub const FfiDriver = struct {
 
     real_driver: RealDriver,
 
-    poll_fds: [2]std.posix.fd_t,
+    poll_fds: [2]std.posix.fd_t = undefined,
 
     operation_id_counter: u32,
     operation_thread: ?std.Thread,
@@ -39,6 +39,17 @@ pub const FfiDriver = struct {
         u32,
         ffi_operations.OperationResult,
     ),
+
+    fn setPollFds(self: *FfiDriver) !void {
+        switch (std.posix.errno(std.c.pipe(&self.poll_fds))) {
+            .SUCCESS => return,
+            .INVAL => unreachable, // Invalid parameters to pipe()
+            .FAULT => unreachable, // Invalid fds pointer
+            .NFILE => return error.SystemFdQuotaExceeded,
+            .MFILE => return error.ProcessFdQuotaExceeded,
+            else => return errors.ScrapliError.Session,
+        }
+    }
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -59,7 +70,6 @@ pub const FfiDriver = struct {
                     config,
                 ),
             },
-            .poll_fds = try std.posix.pipe(),
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -76,6 +86,8 @@ pub const FfiDriver = struct {
                 ffi_operations.OperationResult,
             ).init(allocator),
         };
+
+        try ffi_driver.setPollFds();
 
         return ffi_driver;
     }
@@ -99,7 +111,6 @@ pub const FfiDriver = struct {
                     config,
                 ),
             },
-            .poll_fds = try std.posix.pipe(),
             .operation_id_counter = 0,
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
@@ -116,6 +127,8 @@ pub const FfiDriver = struct {
                 ffi_operations.OperationResult,
             ).init(allocator),
         };
+
+        try ffi_driver.setPollFds();
 
         return ffi_driver;
     }
@@ -213,7 +226,10 @@ pub const FfiDriver = struct {
     }
 
     fn writePollWakeUp(self: *FfiDriver) !void {
-        _ = try std.posix.write(self.poll_fds[1], "x");
+        const rc = std.c.write(self.poll_fds[1], "x", 1);
+        if (rc != 1) {
+            return errors.ScrapliError.Operation;
+        }
     }
 
     /// The operation loop is the "thing" that actually invokes user requested functions by popping
