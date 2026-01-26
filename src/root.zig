@@ -9,7 +9,6 @@ pub const cli_platform = @import("cli-platform.zig");
 pub const cli_result = @import("cli-result.zig");
 pub const errors = @import("errors.zig");
 pub const file = @import("file.zig");
-pub const flags = @import("flags.zig");
 pub const logging = @import("logging.zig");
 pub const netconf = @import("netconf.zig");
 pub const netconf_operation = @import("netconf-operation.zig");
