@@ -7,12 +7,14 @@ const logging = @import("logging.zig");
 const strings = @import("strings.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
-const c = @cImport({
-    @cDefine("_XOPEN_SOURCE", "500");
-    @cInclude("stdlib.h");
-    @cInclude("unistd.h");
-    @cInclude("sys/ioctl.h");
-});
+const c = @cImport(
+    {
+        @cDefine("_XOPEN_SOURCE", "500");
+        @cInclude("stdlib.h");
+        @cInclude("unistd.h");
+        @cInclude("sys/ioctl.h");
+    },
+);
 
 extern fn setsid() callconv(.c) i32;
 
@@ -575,30 +577,11 @@ fn openPty(
     if (pid < 0) {
         return error.PtyError;
     } else if (pid == 0) {
-        // child process
-        const args = try allocator.allocSentinel(?[*:0]const u8, open_args.len, null);
+        const args = try allocator.alloc([*c]u8, open_args.len);
         defer allocator.free(args);
 
         for (open_args, 0..) |arg, i| {
-            const duped_arg = try allocator.dupeZ(u8, arg);
-
-            args[i] = duped_arg.ptr;
-        }
-
-        var env_map = try std.process.getEnvMap(allocator);
-        defer env_map.deinit();
-
-        const envs = try allocator.allocSentinel(?[*:0]const u8, env_map.count(), null);
-        var i: usize = 0;
-
-        var env_map_iter = env_map.iterator();
-        while (env_map_iter.next()) |pair| {
-            envs[i] = try strings.allocPrintZ(
-                allocator,
-                "{s}={s}",
-                .{ pair.key_ptr.*, pair.value_ptr.* },
-            );
-            i += 1;
+            args[i] = try allocator.dupeZ(u8, arg);
         }
 
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
@@ -606,8 +589,8 @@ fn openPty(
         try openPtyChild(
             master_fd,
             slave_fd,
-            args,
-            envs,
+            @ptrCast(args.ptr),
+            // envs,
             term_width,
             term_height,
             netconf,
@@ -626,8 +609,7 @@ fn openPty(
 fn openPtyChild(
     master_fd: std.Io.File,
     slave_fd: std.Io.File,
-    args: [:null]?[*:0]const u8,
-    envs: [:null]?[*:0]const u8,
+    args: [*c]const [*c]u8,
     term_width: u16,
     term_height: u16,
     netconf: bool,
@@ -669,14 +651,17 @@ fn openPtyChild(
         setnoecho(slave_fd.handle) catch {};
     }
 
-    try std.posix.dup2(slave_fd.handle, 0); // stdin
-    try std.posix.dup2(slave_fd.handle, 1); // stdout
-    try std.posix.dup2(slave_fd.handle, 2); // stderr
+    // we'll know if things fail when we cant read anythinig from the child process
+    _ = c.dup2(slave_fd.handle, 0); // stdin
+    _ = c.dup2(slave_fd.handle, 1); // stdout
+    _ = c.dup2(slave_fd.handle, 2); // stderr
 
     std.posix.close(slave_fd.handle);
 
-    // zlint-disable suppressed-errors
-    std.posix.execvpeZ(args.ptr[0].?, args.ptr, envs.ptr) catch {};
+    const rc = c.execvp(args[0], args);
+    if (rc != 0) {
+        @panic("exec failed");
+    }
 }
 
 fn setonlcr(fd: std.posix.fd_t) !void {
