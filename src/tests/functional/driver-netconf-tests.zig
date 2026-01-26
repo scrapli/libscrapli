@@ -187,7 +187,7 @@ test "driver-netconf open" {
         },
     };
 
-    const is_ci = flags.parseCustomFlag("--ci", false);
+    const is_ci = helper.parseCustomFlag("--ci", false);
 
     for (cases) |case| {
         if (is_ci and std.mem.eql(u8, case.platform, "arista-eos")) {
@@ -298,7 +298,7 @@ test "driver-netconf get-config" {
         },
     };
 
-    const is_ci = flags.parseCustomFlag("--ci", false);
+    const is_ci = helper.parseCustomFlag("--ci", false);
 
     for (cases) |case| {
         if (is_ci and std.mem.eql(u8, case.platform, "arista-eos")) {

@@ -222,7 +222,7 @@ test "driver open" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
@@ -357,7 +357,7 @@ test "driver get-prompt" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
@@ -530,7 +530,7 @@ test "driver enter-mode" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
@@ -718,7 +718,7 @@ test "driver send-input" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
@@ -937,7 +937,7 @@ test "driver send-inputs" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
@@ -1152,7 +1152,7 @@ test "driver send-prompted-input" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,

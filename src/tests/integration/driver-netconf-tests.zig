@@ -72,7 +72,7 @@ test "driver-netconf open" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
@@ -128,7 +128,7 @@ test "driver-netconf get-config" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
@@ -193,7 +193,7 @@ test "driver-netconf lock" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
@@ -257,7 +257,7 @@ test "driver-netconf unlock" {
     };
 
     for (cases) |case| {
-        const record = flags.parseCustomFlag("--record", false);
+        const record = helper.parseCustomFlag("--record", false);
 
         const fixture_filename = try std.fmt.allocPrint(
             std.testing.allocator,
