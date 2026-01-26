@@ -7,7 +7,7 @@ const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 
 const scrapli = @import("scrapli");
-const flags = scrapli.flags;
+const test_helper = scrapli.test_helper;
 
 const border = "=" ** 80;
 
@@ -32,18 +32,28 @@ pub const std_options = std.Options{
 // used in custom panic handler
 var current_test: ?[]const u8 = null;
 
-pub fn main() !void {
-    const unit_tests = flags.parseCustomFlag("--unit", true);
-    const integration_tests = flags.parseCustomFlag("--integration", false);
-    const functional_tests = flags.parseCustomFlag("--functional", false);
+pub fn main(init: std.process.Init) !void {
+    test_helper.args = init.minimal.args;
+
+    const unit_tests = test_helper.parseCustomFlag(
+        "--unit",
+        true,
+    );
+    const integration_tests = test_helper.parseCustomFlag(
+        "--integration",
+        false,
+    );
+    const functional_tests = test_helper.parseCustomFlag(
+        "--functional",
+        false,
+    );
 
     var mem: [8_192]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&mem);
 
     const allocator = fba.allocator();
 
-    const env = Env.init(allocator);
-    defer env.deinit(allocator);
+    const env = Env.init(init.environ_map);
 
     var slowest = SlowTracker.init(allocator, 5);
     defer slowest.deinit();
@@ -52,9 +62,6 @@ pub fn main() !void {
     var fail: usize = 0;
     var skip: usize = 0;
     var leak: usize = 0;
-
-    var random_bytes: [12]u8 = undefined;
-    try std.posix.getrandom(std.mem.asBytes(&std.crypto.random.bytes(&random_bytes)));
 
     const printer = Printer.init();
     printer.fmt("\r\x1b[0K", .{}); // beginning of line and clear to end of line
@@ -340,35 +347,24 @@ const Env = struct {
     fail_first: bool,
     filter: ?[]const u8,
 
-    fn init(allocator: Allocator) Env {
-        return .{
-            .verbose = readEnvBool(allocator, "TEST_VERBOSE", true),
-            .fail_first = readEnvBool(allocator, "TEST_FAIL_FIRST", false),
-            .filter = readEnv(allocator, "TEST_FILTER"),
-        };
-    }
-
-    fn deinit(self: Env, allocator: Allocator) void {
-        if (self.filter) |f| {
-            allocator.free(f);
+    fn init(
+        environ_map: *std.process.Environ.Map,
+    ) Env {
+        var verbose = true;
+        if (environ_map.get("TEST_VERBOSE") != null) {
+            verbose = false;
         }
-    }
 
-    fn readEnv(allocator: Allocator, key: []const u8) ?[]const u8 {
-        const v = std.process.getEnvVarOwned(allocator, key) catch |err| {
-            if (err == error.EnvironmentVariableNotFound) {
-                return null;
-            }
-            std.log.warn("failed to get env var {s} due to err {}", .{ key, err });
-            return null;
+        var fail_first = false;
+        if (environ_map.get("TEST_FAIL_FIRST") != null) {
+            fail_first = true;
+        }
+
+        return .{
+            .verbose = verbose,
+            .fail_first = fail_first,
+            .filter = environ_map.get("TEST_FILTER"),
         };
-        return v;
-    }
-
-    fn readEnvBool(allocator: Allocator, key: []const u8, deflt: bool) bool {
-        const value = readEnv(allocator, key) orelse return deflt;
-        defer allocator.free(value);
-        return std.ascii.eqlIgnoreCase(value, "true");
     }
 };
 

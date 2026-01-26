@@ -3,7 +3,6 @@ const std = @import("std");
 const ascii = @import("ascii.zig");
 const bytes = @import("bytes.zig");
 const file = @import("file.zig");
-const flags = @import("flags.zig");
 const re = @import("re.zig");
 
 const user_at_host_pattern = "\\w+@[\\w\\d\\.]+";
@@ -13,6 +12,23 @@ const last_login_pattern = "^last login.*$";
 const netconf_timestamp_pattern = "\\d{4}-\\d{2}-\\d{2}T\\d+:\\d+:\\d+.\\d+Z";
 const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
 const netconf_password_pattern = "<password>.*</password>";
+
+pub var args: ?std.process.Args = null;
+
+pub fn parseCustomFlag(
+    flag: []const u8,
+    default: bool,
+) bool {
+    var args_iterator = args.?.iterate();
+
+    while (args_iterator.next()) |arg| {
+        if (std.mem.eql(u8, arg, flag)) {
+            return !default;
+        }
+    }
+
+    return default;
+}
 
 const normalize_funcs = [6]*const fn (
     allocator: std.mem.Allocator,
@@ -30,7 +46,7 @@ fn processCommon(
     golden_filename: []const u8,
     actual: []const u8,
 ) !?[2][]const u8 {
-    const update = flags.parseCustomFlag("--update", false);
+    const update = parseCustomFlag("--update", false);
 
     var _actual = try std.testing.allocator.alloc(u8, actual.len);
     errdefer std.testing.allocator.free(_actual);
