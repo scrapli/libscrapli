@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const errors = @import("errors.zig");
+
 const unblock_ident = 1;
 
 /// Is the kqueue (darwin) waiter for the transports.
@@ -12,7 +14,7 @@ pub const KqueueWaiter = struct {
     pub fn init(allocator: std.mem.Allocator) !*KqueueWaiter {
         const w = try allocator.create(KqueueWaiter);
 
-        const kq = try std.posix.kqueue();
+        const kq = try std.Io.Kqueue.createFileDescriptor();
 
         const user_event = std.posix.Kevent{
             .ident = unblock_ident,
@@ -23,12 +25,17 @@ pub const KqueueWaiter = struct {
             .udata = 0,
         };
 
-        _ = try std.posix.kevent(
+        const rc = std.c.kevent(
             kq,
             &[_]std.posix.Kevent{user_event},
+            1,
             &[_]std.posix.Kevent{},
+            0,
             null,
         );
+        if (rc == -1) {
+            return errors.ScrapliError.Transport;
+        }
 
         w.* = KqueueWaiter{
             .allocator = allocator,
@@ -56,12 +63,17 @@ pub const KqueueWaiter = struct {
             .udata = 0,
         };
 
-        _ = try std.posix.kevent(
+        const rc = std.c.kevent(
             self.kq,
             &[_]std.posix.Kevent{ev},
+            1,
             &[_]std.posix.Kevent{},
+            0,
             null,
         );
+        if (rc == -1) {
+            return errors.ScrapliError.Transport;
+        }
     }
 
     /// Waits until the given fd has something to read, or if the fd is unblocked.
@@ -116,11 +128,16 @@ pub const KqueueWaiter = struct {
             .udata = 0,
         };
 
-        _ = try std.posix.kevent(
+        const rc = std.c.kevent(
             self.kq,
             &[_]std.posix.Kevent{event},
+            1,
             &[_]std.posix.Kevent{},
+            0,
             null,
         );
+        if (rc == -1) {
+            return errors.ScrapliError.Transport;
+        }
     }
 };
