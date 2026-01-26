@@ -69,79 +69,27 @@ pub const std_options = std.Options{
     },
 };
 
-var gpa_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa_allocator.allocator();
-
-fn getPort() !u16 {
-    const port_as_str_or_null = std.process.getEnvVarOwned(
-        allocator,
-        host_env_var_port,
-    ) catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => null,
-        else => return err,
-    };
-
-    if (port_as_str_or_null == null) {
-        return default_port;
+fn getPort(
+    environ_map: *std.process.Environ.Map,
+) !u16 {
+    if (environ_map.get(host_env_var_port)) |p| {
+        return try std.fmt.parseInt(u16, p, 10);
     }
 
-    defer allocator.free(port_as_str_or_null.?);
-
-    return try std.fmt.parseInt(u16, port_as_str_or_null.?, 10);
+    return default_port;
 }
 
-fn getEnvVarOrDefault(
-    env_var_name: []const u8,
-    default_value: []const u8,
-) !strings.MaybeHeapString {
-    const set_value = std.process.getEnvVarOwned(
-        allocator,
-        env_var_name,
-    ) catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => default_value,
-        else => return err,
-    };
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const allocator = init.gpa;
 
-    if (std.mem.eql(u8, set_value, default_value)) {
-        return strings.MaybeHeapString{
-            .allocator = null,
-            .string = set_value,
-        };
-    }
-
-    return strings.MaybeHeapString{
-        .allocator = allocator,
-        .string = set_value,
-    };
-}
-
-pub fn main() !void {
-    defer {
-        // mostly i've used this for testing but its kinda nice to double check!
-        std.log.info("leak check results >> {any}\n", .{gpa_allocator.deinit()});
-    }
-
-    var threaded: std.Io.Threaded = .init(allocator, .{});
-    defer threaded.deinit();
-
-    const io = threaded.io();
-
-    var host = try getEnvVarOrDefault(
-        host_env_var_name,
-        default_host,
-    );
-    defer host.deinit();
-
-    var password = try getEnvVarOrDefault(
-        password_env_var_name,
-        default_password,
-    );
-    defer password.deinit();
+    const host = init.environ_map.get(host_env_var_name) orelse default_host;
+    const password = init.environ_map.get(password_env_var_name) orelse default_password;
 
     const d = try cli.Driver.init(
         allocator,
         io,
-        host.string,
+        host,
         .{
             .definition = .{
                 .string = definition,
@@ -152,10 +100,10 @@ pub fn main() !void {
             //     .allocator = allocator,
             //     .f = logging.stdLogf,
             // },
-            .port = try getPort(),
+            .port = try getPort(init.environ_map),
             .auth = .{
                 .username = "admin",
-                .password = password.string,
+                .password = password,
             },
             .session = .{
                 // uncomment to log/record to a file
