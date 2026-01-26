@@ -154,18 +154,18 @@ build-release: fmt clean-zig-out clean-zig-cache
 	    -exec sha256sum {} + \
 	    > zig-out/checksums.txt
 
-## Build the example binaries
+## Build the example binaries, uses Debug build so you get leak checking
 build-examples: fmt clean-zig-cache
 	zig build examples \
-	    -Doptimize=ReleaseSafe \
+	    -Doptimize=Debug \
 		-freference-trace=4 \
 		-Ddependency-linkage=static \
 		--summary all
 
-## Build the "main" binary in repo root, useful for testing stuff out
+## Build the "main" binary in repo root, uses Debug build so you get leak checking
 build-main: fmt clean-zig-cache
 	zig build main \
-	    -Doptimize=ReleaseSafe \
+	    -Doptimize=Debug \
 		-freference-trace=4 \
 		-Ddependency-linkage=static \
 		--summary all
