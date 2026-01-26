@@ -320,8 +320,7 @@ fn buildTests(
     ) orelse false;
 
     if (test_coverage) {
-        const home = std.process.getEnvVarOwned(b.allocator, "HOME") catch "";
-        defer b.allocator.free(home);
+        const home = b.graph.environ_map.get("HOME") orelse "";
 
         const exclude = std.fmt.allocPrint(
             b.allocator,

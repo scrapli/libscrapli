@@ -12,8 +12,8 @@
             .path = "lib/libssh2",
         },
         .xml = .{
-            .url = "https://github.com/carlmontanari/zig-xml/archive/cd6703a.tar.gz",
-            .hash = "xml-0.1.0-ZTbP35UoAgBojaHeY1SNlU1m8p9F82i1Qxgiulrp2v4E",
+            .url = "https://github.com/ianprime0509/zig-xml/archive/8874de5.tar.gz",
+            .hash = "xml-0.2.0-ZTbP3wE6AgCsnyZut_plzxi6WB2tzzh3kFRBOp3AL7n9",
         },
         .yaml = .{
             // pinning here till real 0.16.x release + merge to upstream
