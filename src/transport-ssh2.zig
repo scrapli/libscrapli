@@ -418,7 +418,7 @@ const ProxyWrapper = struct {
         var wrote: usize = 0;
 
         while (true) {
-            const wrote_n = try std.posix.write(self.remote_fd, buf[0..@intCast(n)]);
+            const wrote_n: usize = @intCast(std.c.write(self.remote_fd, buf[0..@intCast(n)].ptr, @intCast(n)));
 
             wrote += wrote_n;
 
