@@ -45,7 +45,10 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
 // because we check the length -- if the length is non zero then we know it was something,
 // there shouldnt be any fields here where an empty string is a valid user input
 pub const FFIOptions = extern struct {
-    loggerCallback: ?*const fn (level: u8, message: *const []u8) callconv(.c) void = null,
+    loggerCallback: ?*const fn (
+        level: u8,
+        message: *const []u8,
+    ) callconv(.c) void = null,
     logger_level: [*c]const u8 = undefined,
     logger_level_len: usize = 0,
 
@@ -64,6 +67,9 @@ pub const FFIOptions = extern struct {
         preferred_version: [*c]const u8 = undefined,
         preferred_version_len: usize = 0,
         message_poll_interval: ?*u64 = null,
+        capabilitiesCallback: ?*const fn (
+            cap_buf: *[]const u8,
+        ) callconv(.c) *[]const u8 = null,
     },
 
     session: extern struct {
@@ -76,7 +82,9 @@ pub const FFIOptions = extern struct {
         operation_max_search_depth: ?*u64 = null,
         record_destination: [*c]const u8 = undefined,
         record_destination_len: usize = 0,
-        recordCallback: ?*const fn (buf: *const []u8) callconv(.c) void = null,
+        recordCallback: ?*const fn (
+            buf: *const []u8,
+        ) callconv(.c) void = null,
     },
 
     auth: extern struct {
@@ -383,6 +391,9 @@ pub const FFIOptions = extern struct {
             .auth = self.authOptionsInputs(),
             .session = self.sessionOptionsInputs(),
             .transport = self.transportOptionsInputs(),
+            .capabilities_callback = if (self.netconf.capabilitiesCallback) |cb| .{
+                .ffi = cb,
+            } else null,
         };
 
         if (self.netconf.error_tag_len > 0) {
