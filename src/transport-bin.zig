@@ -577,12 +577,14 @@ fn openPty(
     if (pid < 0) {
         return error.PtyError;
     } else if (pid == 0) {
-        const args = try allocator.alloc([*c]u8, open_args.len);
+        const args = try allocator.alloc([*c]u8, open_args.len + 1);
         defer allocator.free(args);
 
         for (open_args, 0..) |arg, i| {
             args[i] = try allocator.dupeZ(u8, arg);
         }
+
+        args[open_args.len] = null;
 
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
         // to see what happened
@@ -590,7 +592,6 @@ fn openPty(
             master_fd,
             slave_fd,
             @ptrCast(args.ptr),
-            // envs,
             term_width,
             term_height,
             netconf,
@@ -630,17 +631,17 @@ fn openPtyChild(
     }
 
     if (!netconf) {
+        var ws = c.winsize{
+            .ws_row = term_height,
+            .ws_col = term_width,
+            .ws_ypixel = 0,
+            .ws_xpixel = 0,
+        };
+
         const set_win_size_rc = std.posix.system.ioctl(
             slave_fd.handle,
             @bitCast(@as(u32, c.TIOCSWINSZ)),
-            @intFromPtr(
-                &c.winsize{
-                    .ws_row = term_height,
-                    .ws_col = term_width,
-                    .ws_ypixel = 0,
-                    .ws_xpixel = 0,
-                },
-            ),
+            @intFromPtr(&ws),
         );
 
         if (set_win_size_rc != 0) {

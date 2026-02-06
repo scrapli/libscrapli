@@ -376,9 +376,7 @@ const ProxyWrapper = struct {
     fn copyPipeToChannel(self: *ProxyWrapper) !void {
         while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
             const result = self.pipeToChannel();
-            if (result) {
-                return;
-            } else |err| switch (err) {
+            if (result) {} else |err| switch (err) {
                 error.WouldBlock => {
                     try std.Io.Clock.Duration.sleep(
                         .{
@@ -418,7 +416,9 @@ const ProxyWrapper = struct {
         var wrote: usize = 0;
 
         while (true) {
-            const wrote_n: usize = @intCast(std.c.write(self.remote_fd, buf[0..@intCast(n)].ptr, @intCast(n)));
+            const wrote_n: usize = @intCast(
+                std.c.write(self.remote_fd, buf[0..@intCast(n)].ptr, @intCast(n)),
+            );
 
             wrote += wrote_n;
 
@@ -631,6 +631,8 @@ pub const Transport = struct {
 
             channel = self.initial_channel;
         } else {
+            self.log.debug("ssh2.Transport open: start proxy jump", .{});
+
             self.proxy_wrapper = try ProxyWrapper.init(self.allocator, self.io, self.log);
 
             try self.openProxyChannel(

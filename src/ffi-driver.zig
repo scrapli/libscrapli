@@ -274,7 +274,7 @@ pub const FfiDriver = struct {
                 .cli => |d| d,
                 else => {
                     @panic(
-                        "ffi-driver.FfiDriver:  cli operation loop executed, but driver is not cli",
+                        "ffi-driver.FfiDriver: cli operation loop executed, but driver is not cli",
                     );
                 },
             };
