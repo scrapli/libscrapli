@@ -122,8 +122,6 @@ pub const Result = struct {
         input: []const u8,
         operation_kind: operation.Kind,
     ) !*Result {
-        const now = try std.Io.Clock.real.now(io);
-
         const r = try allocator.create(Result);
 
         r.* = Result{
@@ -137,7 +135,7 @@ pub const Result = struct {
             .input = input,
             .result_raw = "",
             .result = "",
-            .start_time_ns = now.toNanoseconds(),
+            .start_time_ns = std.Io.Timestamp.now(io, .real).nanoseconds,
             .end_time_ns = 0,
             .result_failure_indicated = false,
             .result_warning_messages = .{},
@@ -288,9 +286,7 @@ pub const Result = struct {
         self: *Result,
         ret: [2][]const u8,
     ) !void {
-        const now = try std.Io.Clock.real.now(self.io);
-
-        self.end_time_ns = now.toNanoseconds();
+        self.end_time_ns = std.Io.Timestamp.now(self.io, .real).nanoseconds;
         self.result_raw = ret[0];
         self.result = ret[1];
 

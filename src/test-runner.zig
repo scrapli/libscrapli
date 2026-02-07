@@ -55,7 +55,7 @@ pub fn main(init: std.process.Init) !void {
 
     const env = Env.init(init.environ_map);
 
-    var slowest = SlowTracker.init(allocator, 5);
+    var slowest = SlowTracker.init(allocator, init.io, 5);
     defer slowest.deinit();
 
     var pass: usize = 0;
@@ -256,17 +256,19 @@ const Status = enum {
 
 const SlowTracker = struct {
     const SlowestQueue = std.PriorityDequeue(TestInfo, void, compareTiming);
+
+    io: std.Io,
     max: usize,
     slowest: SlowestQueue,
-    timer: std.time.Timer,
+    timer: std.Io.Timestamp,
 
-    fn init(allocator: Allocator, count: u32) SlowTracker {
-        const timer = std.time.Timer.start() catch @panic("failed to start timer");
+    fn init(allocator: Allocator, io: std.Io, count: u32) SlowTracker {
         var slowest = SlowestQueue.init(allocator, {});
         slowest.ensureTotalCapacity(count) catch @panic("OOM");
         return .{
+            .io = io,
             .max = count,
-            .timer = timer,
+            .timer = std.Io.Timestamp.now(io, .real),
             .slowest = slowest,
         };
     }
@@ -281,12 +283,11 @@ const SlowTracker = struct {
     }
 
     fn startTiming(self: *SlowTracker) void {
-        self.timer.reset();
+        self.timer = std.Io.Timestamp.now(self.io, .real);
     }
 
     fn endTiming(self: *SlowTracker, test_name: []const u8) u64 {
-        var timer = self.timer;
-        const ns = timer.lap();
+        const ns: u64 = @intCast(self.timer.untilNow(self.io, .real).nanoseconds);
 
         var slowest = &self.slowest;
 

@@ -179,10 +179,10 @@ pub const Driver = struct {
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
-    messages_lock: std.Thread.Mutex,
+    messages_lock: std.Io.Mutex,
 
     notifications: std.ArrayList([]const u8),
-    notifications_lock: std.Thread.Mutex,
+    notifications_lock: std.Io.Mutex,
 
     subscriptions: std.HashMap(
         u64,
@@ -190,7 +190,7 @@ pub const Driver = struct {
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
-    subscriptions_lock: std.Thread.Mutex,
+    subscriptions_lock: std.Io.Mutex,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -264,16 +264,16 @@ pub const Driver = struct {
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
-            .messages_lock = std.Thread.Mutex{},
+            .messages_lock = std.Io.Mutex.init,
             .notifications = .{},
-            .notifications_lock = std.Thread.Mutex{},
+            .notifications_lock = std.Io.Mutex.init,
             .subscriptions = std.HashMap(
                 u64,
                 std.ArrayList([]const u8),
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
-            .subscriptions_lock = std.Thread.Mutex{},
+            .subscriptions_lock = std.Io.Mutex.init,
         };
 
         return d;
@@ -365,7 +365,7 @@ pub const Driver = struct {
     ) !*result.Result {
         self.log.info("netconf.Driver open requested", .{});
 
-        var timer = try std.time.Timer.start();
+        const start_timestamp = std.Io.Timestamp.now(self.io, .real);
 
         var res = try self.newResult(
             allocator,
@@ -435,7 +435,7 @@ pub const Driver = struct {
                 cap_buf = try self.receiveServerCapabilities(
                     allocator,
                     options,
-                    &timer,
+                    start_timestamp,
                 );
 
                 res.result = try std.fmt.allocPrint(
@@ -542,7 +542,7 @@ pub const Driver = struct {
         self: *Driver,
         allocator: std.mem.Allocator,
         options: operation.OpenOptions,
-        timer: *std.time.Timer,
+        start_timestamp: std.Io.Timestamp,
     ) ![]u8 {
         self.log.info("netconf.Driver receiveServerCapabilities requested", .{});
 
@@ -571,10 +571,8 @@ pub const Driver = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
             if (self.session.options.operation_timeout_ns != 0 and
-                elapsed_time >= self.session.options.operation_timeout_ns)
+                start_timestamp.untilNow(self.io, .real).nanoseconds >= self.session.options.operation_timeout_ns)
             {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1147,8 +1145,8 @@ pub const Driver = struct {
             // we ignore raw buf of subscriptions/notifications
             self.allocator.free(raw_buf);
 
-            self.subscriptions_lock.lock();
-            defer self.subscriptions_lock.unlock();
+            try self.subscriptions_lock.lock(self.io);
+            defer self.subscriptions_lock.unlock(self.io);
 
             const ret = try self.subscriptions.getOrPut(id_info.found_id);
             if (!ret.found_existing) {
@@ -1159,13 +1157,13 @@ pub const Driver = struct {
         } else if (id_info.is_notification_message) {
             self.allocator.free(raw_buf);
 
-            self.notifications_lock.lock();
-            defer self.notifications_lock.unlock();
+            try self.notifications_lock.lock(self.io);
+            defer self.notifications_lock.unlock(self.io);
 
             try self.notifications.append(self.allocator, processed_buf);
         } else {
-            self.messages_lock.lock();
-            defer self.messages_lock.unlock();
+            try self.messages_lock.lock(self.io);
+            defer self.messages_lock.unlock(self.io);
 
             // message id will be unique, clobber away
             try self.messages.put(id_info.found_id, [2][]const u8{ raw_buf, processed_buf });
@@ -1355,7 +1353,7 @@ pub const Driver = struct {
 
     fn processCancelAndTimeout(
         self: *Driver,
-        timer: *std.time.Timer,
+        start_timestamp: std.Io.Timestamp,
         cancel: ?*bool,
     ) !void {
         if (cancel != null and cancel.?.*) {
@@ -1368,12 +1366,10 @@ pub const Driver = struct {
             );
         }
 
-        const elapsed_time = timer.read();
-
         // if timeout is 0 we dont timeout -- we do this to let users 1) disable it but also
         // 2) to let the ffi layer via (go) context control it for example
         if (self.session.options.operation_timeout_ns != 0 and
-            (elapsed_time > self.session.options.operation_timeout_ns))
+            (start_timestamp.untilNow(self.io, .real).nanoseconds > self.session.options.operation_timeout_ns))
         {
             return errors.wrapCriticalError(
                 errors.ScrapliError.TimeoutExceeded,
@@ -2616,7 +2612,7 @@ pub const Driver = struct {
             .{@tagName(options)},
         );
 
-        var timer = try std.time.Timer.start();
+        const start_timestamp = std.Io.Timestamp.now(self.io, .real);
 
         var cancel: ?*bool = null;
 
@@ -2771,7 +2767,7 @@ pub const Driver = struct {
         self.message_id += 1;
 
         const ret = try self.sendRpc(
-            &timer,
+            start_timestamp,
             cancel,
             res.input,
             self.message_id - 1,
@@ -2784,7 +2780,7 @@ pub const Driver = struct {
 
     pub fn sendRpc(
         self: *Driver,
-        timer: *std.time.Timer,
+        start_timestamp: std.Io.Timestamp,
         cancel: ?*bool,
         input: []const u8,
         message_id: u64,
@@ -2806,12 +2802,12 @@ pub const Driver = struct {
         }
 
         while (true) {
-            try self.processCancelAndTimeout(timer, cancel);
+            try self.processCancelAndTimeout(start_timestamp, cancel);
 
-            self.messages_lock.lock();
+            try self.messages_lock.lock(self.io);
 
             if (!self.messages.contains(message_id)) {
-                self.messages_lock.unlock();
+                self.messages_lock.unlock(self.io);
 
                 if (self.process_thread_exited) {
                     return errors.ScrapliError.EOF;
@@ -2830,7 +2826,7 @@ pub const Driver = struct {
 
             const kv = self.messages.fetchRemove(message_id);
 
-            self.messages_lock.unlock();
+            self.messages_lock.unlock(self.io);
 
             return kv.?.value;
         }

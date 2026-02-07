@@ -28,8 +28,8 @@ pub const FfiDriver = struct {
     operation_thread: ?std.Thread,
     operation_ready: std.atomic.Value(bool),
     operation_stop: std.atomic.Value(bool),
-    operation_lock: std.Thread.Mutex,
-    operation_condition: std.Thread.Condition,
+    operation_lock: std.Io.Mutex,
+    operation_condition: std.Io.Condition,
     operation_predicate: u32,
     operation_queue: queue.LinearFifo(
         ffi_operations.OperationOptions,
@@ -74,8 +74,8 @@ pub const FfiDriver = struct {
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
             .operation_stop = std.atomic.Value(bool).init(false),
-            .operation_lock = std.Thread.Mutex{},
-            .operation_condition = std.Thread.Condition{},
+            .operation_lock = std.Io.Mutex.init,
+            .operation_condition = std.Io.Condition.init,
             .operation_predicate = 0,
             .operation_queue = queue.LinearFifo(
                 ffi_operations.OperationOptions,
@@ -115,8 +115,8 @@ pub const FfiDriver = struct {
             .operation_thread = null,
             .operation_ready = std.atomic.Value(bool).init(false),
             .operation_stop = std.atomic.Value(bool).init(false),
-            .operation_lock = std.Thread.Mutex{},
-            .operation_condition = std.Thread.Condition{},
+            .operation_lock = std.Io.Mutex.init,
+            .operation_condition = std.Io.Condition.init,
             .operation_predicate = 0,
             .operation_queue = queue.LinearFifo(
                 ffi_operations.OperationOptions,
@@ -138,9 +138,10 @@ pub const FfiDriver = struct {
         self.operation_stop.store(true, std.builtin.AtomicOrder.unordered);
 
         // signal to the operation thread to iterate, it should then catch the stored stop condition
-        self.operation_lock.lock();
-        self.operation_condition.signal();
-        self.operation_lock.unlock();
+        // we should really never fail to acquire the lock... but if we do... what happens??
+        self.operation_lock.lock(self.io) catch {};
+        self.operation_condition.signal(self.io);
+        self.operation_lock.unlock(self.io);
 
         if (self.operation_thread) |ot| {
             ot.join();
@@ -252,16 +253,22 @@ pub const FfiDriver = struct {
                 break;
             }
 
-            self.operation_lock.lock();
+            self.operation_lock.lock(self.io) catch {
+                @panic("failed acquiring operation lock");
+            };
 
             if (self.operation_queue.count == 0) {
                 // nothing in the queue to process, wait for the signal
-                self.operation_condition.wait(&self.operation_lock);
+                self.operation_condition.wait(self.io, &self.operation_lock) catch {
+                    @panic(
+                        "ffi-driver.FfiDriver: failed waiting for signal to unblock operation loop",
+                    );
+                };
             }
 
             const op = self.operation_queue.readItem();
 
-            self.operation_lock.unlock();
+            self.operation_lock.unlock(self.io);
 
             if (op == null) {
                 continue;
@@ -345,7 +352,9 @@ pub const FfiDriver = struct {
                 },
             }
 
-            self.operation_lock.lock();
+            self.operation_lock.lock(self.io) catch {
+                @panic("failed acquiring operation lock");
+            };
 
             if (ret_err != null) {
                 self.operation_results.put(
@@ -381,7 +390,7 @@ pub const FfiDriver = struct {
                 };
             }
 
-            self.operation_lock.unlock();
+            self.operation_lock.unlock(self.io);
 
             self.writePollWakeUp() catch {
                 @panic("ffi-driver.FfiDriver: failed writing to wakeup fd, cannot proceed");
@@ -402,16 +411,22 @@ pub const FfiDriver = struct {
                 break;
             }
 
-            self.operation_lock.lock();
+            self.operation_lock.lock(self.io) catch {
+                @panic("ffi-driver.FfiDriver: failed acquiring operation lock");
+            };
 
             if (self.operation_queue.count == 0) {
                 // nothing in the queue to process, wait for the signal
-                self.operation_condition.wait(&self.operation_lock);
+                self.operation_condition.wait(self.io, &self.operation_lock) catch {
+                    @panic(
+                        "ffi-driver.FfiDriver: failed waiting for signal to unblock operation loop",
+                    );
+                };
             }
 
             const op = self.operation_queue.readItem();
 
-            self.operation_lock.unlock();
+            self.operation_lock.unlock(self.io);
 
             if (op == null) {
                 continue;
@@ -613,7 +628,9 @@ pub const FfiDriver = struct {
                 },
             }
 
-            self.operation_lock.lock();
+            self.operation_lock.lock(self.io) catch {
+                @panic("ffi-driver.FfiDriver: failed acquiring operation lock");
+            };
 
             if (ret_err != null) {
                 self.operation_results.put(
@@ -649,7 +666,7 @@ pub const FfiDriver = struct {
                 };
             }
 
-            self.operation_lock.unlock();
+            self.operation_lock.unlock(self.io);
 
             self.writePollWakeUp() catch {
                 @panic("ffi-driver.FfiDriver: failed writing to wakeup fd, cannot proceed");
@@ -665,8 +682,8 @@ pub const FfiDriver = struct {
     ) !u32 {
         var mut_options = options;
 
-        self.operation_lock.lock();
-        errdefer self.operation_lock.unlock();
+        try self.operation_lock.lock(self.io);
+        errdefer self.operation_lock.unlock(self.io);
 
         self.operation_id_counter += 1;
 
@@ -700,11 +717,11 @@ pub const FfiDriver = struct {
             },
         }
 
-        self.operation_lock.unlock();
+        self.operation_lock.unlock(self.io);
 
         // signal to unblock the operation loop (we do this so we dont have to do some sleep in the
         // loop between checking for operations)
-        self.operation_condition.signal();
+        self.operation_condition.signal(self.io);
 
         return operation_id;
     }
@@ -714,8 +731,8 @@ pub const FfiDriver = struct {
         operation_id: u32,
         remove: bool,
     ) !ffi_operations.OperationResult {
-        self.operation_lock.lock();
-        defer self.operation_lock.unlock();
+        try self.operation_lock.lock(self.io);
+        defer self.operation_lock.unlock(self.io);
 
         if (!self.operation_results.contains(operation_id)) {
             return errors.wrapCriticalError(

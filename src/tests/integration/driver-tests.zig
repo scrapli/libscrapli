@@ -32,38 +32,14 @@ fn eosOnOpen(
     );
 }
 
-fn getPlatformPath(buf: []u8) !usize {
-    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const cwd = try std.posix.getcwd(&cwd_buf);
-
-    var platform_path_len: usize = 0;
-
-    @memcpy(buf[0..cwd.len], cwd[0..cwd.len]);
-    platform_path_len += cwd.len;
-
-    buf[platform_path_len] = "/"[0];
-    platform_path_len += 1;
-
-    @memcpy(
-        buf[platform_path_len .. platform_path_len + arista_eos_platform_path_from_project_root.len],
-        arista_eos_platform_path_from_project_root,
-    );
-    platform_path_len += arista_eos_platform_path_from_project_root.len;
-
-    return platform_path_len;
-}
-
 fn GetRecordTestDriver(record_path: []const u8) !*cli.Driver {
-    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const platform_path_len = try getPlatformPath(&platform_path_buf);
-
     return cli.Driver.init(
         std.testing.allocator,
         std.testing.io,
         "localhost",
         .{
             .definition = .{
-                .file = platform_path_buf[0..platform_path_len],
+                .file = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml",
             },
             .port = 22022,
             .auth = .{
@@ -85,16 +61,13 @@ fn GetRecordTestDriver(record_path: []const u8) !*cli.Driver {
 }
 
 fn GetTestDriver(f: []const u8) !*cli.Driver {
-    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const platform_path_len = try getPlatformPath(&platform_path_buf);
-
     return cli.Driver.init(
         std.testing.allocator,
         std.testing.io,
         "dummy",
         .{
             .definition = .{
-                .file = platform_path_buf[0..platform_path_len],
+                .file = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml",
             },
             .port = 22022,
             .auth = .{

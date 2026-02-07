@@ -2,7 +2,14 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn setNonBlocking(fd: std.posix.fd_t) !void {
-    var flags = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
+    var flags = std.posix.system.fcntl(
+        fd,
+        std.posix.system.F.GETFL,
+        @as(usize, 0),
+    );
+    if (flags == -1) {
+        return error.CError;
+    }
 
     // would have thought there would be a portable std.posix.O.NONBLOCK but
     // seems that doesnt exist on darwin but this does work on darwin? then
@@ -11,7 +18,14 @@ pub fn setNonBlocking(fd: std.posix.fd_t) !void {
     // on darwin+linux(gnu/musl)
     flags |= @as(usize, 1 << @bitOffsetOf(std.posix.O, "NONBLOCK"));
 
-    _ = try std.posix.fcntl(fd, std.posix.F.SETFL, flags);
+    const rc = std.posix.system.fcntl(
+        fd,
+        std.posix.system.F.SETFL,
+        flags,
+    );
+    if (rc == -1) {
+        return error.CError;
+    }
 }
 
 // buf is passed in for lifetime reasons of course, so needs to be allocated outside of this

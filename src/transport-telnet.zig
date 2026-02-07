@@ -164,7 +164,7 @@ pub const Transport = struct {
 
     fn handleControlChars(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
     ) !void {
@@ -182,9 +182,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -222,7 +220,7 @@ pub const Transport = struct {
 
     pub fn open(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         host: []const u8,
@@ -255,7 +253,7 @@ pub const Transport = struct {
         self.writer = self.stream.?.writer(self.io, &self.w_buffer);
 
         try self.handleControlChars(
-            timer,
+            start_time,
             cancel,
             operation_timeout_ns,
         );

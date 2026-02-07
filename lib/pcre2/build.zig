@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) !void {
         b.allocator,
         b.graph.io,
         .{
-            .cwd = b.build_root.path orelse ".",
+            .cwd = .{ .path = b.build_root.path orelse "." },
             .argv = &[_][]const u8{"./generate.sh"},
         },
     ) catch {

@@ -191,7 +191,7 @@ pub const Session = struct {
 
     read_thread: ?std.Thread,
     read_stop: std.atomic.Value(ReadThreadState),
-    read_lock: std.Thread.Mutex,
+    read_lock: std.Io.Mutex,
     read_queue: queue.LinearFifo(
         u8,
         .dynamic,
@@ -241,7 +241,7 @@ pub const Session = struct {
             .transport = t,
             .read_thread = null,
             .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.uninitialized),
-            .read_lock = std.Thread.Mutex{},
+            .read_lock = std.Io.Mutex.init,
             .read_queue = queue.LinearFifo(
                 u8,
                 .dynamic,
@@ -356,10 +356,10 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("session.Session open requested", .{});
 
-        var timer = try std.time.Timer.start();
+        const start_time = std.Io.Timestamp.now(self.io, .real);
 
         try self.transport.open(
-            &timer,
+            start_time,
             cancel,
             self.options.operation_timeout_ns,
             host,
@@ -397,7 +397,7 @@ pub const Session = struct {
 
         return self.authenticate(
             allocator,
-            &timer,
+            start_time,
             cancel,
         );
     }
@@ -452,9 +452,9 @@ pub const Session = struct {
                 continue;
             }
 
-            self.read_lock.lock();
+            try self.read_lock.lock(self.io);
             try self.read_queue.write(buf[0..n]);
-            self.read_lock.unlock();
+            self.read_lock.unlock(self.io);
 
             // log all the reads w/ ascii unprintables shown
             logging.traceWithSrc(
@@ -472,8 +472,8 @@ pub const Session = struct {
 
     /// Reads from the internal queue into the given buffer.
     pub fn read(self: *Session, buf: []u8) !usize {
-        self.read_lock.lock();
-        defer self.read_lock.unlock();
+        try self.read_lock.lock(self.io);
+        defer self.read_lock.unlock(self.io);
 
         if (self.read_thread_errored and self.read_queue.readableLength() == 0) {
             // once the read thread is errored out and there is nothing else to
@@ -518,7 +518,7 @@ pub const Session = struct {
     fn authenticate(
         self: *Session,
         allocator: std.mem.Allocator,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
     ) ![2][]const u8 {
         self.log.info("session.Session authenticate requested", .{});
@@ -555,10 +555,8 @@ pub const Session = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
             if (self.options.operation_timeout_ns != 0 and
-                elapsed_time >= self.options.operation_timeout_ns)
+                start_time.untilNow(self.io, .real).nanoseconds >= self.options.operation_timeout_ns)
             {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -784,7 +782,7 @@ pub const Session = struct {
     /// output is seen in the transport output.
     pub fn readTimeout(
         self: *Session,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         checkF: bytes_check.CheckF,
         check_args: bytes_check.CheckArgs,
@@ -815,12 +813,10 @@ pub const Session = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
             // if timeout is 0 we dont timeout -- we do this to let users 1) disable it but also
             // 2) to let the ffi layer via (go) context control it for example
             if (self.options.operation_timeout_ns != 0 and
-                (elapsed_time + cur_read_delay_ns) >= self.options.operation_timeout_ns)
+                (start_time.untilNow(self.io, .real).nanoseconds + cur_read_delay_ns) >= self.options.operation_timeout_ns)
             {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -892,10 +888,10 @@ pub const Session = struct {
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
-        var timer = try std.time.Timer.start();
+        const start_time = std.Io.Timestamp.now(self.io, .real);
 
         _ = try self.readTimeout(
-            &timer,
+            start_time,
             options.cancel,
             bytes_check.nonZeroBuf,
             .{},
@@ -920,10 +916,10 @@ pub const Session = struct {
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
-        var timer = try std.time.Timer.start();
+        const start_time = std.Io.Timestamp.now(self.io, .real);
 
         _ = try self.readTimeout(
-            &timer,
+            start_time,
             options.cancel,
             bytes_check.patternInBuf,
             .{
@@ -966,7 +962,7 @@ pub const Session = struct {
 
     fn innerSendInput(
         self: *Session,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         input: []const u8,
         input_handling: operation.InputHandling,
@@ -995,7 +991,7 @@ pub const Session = struct {
         switch (input_handling) {
             .exact => {
                 match_indexes = try self.readTimeout(
-                    timer,
+                    start_time,
                     cancel,
                     bytes_check.exactInBuf,
                     check_args,
@@ -1005,7 +1001,7 @@ pub const Session = struct {
             },
             .fuzzy => {
                 match_indexes = try self.readTimeout(
-                    timer,
+                    start_time,
                     cancel,
                     bytes_check.fuzzyInBuf,
                     check_args,
@@ -1040,7 +1036,7 @@ pub const Session = struct {
         self.log.info("session.Session sendInput requested", .{});
         self.log.debug("session.Session sendInput: input '{s}'", .{options.input});
 
-        var timer = try std.time.Timer.start();
+        const start_time = std.Io.Timestamp.now(self.io, .real);
 
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
@@ -1053,7 +1049,7 @@ pub const Session = struct {
         }
 
         _ = try self.innerSendInput(
-            &timer,
+            start_time,
             options.cancel,
             options.input,
             options.input_handling,
@@ -1071,7 +1067,7 @@ pub const Session = struct {
         };
 
         var prompt_indexes = try self.readTimeout(
-            &timer,
+            start_time,
             options.cancel,
             bytes_check.patternInBuf,
             check_args,
@@ -1114,7 +1110,7 @@ pub const Session = struct {
             .{ options.input, options.response },
         );
 
-        var timer = try std.time.Timer.start();
+        const start_time = std.Io.Timestamp.now(self.io, .real);
 
         var compiled_pattern: ?*re.pcre2CompiledPattern = null;
 
@@ -1162,7 +1158,7 @@ pub const Session = struct {
         }
 
         _ = try self.innerSendInput(
-            &timer,
+            start_time,
             options.cancel,
             options.input,
             options.input_handling,
@@ -1183,7 +1179,7 @@ pub const Session = struct {
         }
 
         _ = try self.readTimeout(
-            &timer,
+            start_time,
             options.cancel,
             bytes_check.exactInBuf,
             check_args,
@@ -1195,7 +1191,7 @@ pub const Session = struct {
             try self.writeAndReturn(options.response, true);
         } else {
             _ = try self.innerSendInput(
-                &timer,
+                start_time,
                 options.cancel,
                 options.input,
                 options.input_handling,
@@ -1204,7 +1200,7 @@ pub const Session = struct {
         }
 
         var prompt_indexes = try self.readTimeout(
-            &timer,
+            start_time,
             options.cancel,
             bytes_check.patternInBuf,
             check_args,

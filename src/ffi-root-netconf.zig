@@ -72,8 +72,10 @@ export fn ls_netconf_open(
         // weve already waited for the operation loop to start in the queue operation function,
         // but we also need to ensure we wait for the open operation to actually get put into
         // the queue before continuing
-        d.operation_lock.lock();
-        defer d.operation_lock.unlock();
+        d.operation_lock.lock(d.io) catch {
+            return 1;
+        };
+        defer d.operation_lock.unlock(d.io);
 
         const op = d.operation_results.get(operation_id.*);
         if (op != null) {
@@ -323,8 +325,10 @@ export fn ls_netconf_next_notification_message_size(
 ) callconv(.c) void {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.netconf.notifications_lock.lock();
-    defer d.real_driver.netconf.notifications_lock.unlock();
+    d.real_driver.netconf.notifications_lock.lock(d.io) catch {
+        return;
+    };
+    defer d.real_driver.netconf.notifications_lock.unlock(d.io);
 
     if (d.real_driver.netconf.notifications.items.len > 0) {
         size.* = d.real_driver.netconf.notifications.items[0].len;
@@ -337,8 +341,10 @@ export fn ls_netconf_next_notification_message(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.netconf.notifications_lock.lock();
-    defer d.real_driver.netconf.notifications_lock.unlock();
+    d.real_driver.netconf.notifications_lock.lock(d.io) catch {
+        return 1;
+    };
+    defer d.real_driver.netconf.notifications_lock.unlock(d.io);
 
     if (d.real_driver.netconf.notifications.items.len == 0) {
         // an error because they shoulda peeked at sizes first
@@ -362,8 +368,13 @@ export fn ls_netconf_next_subscription_message_size(
 ) callconv(.c) void {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.netconf.subscriptions_lock.lock();
-    defer d.real_driver.netconf.subscriptions_lock.unlock();
+    d.real_driver.netconf.subscriptions_lock.lock(d.io) catch {
+        // this *shouldnt* happen... but if we cant get the lock just return i guess since we have
+        // no easy way to signal erroring here (we could ofc add a return value etc etc, but it
+        // seems like this should really never be an issue)
+        return;
+    };
+    defer d.real_driver.netconf.subscriptions_lock.unlock(d.io);
 
     if (!d.real_driver.netconf.subscriptions.contains(subscription_id)) {
         return;
@@ -385,8 +396,10 @@ export fn ls_netconf_next_subscription_message(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    d.real_driver.netconf.subscriptions_lock.lock();
-    defer d.real_driver.netconf.subscriptions_lock.unlock();
+    d.real_driver.netconf.subscriptions_lock.lock(d.io) catch {
+        return 1;
+    };
+    defer d.real_driver.netconf.subscriptions_lock.unlock(d.io);
 
     var subs = d.real_driver.netconf.subscriptions.get(subscription_id);
 
