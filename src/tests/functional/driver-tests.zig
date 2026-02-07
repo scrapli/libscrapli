@@ -72,25 +72,7 @@ fn GetDriver(
         return error.UnknownPlatform;
     }
 
-    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const cwd = try std.posix.getcwd(&cwd_buf);
-
-    var platform_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    var platform_path_len: usize = 0;
-
-    @memcpy(platform_path_buf[0..cwd.len], cwd[0..cwd.len]);
-    platform_path_len += cwd.len;
-
-    platform_path_buf[platform_path_len] = "/"[0];
-    platform_path_len += 1;
-
-    @memcpy(
-        platform_path_buf[platform_path_len .. platform_path_len + platform_definition_path.len],
-        platform_definition_path,
-    );
-    platform_path_len += platform_definition_path.len;
-
-    config.definition.file = platform_path_buf[0..platform_path_len];
+    config.definition.file = platform_definition_path;
 
     if (username == null) {
         config.auth.username = "admin";

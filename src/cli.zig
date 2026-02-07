@@ -385,12 +385,12 @@ pub const Driver = struct {
         );
         defer steps.deinit(self.allocator);
 
-        self.log.debug(
-            "cli.Driver enterMode: determined steps to requested mode '{s}' are: '{any}'",
-            .{ options.requested_mode, steps.items },
-        );
-
         for (0.., steps.items) |step_idx, step| {
+            self.log.debug(
+                "cli.Driver enterMode: determined next step to requested mode '{s}' is: '{s}'",
+                .{ options.requested_mode, step },
+            );
+
             if (step_idx == steps.items.len - 1) {
                 break;
             }

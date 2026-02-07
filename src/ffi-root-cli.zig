@@ -128,8 +128,10 @@ export fn ls_cli_open(
         // weve already waited for the operation loop to start in the queue operation function,
         // but we also need to ensure we wait for the open operation to actually get put into
         // the queue before continuing
-        d.operation_lock.lock();
-        defer d.operation_lock.unlock();
+        d.operation_lock.lock(d.io) catch {
+            return 1;
+        };
+        defer d.operation_lock.unlock(d.io);
 
         const op = d.operation_results.get(operation_id.*);
         if (op != null) {

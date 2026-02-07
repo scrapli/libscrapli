@@ -1,17 +1,24 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const c = @cImport(
+    {
+        @cInclude("fcntl.h");
+        @cInclude("unistd.h");
+        @cInclude("errno.h");
+    },
+);
+
 pub fn setNonBlocking(fd: std.posix.fd_t) !void {
-    var flags = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
+    const flags = c.fcntl(fd, std.posix.F.GETFL, @as(usize, 0));
+    if (flags == -1) {
+        return error.CError;
+    }
 
-    // would have thought there would be a portable std.posix.O.NONBLOCK but
-    // seems that doesnt exist on darwin but this does work on darwin? then
-    // darwin was content doing c.O_NONBLOCK but for some reason fnctl things
-    // were not getting transalted nicely on linux-gnu... so this should work
-    // on darwin+linux(gnu/musl)
-    flags |= @as(usize, 1 << @bitOffsetOf(std.posix.O, "NONBLOCK"));
-
-    _ = try std.posix.fcntl(fd, std.posix.F.SETFL, flags);
+    const rc = c.fcntl(fd, c.F_SETFL, flags | c.O_NONBLOCK);
+    if (rc == -1) {
+        return error.CError;
+    }
 }
 
 // buf is passed in for lifetime reasons of course, so needs to be allocated outside of this

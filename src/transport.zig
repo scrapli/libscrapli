@@ -219,7 +219,7 @@ pub const Transport = struct {
 
     pub fn open(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         host: []const u8,
@@ -234,11 +234,11 @@ pub const Transport = struct {
                 try t.open(operation_timeout_ns, host, port, auth_options);
             },
             Kind.telnet => |t| {
-                try t.open(timer, cancel, operation_timeout_ns, host, port);
+                try t.open(start_time, cancel, operation_timeout_ns, host, port);
             },
             Kind.ssh2 => |t| {
                 try t.open(
-                    timer,
+                    start_time,
                     cancel,
                     operation_timeout_ns,
                     host,

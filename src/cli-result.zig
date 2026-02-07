@@ -39,8 +39,6 @@ pub const Result = struct {
         operation_kind: operation.Kind,
         failed_indicators: ?std.array_list.Managed([]const u8),
     ) !*Result {
-        const now = try std.Io.Clock.real.now(io);
-
         const res = try allocator.create(Result);
 
         res.* = Result{
@@ -53,7 +51,7 @@ pub const Result = struct {
             .inputs = std.array_list.Managed([]const u8).init(allocator),
             .results_raw = std.array_list.Managed([]const u8).init(allocator),
             .results = std.array_list.Managed([]const u8).init(allocator),
-            .start_time_ns = now.toNanoseconds(),
+            .start_time_ns = std.Io.Timestamp.now(io, .real).nanoseconds,
             .splits_ns = std.array_list.Managed(i128).init(allocator),
             .result_failure_indicated = false,
             .result_failure_indicator = -1,
@@ -91,9 +89,7 @@ pub const Result = struct {
             trim_processed: bool = true,
         },
     ) !void {
-        const now = try std.Io.Clock.real.now(self.io);
-
-        try self.splits_ns.append(now.toNanoseconds());
+        try self.splits_ns.append(std.Io.Timestamp.now(self.io, .real).nanoseconds);
         try self.inputs.append(data.input);
         try self.results_raw.append(data.rets[0]);
 

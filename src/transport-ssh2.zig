@@ -510,7 +510,7 @@ pub const Transport = struct {
 
     auth_callback_data: *AuthCallbackData,
 
-    session_lock: std.Thread.Mutex,
+    session_lock: std.Io.Mutex,
 
     // may be to the actual host or to the jumphost
     socket: ?std.posix.socket_t = null,
@@ -559,7 +559,7 @@ pub const Transport = struct {
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
             .auth_callback_data = a,
-            .session_lock = std.Thread.Mutex{},
+            .session_lock = std.Io.Mutex.init,
         };
 
         return t;
@@ -595,7 +595,7 @@ pub const Transport = struct {
     /// Opens the ssh2 transport object.
     pub fn open(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         host: []const u8,
@@ -605,11 +605,11 @@ pub const Transport = struct {
         self.log.info("ssh2.Transport open requested", .{});
 
         try self.initSocket(host, port);
-        try self.initSession(timer, cancel, operation_timeout_ns);
+        try self.initSession(start_time, cancel, operation_timeout_ns);
         try self.initKnownHost(host, port);
 
         try self.authenticate(
-            timer,
+            start_time,
             cancel,
             operation_timeout_ns,
             self.initial_session.?,
@@ -623,7 +623,7 @@ pub const Transport = struct {
         if (self.options.proxy_jump_options == null) {
             // no proxy jump, normal flow
             self.initial_channel = try self.openChannel(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 self.initial_session.?,
@@ -636,14 +636,14 @@ pub const Transport = struct {
             self.proxy_wrapper = try ProxyWrapper.init(self.allocator, self.io, self.log);
 
             try self.openProxyChannel(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 auth_options,
             );
 
             self.proxy_channel = try self.openChannel(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 self.proxy_session.?,
@@ -657,7 +657,7 @@ pub const Transport = struct {
             // not in netconf), and disabling them via term mode only makes it echo once
             // not twice :p
             try self.requestPty(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 channel.?,
@@ -665,7 +665,7 @@ pub const Transport = struct {
         }
 
         try self.requestShell(
-            timer,
+            start_time,
             cancel,
             operation_timeout_ns,
             channel.?,
@@ -703,12 +703,14 @@ pub const Transport = struct {
 
     fn initSession(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
     ) !void {
         self.log.debug("ssh2.Transport initSession requested", .{});
 
+        // TODO "illegal instruction" *somewhere* around here on x86 linux (but only in scrapligo
+        // it seems? (havent tried py yet. so must be passing in something not nice))
         self.initial_session = c.libssh2_session_init_ex(
             null,
             null,
@@ -753,9 +755,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -916,7 +916,7 @@ pub const Transport = struct {
 
     fn authenticate(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
@@ -929,7 +929,7 @@ pub const Transport = struct {
 
         if (auth_options.private_key_path != null) {
             self.handlePrivateKeyAuth(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 session,
@@ -942,7 +942,7 @@ pub const Transport = struct {
             };
 
             if (try self.isAuthenticated(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 session,
@@ -963,7 +963,7 @@ pub const Transport = struct {
             self.auth_callback_data.password = _password;
 
             self.handlePasswordAuth(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 session,
@@ -976,7 +976,7 @@ pub const Transport = struct {
             };
 
             if (try self.isAuthenticated(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 session,
@@ -985,15 +985,16 @@ pub const Transport = struct {
             }
 
             try self.handleKeyboardInteractiveAuth(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 session,
                 _username,
                 _password,
             );
+
             if (try self.isAuthenticated(
-                timer,
+                start_time,
                 cancel,
                 operation_timeout_ns,
                 session,
@@ -1013,7 +1014,7 @@ pub const Transport = struct {
 
     fn isAuthenticated(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
@@ -1029,9 +1030,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1064,7 +1063,7 @@ pub const Transport = struct {
 
     fn handlePrivateKeyAuth(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
@@ -1107,9 +1106,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1156,7 +1153,7 @@ pub const Transport = struct {
 
     fn handleKeyboardInteractiveAuth(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
@@ -1176,9 +1173,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1222,7 +1217,7 @@ pub const Transport = struct {
 
     fn handlePasswordAuth(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
@@ -1242,9 +1237,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1290,7 +1283,7 @@ pub const Transport = struct {
 
     fn openChannel(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
@@ -1306,9 +1299,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1350,7 +1341,7 @@ pub const Transport = struct {
 
     fn openProxyChannel(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         auth_options: *auth.Options,
@@ -1372,9 +1363,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1495,7 +1484,7 @@ pub const Transport = struct {
         defer pa.deinit();
 
         try self.authenticate(
-            timer,
+            start_time,
             cancel,
             operation_timeout_ns,
             self.proxy_session.?,
@@ -1505,7 +1494,7 @@ pub const Transport = struct {
 
     fn requestPty(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         channel: *c.LIBSSH2_CHANNEL,
@@ -1521,9 +1510,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1561,7 +1548,7 @@ pub const Transport = struct {
 
     fn requestShell(
         self: *Transport,
-        timer: *std.time.Timer,
+        start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
         channel: *c.LIBSSH2_CHANNEL,
@@ -1577,9 +1564,7 @@ pub const Transport = struct {
                 );
             }
 
-            const elapsed_time = timer.read();
-
-            if (operation_timeout_ns != 0 and elapsed_time > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1622,8 +1607,13 @@ pub const Transport = struct {
     pub fn close(self: *Transport) void {
         self.log.info("ssh2.Transport close requested", .{});
 
-        self.session_lock.lock();
-        defer self.session_lock.unlock();
+        self.session_lock.lock(self.io) catch {
+            // going to just ignore it and let it rip since we are tearing this thing
+            // down anyway and this seems like it should generally not error out...?
+            // the only real possible error i think is if the io object is cancelling
+            // tasks but for now for libscrapli that shouldnt be the case i think/hope
+        };
+        defer self.session_lock.unlock(self.io);
 
         if (self.proxy_channel) |chan| {
             libssh2CloseChannel(self.io, chan, self.log);
@@ -1645,8 +1635,8 @@ pub const Transport = struct {
     fn writeStandard(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeStandard requested", .{});
 
-        self.session_lock.lock();
-        defer self.session_lock.unlock();
+        try self.session_lock.lock(self.io);
+        defer self.session_lock.unlock(self.io);
 
         const n = c.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
         if (n == c.LIBSSH2_ERROR_EAGAIN) {
@@ -1677,8 +1667,8 @@ pub const Transport = struct {
     fn writeProxied(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeProxied requested", .{});
 
-        self.session_lock.lock();
-        defer self.session_lock.unlock();
+        try self.session_lock.lock(self.io);
+        defer self.session_lock.unlock(self.io);
 
         const n = c.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
         if (n == c.LIBSSH2_ERROR_EAGAIN) {
@@ -1739,12 +1729,12 @@ pub const Transport = struct {
     fn readStandard(self: *Transport, buf: []u8) !usize {
         self.log.debug("ssh2.Transport readStandard requested", .{});
 
-        self.session_lock.lock();
+        try self.session_lock.lock(self.io);
 
         // because nonblock we will just eagain forever (really until the timeout catches us)
         // if we dont check explicitly for eof, so do that
         if (c.libssh2_channel_eof(self.initial_channel.?) == 1) {
-            self.session_lock.unlock();
+            self.session_lock.unlock(self.io);
 
             return errors.ScrapliError.EOF;
         }
@@ -1757,7 +1747,7 @@ pub const Transport = struct {
             @intCast(buf.len),
         );
 
-        self.session_lock.unlock();
+        self.session_lock.unlock(self.io);
 
         if (n == c.LIBSSH2_ERROR_EAGAIN) {
             try self.waiter.wait(self.socket.?);
@@ -1779,10 +1769,10 @@ pub const Transport = struct {
     fn readProxied(self: *Transport, buf: []u8) !usize {
         self.log.debug("ssh2.Transport readProxied requested", .{});
 
-        self.session_lock.lock();
+        try self.session_lock.lock(self.io);
 
         if (c.libssh2_channel_eof(self.proxy_channel.?) == 1) {
-            self.session_lock.unlock();
+            self.session_lock.unlock(self.io);
             return errors.ScrapliError.EOF;
         }
 
@@ -1793,7 +1783,7 @@ pub const Transport = struct {
             @intCast(buf.len),
         );
 
-        self.session_lock.unlock();
+        self.session_lock.unlock(self.io);
 
         // need to make sure we are flushing things the *other* way too -- as in back to the server
         // because if we dont do this our acks and such wont get there
