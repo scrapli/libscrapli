@@ -180,7 +180,7 @@ export fn ls_shared_free(
 export fn ls_session_read(
     d_ptr: usize,
     buf: *[]u8,
-    read_n: *u64,
+    read_n: *usize,
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 

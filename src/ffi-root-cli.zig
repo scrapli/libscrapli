@@ -202,11 +202,11 @@ export fn ls_cli_fetch_operation_sizes(
     d_ptr: usize,
     operation_id: u32,
     operation_count: *u32,
-    operation_input_size: *u64,
-    operation_result_raw_size: *u64,
-    operation_result_size: *u64,
-    operation_failure_indicator_size: *u64,
-    operation_error_size: *u64,
+    operation_input_size: *usize,
+    operation_result_raw_size: *usize,
+    operation_result_size: *usize,
+    operation_failure_indicator_size: *usize,
+    operation_error_size: *usize,
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
