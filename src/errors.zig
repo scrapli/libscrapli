@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const logging = @import("logging.zig");
 
@@ -35,6 +36,15 @@ pub fn wrapCriticalError(
         );
 
         l.critical(format, args);
+    }
+
+    if (builtin.is_test) {
+        std.debug.print(
+            "critical: {s}:{s}:{d}: encountered error '{any}'\n",
+            .{
+                src.file, src.fn_name, src.line, err,
+            },
+        );
     }
 
     return err;
@@ -83,6 +93,15 @@ pub fn wrapWarnError(
         );
 
         l.warn(format, args);
+    }
+
+    if (builtin.is_test) {
+        std.debug.print(
+            "warn: {s}:{s}:{d}: encountered error '{any}'\n",
+            .{
+                src.file, src.fn_name, src.line, err,
+            },
+        );
     }
 
     return err;

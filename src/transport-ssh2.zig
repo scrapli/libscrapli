@@ -945,8 +945,11 @@ pub const Transport = struct {
         }
 
         if (auth_options.username != null and auth_options.password != null) {
-            self.auth_callback_data.password = @ptrCast(@constCast(auth_options.username.?));
-            self.auth_callback_data.password_len = auth_options.password.?.len;
+            const resolved_password = try auth_options.resolveAuthValue(auth_options.password.?);
+            self.auth_callback_data.password = @ptrCast(
+                @constCast(resolved_password),
+            );
+            self.auth_callback_data.password_len = resolved_password.len;
 
             self.handlePasswordAuth(
                 start_time,
@@ -1053,6 +1056,10 @@ pub const Transport = struct {
         session: *c.LIBSSH2_SESSION,
         auth_options: *auth.Options,
     ) !void {
+        const resolved_private_key_passhprase = try auth_options.resolveAuthValue(
+            auth_options.private_key_passphrase orelse "",
+        );
+
         while (true) {
             if (cancel != null and cancel.?.*) {
                 return errors.wrapCriticalError(
@@ -1082,7 +1089,7 @@ pub const Transport = struct {
                 @intCast(auth_options.username.?.len),
                 null, // would be public key if not using openssl as libssh2 crypto engine
                 @ptrCast(@constCast(auth_options.private_key_path.?)),
-                @ptrCast(@constCast(auth_options.private_key_passphrase orelse "")),
+                @ptrCast(@constCast(resolved_private_key_passhprase)),
             );
 
             if (rc == 0) {
@@ -1103,8 +1110,9 @@ pub const Transport = struct {
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport handlePrivateKeyAuth: failed private key authentication",
-                .{},
+                "ssh2.Transport handlePrivateKeyAuth: failed private key authentication " ++
+                    "error code {d}",
+                .{rc},
             );
         }
     }
@@ -1166,8 +1174,8 @@ pub const Transport = struct {
                 @src(),
                 self.log,
                 "ssh2.Transport handleKeyboardInteractiveAuth: failed keyboard " ++
-                    "interactive authentication",
-                .{},
+                    "interactive authentication, error code {d}",
+                .{rc},
             );
         }
     }
@@ -1182,6 +1190,8 @@ pub const Transport = struct {
     ) !void {
         // note: calling the converted c func instead of zig style due to typing issue similar
         // to -> https://github.com/ziglang/zig/issues/18824
+        const resolved_password = try auth_options.resolveAuthValue(auth_options.password.?);
+
         while (true) {
             if (cancel != null and cancel.?.*) {
                 return errors.wrapCriticalError(
@@ -1207,8 +1217,8 @@ pub const Transport = struct {
                 session,
                 @ptrCast(@constCast(auth_options.username.?)),
                 @intCast(auth_options.username.?.len),
-                @ptrCast(@constCast(auth_options.password.?)),
-                @intCast(auth_options.password.?.len),
+                @ptrCast(@constCast(resolved_password)),
+                @intCast(resolved_password.len),
                 null,
             );
 

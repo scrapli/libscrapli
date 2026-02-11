@@ -190,6 +190,10 @@ test "driver open" {
     const is_ci = helper.parseCustomFlag("--ci", false);
 
     for (cases) |case| {
+        errdefer {
+            std.debug.print("failed case: {s}\n", .{case.name});
+        }
+
         if (is_ci and std.mem.eql(u8, case.platform, "arista-eos")) {
             continue;
         }
