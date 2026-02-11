@@ -1056,9 +1056,21 @@ pub const Transport = struct {
         session: *c.LIBSSH2_SESSION,
         auth_options: *auth.Options,
     ) !void {
-        const resolved_private_key_passhprase = try auth_options.resolveAuthValue(
-            auth_options.private_key_passphrase orelse "",
+        const private_key_path_c = try self.allocator.dupeSentinel(
+            u8,
+            auth_options.private_key_path.?,
+            0,
         );
+        defer self.allocator.free(private_key_path_c);
+
+        const private_key_passphrase_c = try self.allocator.dupeSentinel(
+            u8,
+            try auth_options.resolveAuthValue(
+                auth_options.private_key_passphrase orelse "",
+            ),
+            0,
+        );
+        defer self.allocator.free(private_key_passphrase_c);
 
         while (true) {
             if (cancel != null and cancel.?.*) {
@@ -1081,15 +1093,17 @@ pub const Transport = struct {
                 );
             }
 
+            // -16 rc == "file" (bad file path or perms or something)
             // -18 rc == "failed" (key auth not supported)
             // -19 rc == "unverified" (auth failed)
             const rc = c.libssh2_userauth_publickey_fromfile_ex(
                 session,
+                // don't need to null terminate because we pass len
                 @ptrCast(@constCast(auth_options.username.?)),
                 @intCast(auth_options.username.?.len),
                 null, // would be public key if not using openssl as libssh2 crypto engine
-                @ptrCast(@constCast(auth_options.private_key_path.?)),
-                @ptrCast(@constCast(resolved_private_key_passhprase)),
+                private_key_path_c.ptr,
+                private_key_passphrase_c.ptr,
             );
 
             if (rc == 0) {
@@ -1104,6 +1118,24 @@ pub const Transport = struct {
                 );
 
                 continue;
+            }
+
+            var errmsg: [*c]u8 = null;
+            var errlen: c_int = 0;
+
+            // 0 => do not clear the error
+            const err: c_int = c.libssh2_session_last_error(
+                session,
+                &errmsg,
+                &errlen,
+                0,
+            );
+
+            if (errmsg != null and errlen > 0) {
+                const msg_slice = errmsg[0..@intCast(errlen)];
+                std.debug.print("libssh2 error: {} {s}\n", .{ err, msg_slice });
+            } else {
+                std.debug.print("libssh2 error: {} (no message)\n", .{err});
             }
 
             return errors.wrapCriticalError(
