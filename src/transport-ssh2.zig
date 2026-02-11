@@ -510,6 +510,7 @@ pub const Transport = struct {
     waiter: transport_waiter.Waiter,
 
     auth_callback_data: *AuthCallbackData,
+    proxy_jump_auth_callback_data: *AuthCallbackData,
 
     session_lock: std.Io.Mutex,
 
@@ -547,8 +548,10 @@ pub const Transport = struct {
 
         const t = try allocator.create(Transport);
         const a = try allocator.create(AuthCallbackData);
+        const pa = try allocator.create(AuthCallbackData);
 
         a.* = AuthCallbackData{};
+        pa.* = AuthCallbackData{};
 
         t.* = Transport{
             .allocator = allocator,
@@ -557,6 +560,7 @@ pub const Transport = struct {
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
             .auth_callback_data = a,
+            .proxy_jump_auth_callback_data = pa,
             .session_lock = std.Io.Mutex.init,
         };
 
@@ -580,6 +584,7 @@ pub const Transport = struct {
         }
 
         self.allocator.destroy(self.auth_callback_data);
+        self.allocator.destroy(self.proxy_jump_auth_callback_data);
 
         if (self.proxy_wrapper) |pw| {
             pw.deinit();
@@ -605,6 +610,14 @@ pub const Transport = struct {
         try self.initSocket(host, port);
         try self.initSession(start_time, cancel, operation_timeout_ns);
         try self.initKnownHost(host, port);
+
+        if (auth_options.username != null and auth_options.password != null) {
+            const resolved_password = try auth_options.resolveAuthValue(auth_options.password.?);
+            self.auth_callback_data.password = @ptrCast(
+                @constCast(resolved_password),
+            );
+            self.auth_callback_data.password_len = resolved_password.len;
+        }
 
         try self.authenticate(
             start_time,
@@ -945,12 +958,6 @@ pub const Transport = struct {
         }
 
         if (auth_options.username != null and auth_options.password != null) {
-            const resolved_password = try auth_options.resolveAuthValue(auth_options.password.?);
-            self.auth_callback_data.password = @ptrCast(
-                @constCast(resolved_password),
-            );
-            self.auth_callback_data.password_len = resolved_password.len;
-
             self.handlePasswordAuth(
                 start_time,
                 cancel,
@@ -1409,7 +1416,7 @@ pub const Transport = struct {
             null,
             null,
             null,
-            self.auth_callback_data,
+            self.proxy_jump_auth_callback_data,
         );
         if (self.proxy_session == null) {
             return errors.wrapCriticalError(
@@ -1480,6 +1487,14 @@ pub const Transport = struct {
             },
         );
         defer pa.deinit();
+
+        if (pa.username != null and pa.password != null) {
+            const resolved_password = try auth_options.resolveAuthValue(pa.password.?);
+            self.proxy_jump_auth_callback_data.password = @ptrCast(
+                @constCast(resolved_password),
+            );
+            self.proxy_jump_auth_callback_data.password_len = resolved_password.len;
+        }
 
         try self.authenticate(
             start_time,
