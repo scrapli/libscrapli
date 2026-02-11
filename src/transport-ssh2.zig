@@ -270,8 +270,9 @@ fn libssh2FreeChannel(
     }
 }
 
-const AuthCallbackData = struct {
-    password: [:0]u8,
+const AuthCallbackData = extern struct {
+    password: [*c]u8 = undefined,
+    password_len: usize = 0,
 };
 
 const ProxyWrapper = struct {
@@ -547,10 +548,7 @@ pub const Transport = struct {
         const t = try allocator.create(Transport);
         const a = try allocator.create(AuthCallbackData);
 
-        a.* = AuthCallbackData{
-            // SAFETY: used in C callback, so think this is expected/fine
-            .password = undefined,
-        };
+        a.* = AuthCallbackData{};
 
         t.* = Transport{
             .allocator = allocator,
@@ -709,8 +707,6 @@ pub const Transport = struct {
     ) !void {
         self.log.debug("ssh2.Transport initSession requested", .{});
 
-        // TODO "illegal instruction" *somewhere* around here on x86 linux (but only in scrapligo
-        // it seems? (havent tried py yet. so must be passing in something not nice))
         self.initial_session = c.libssh2_session_init_ex(
             null,
             null,
@@ -755,7 +751,9 @@ pub const Transport = struct {
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns)
+            {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -924,18 +922,13 @@ pub const Transport = struct {
     ) !void {
         self.log.debug("ssh2.Transport authenticate requested", .{});
 
-        const _username = try self.allocator.dupeZ(u8, auth_options.username.?);
-        defer self.allocator.free(_username);
-
         if (auth_options.private_key_path != null) {
             self.handlePrivateKeyAuth(
                 start_time,
                 cancel,
                 operation_timeout_ns,
                 session,
-                _username,
-                auth_options.private_key_path,
-                auth_options.private_key_passphrase,
+                auth_options,
             ) catch blk: {
                 // we can still try to auth with a password if the user provided it, so we continue
                 break :blk;
@@ -952,23 +945,15 @@ pub const Transport = struct {
         }
 
         if (auth_options.username != null and auth_options.password != null) {
-            const _password = try self.allocator.dupeZ(
-                u8,
-                try auth_options.resolveAuthValue(
-                    auth_options.password.?,
-                ),
-            );
-            defer self.allocator.free(_password);
-
-            self.auth_callback_data.password = _password;
+            self.auth_callback_data.password = @ptrCast(@constCast(auth_options.username.?));
+            self.auth_callback_data.password_len = auth_options.password.?.len;
 
             self.handlePasswordAuth(
                 start_time,
                 cancel,
                 operation_timeout_ns,
                 session,
-                _username,
-                _password,
+                auth_options,
             ) catch blk: {
                 // password auth failed but we can still try kbdinteractive, in the future we could
                 // /should check auth list before doing this but for now this is ok
@@ -989,8 +974,7 @@ pub const Transport = struct {
                 cancel,
                 operation_timeout_ns,
                 session,
-                _username,
-                _password,
+                auth_options,
             );
 
             if (try self.isAuthenticated(
@@ -1067,34 +1051,8 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
-        username: [:0]u8,
-        private_key_path: ?[]const u8,
-        passphrase: ?[]const u8,
+        auth_options: *auth.Options,
     ) !void {
-        const _private_key_path = try self.allocator.dupeZ(
-            u8,
-            private_key_path.?,
-        );
-        defer self.allocator.free(_private_key_path);
-
-        // SAFETY: will be set always, but this possibly saves us an allocation
-        var _passphrase: [:0]u8 = undefined;
-
-        if (passphrase != null) {
-            _passphrase = try self.allocator.dupeZ(
-                u8,
-                passphrase.?,
-            );
-        } else {
-            _passphrase = try strings.allocPrintZ(
-                self.allocator,
-                "",
-                .{},
-            );
-        }
-
-        defer self.allocator.free(_passphrase);
-
         while (true) {
             if (cancel != null and cancel.?.*) {
                 return errors.wrapCriticalError(
@@ -1120,11 +1078,11 @@ pub const Transport = struct {
             // -19 rc == "unverified" (auth failed)
             const rc = c.libssh2_userauth_publickey_fromfile_ex(
                 session,
-                username,
-                @intCast(username.len),
+                @ptrCast(@constCast(auth_options.username.?)),
+                @intCast(auth_options.username.?.len),
                 null, // would be public key if not using openssl as libssh2 crypto engine
-                _private_key_path,
-                _passphrase,
+                @ptrCast(@constCast(auth_options.private_key_path.?)),
+                @ptrCast(@constCast(auth_options.private_key_passphrase orelse "")),
             );
 
             if (rc == 0) {
@@ -1157,11 +1115,8 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
-        username: [:0]u8,
-        password: [:0]u8,
+        auth_options: *auth.Options,
     ) !void {
-        self.auth_callback_data.password = password;
-
         while (true) {
             if (cancel != null and cancel.?.*) {
                 return errors.wrapCriticalError(
@@ -1173,7 +1128,9 @@ pub const Transport = struct {
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns)
+            {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
@@ -1185,8 +1142,8 @@ pub const Transport = struct {
 
             const rc = c.libssh2_userauth_keyboard_interactive_ex(
                 session,
-                username,
-                @intCast(username.len),
+                @ptrCast(@constCast(auth_options.username.?)),
+                @intCast(auth_options.username.?.len),
                 kbdInteractiveCallback,
             );
 
@@ -1221,8 +1178,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *c.LIBSSH2_SESSION,
-        username: [:0]u8,
-        password: [:0]u8,
+        auth_options: *auth.Options,
     ) !void {
         // note: calling the converted c func instead of zig style due to typing issue similar
         // to -> https://github.com/ziglang/zig/issues/18824
@@ -1249,10 +1205,10 @@ pub const Transport = struct {
 
             const rc = c.libssh2_userauth_password_ex(
                 session,
-                username,
-                @intCast(username.len),
-                password,
-                @intCast(password.len),
+                @ptrCast(@constCast(auth_options.username.?)),
+                @intCast(auth_options.username.?.len),
+                @ptrCast(@constCast(auth_options.password.?)),
+                @intCast(auth_options.password.?.len),
                 null,
             );
 
@@ -1855,17 +1811,17 @@ fn kbdInteractiveCallback(
             const auth_callback_data_ptr: *AuthCallbackData = @ptrCast(@alignCast(abstract_ptr.*));
 
             const password_copy: [*c]u8 = @ptrCast(
-                c.malloc(auth_callback_data_ptr.password.len + 1),
+                c.malloc(auth_callback_data_ptr.password_len + 1),
             );
 
             @memcpy(
-                password_copy[0..auth_callback_data_ptr.password.len],
-                auth_callback_data_ptr.password[0..auth_callback_data_ptr.password.len],
+                password_copy[0..auth_callback_data_ptr.password_len],
+                auth_callback_data_ptr.password[0..auth_callback_data_ptr.password_len],
             );
-            password_copy[auth_callback_data_ptr.password.len] = 0;
+            password_copy[auth_callback_data_ptr.password_len] = 0;
 
             responses[0].text = password_copy;
-            responses[0].length = @intCast(auth_callback_data_ptr.password.len);
+            responses[0].length = @intCast(auth_callback_data_ptr.password_len);
         }
     }
 }

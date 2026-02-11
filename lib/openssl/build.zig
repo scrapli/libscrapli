@@ -41,7 +41,12 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(ssl);
 }
 
-const cflags = &.{};
+const cflags = &.{
+    // it seems that we need to pass this flag to disable runtime safety checks that seem to get
+    // triggered when calling things over the ffi layer bits... zig things would work fine without
+    // this but when calling from py/go we would get illegal instructions.
+    "-fno-sanitize=all",
+};
 
 fn libssl(
     b: *std.Build,
