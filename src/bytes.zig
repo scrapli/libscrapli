@@ -6,6 +6,7 @@ const ascii = @import("ascii.zig");
 // via ffi to not have to deal w/ c arrays and such
 pub const libscrapli_delimiter = "__libscrapli__";
 
+/// Convert all contents of buf to lower.
 pub fn toLower(buf: []u8) void {
     for (buf) |*b| {
         b.* = std.ascii.toLower(b.*);
@@ -40,6 +41,9 @@ test "toLower" {
     }
 }
 
+/// Return the start and end indexes of needle in the haystack -- do this "roughly" -- meaning that
+/// all contents of needle must appear in order in haystack, but other chars may interleave
+/// needle's chars.
 pub fn roughlyContains(haystack: []const u8, needle: []const u8) [2]usize {
     if (needle.len > haystack.len) {
         return [2]usize{ 0, 0 };
@@ -112,6 +116,7 @@ test "roughlyContains" {
     }
 }
 
+/// Return true if needle is in haystack.
 pub fn charIn(haystack: []const u8, needle: u8) bool {
     for (haystack) |haystack_char| {
         if (needle == haystack_char) {
@@ -151,6 +156,8 @@ test "charIn" {
     }
 }
 
+/// Conveinence function to trim newline chars from the given buf. Returns a new, trimmed, copy
+/// that the user owns memory for.
 pub fn trimNewlineWhitespace(
     allocator: std.mem.Allocator,
     buf: []const u8,
@@ -163,99 +170,8 @@ pub fn trimNewlineWhitespace(
     return owned_trimmed_buf;
 }
 
-// this used to be the "main" trim func, retaining as it may be handy, but now we use
-// the one that just trims the newlines and tabs w/out the spaces
-pub fn trimWhitespace(
-    allocator: std.mem.Allocator,
-    buf: []const u8,
-) ![]const u8 {
-    const trimmed_buf = std.mem.trim(u8, buf, " \t\n\r");
-    const owned_trimmed_buf = try allocator.alloc(u8, trimmed_buf.len);
-
-    @memcpy(owned_trimmed_buf, trimmed_buf);
-
-    return owned_trimmed_buf;
-}
-
-test "trimWhitespace" {
-    const cases = [_]struct {
-        name: []const u8,
-        input: []const u8,
-        expected: []const u8,
-    }{
-        .{
-            .name = "nothing to trim",
-            .input = "foo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim newline",
-            .input = "\nfoo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim carriage return",
-            .input = "\rfoo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim carriage return newline",
-            .input = "\r\nfoo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim tab",
-            .input = "\tfoo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "left trim spaces",
-            .input = "  foo bar baz",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim newline",
-            .input = "foo bar baz\n",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim carriage return",
-            .input = "foo bar baz\r",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim carriage return newline",
-            .input = "foo bar baz\r\n",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim tab",
-            .input = "foo bar baz\t",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "right trim spaces",
-            .input = "foo bar baz  ",
-            .expected = "foo bar baz",
-        },
-        .{
-            .name = "trim all the things",
-            .input = "\t \r\n foo bar baz\r\n \t ",
-            .expected = "foo bar baz",
-        },
-    };
-
-    for (cases) |case| {
-        const actual = try trimWhitespace(
-            std.testing.allocator,
-            case.input,
-        );
-        defer std.testing.allocator.free(actual);
-
-        try std.testing.expectEqualStrings(case.expected, actual);
-    }
-}
-
+/// Return a view into the given buf that is depth sized at most, preferring of course the tail of
+/// the buf.
 pub fn getBufSearchView(
     buf: []u8,
     depth: u64,
@@ -272,6 +188,7 @@ pub const ProcessedBuf = struct {
     raw: std.ArrayList(u8),
     processed: std.ArrayList(u8),
 
+    /// Initialize the ProcessedBuf object.
     pub fn init(allocator: std.mem.Allocator) ProcessedBuf {
         return ProcessedBuf{
             .allocator = allocator,
@@ -280,11 +197,14 @@ pub const ProcessedBuf = struct {
         };
     }
 
+    /// Deinitialize the Processedbuf object.
     pub fn deinit(self: *ProcessedBuf) void {
         self.raw.deinit(self.allocator);
         self.processed.deinit(self.allocator);
     }
 
+    /// Append the given buf to both raw and processed buffers, trimming asni/ascii chars before
+    /// writing to the processed buf.
     pub fn appendSlice(self: *ProcessedBuf, buf: []u8) !void {
         try self.raw.appendSlice(self.allocator, buf);
 
@@ -304,6 +224,7 @@ pub const ProcessedBuf = struct {
         }
     }
 
+    /// Return the "raw" and "processed" buffers, caller owns memory.
     pub fn toOwnedSlices(self: *ProcessedBuf) ![2][]const u8 {
         return [2][]const u8{
             try self.raw.toOwnedSlice(self.allocator),

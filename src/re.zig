@@ -7,10 +7,12 @@ const pcre2 = @cImport({
 
 pub const pcre2CompiledPattern = pcre2.pcre2_code_8;
 
+/// Conveinence function to free a pcre2 compiled object.
 pub fn pcre2Free(regexp: *pcre2CompiledPattern) void {
     pcre2.pcre2_code_free_8(regexp);
 }
 
+/// Conveinence function to compile pattern to a pcre2 compiled object..
 pub fn pcre2Compile(pattern: []const u8) ?*pcre2CompiledPattern {
     // SAFETY: required for interop w/ C library
     var err_number: c_int = undefined;
@@ -53,6 +55,7 @@ pub fn pcre2Compile(pattern: []const u8) ?*pcre2CompiledPattern {
     return regex;
 }
 
+/// Conveinence function to compile patterns into a list of pcre2 compiled objects.
 pub fn pcre2CompileMany(
     allocator: std.mem.Allocator,
     patterns: []const []const u8,
@@ -69,6 +72,7 @@ pub fn pcre2CompileMany(
     return compiled_patterns;
 }
 
+/// Conveinence function to find the first match in haystack using the pcre2 pattern object.
 pub fn pcre2Find(
     regexp: *pcre2.pcre2_code_8,
     haystack: []const u8,
@@ -178,6 +182,7 @@ test "pcre2Find" {
     }
 }
 
+/// Conveneince function to return the match indexes of the pattern in the given haystack.
 pub fn pcre2FindIndex(
     regexp: *pcre2.pcre2_code_8,
     haystack: []const u8,

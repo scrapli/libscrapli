@@ -9,6 +9,7 @@ pub const MatchPositions = struct {
     start: usize,
     end: usize,
 
+    /// Return the total len -- as in the distance between the start and end match positions.
     pub fn len(self: *MatchPositions) usize {
         if (self.end == 0) {
             return 0;
@@ -24,6 +25,7 @@ pub const CheckArgs = struct {
     actual: ?[]const u8 = null,
 };
 
+/// Check if the buf is non-zero-len.
 pub fn nonZeroBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     _ = args;
 
@@ -34,6 +36,7 @@ pub fn nonZeroBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     return MatchPositions{ .start = 0, .end = buf.len };
 }
 
+/// Check if the check pattern is in the given buf.
 pub fn patternInBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     if (buf.len == 0) {
         return MatchPositions{ .start = 0, .end = 0 };
@@ -47,6 +50,7 @@ pub fn patternInBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     return MatchPositions{ .start = 0, .end = 0 };
 }
 
+/// Check if any pattern from the CheckArgs are in buf, return the first match position found.
 pub fn anyPatternInBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     if (buf.len == 0) {
         return MatchPositions{ .start = 0, .end = 0 };
@@ -62,6 +66,7 @@ pub fn anyPatternInBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     return MatchPositions{ .start = 0, .end = 0 };
 }
 
+/// Return the positions of the exact CheckArgs content in the given buf.
 pub fn exactInBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     if (buf.len == 0) {
         return MatchPositions{ .start = 0, .end = 0 };
@@ -78,6 +83,9 @@ pub fn exactInBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     return MatchPositions{ .start = 0, .end = 0 };
 }
 
+/// Return the MatchPositions of what is in the CheckArgs in buf -- do this "fuzzily", meaning
+/// all the contents of the check args must be in buf and in order in buf, but other chars may
+/// be in the midst of the check buf.
 pub fn fuzzyInBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
     const match_indexes = bytes.roughlyContains(buf, args.actual.?);
 

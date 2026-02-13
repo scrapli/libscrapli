@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// Conveinence function to set the given fd to be in non block.
 pub fn setNonBlocking(fd: std.posix.fd_t) !void {
     var flags = std.posix.system.fcntl(
         fd,
@@ -28,7 +29,8 @@ pub fn setNonBlocking(fd: std.posix.fd_t) !void {
     }
 }
 
-// buf is passed in for lifetime reasons of course, so needs to be allocated outside of this
+/// Conveinence function return a reader from the given path. buf is passed in for lifetime
+/// reasons of course, so needs to be allocated outside of this.
 pub fn readerFromPath(
     io: std.Io,
     buf: []u8,
@@ -38,6 +40,7 @@ pub fn readerFromPath(
     return f.reader(io, buf);
 }
 
+/// Conveinence function to read teh contents of a file at path, owner owns returned memory.
 pub fn readFromPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
     const f = try std.Io.Dir.openFile(std.Io.Dir.cwd(), io, path, .{});
 
@@ -52,6 +55,7 @@ pub fn readFromPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) 
     return try out.toOwnedSlice(allocator);
 }
 
+/// Conveinence function to write the given contents to the provided path.
 pub fn writeToPath(io: std.Io, path: []const u8, data: []const u8) !void {
     const f = try std.Io.Dir.createFile(std.Io.Dir.cwd(), io, path, .{});
     try f.writeStreamingAll(io, data);

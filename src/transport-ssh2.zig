@@ -376,8 +376,7 @@ const ProxyWrapper = struct {
 
     fn copyPipeToChannel(self: *ProxyWrapper) !void {
         while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
-            const result = self.pipeToChannel();
-            if (result) {} else |err| switch (err) {
+            _ = self.pipeToChannel() catch |err| switch (err) {
                 error.WouldBlock => {
                     try std.Io.Clock.Duration.sleep(
                         .{
@@ -390,7 +389,7 @@ const ProxyWrapper = struct {
                     continue;
                 },
                 else => return err,
-            }
+            };
         }
     }
 
@@ -526,7 +525,7 @@ pub const Transport = struct {
     proxy_channel: ?*c.LIBSSH2_CHANNEL = null,
     proxy_wrapper: ?*ProxyWrapper = null,
 
-    /// Initializes the ssh2 transport.
+    /// Initializes the transport.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -567,7 +566,7 @@ pub const Transport = struct {
         return t;
     }
 
-    /// Deinitializes the ssh2 transport.
+    /// Deinitializes the transport.
     pub fn deinit(self: *Transport) void {
         logging.traceWithSrc(self.log, @src(), "ssh2.Transport deinitializing", .{});
 
@@ -595,7 +594,7 @@ pub const Transport = struct {
         self.allocator.destroy(self);
     }
 
-    /// Opens the ssh2 transport object.
+    /// Opens the transport object.
     pub fn open(
         self: *Transport,
         start_time: std.Io.Timestamp,
@@ -1616,7 +1615,7 @@ pub const Transport = struct {
         }
     }
 
-    /// Closes the ssh2 transport.
+    /// Closes the transport.
     pub fn close(self: *Transport) void {
         self.log.info("ssh2.Transport close requested", .{});
 

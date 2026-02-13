@@ -44,6 +44,7 @@ pub const Mode = struct {
     prompt_excludes: ?[]const []const u8,
     accessible_modes: std.StringHashMap([]Operation),
 
+    /// Initialize the mode object, compiles patterns and dupes user inputs for lifetime reasons.
     pub fn init(allocator: std.mem.Allocator, options: Options) !*Mode {
         const m = try allocator.create(Mode);
 
@@ -142,6 +143,7 @@ pub const Mode = struct {
         return m;
     }
 
+    /// Deinit the mode object.
     pub fn deinit(self: *Mode) void {
         if (self.compiled_prompt_pattern) |pattern| {
             re.pcre2Free(pattern);
@@ -187,6 +189,7 @@ pub const Mode = struct {
     }
 };
 
+/// Given a map of Mode objects, determine the mode based on the current prompt output.
 pub fn determineMode(
     modes: std.StringHashMap(*Mode),
     current_prompt: []const u8,
@@ -412,6 +415,7 @@ test "determineMode" {
     }
 }
 
+/// Recursively find a path to a requestd mode from the current mode.
 pub fn getPathToMode(
     allocator: std.mem.Allocator,
     modes: std.StringHashMap(*Mode),

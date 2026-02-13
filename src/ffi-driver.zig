@@ -51,6 +51,7 @@ pub const FfiDriver = struct {
         }
     }
 
+    /// Initialize the FfiDriver for cli (ssh/telnet) operations.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -92,6 +93,7 @@ pub const FfiDriver = struct {
         return ffi_driver;
     }
 
+    /// Initialize the FfiDriver for netconf operations.
     pub fn initNetconf(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -133,6 +135,7 @@ pub const FfiDriver = struct {
         return ffi_driver;
     }
 
+    /// Deinitialize the FfiDriver and its underlying "real" driver.
     pub fn deinit(self: *FfiDriver) void {
         // store the stop signal before signaling the operation thread to iterate
         self.operation_stop.store(true, std.builtin.AtomicOrder.unordered);
@@ -166,6 +169,7 @@ pub const FfiDriver = struct {
         self.allocator.destroy(self);
     }
 
+    /// Get the logger of the underlying "real" driver.
     pub fn getLogger(self: *FfiDriver) logging.Logger {
         const logger = switch (self.real_driver) {
             .cli => |d| d.log,
@@ -175,6 +179,7 @@ pub const FfiDriver = struct {
         return logger;
     }
 
+    /// Open the underlying "real" driver and begin the ffi driver operation loop.
     pub fn open(self: *FfiDriver) !void {
         switch (self.real_driver) {
             .cli => {
@@ -676,6 +681,7 @@ pub const FfiDriver = struct {
         self.getLogger().info("ffi-driver.FfiDriver: operation thread stopped", .{});
     }
 
+    /// Queue an operation based on the given operation options.
     pub fn queueOperation(
         self: *FfiDriver,
         options: ffi_operations.OperationOptions,
@@ -726,6 +732,8 @@ pub const FfiDriver = struct {
         return operation_id;
     }
 
+    /// Dequeues the the given operation id from the operation queue if present, if remove is false
+    /// only "get" it, don't "remove" it from the queue.
     pub fn dequeueOperation(
         self: *FfiDriver,
         operation_id: u32,

@@ -19,10 +19,10 @@
             .url = "https://github.com/kubkon/zig-yaml/archive/84d747b.tar.gz",
             .hash = "zig_yaml-0.3.0-C1161vSrAgCEKLk0825Y_GtmnThQI6O_cqtkBHb57KT-",
         },
-        // .zlinter = .{
-        //     .url = "git+https://github.com/kurtwagner/zlinter?ref=master#4d63663f6f18198875c1ecb26fc4c941cb38076e",
-        //     .hash = "zlinter-0.0.1-OjQ08Q55CwBuMIOPT6Fyf1v5iRyrQ--JSwevn8WStc-D",
-        // },
+        .zlinter = .{
+            .url = "https://github.com/kurtwagner/zlinter/archive/1d9ba8f.tar.gz",
+            .hash = "zlinter-0.0.1-OjQ08QB6CwB9Sjd_wi8kBTYpjHTA2P_WJaxTPxexQwtG",
+        },
     },
     .paths = .{
         "build.zig",

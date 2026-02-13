@@ -165,6 +165,7 @@ fn getConfigFilter(config_filter: [*c]const u8) ?bool {
     return null;
 }
 
+/// Builds RawRpcOptions from given ffi inputs.
 pub fn rawRpcOptionsFromArgs(
     cancel: *bool,
     payload: [*c]const u8,
@@ -189,6 +190,7 @@ pub fn rawRpcOptionsFromArgs(
     return options;
 }
 
+/// Builds GetConfigOptions from given ffi inputs.
 pub fn getConfigOptionsFromArgs(
     cancel: *bool,
     source: [*c]const u8,
@@ -226,6 +228,7 @@ pub fn getConfigOptionsFromArgs(
     return options;
 }
 
+/// Builds EditConfigOptions from given ffi inputs.
 pub fn editConfigOptionsFromArgs(
     cancel: *bool,
     config: [*c]const u8,
@@ -306,6 +309,7 @@ pub fn editConfigOptionsFromArgs(
     return options;
 }
 
+/// Builds CopyConfigOptions from given ffi inputs.
 pub fn copyConfigOptionsFromArgs(
     cancel: *bool,
     target: [*c]const u8,
@@ -324,6 +328,7 @@ pub fn copyConfigOptionsFromArgs(
     };
 }
 
+/// Builds DeleteConfigOptions from given ffi inputs.
 pub fn deleteConfigOptionsFromArgs(
     cancel: *bool,
     target: [*c]const u8,
@@ -337,6 +342,7 @@ pub fn deleteConfigOptionsFromArgs(
     };
 }
 
+/// Builds LockUnlockOptions from given ffi inputs.
 pub fn lockUnlockOptionsFromArgs(
     cancel: *bool,
     target: [*c]const u8,
@@ -350,6 +356,7 @@ pub fn lockUnlockOptionsFromArgs(
     };
 }
 
+/// Builds GetOptions from given ffi inputs.
 pub fn getOptionsFromArgs(
     cancel: *bool,
     filter: [*c]const u8,
@@ -382,6 +389,7 @@ pub fn getOptionsFromArgs(
     return options;
 }
 
+/// Builds ValidateOptions from given ffi inputs.
 pub fn validateOptionsFromArgs(
     cancel: *bool,
     source: [*c]const u8,
@@ -395,6 +403,7 @@ pub fn validateOptionsFromArgs(
     };
 }
 
+/// Builds CancelCommitOptions from given ffi inputs.
 pub fn cancelCommitOptionsFromArgs(
     cancel: *bool,
     persist_id: [*c]const u8,
@@ -412,6 +421,7 @@ pub fn cancelCommitOptionsFromArgs(
     return options;
 }
 
+/// Builds GetSchemaOptions from given ffi inputs.
 pub fn getSchemaOptionsFromArgs(
     cancel: *bool,
     identifier: [*c]const u8,
@@ -426,6 +436,7 @@ pub fn getSchemaOptionsFromArgs(
     };
 }
 
+/// Builds GetDataOptions from given ffi inputs.
 pub fn getDataOptionsFromArgs(
     cancel: *bool,
     datastore: [*c]const u8,
@@ -481,6 +492,7 @@ pub fn getDataOptionsFromArgs(
     return options;
 }
 
+/// Builds EditDataOptions from given ffi inputs.
 pub fn editDataOptionsFromArgs(
     cancel: *bool,
     datastore: [*c]const u8,

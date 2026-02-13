@@ -57,6 +57,7 @@ pub const Options = struct {
     term_width: u16,
     netconf: bool,
 
+    /// Initializes the bin options.
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
@@ -97,6 +98,7 @@ pub const Options = struct {
         return o;
     }
 
+    /// Deinitializes the bin options.
     pub fn deinit(self: *Options) void {
         if (&self.bin[0] != &default_ssh_bin[0]) {
             self.allocator.free(self.bin);
@@ -141,6 +143,7 @@ pub const Transport = struct {
 
     open_args: std.array_list.Managed(strings.MaybeHeapString),
 
+    /// Initializes the transport.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -163,6 +166,7 @@ pub const Transport = struct {
         return t;
     }
 
+    /// Deinitializes the transport.
     pub fn deinit(self: *Transport) void {
         logging.traceWithSrc(self.log, @src(), "bin.Transport deinitializing", .{});
 
@@ -413,6 +417,7 @@ pub const Transport = struct {
         }
     }
 
+    /// Opens the transport object.
     pub fn open(
         self: *Transport,
         operation_timeout_ns: u64,
@@ -458,6 +463,7 @@ pub const Transport = struct {
         self.writer = self.f.?.writer(self.io, &self.w_buffer);
     }
 
+    /// Closes the transport.
     pub fn close(self: *Transport) void {
         self.log.info("bin.Transport close requested", .{});
 
@@ -468,6 +474,7 @@ pub const Transport = struct {
         self.f = null;
     }
 
+    /// Writes content to the transport session.
     pub fn write(self: *Transport, buf: []const u8) !void {
         self.log.info("bin.Transport write requested", .{});
 
@@ -494,6 +501,7 @@ pub const Transport = struct {
         try self.writer.?.interface.flush();
     }
 
+    /// Reads content from the transport session.
     pub fn read(self: *Transport, buf: []u8) !usize {
         self.log.debug("bin.Transport read requested", .{});
 
@@ -533,6 +541,7 @@ pub const Transport = struct {
         return n;
     }
 
+    /// Unblocks any in progress reads.
     pub fn unblock(self: *Transport) !void {
         try self.waiter.unblock();
     }

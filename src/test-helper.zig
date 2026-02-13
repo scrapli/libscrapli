@@ -15,6 +15,7 @@ const netconf_password_pattern = "<password>.*</password>";
 
 pub var args: ?std.process.Args = null;
 
+/// Simple bool flag parser for use with test flags.
 pub fn parseCustomFlag(
     flag: []const u8,
     default: bool,
