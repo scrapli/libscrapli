@@ -27,6 +27,7 @@ private/
 # zig cache/build stuff
 .zig-cache
 zig-out
+zig-pkg
 
 # pcre2/openssl that will be cloned during builds
 lib/pcre2/pcre2

@@ -3,7 +3,7 @@
     // set in ci
     .version = "0.0.0",
     .fingerprint = 0xb0e01d3de97bbf58,
-    .minimum_zig_version = "0.16.0-dev.1657+985a3565c",
+    .minimum_zig_version = "0.16.0-dev.2535+b5bd49460",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",
@@ -16,9 +16,8 @@
             .hash = "xml-0.2.0-ZTbP3wE6AgCsnyZut_plzxi6WB2tzzh3kFRBOp3AL7n9",
         },
         .yaml = .{
-            // pinning here till real 0.16.x release + merge to upstream
-            .url = "https://github.com/carlmontanari/zig-yaml/archive/ee8a229.tar.gz",
-            .hash = "zig_yaml-0.2.0-C1161vOtAgBlWxOdwTcAQaB8nLXn329Vn5xT-Q1dLszi",
+            .url = "https://github.com/kubkon/zig-yaml/archive/84d747b.tar.gz",
+            .hash = "zig_yaml-0.3.0-C1161vSrAgCEKLk0825Y_GtmnThQI6O_cqtkBHb57KT-",
         },
         // .zlinter = .{
         //     .url = "git+https://github.com/kurtwagner/zlinter?ref=master#4d63663f6f18198875c1ecb26fc4c941cb38076e",

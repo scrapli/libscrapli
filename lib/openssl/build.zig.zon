@@ -1,7 +1,7 @@
 .{
     .name = .openssl,
     .version = "3.4.0",
-    .minimum_zig_version = "0.16.0-dev.1657+985a3565c",
+    .minimum_zig_version = "0.16.0-dev.2535+b5bd49460",
     .fingerprint = 0x773a47f1612442b6,
     .dependencies = .{},
     .paths = .{
