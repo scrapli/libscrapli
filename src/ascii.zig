@@ -87,6 +87,7 @@ pub const control_chars = struct {
     pub const open_element_char = 0x3C;
 };
 
+/// Strips ascii and ansi chars in place in the haystack.
 pub fn stripAsciiAndAnsiControlCharsInPlace(
     haystack: []u8,
     start_idx: usize,
@@ -462,6 +463,7 @@ test "stripAsciiAndAnsiControlCharsInPlace" {
     }
 }
 
+/// Strips ascii control chars in place in the givne haystack.
 pub fn stripAsciiControlCharsInPlace(
     allocator: std.mem.Allocator,
     haystack: *std.ArrayList(u8),
@@ -704,6 +706,7 @@ test "stripAsciiControlCharsInPlace" {
     }
 }
 
+/// Strip Ascii control chars, returns freshly allocated/"cleaned" object, caller owns memory.
 pub fn stripAsciiControlChars(
     allocator: std.mem.Allocator,
     haystack: []const u8,
@@ -947,6 +950,7 @@ test "stripAsciiControlChars" {
     }
 }
 
+/// Strips ansii control sequences in haystack, caller owns returned memory.
 pub fn stripAnsiiControlSequences(
     allocator: std.mem.Allocator,
     haystack: []const u8,
@@ -1243,6 +1247,7 @@ test "stripAnsiiControlSequences" {
     }
 }
 
+/// Strips ascii and ansi chars in the file at path f.
 pub fn stripAsciiAndAnsiControlCharsInFile(
     io: std.Io,
     f: []const u8,

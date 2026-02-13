@@ -2,6 +2,7 @@ const std = @import("std");
 
 const errors = @import("errors.zig");
 
+/// Get a tcp Stream object for the given host/port.
 pub fn getStream(io: std.Io, host: []const u8, port: u16) !std.Io.net.Stream {
     var lookup_buf: [16]std.Io.net.HostName.LookupResult = undefined;
     var lookup_queue = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookup_buf);

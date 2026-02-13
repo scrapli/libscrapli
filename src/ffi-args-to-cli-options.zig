@@ -28,6 +28,7 @@ fn getInputHandling(input_handling: [*c]const u8) operation.InputHandling {
     }
 }
 
+/// Return SendInputOptions from ffi provided arguments.
 pub fn sendInputOptionsFromArgs(
     cancel: *bool,
     input: [*c]const u8,
@@ -52,6 +53,7 @@ pub fn sendInputOptionsFromArgs(
     return options;
 }
 
+/// Return SendPromptedInputOptions from ffi provided arguments.
 pub fn sendPromptedInputOptionsFromArgs(
     cancel: *bool,
     input: [*c]const u8,

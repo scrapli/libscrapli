@@ -51,6 +51,7 @@ pub const Options = union(Kind) {
     ssh2: *transport_ssh2.Options,
     test_: *transport_test.Options,
 
+    /// Initialize the transport options.
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
@@ -93,6 +94,7 @@ pub const Options = union(Kind) {
         return o;
     }
 
+    /// Deinitialize the transport options.
     pub fn deinit(self: *Options) void {
         switch (self.*) {
             .bin => |o| {
@@ -129,6 +131,7 @@ pub const Transport = struct {
     log: logging.Logger,
     implementation: Implementation,
 
+    /// Initialize the transport.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -198,6 +201,7 @@ pub const Transport = struct {
         return t;
     }
 
+    /// Deinitialize the transport.
     pub fn deinit(self: *Transport) void {
         switch (self.implementation) {
             Kind.bin => |t| {
@@ -217,6 +221,7 @@ pub const Transport = struct {
         self.allocator.destroy(self);
     }
 
+    /// Open the transport connection.
     pub fn open(
         self: *Transport,
         start_time: std.Io.Timestamp,
@@ -252,6 +257,8 @@ pub const Transport = struct {
         }
     }
 
+    /// Returns true if the underlying transport does auth "in session" (like as in not in the ssh
+    /// protocol like ssh2 does).
     pub fn isInSessionAuth(
         self: *Transport,
     ) bool {
@@ -265,8 +272,8 @@ pub const Transport = struct {
         }
     }
 
-    // unblocks the transport waiter to stop any in flight reads; useful before closing the
-    // session to free up the session read loop.
+    /// Unblocks the transport waiter to stop any in flight reads; useful before closing the
+    /// session to free up the session read loop.
     pub fn unblock(self: *Transport) !void {
         switch (self.implementation) {
             Kind.bin => |t| {
@@ -282,9 +289,9 @@ pub const Transport = struct {
         }
     }
 
-    // close can never error, worst case we just tear down and free the underlying handle/session
-    // this allows the session to ensure that the transport gets closed during deinit so its always
-    // nicely tidied up.
+    /// Close the transport. Close can never error, worst case we just tear down and free the
+    /// underlying handle/session this allows the session to ensure that the transport gets closed
+    /// during deinit so its always nicely tidied up.
     pub fn close(self: *Transport) void {
         switch (self.implementation) {
             Kind.bin => |t| {
@@ -302,6 +309,7 @@ pub const Transport = struct {
         }
     }
 
+    /// Write to the transport.
     pub fn write(self: *Transport, buf: []const u8) !void {
         switch (self.implementation) {
             Kind.bin => |t| {
@@ -319,6 +327,7 @@ pub const Transport = struct {
         }
     }
 
+    /// Read from the transport.
     pub fn read(self: *Transport, buf: []u8) !usize {
         var n: usize = 0;
 

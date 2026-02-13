@@ -1,5 +1,6 @@
 const std = @import("std");
 
+/// Conveneince function to initalize a string hashmap with the given keys and items.
 pub fn inlineInitStringHashMap(
     allocator: std.mem.Allocator,
     comptime T: type,

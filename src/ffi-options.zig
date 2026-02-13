@@ -353,6 +353,7 @@ pub const FFIOptions = extern struct {
         }
     }
 
+    /// Returns a cli config from this ffi options struct.
     pub fn cliConfig(self: *FFIOptions, allocator: std.mem.Allocator) cli.Config {
         return cli.Config{
             .logger = if (self.loggerCallback) |cb|
@@ -375,6 +376,7 @@ pub const FFIOptions = extern struct {
         };
     }
 
+    /// Returns a netconf config from this ffi options struct.
     pub fn netconfConfig(self: *FFIOptions, allocator: std.mem.Allocator) netconf.Config {
         var c = netconf.Config{
             .logger = if (self.loggerCallback) |cb|

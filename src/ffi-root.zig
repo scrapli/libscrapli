@@ -43,6 +43,7 @@ fn isDebugMode() bool {
     return std.c.getenv(libscrapli_ffi_debug_mode_env_var) != null;
 }
 
+/// Returns the allocator for use in ffi mode.
 pub fn getAllocator() std.mem.Allocator {
     if (isDebugMode()) {
         return debug_allocator;

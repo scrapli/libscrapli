@@ -34,6 +34,7 @@ pub const OptionsInputs = struct {};
 pub const Options = struct {
     allocator: std.mem.Allocator,
 
+    /// Initialize the transport options.
     pub fn init(allocator: std.mem.Allocator, _: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
@@ -45,6 +46,7 @@ pub const Options = struct {
         return o;
     }
 
+    /// Deinitialize the transport options.
     pub fn deinit(self: *Options) void {
         self.allocator.destroy(self);
     }
@@ -68,6 +70,7 @@ pub const Transport = struct {
     w_buffer: [1024]u8 = undefined,
     writer: ?std.Io.net.Stream.Writer = null,
 
+    /// Initialize the transport object.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -91,6 +94,7 @@ pub const Transport = struct {
         return t;
     }
 
+    /// Deinitialize the transport object.
     pub fn deinit(self: *Transport) void {
         logging.traceWithSrc(self.log, @src(), "telnet.Transport deinitializing", .{});
 
@@ -218,6 +222,7 @@ pub const Transport = struct {
         }
     }
 
+    /// Open the transport object.
     pub fn open(
         self: *Transport,
         start_time: std.Io.Timestamp,
@@ -259,6 +264,7 @@ pub const Transport = struct {
         );
     }
 
+    /// Close the transport object.
     pub fn close(self: *Transport) void {
         self.log.info("telnet.Transport close requested", .{});
 
@@ -268,6 +274,7 @@ pub const Transport = struct {
         }
     }
 
+    /// Write to the transport object.
     pub fn write(self: *Transport, buf: []const u8) !void {
         self.log.info("telnet.Transport write requested", .{});
 
@@ -295,6 +302,7 @@ pub const Transport = struct {
         try wi.flush();
     }
 
+    /// Read from the transport object.
     pub fn read(self: *Transport, buf: []u8) !usize {
         self.log.debug("telnet.Transport read requested", .{});
 
@@ -345,6 +353,7 @@ pub const Transport = struct {
         return n;
     }
 
+    /// Unblock any in flight reads.
     pub fn unblock(self: *Transport) !void {
         try self.waiter.unblock();
     }

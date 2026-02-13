@@ -23,6 +23,7 @@ pub const LookupItems = struct {
     items: [16]LookupKeyValue = undefined,
     count: usize = 0,
 
+    /// Init the lookup items object.
     pub fn init(kvs: []const LookupKeyValue) LookupItems {
         var out = LookupItems{
             .items = undefined,
@@ -110,6 +111,7 @@ pub const Options = struct {
     password_pattern: []const u8 = default_password_pattern,
     private_key_passphrase_pattern: []const u8 = default_passphrase_pattern,
 
+    /// Initialize the auth options.
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
         errdefer o.deinit();
@@ -156,6 +158,7 @@ pub const Options = struct {
         return o;
     }
 
+    /// Deinitialize the auth options.
     pub fn deinit(self: *Options) void {
         if (self.username != null) {
             self.allocator.free(self.username.?);
@@ -190,6 +193,9 @@ pub const Options = struct {
         self.allocator.destroy(self);
     }
 
+    /// Resolve the given auth input -- checks if the string begins with the "lookup prefix" -- if
+    /// not, simply return the value, otherwise check all the lookups to see if we can find the
+    /// value.
     pub fn resolveAuthValue(self: *Options, v: []const u8) ![]const u8 {
         if (!std.mem.startsWith(u8, v, lookup_prefix)) {
             return v;
@@ -226,6 +232,8 @@ test "optionsInit" {
     o.deinit();
 }
 
+/// Processes the "searchable buf" for in session auth by checking if any of the auth patterns
+/// show up.
 pub fn processSearchableAuthBuf(
     searchable_buf: []const u8,
     compiled_prompt_pattern: ?*re.pcre2CompiledPattern,
@@ -286,6 +294,7 @@ const open_error_message_substrings = [_][2][]const u8{
     [2][]const u8{ "ssh-2.0-openssh_", "are you telnet'ing to an ssh port?" },
 };
 
+/// Checks the buf to see if any known error messages show up in the contents.
 pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !?[]const u8 {
     const copied_buf = try allocator.alloc(u8, buf.len);
     defer allocator.free(copied_buf);

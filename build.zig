@@ -190,6 +190,7 @@ fn buildZlinter(
                         b.path("lib/"),
                         b.path("examples/"),
                         b.path("src/test-runner.zig"),
+                        b.path("src/queue.zig"),
                     },
                 },
             );

@@ -8,6 +8,7 @@ pub const LogLevel = enum(u8) {
     critical,
     fatal,
 
+    /// Return an instance of the LogLevel enum based on the given string, fallback to warn level.
     pub fn fromString(s: []const u8) LogLevel {
         if (std.mem.eql(u8, s, "trace")) {
             return LogLevel.trace;
@@ -27,6 +28,7 @@ pub const LogLevel = enum(u8) {
     }
 };
 
+/// A standard debug.print logger function.
 pub fn stdLogf(level: u8, message: *[]u8) callconv(.c) void {
     switch (level) {
         @intFromEnum(LogLevel.trace) => {
@@ -81,6 +83,7 @@ pub const Logger = struct {
         return formatted_buf;
     }
 
+    /// Emit a log at the "trace" level.
     pub fn trace(
         self: Logger,
         comptime format: []const u8,
@@ -100,6 +103,7 @@ pub const Logger = struct {
         self.f.?(@intFromEnum(LogLevel.trace), &formatted_message);
     }
 
+    /// Emit a log at the "debug" level.
     pub fn debug(
         self: Logger,
         comptime format: []const u8,
@@ -119,6 +123,7 @@ pub const Logger = struct {
         self.f.?(@intFromEnum(LogLevel.debug), &formatted_message);
     }
 
+    /// Emit a log at the "info" level.
     pub fn info(
         self: Logger,
         comptime format: []const u8,
@@ -138,6 +143,7 @@ pub const Logger = struct {
         self.f.?(@intFromEnum(LogLevel.info), &formatted_message);
     }
 
+    /// Emit a log at the "warn" level.
     pub fn warn(
         self: Logger,
         comptime format: []const u8,
@@ -157,6 +163,7 @@ pub const Logger = struct {
         self.f.?(@intFromEnum(LogLevel.warn), &formatted_message);
     }
 
+    /// Emit a log at the "critical" level.
     pub fn critical(
         self: Logger,
         comptime format: []const u8,
@@ -176,6 +183,7 @@ pub const Logger = struct {
         self.f.?(@intFromEnum(LogLevel.critical), &formatted_message);
     }
 
+    /// Emit a log at the "fatal" level.
     pub fn fatal(
         self: Logger,
         comptime format: []const u8,
@@ -192,6 +200,7 @@ pub const Logger = struct {
     }
 };
 
+/// Emit a trace log and include the source code file/line.
 pub fn traceWithSrc(
     log: Logger,
     src: std.builtin.SourceLocation,

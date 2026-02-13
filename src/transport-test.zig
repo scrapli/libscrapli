@@ -13,6 +13,7 @@ pub const Options = struct {
     allocator: std.mem.Allocator,
     f: ?[]const u8,
 
+    /// Initialize the transport options.
     pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
@@ -29,6 +30,7 @@ pub const Options = struct {
         return o;
     }
 
+    /// Deinitialize the transport options.
     pub fn deinit(self: *Options) void {
         if (self.f != null) {
             self.allocator.free(self.f.?);
@@ -49,6 +51,7 @@ pub const Transport = struct {
     r_buffer: [1]u8 = undefined,
     reader: ?std.Io.File.Reader,
 
+    /// Initialize the transport object.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -66,10 +69,12 @@ pub const Transport = struct {
         return t;
     }
 
+    /// Deinitialize the transport object.
     pub fn deinit(self: *Transport) void {
         self.allocator.destroy(self);
     }
 
+    /// Open the transport object.
     pub fn open(self: *Transport, cancel: ?*bool) !void {
         // ignored for file because nothing to cancel!
         _ = cancel;
@@ -95,15 +100,18 @@ pub const Transport = struct {
         };
     }
 
+    /// Close the transport object.
     pub fn close(self: *Transport) void {
         self.reader.?.file.close(self.io);
     }
 
+    /// Write to the transport object. A noop for the test transport.
     pub fn write(self: *Transport, buf: []const u8) !void {
         _ = self;
         _ = buf;
     }
 
+    /// Read from the transport object.
     pub fn read(self: *Transport, buf: []u8) !usize {
         const ri = &self.reader.?.interface;
 

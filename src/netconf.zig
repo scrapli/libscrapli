@@ -110,6 +110,7 @@ pub const Options = struct {
     capabilities_callback: ?ClientCapabilitiesCallback,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
 
+    /// Initializes the netconf options.
     pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
@@ -138,6 +139,7 @@ pub const Options = struct {
         return o;
     }
 
+    /// Deinitializes the netconf options.
     pub fn deinit(self: *Options) void {
         if (&self.error_tag[0] != &operation.default_rpc_error_tag[0]) {
             self.allocator.free(self.error_tag);
@@ -192,6 +194,7 @@ pub const Driver = struct {
     ),
     subscriptions_lock: std.Io.Mutex,
 
+    /// Initialize a netconf object.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -279,6 +282,7 @@ pub const Driver = struct {
         return d;
     }
 
+    /// Deinitialize the netconf object -- nukes any stored messages (notifiations/subscriptions).
     pub fn deinit(self: *Driver) void {
         logging.traceWithSrc(self.log, @src(), "netconf.Driver object deinitializing", .{});
 
@@ -358,6 +362,7 @@ pub const Driver = struct {
         );
     }
 
+    /// Open the netconf conection.
     pub fn open(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -498,6 +503,7 @@ pub const Driver = struct {
         try self.session.close();
     }
 
+    /// Close the netconf connection.
     pub fn close(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -737,6 +743,7 @@ pub const Driver = struct {
         }
     }
 
+    /// Check if the server has reported the given capability.
     pub fn hasCapability(
         self: *Driver,
         namespace: ?[]const u8,
@@ -1324,7 +1331,8 @@ pub const Driver = struct {
         }
     }
 
-    // caller owns returned memory -- w/ the allocator the netconf object was created with!
+    /// Fetch a subscription message by ID. Caller owns returned memory -- w/ the allocator the
+    /// netconf object was created with!
     pub fn getSubscriptionMessages(
         self: *Driver,
         id: u64,
@@ -1341,7 +1349,8 @@ pub const Driver = struct {
         return ret.?.value.toOwnedSlice();
     }
 
-    // caller owns returned memory -- w/ the allocator the netconf object was created with!
+    /// Fetch any stored notification messages. Caller owns returned memory -- w/ the allocator the
+    /// netconf object was created with!
     pub fn getNotificationMessages(
         self: *Driver,
     ) ![][]const u8 {
@@ -1583,6 +1592,8 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a "raw" rpc -- meaning execute any arbitrary rpc that libscrapli doesn't natively
+    /// support.
     pub fn rawRpc(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -1647,6 +1658,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a GetConfig rpc.
     pub fn getConfig(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -1717,6 +1729,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute an EditConfig rpc.
     pub fn editConfig(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -1765,6 +1778,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a CopyConfig rpc.
     pub fn copyConfig(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -1812,6 +1826,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a DeleteConfig rpc.
     pub fn deleteConfig(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -1859,6 +1874,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a Lock rpc.
     pub fn lock(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -1906,6 +1922,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute an Unlock rpc.
     pub fn unlock(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -1969,6 +1986,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a Get rpc.
     pub fn get(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2015,6 +2033,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a CloseSession rpc.
     pub fn closeSession(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2109,6 +2128,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a KillSession rpc.
     pub fn killSession(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2155,6 +2175,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a Commit rpc.
     pub fn commit(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2201,6 +2222,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a Discard rpc.
     pub fn discard(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2253,6 +2275,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a CancelCommit rpc.
     pub fn cancelCommit(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2302,6 +2325,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a Validate rpc.
     pub fn validate(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2363,6 +2387,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a GetSchema rpc.
     pub fn getSchema(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2470,6 +2495,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute a GetData rpc.
     pub fn getData(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2539,6 +2565,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute an EditData rpc.
     pub fn editData(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2588,6 +2615,7 @@ pub const Driver = struct {
         return self.finalizeElem(allocator, output.written());
     }
 
+    /// Execute an Action rpc.
     pub fn action(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2778,6 +2806,7 @@ pub const Driver = struct {
         return res;
     }
 
+    /// Send a fully formed rpc.
     pub fn sendRpc(
         self: *Driver,
         start_timestamp: std.Io.Timestamp,

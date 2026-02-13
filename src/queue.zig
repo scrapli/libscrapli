@@ -1,4 +1,3 @@
-// zlint-disable
 // TODO this whole file... not great! should use w/e new io thing im supposed to use instead of
 // this deprecated stuff
 const std = @import("std");
