@@ -304,7 +304,7 @@ pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !?[]con
     bytes.toLower(copied_buf);
 
     for (open_error_message_substrings) |error_substring| {
-        if (std.mem.indexOf(u8, copied_buf, error_substring[0]) != null) {
+        if (std.mem.find(u8, copied_buf, error_substring[0]) != null) {
             if (error_substring[1].len > 0) {
                 return error_substring[1];
             }

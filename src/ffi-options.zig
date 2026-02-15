@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const auth = @import("auth.zig");
 const cli = @import("cli.zig");

@@ -9,11 +9,7 @@ const os = @import("builtin").os.tag;
 const scrapli = @import("scrapli");
 const cli = scrapli.cli;
 const transport = scrapli.transport;
-const ssh2_transport = scrapli.transport_ssh2;
-const telnet_transport = scrapli.transport_telnet;
-const operation = scrapli.cli_operation;
 const result = scrapli.cli_result;
-const flags = scrapli.flags;
 const helper = scrapli.test_helper;
 
 const nokia_srlinux_platform_path_from_project_root = "src/tests/fixtures/platform_nokia_srlinux_no_open_close_callbacks.yaml";

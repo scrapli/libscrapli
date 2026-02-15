@@ -173,7 +173,7 @@ pub fn testStrResult(
         std.testing.allocator.free(display_name);
     };
 
-    const diff_index = std.mem.indexOfDiff(u8, actual, expected);
+    const diff_index = std.mem.findDiff(u8, actual, expected);
 
     if (diff_index == null) {
         return;
@@ -355,7 +355,7 @@ fn normalizeTimestamps(
         // SAFETY: will always be set;
         var pattern: []const u8 = undefined;
 
-        if (std.mem.indexOf(u8, haystack, "<rpc") != null) {
+        if (std.mem.find(u8, haystack, "<rpc") != null) {
             pattern = netconf_timestamp_pattern;
         } else {
             pattern = timestamp_pattern;
@@ -444,7 +444,7 @@ fn normalizeNetconfSessionId(
     allocator: std.mem.Allocator,
     haystack: []const u8,
 ) anyerror![]const u8 {
-    if (haystack.len != 0 and std.mem.indexOf(u8, haystack, "<session-id>") != null) {
+    if (haystack.len != 0 and std.mem.find(u8, haystack, "<session-id>") != null) {
         const compiled_netconf_session_id_pattern = re.pcre2Compile(
             netconf_session_id_pattern,
         );
@@ -486,7 +486,7 @@ fn normalizeNetconfPassword(
     allocator: std.mem.Allocator,
     haystack: []const u8,
 ) anyerror![]const u8 {
-    if (haystack.len != 0 and std.mem.indexOf(u8, haystack, "<password>") != null) {
+    if (haystack.len != 0 and std.mem.find(u8, haystack, "<password>") != null) {
         const compiled_netconf_password_pattern = re.pcre2Compile(
             netconf_password_pattern,
         );
@@ -527,7 +527,11 @@ fn normalizeNetconfPassword(
 // taken from std lib
 fn printWithVisibleNewlines(source: []const u8) void {
     var i: usize = 0;
-    while (std.mem.indexOfScalar(u8, source[i..], '\n')) |nl| : (i += nl + 1) {
+    while (std.mem.findScalar(
+        u8,
+        source[i..],
+        '\n',
+    )) |nl| : (i += nl + 1) {
         printLine(source[i..][0..nl]);
     }
     std.debug.print("{s}␃\n", .{source[i..]}); // End of Text symbol (ETX)
@@ -544,11 +548,19 @@ fn printLine(line: []const u8) void {
 
 // taken from std lib
 fn printIndicatorLine(source: []const u8, indicator_index: usize) void {
-    const line_begin_index = if (std.mem.lastIndexOfScalar(u8, source[0..indicator_index], '\n')) |line_begin|
+    const line_begin_index = if (std.mem.findScalarLast(
+        u8,
+        source[0..indicator_index],
+        '\n',
+    )) |line_begin|
         line_begin + 1
     else
         0;
-    const line_end_index = if (std.mem.indexOfScalar(u8, source[indicator_index..], '\n')) |line_end|
+    const line_end_index = if (std.mem.findScalar(
+        u8,
+        source[indicator_index..],
+        '\n',
+    )) |line_end|
         (indicator_index + line_end)
     else
         source.len;

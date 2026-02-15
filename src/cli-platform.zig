@@ -48,6 +48,7 @@ pub const BoundOnXCallback = struct {
     kind: operation.Kind,
     instructions: []BoundOnXCallbackInstruction,
 
+    /// Initialize the bound "on x" (open/close) callback.
     pub fn init(
         allocator: std.mem.Allocator,
         kind: operation.Kind,
@@ -140,6 +141,7 @@ pub const BoundOnXCallback = struct {
         return cb;
     }
 
+    /// Deinitialize the bound "on x" (open/close) callback.
     pub fn deinit(self: *BoundOnXCallback) void {
         for (self.instructions) |instr| {
             switch (instr) {
@@ -173,6 +175,7 @@ pub const BoundOnXCallback = struct {
         self.allocator.destroy(self);
     }
 
+    /// Execute the callback.
     pub fn callback(
         self: *BoundOnXCallback,
         allocator: std.mem.Allocator,
@@ -265,6 +268,7 @@ pub const Definition = struct {
     ntc_templates_platform: ?[]const u8,
     genie_platform: ?[]const u8,
 
+    /// Initialize the cli definition object.
     pub fn init(allocator: std.mem.Allocator, options: Options) !*Definition {
         const d = try allocator.create(Definition);
 
@@ -312,6 +316,7 @@ pub const Definition = struct {
         return d;
     }
 
+    /// Deinitialize the cli defintion object.
     pub fn deinit(self: *Definition) void {
         self.allocator.free(self.prompt_pattern);
 
@@ -371,6 +376,7 @@ pub const YamlDefinition = struct {
     ntc_templates_platform: ?[]const u8,
     genie_platform: ?[]const u8,
 
+    /// Return a Definition object from the loaded yaml.
     pub fn toDefinition(
         allocator: std.mem.Allocator,
         io: std.Io,

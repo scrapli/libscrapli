@@ -109,7 +109,7 @@ pub fn pcre2Find(
 
         const err_message = err_message_buf[0..@intCast(err_message_len)];
 
-        if (std.mem.indexOf(u8, err_message, "no match") != null) {
+        if (std.mem.find(u8, err_message, "no match") != null) {
             return null;
         }
 
@@ -214,7 +214,7 @@ pub fn pcre2FindIndex(
 
         const err_message = err_message_buf[0..@intCast(err_message_len)];
 
-        if (std.mem.indexOf(u8, err_message, "no match") != null) {
+        if (std.mem.find(u8, err_message, "no match") != null) {
             return [2]usize{ 0, 0 };
         }
 

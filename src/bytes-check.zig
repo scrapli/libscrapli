@@ -72,7 +72,7 @@ pub fn exactInBuf(args: CheckArgs, buf: []const u8) !MatchPositions {
         return MatchPositions{ .start = 0, .end = 0 };
     }
 
-    const match_start_index = std.mem.indexOf(u8, buf, args.actual.?);
+    const match_start_index = std.mem.find(u8, buf, args.actual.?);
     if (match_start_index != null) {
         return MatchPositions{
             .start = match_start_index.?,

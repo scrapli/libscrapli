@@ -5,14 +5,7 @@ const os = @import("builtin").os.tag;
 const scrapli = @import("scrapli");
 const netconf = scrapli.netconf;
 const transport = scrapli.transport;
-const result = scrapli.netconf_result;
-const operation = scrapli.netconf_operation;
-const ascii = scrapli.ascii;
-const ssh2_transport = scrapli.transport_ssh2;
-const flags = scrapli.flags;
-const file = scrapli.file;
 const helper = scrapli.test_helper;
-const xml = @import("xml");
 const yaml = @import("yaml");
 
 fn GetDriver(

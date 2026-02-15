@@ -54,23 +54,6 @@ pub const delimiter_version_1_1 = "##";
 pub const version_1_0_capability_name = "urn:ietf:params:netconf:base:1.0";
 pub const version_1_1_capability_name = "urn:ietf:params:netconf:base:1.1";
 
-const version_1_0_capability =
-    \\<?xml version="1.0" encoding="utf-8"?>
-    \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-    \\  <capabilities>
-    \\      <capability>urn:ietf:params:netconf:base:1.0</capability>
-    \\  </capabilities>
-    \\</hello>]]>]]>
-;
-const version_1_1_capability =
-    \\<?xml version="1.0" encoding="utf-8"?>
-    \\<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-    \\  <capabilities>
-    \\      <capability>urn:ietf:params:netconf:base:1.1</capability>
-    \\  </capabilities>
-    \\</hello>]]>]]>
-;
-
 const base_capability_name = "urn:ietf:params:xml:ns:netconf:base:1.0";
 const with_defaults_capability_name = "urn:ietf:params:netconf:capability:with-defaults:1.0";
 const validate_capability_name = "urn:ietf:params:xml:ns:netconf:capability:validate:1.0";
@@ -399,7 +382,7 @@ pub const Driver = struct {
                 // bin will need to clean up the open buf though so we only send a valid
                 // xml doc to processServerCapabilities!
                 // note that this all applies to the test transport as well (reading from file)
-                const cap_start_index = std.mem.indexOf(
+                const cap_start_index = std.mem.find(
                     u8,
                     res.result,
                     "<hello ",
@@ -416,7 +399,7 @@ pub const Driver = struct {
 
                 // session will have read up to (and consumed) the prompt (]]>]]> at this point),
                 // so we just need find the end of the server hello/capabilities.
-                const cap_end_index = std.mem.indexOf(
+                const cap_end_index = std.mem.find(
                     u8,
                     res.result,
                     "/hello>",
@@ -596,7 +579,7 @@ pub const Driver = struct {
             }
 
             if (!found_cap_start) {
-                const cap_start_index = std.mem.indexOf(
+                const cap_start_index = std.mem.find(
                     u8,
                     read_cap_buf,
                     "<hello ",
@@ -610,7 +593,7 @@ pub const Driver = struct {
 
             var end_copy_index: usize = n;
 
-            const cap_end_index = std.mem.indexOf(
+            const cap_end_index = std.mem.find(
                 u8,
                 read_cap_buf,
                 delimiter_version_1_0,
@@ -1068,19 +1051,19 @@ pub const Driver = struct {
         is_notification_message: bool = false,
         found_id: usize = 0,
     } {
-        const index_of_message_id = std.mem.indexOf(
+        const index_of_message_id = std.mem.find(
             u8,
             message_view,
             message_id_attribute_prefix,
         );
 
-        const index_of_subscription_id = std.mem.indexOf(
+        const index_of_subscription_id = std.mem.find(
             u8,
             message_view,
             subscription_id_attribute_prefix,
         );
 
-        const index_of_notification = std.mem.indexOf(
+        const index_of_notification = std.mem.find(
             u8,
             message_view,
             notification_prefix,
@@ -1187,7 +1170,7 @@ pub const Driver = struct {
         var message_start_idx: usize = 0;
 
         while (delimiter_count > 0) {
-            const delimiter_index = std.mem.indexOf(
+            const delimiter_index = std.mem.find(
                 u8,
                 buf,
                 delimiter_version_1_0,
@@ -1405,7 +1388,7 @@ pub const Driver = struct {
         filter_namespace: ?[]const u8,
     ) !void {
         try writer.elementStartNs(base_capability_name, "filter");
-        try writer.attribute("type", filter_type.toString());
+        try writer.attribute("type", @tagName(filter_type));
 
         if (filter_namespace != null and filter_namespace.?.len > 0) {
             try writer.bindNs(
@@ -1632,7 +1615,7 @@ pub const Driver = struct {
         );
 
         try writer.elementStartNs(base_capability_name, "get-config");
-        try Driver.addSourceElem(&writer, options.source.toString());
+        try Driver.addSourceElem(&writer, @tagName(options.source));
 
         if (options.filter != null and options.filter.?.len > 0) {
             try Driver.addFilterElem(
@@ -1698,11 +1681,11 @@ pub const Driver = struct {
 
         try writer.elementStartNs(base_capability_name, "edit-config");
 
-        try Driver.addTargetElem(&writer, options.target.toString());
+        try Driver.addTargetElem(&writer, @tagName(options.target));
 
         if (options.default_operation) |default_operation| {
             try writer.elementStartNs(base_capability_name, "default-operation");
-            try writer.text(default_operation.toString());
+            try writer.text(@tagName(default_operation));
             try writer.elementEnd();
         }
 
@@ -1768,8 +1751,8 @@ pub const Driver = struct {
         );
         try writer.elementStartNs(base_capability_name, "copy-config");
 
-        try Driver.addSourceElem(&writer, options.source.toString());
-        try Driver.addTargetElem(&writer, options.target.toString());
+        try Driver.addSourceElem(&writer, @tagName(options.source));
+        try Driver.addTargetElem(&writer, @tagName(options.target));
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -1817,7 +1800,7 @@ pub const Driver = struct {
         );
         try writer.elementStartNs(base_capability_name, "delete-config");
 
-        try Driver.addTargetElem(&writer, options.target.toString());
+        try Driver.addTargetElem(&writer, @tagName(options.target));
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -1865,7 +1848,7 @@ pub const Driver = struct {
         );
         try writer.elementStartNs(base_capability_name, "lock");
 
-        try Driver.addTargetElem(&writer, options.target.toString());
+        try Driver.addTargetElem(&writer, @tagName(options.target));
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -1913,7 +1896,7 @@ pub const Driver = struct {
         );
         try writer.elementStartNs(base_capability_name, "unlock");
 
-        try Driver.addTargetElem(&writer, options.target.toString());
+        try Driver.addTargetElem(&writer, @tagName(options.target));
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -2316,7 +2299,7 @@ pub const Driver = struct {
         try writer.elementStart("validate");
         try writer.bindNs("", validate_capability_name);
 
-        try Driver.addSourceElem(&writer, options.source.toString());
+        try Driver.addSourceElem(&writer, @tagName(options.source));
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -2377,7 +2360,7 @@ pub const Driver = struct {
         }
 
         try writer.elementStartNs(get_schema_capability_name, "format");
-        try writer.text(options.format.toString());
+        try writer.text(@tagName(options.format));
         try writer.elementEnd();
 
         try writer.elementEnd();
@@ -2437,7 +2420,7 @@ pub const Driver = struct {
         try writer.text(try std.fmt.bufPrint(
             &datastore_buf,
             "ds:{s}",
-            .{options.datastore.toString()},
+            .{@tagName(options.datastore)},
         ));
         try writer.elementEnd();
 
@@ -2544,13 +2527,13 @@ pub const Driver = struct {
         try writer.text(try std.fmt.bufPrint(
             &datastore_buf,
             "ds:{s}",
-            .{options.datastore.toString()},
+            .{@tagName(options.datastore)},
         ));
         try writer.elementEnd();
 
         if (options.default_operation) |default_operation| {
             try writer.elementStartNs(base_capability_name, "default-operation");
-            try writer.text(default_operation.toString());
+            try writer.text(@tagName(default_operation));
             try writer.elementEnd();
         }
 

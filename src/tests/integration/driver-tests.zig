@@ -7,13 +7,10 @@ const scrapli = @import("scrapli");
 const cli = scrapli.cli;
 const operation = scrapli.cli_operation;
 const mode = scrapli.cli_mode;
-const flags = scrapli.flags;
 const ascii = scrapli.ascii;
 const errors = scrapli.errors;
 const result = scrapli.cli_result;
 const helper = scrapli.test_helper;
-
-const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
 fn eosOnOpen(
     d: *cli.Driver,

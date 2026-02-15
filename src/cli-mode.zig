@@ -201,11 +201,7 @@ pub fn determineMode(
             if (std.mem.eql(u8, current_prompt, prompt_exact)) {
                 if (mode_def.value_ptr.*.prompt_excludes) |prompt_excludes| {
                     for (prompt_excludes) |exclusion| {
-                        if (std.mem.indexOf(
-                            u8,
-                            current_prompt,
-                            exclusion,
-                        ) != 0) {
+                        if (std.mem.find(u8, current_prompt, exclusion) != 0) {
                             continue;
                         }
                     }
@@ -225,7 +221,7 @@ pub fn determineMode(
 
                 if (mode_def.value_ptr.*.prompt_excludes) |prompt_excludes| {
                     for (prompt_excludes) |exclusion| {
-                        if (std.mem.indexOf(
+                        if (std.mem.find(
                             u8,
                             current_prompt,
                             exclusion,

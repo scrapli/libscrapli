@@ -11,8 +11,10 @@ const rpc_error_severity_error = "error";
 
 const subscription_id_close_tag = "</subscription-id>";
 
+/// Parse the subscription id from the given buf (that is hopefully a response from a subscription
+/// initializing rpc).
 pub fn getSubscriptionId(buf: []const u8) !?u64 {
-    const index_of_subscription_id = std.mem.indexOf(
+    const index_of_subscription_id = std.mem.find(
         u8,
         buf,
         subscription_id_close_tag,
@@ -282,6 +284,7 @@ pub const Result = struct {
         }
     }
 
+    /// Record the result of a netconf operation.
     pub fn record(
         self: *Result,
         ret: [2][]const u8,
@@ -290,13 +293,14 @@ pub const Result = struct {
         self.result_raw = ret[0];
         self.result = ret[1];
 
-        if (std.mem.indexOf(u8, ret[1], self.error_tag) != null) {
+        if (std.mem.find(u8, ret[1], self.error_tag) != null) {
             self.result_failure_indicated = true;
 
             try self.parseRpcErrors(ret[1]);
         }
     }
 
+    /// Returns the elapsed time in seconds for the operation this result object represents.
     pub fn elapsedTimeSeconds(
         self: *Result,
     ) f64 {

@@ -4,7 +4,6 @@ const auth = @import("auth.zig");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
-const strings = @import("strings.zig");
 const transport_socket = @import("transport-socket.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
@@ -815,12 +814,13 @@ pub const Transport = struct {
             return;
         }
 
-        const _host = try self.allocator.dupeZ(u8, host);
+        const _host = try self.allocator.dupeSentinel(u8, host, 0);
         defer self.allocator.free(_host);
 
-        const _known_hosts_path = try self.allocator.dupeZ(
+        const _known_hosts_path = try self.allocator.dupeSentinel(
             u8,
             self.options.known_hosts_path.?,
+            0,
         );
         defer self.allocator.free(_known_hosts_path);
 
@@ -1350,9 +1350,10 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         auth_options: *auth.Options,
     ) !void {
-        const _host = try self.allocator.dupeZ(
+        const _host = try self.allocator.dupeSentinel(
             u8,
             self.options.proxy_jump_options.?.host,
+            0,
         );
         defer self.allocator.free(_host);
 

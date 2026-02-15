@@ -66,6 +66,7 @@ pub const RpcOptions = union(Kind) {
 
     action: ActionOptions,
 
+    /// Returns the "kind" from the tagged union.
     pub fn getKind(self: RpcOptions) Kind {
         return @as(Kind, self);
     }
@@ -80,48 +81,11 @@ pub const DatastoreType = enum {
     intended,
     dynamic,
     operational,
-
-    pub fn toString(self: DatastoreType) []const u8 {
-        switch (self) {
-            .conventional => {
-                return "conventional";
-            },
-            .running => {
-                return "running";
-            },
-            .candidate => {
-                return "candidate";
-            },
-            .startup => {
-                return "startup";
-            },
-            .intended => {
-                return "intended";
-            },
-            .dynamic => {
-                return "dynamic";
-            },
-            .operational => {
-                return "operational";
-            },
-        }
-    }
 };
 
 pub const FilterType = enum {
     subtree,
     xpath,
-
-    pub fn toString(self: FilterType) []const u8 {
-        switch (self) {
-            .subtree => {
-                return "subtree";
-            },
-            .xpath => {
-                return "xpath";
-            },
-        }
-    }
 };
 
 /// with-defaults supported on get, get-config, copy-config operations. see rfc-6243.
@@ -131,6 +95,7 @@ pub const DefaultsType = enum {
     trim,
     explicit,
 
+    /// Returns the value of the enum as a string, cant use tagName because of hyphens.
     pub fn toString(self: DefaultsType) []const u8 {
         switch (self) {
             .report_all => {
@@ -156,26 +121,6 @@ pub const SchemaFormat = enum {
     yin,
     rng,
     rnc,
-
-    pub fn toString(self: SchemaFormat) []const u8 {
-        switch (self) {
-            .xsd => {
-                return "xsd";
-            },
-            .yang => {
-                return "yang";
-            },
-            .yin => {
-                return "yin";
-            },
-            .rng => {
-                return "rng";
-            },
-            .rnc => {
-                return "rnc";
-            },
-        }
-    }
 };
 
 // for example with edit-config, see rfc4741
@@ -183,20 +128,6 @@ pub const DefaultOperation = enum {
     merge,
     replace,
     none,
-
-    pub fn toString(self: DefaultOperation) []const u8 {
-        switch (self) {
-            .merge => {
-                return "merge";
-            },
-            .replace => {
-                return "replace";
-            },
-            .none => {
-                return "none";
-            },
-        }
-    }
 };
 
 // also see rfc4741
@@ -204,6 +135,7 @@ pub const TestOption = enum {
     test_then_set,
     set,
 
+    /// Returns the value of the enum as a string, cant use tagName because of hyphens.
     pub fn toString(self: TestOption) []const u8 {
         switch (self) {
             .test_then_set => {
@@ -222,6 +154,7 @@ pub const ErrorOption = enum {
     continue_on_error,
     rollback_on_error,
 
+    /// Returns the value of the enum as a string, cant use tagName because of hyphens.
     pub fn toString(self: ErrorOption) []const u8 {
         switch (self) {
             .stop_on_error => {

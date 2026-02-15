@@ -49,7 +49,7 @@ pub fn roughlyContains(haystack: []const u8, needle: []const u8) [2]usize {
         return [2]usize{ 0, 0 };
     }
 
-    const match_start_index = std.mem.indexOf(u8, haystack, needle);
+    const match_start_index = std.mem.find(u8, haystack, needle);
     if (match_start_index != null) {
         return [2]usize{ match_start_index.?, match_start_index.? + needle.len };
     }
@@ -208,7 +208,7 @@ pub const ProcessedBuf = struct {
     pub fn appendSlice(self: *ProcessedBuf, buf: []u8) !void {
         try self.raw.appendSlice(self.allocator, buf);
 
-        if (std.mem.indexOf(u8, buf, &[_]u8{ascii.control_chars.esc}) != null) {
+        if (std.mem.find(u8, buf, &[_]u8{ascii.control_chars.esc}) != null) {
             // if ESC in the new buf look at last n of processed buf to replace if
             // necessary; this *feels* bad like we may miss sequences (if our read gets part
             // of a sequence, then a subsequent read gets the rest), however this has never

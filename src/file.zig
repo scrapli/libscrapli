@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 /// Conveinence function to set the given fd to be in non block.
 pub fn setNonBlocking(fd: std.posix.fd_t) !void {

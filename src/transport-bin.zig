@@ -141,7 +141,7 @@ pub const Transport = struct {
     w_buffer: [1024]u8 = undefined,
     writer: ?std.Io.File.Writer = null,
 
-    open_args: std.array_list.Managed(strings.MaybeHeapString),
+    open_args: std.ArrayList(strings.MaybeHeapString),
 
     /// Initializes the transport.
     pub fn init(
@@ -160,7 +160,7 @@ pub const Transport = struct {
             .log = log,
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
-            .open_args = std.array_list.Managed(strings.MaybeHeapString).init(allocator),
+            .open_args = .{},
         };
 
         return t;
@@ -174,7 +174,7 @@ pub const Transport = struct {
             arg.deinit();
         }
 
-        self.open_args.deinit();
+        self.open_args.deinit(self.allocator);
         self.waiter.deinit();
 
         self.allocator.destroy(self);
@@ -196,6 +196,7 @@ pub const Transport = struct {
 
             while (override_args_iterator.next()) |arg| {
                 try self.open_args.append(
+                    self.allocator,
                     strings.MaybeHeapString{
                         .allocator = null,
                         .string = arg,
@@ -207,6 +208,7 @@ pub const Transport = struct {
         }
 
         try self.open_args.append(
+            self.allocator,
             // TODO -- equivalent of go exec.LookPath
             strings.MaybeHeapString{
                 .allocator = null,
@@ -215,6 +217,7 @@ pub const Transport = struct {
         );
 
         try self.open_args.append(
+            self.allocator,
             strings.MaybeHeapString{
                 .allocator = null,
                 .string = host,
@@ -222,6 +225,7 @@ pub const Transport = struct {
         );
 
         try self.open_args.append(
+            self.allocator,
             strings.MaybeHeapString{
                 .allocator = null,
                 .string = "-p",
@@ -229,6 +233,7 @@ pub const Transport = struct {
         );
 
         try self.open_args.append(
+            self.allocator,
             strings.MaybeHeapString{
                 .allocator = self.allocator,
                 .string = try std.fmt.allocPrint(
@@ -241,6 +246,7 @@ pub const Transport = struct {
 
         if (operation_timeout_ns != 0) {
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "-o",
@@ -248,6 +254,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
                     .string = try std.fmt.allocPrint(
@@ -259,6 +266,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "-o",
@@ -266,6 +274,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
                     .string = try std.fmt.allocPrint(
@@ -279,6 +288,7 @@ pub const Transport = struct {
 
         if (auth_options.username != null) {
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "-l",
@@ -286,6 +296,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = auth_options.username.?,
@@ -295,6 +306,7 @@ pub const Transport = struct {
 
         if (auth_options.private_key_path != null) {
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "-i",
@@ -302,6 +314,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = auth_options.private_key_path.?,
@@ -311,6 +324,7 @@ pub const Transport = struct {
 
         if (self.options.ssh_config_path != null) {
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "-F",
@@ -318,6 +332,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = self.options.ssh_config_path.?,
@@ -326,6 +341,7 @@ pub const Transport = struct {
         }
 
         try self.open_args.append(
+            self.allocator,
             strings.MaybeHeapString{
                 .allocator = null,
                 .string = "-o",
@@ -334,6 +350,7 @@ pub const Transport = struct {
 
         if (self.options.enable_strict_key) {
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "StrictHostKeyChecking=yes",
@@ -341,6 +358,7 @@ pub const Transport = struct {
             );
         } else {
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "StrictHostKeyChecking=no",
@@ -349,6 +367,7 @@ pub const Transport = struct {
 
             // if not strict checking, just /dev/null em too
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "-o",
@@ -356,6 +375,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "UserKnownHostsFile=/dev/null",
@@ -365,6 +385,7 @@ pub const Transport = struct {
 
         if (self.options.known_hosts_path != null) {
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "-o",
@@ -372,6 +393,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
                     .string = try std.fmt.allocPrint(
@@ -392,6 +414,7 @@ pub const Transport = struct {
 
             while (extra_args_iterator.next()) |arg| {
                 try self.open_args.append(
+                    self.allocator,
                     strings.MaybeHeapString{
                         .allocator = null,
                         .string = arg,
@@ -402,6 +425,7 @@ pub const Transport = struct {
 
         if (self.options.netconf) {
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "-s",
@@ -409,6 +433,7 @@ pub const Transport = struct {
             );
 
             try self.open_args.append(
+                self.allocator,
                 strings.MaybeHeapString{
                     .allocator = null,
                     .string = "netconf",
@@ -590,7 +615,7 @@ fn openPty(
         defer allocator.free(args);
 
         for (open_args, 0..) |arg, i| {
-            args[i] = try allocator.dupeZ(u8, arg);
+            args[i] = try allocator.dupeSentinel(u8, arg, 0);
         }
 
         args[open_args.len] = null;

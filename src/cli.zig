@@ -41,6 +41,7 @@ pub const Options = struct {
     session: *session.Options,
     transport: *transport.Options,
 
+    /// Initializes the cli options.
     pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
         const o = try allocator.create(Options);
         errdefer allocator.destroy(o);
@@ -60,6 +61,7 @@ pub const Options = struct {
         return o;
     }
 
+    /// Deinitializes the cli options.
     pub fn deinit(self: *Options) void {
         self.auth.deinit();
         self.session.deinit();
@@ -79,6 +81,7 @@ pub const Driver = struct {
     session: *session.Session,
     current_mode: []const u8 = mode.unknown_mode,
 
+    /// Initialize the cli driver.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -149,6 +152,7 @@ pub const Driver = struct {
         return d;
     }
 
+    /// Deinitialize the cli object.
     pub fn deinit(self: *Driver) void {
         logging.traceWithSrc(self.log, @src(), "cli.Driver deinitializing", .{});
 
@@ -158,6 +162,7 @@ pub const Driver = struct {
         self.allocator.destroy(self);
     }
 
+    /// Create a new result object for the given operation.
     pub fn newResult(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -178,6 +183,7 @@ pub const Driver = struct {
         );
     }
 
+    /// Open the cli connection.
     pub fn open(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -241,6 +247,7 @@ pub const Driver = struct {
         return res;
     }
 
+    /// Close the cli connection.
     pub fn close(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -286,6 +293,7 @@ pub const Driver = struct {
         return res;
     }
 
+    /// Get the current "prompt" of the cli connection.
     pub fn getPrompt(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -308,6 +316,8 @@ pub const Driver = struct {
         return res;
     }
 
+    /// Enter the requested "mode" (i.e. config, or privileged, as defined by the definition) for
+    /// the cli object.
     pub fn enterMode(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -493,6 +503,7 @@ pub const Driver = struct {
         return res;
     }
 
+    /// Send the given input to the device.
     pub fn sendInput(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -537,6 +548,7 @@ pub const Driver = struct {
         return res;
     }
 
+    /// Send multiple inputs to the device.
     pub fn sendInputs(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -597,6 +609,8 @@ pub const Driver = struct {
         return res;
     }
 
+    /// Send a "prompted" input to a device -- meaning an input that generates a basic prompt for
+    /// a user to respond to -- i.e. "are you sure you want to do this [y]n: ".
     pub fn sendPromptedInput(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -644,11 +658,11 @@ pub const Driver = struct {
         return res;
     }
 
-    // safely reads any bytes from the session with the deafult timeout handling. "nicer" than just
-    // directly reading from the session since timeouts are handled and ascii/ansi things are
-    // stripped if present, however no whitespace is trimmed! this is because we dont want to chomp
-    // off a newline that actually matters to output, and since we are not reading to "well known"
-    // places (i.e. the next prompt) we have no idea what we've read so we better not faff w/ it.
+    /// Safely reads any bytes from the session with the deafult timeout handling. "nicer" than just
+    /// directly reading from the session since timeouts are handled and ascii/ansi things are
+    /// stripped if present, however no whitespace is trimmed! this is because we dont want to chomp
+    /// off a newline that actually matters to output, and since we are not reading to "well known"
+    /// places (i.e. the next prompt) we have no idea what we've read so we better not faff w/ it.
     pub fn readAny(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -767,6 +781,8 @@ pub const Driver = struct {
         }
     }
 
+    /// Read from the connection, checking each output to see if it should trigger any number of
+    /// callback functions.
     pub fn readWithCallbacks(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -818,6 +834,7 @@ pub const Driver = struct {
     }
 };
 
+/// Check if a "read callback" should execute based on the given buffer.
 pub fn readCallbackShouldExecute(
     buf: []const u8,
     name: []const u8,
@@ -844,7 +861,7 @@ pub fn readCallbackShouldExecute(
     var callback_contains_or_pattern_matches = false;
 
     if (contains) |c| {
-        if (std.mem.indexOf(u8, buf, c) != null) {
+        if (std.mem.find(u8, buf, c) != null) {
             callback_contains_or_pattern_matches = true;
         }
     } else if (contains_pattern) |cp| {
@@ -868,7 +885,7 @@ pub fn readCallbackShouldExecute(
 
     if (not_contains) |nc| {
         // not contains applies regardless of string or pattern containment check
-        if (std.mem.indexOf(u8, buf, nc) != null) {
+        if (std.mem.find(u8, buf, nc) != null) {
             return false;
         }
     }
