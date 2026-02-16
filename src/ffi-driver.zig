@@ -9,13 +9,17 @@ const queue = @import("queue.zig");
 const result = @import("cli-result.zig");
 const result_netconf = @import("netconf-result.zig");
 
+/// The static sleep duration for waiting for the ffi driver operation thread to be running.
 pub const operation_thread_ready_sleep: u64 = 2_500;
 
+/// An enum representing a "real" (non ffi) cli or netconf driver.
 pub const RealDriver = union(enum) {
     cli: *cli.Driver,
     netconf: *netconf.Driver,
 };
 
+/// The "ffi driver" is the thing that drives the "normal" zig libscrapli drivers and exposes things
+/// via the ffi/shared object interface.
 pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
     io: std.Io,

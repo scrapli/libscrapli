@@ -13,15 +13,15 @@ pub const Result = struct {
 
     operation_kind: operation.Kind,
 
-    failed_indicators: ?std.array_list.Managed([]const u8),
+    failed_indicators: ?std.ArrayList([]const u8),
 
-    inputs: std.array_list.Managed([]const u8),
+    inputs: std.ArrayList([]const u8),
 
-    results_raw: std.array_list.Managed([]const u8),
-    results: std.array_list.Managed([]const u8),
+    results_raw: std.ArrayList([]const u8),
+    results: std.ArrayList([]const u8),
 
     start_time_ns: i128,
-    splits_ns: std.array_list.Managed(i128),
+    splits_ns: std.ArrayList(i128),
 
     // set to true at first failure indication, further failures would not be captured
     result_failure_indicated: bool,
@@ -37,7 +37,7 @@ pub const Result = struct {
         host: []const u8,
         port: u16,
         operation_kind: operation.Kind,
-        failed_indicators: ?std.array_list.Managed([]const u8),
+        failed_indicators: ?std.ArrayList([]const u8),
     ) !*Result {
         const res = try allocator.create(Result);
 
@@ -48,11 +48,11 @@ pub const Result = struct {
             .port = port,
             .operation_kind = operation_kind,
             .failed_indicators = failed_indicators,
-            .inputs = std.array_list.Managed([]const u8).init(allocator),
-            .results_raw = std.array_list.Managed([]const u8).init(allocator),
-            .results = std.array_list.Managed([]const u8).init(allocator),
+            .inputs = .{},
+            .results_raw = .{},
+            .results = .{},
             .start_time_ns = std.Io.Timestamp.now(io, .real).nanoseconds,
-            .splits_ns = std.array_list.Managed(i128).init(allocator),
+            .splits_ns = .{},
             .result_failure_indicated = false,
             .result_failure_indicator = -1,
         };
@@ -72,10 +72,10 @@ pub const Result = struct {
             self.allocator.free(result);
         }
 
-        self.results_raw.deinit();
-        self.results.deinit();
-        self.inputs.deinit();
-        self.splits_ns.deinit();
+        self.results_raw.deinit(self.allocator);
+        self.results.deinit(self.allocator);
+        self.inputs.deinit(self.allocator);
+        self.splits_ns.deinit(self.allocator);
 
         self.allocator.destroy(self);
     }
@@ -89,9 +89,9 @@ pub const Result = struct {
             trim_processed: bool = true,
         },
     ) !void {
-        try self.splits_ns.append(std.Io.Timestamp.now(self.io, .real).nanoseconds);
-        try self.inputs.append(data.input);
-        try self.results_raw.append(data.rets[0]);
+        try self.splits_ns.append(self.allocator, std.Io.Timestamp.now(self.io, .real).nanoseconds);
+        try self.inputs.append(self.allocator, data.input);
+        try self.results_raw.append(self.allocator, data.rets[0]);
 
         if (data.trim_processed) {
             // trimWhitespace allocates new memory properly sized, so we can then free
@@ -99,9 +99,9 @@ pub const Result = struct {
             // removed, but we still trim whitespace to get rid of leading/trailing junk)
             const trimmed = try bytes.trimNewlineWhitespace(self.allocator, data.rets[1]);
             self.allocator.free(data.rets[1]);
-            try self.results.append(trimmed);
+            try self.results.append(self.allocator, trimmed);
         } else {
-            try self.results.append(data.rets[1]);
+            try self.results.append(self.allocator, data.rets[1]);
         }
 
         if (self.failed_indicators == null) {
@@ -129,18 +129,18 @@ pub const Result = struct {
         self: *Result,
         res: *Result,
     ) !void {
-        const owned_inputs = try res.inputs.toOwnedSlice();
+        const owned_inputs = try res.inputs.toOwnedSlice(self.allocator);
         defer self.allocator.free(owned_inputs);
-        const owned_results_raw = try res.results_raw.toOwnedSlice();
+        const owned_results_raw = try res.results_raw.toOwnedSlice(self.allocator);
         defer self.allocator.free(owned_results_raw);
-        const owned_results = try res.results.toOwnedSlice();
+        const owned_results = try res.results.toOwnedSlice(self.allocator);
         defer self.allocator.free(owned_results);
 
         for (0.., owned_results_raw) |idx, _| {
-            try self.splits_ns.append(res.splits_ns.items[idx]);
-            try self.inputs.append(owned_inputs[idx]);
-            try self.results_raw.append(owned_results_raw[idx]);
-            try self.results.append(owned_results[idx]);
+            try self.splits_ns.append(self.allocator, res.splits_ns.items[idx]);
+            try self.inputs.append(self.allocator, owned_inputs[idx]);
+            try self.results_raw.append(self.allocator, owned_results_raw[idx]);
+            try self.results.append(self.allocator, owned_results[idx]);
 
             if (!self.result_failure_indicated and res.result_failure_indicated) {
                 self.result_failure_indicated = true;
@@ -148,10 +148,10 @@ pub const Result = struct {
             }
         }
 
-        res.results_raw.deinit();
-        res.results.deinit();
-        res.inputs.deinit();
-        res.splits_ns.deinit();
+        res.results_raw.deinit(self.allocator);
+        res.results.deinit(self.allocator);
+        res.inputs.deinit(self.allocator);
+        res.splits_ns.deinit(self.allocator);
         self.allocator.destroy(res);
     }
 

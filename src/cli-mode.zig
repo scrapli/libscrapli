@@ -4,9 +4,12 @@ const errors = @import("errors.zig");
 const hashmaps = @import("hashmaps.zig");
 const re = @import("re.zig");
 
+/// Simple const used to signify an "unknown" mode.
 pub const unknown_mode = "__unknown__";
+/// Simple const used to signify the default mode -- the definition should tell us what this is.
 pub const default_mode = "__default__";
 
+/// An enum of cli operations that can be used when dealing w/ cli modes.
 pub const Operation = union(enum) {
     send_input: struct {
         send_input: struct {
@@ -23,6 +26,7 @@ pub const Operation = union(enum) {
     },
 };
 
+/// Options used to configure a mode.
 pub const Options = struct {
     name: []const u8,
     prompt_exact: ?[]const u8 = null,
@@ -31,11 +35,14 @@ pub const Options = struct {
     accessible_modes: ?[]const AccessibleMode = null,
 };
 
+/// A struct hodling the name of a mode and the slice of operations required in order to access it.
 pub const AccessibleMode = struct {
     name: []const u8,
     instructions: []const Operation,
 };
 
+/// A mode -- or basically some type of config "level" on a cli device. In traditional network land
+/// this means things like "privileged exec" or "config t" etc..
 pub const Mode = struct {
     allocator: std.mem.Allocator,
     prompt_exact: ?[]const u8,

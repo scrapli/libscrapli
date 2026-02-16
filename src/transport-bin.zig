@@ -124,6 +124,7 @@ pub const Options = struct {
     }
 };
 
+/// The "bin" (binary invoker/wrapper) transport object.
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     io: std.Io,

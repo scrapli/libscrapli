@@ -38,11 +38,12 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
     }
 }
 
-// note: many fields are optional pointers because we cant just have ?u64 on extern struct
-// for example. so for most things zero values are acutally valid options so this way we
-// can differentiate between zero value and unset easily. strings dont have this problem
-// because we check the length -- if the length is non zero then we know it was something,
-// there shouldnt be any fields here where an empty string is a valid user input
+/// An options struct that can have fields set from a calling language (i.e. py/go).
+/// note: many fields are optional pointers because we cant just have ?u64 on extern struct
+/// for example. so for most things zero values are acutally valid options so this way we
+/// can differentiate between zero value and unset easily. strings dont have this problem
+/// because we check the length -- if the length is non zero then we know it was something,
+/// there shouldnt be any fields here where an empty string is a valid user input
 pub const FFIOptions = extern struct {
     loggerCallback: ?*const fn (
         level: u8,

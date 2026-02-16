@@ -8,7 +8,7 @@ const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const result = @import("netconf-result.zig");
 
-// for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
+/// For forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
 
 export fn ls_netconf_open(

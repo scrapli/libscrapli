@@ -40,6 +40,7 @@ pub const Options = struct {
     }
 };
 
+/// The "test" transport -- basically read from a file instead of a socket/ssh session.
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     io: std.Io,

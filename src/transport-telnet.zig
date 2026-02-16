@@ -62,7 +62,7 @@ pub const Transport = struct {
     waiter: transport_waiter.Waiter,
 
     stream: ?std.Io.net.Stream,
-    initial_buf: std.array_list.Managed(u8),
+    initial_buf: std.ArrayList(u8),
 
     r_buffer: [1024]u8 = undefined,
     reader: ?std.Io.net.Stream.Reader = null,
@@ -88,7 +88,7 @@ pub const Transport = struct {
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
             .stream = null,
-            .initial_buf = std.array_list.Managed(u8).init(allocator),
+            .initial_buf = .{},
         };
 
         return t;
@@ -98,7 +98,7 @@ pub const Transport = struct {
     pub fn deinit(self: *Transport) void {
         logging.traceWithSrc(self.log, @src(), "telnet.Transport deinitializing", .{});
 
-        self.initial_buf.deinit();
+        self.initial_buf.deinit(self.allocator);
         self.waiter.deinit();
 
         self.allocator.destroy(self);
@@ -111,7 +111,7 @@ pub const Transport = struct {
     ) !bool {
         if (control_buf.items.len == 0) {
             if (maybe_control_char != control_char_iac) {
-                try self.initial_buf.append(maybe_control_char);
+                try self.initial_buf.append(self.allocator, maybe_control_char);
 
                 return true;
             } else {

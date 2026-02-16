@@ -5,6 +5,7 @@ const pcre2 = @cImport({
     @cInclude("pcre2.h");
 });
 
+/// Alias for pcre2 compiled pattern to a more clear name.
 pub const pcre2CompiledPattern = pcre2.pcre2_code_8;
 
 /// Conveinence function to free a pcre2 compiled object.

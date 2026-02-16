@@ -255,7 +255,7 @@ pub const Definition = struct {
     prompt_pattern: []const u8,
     default_mode: []const u8,
     modes: std.StringHashMap(*mode.Mode),
-    failure_indicators: std.array_list.Managed([]const u8),
+    failure_indicators: std.ArrayList([]const u8),
     onOpenCallback: ?OnXCallback,
     // nothing but yaml -> Definition should use bound callbacks, but if you did for some weird
     // reason, Definition expects a heap allocated struct that we will call deinit for (which
@@ -277,7 +277,7 @@ pub const Definition = struct {
             .prompt_pattern = try allocator.dupe(u8, options.prompt_pattern),
             .default_mode = options.default_mode,
             .modes = std.StringHashMap(*mode.Mode).init(allocator),
-            .failure_indicators = std.array_list.Managed([]const u8).init(allocator),
+            .failure_indicators = .{},
             .onOpenCallback = options.onOpenCallback,
             .bound_on_open_callback = options.bound_on_open_callback,
             .onCloseCallback = options.onCloseCallback,
@@ -309,7 +309,7 @@ pub const Definition = struct {
 
         if (options.failure_indicators) |failure_indicators| {
             for (failure_indicators) |fi| {
-                try d.failure_indicators.append(try allocator.dupe(u8, fi));
+                try d.failure_indicators.append(allocator, try allocator.dupe(u8, fi));
             }
         }
 
@@ -337,7 +337,7 @@ pub const Definition = struct {
             self.allocator.free(fi);
         }
 
-        self.failure_indicators.deinit();
+        self.failure_indicators.deinit(self.allocator);
 
         if (self.bound_on_open_callback) |cb| {
             cb.deinit();

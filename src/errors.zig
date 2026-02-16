@@ -3,6 +3,8 @@ const builtin = @import("builtin");
 
 const logging = @import("logging.zig");
 
+/// Holds scrapli specific errors. We try to be broad enough so as to not have a bunch of errors
+/// that end up getting used in only one place.
 pub const ScrapliError = error{
     // EOF is a special error that can help signal to the read loop(s) to shutdown
     EOF,

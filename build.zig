@@ -242,9 +242,15 @@ fn buildZlinter(
                                     .len = 0,
                                     .severity = .off,
                                 },
+                                .decl_name_max_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
                             },
                         );
                     },
+                    .no_literal_args => {},
+                    .max_positional_args => {},
                     else => {
                         builder.addRule(
                             .{

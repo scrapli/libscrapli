@@ -183,6 +183,7 @@ pub fn getBufSearchView(
     return buf[buf.len - depth ..];
 }
 
+/// A type that holds the "raw" and "processed" buffers (array list) for scrapli session objects.
 pub const ProcessedBuf = struct {
     allocator: std.mem.Allocator,
     raw: std.ArrayList(u8),

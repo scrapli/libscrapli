@@ -13,15 +13,19 @@ const result = @import("cli-result.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
 
+/// The default/standard ssh port.
 const default_ssh_port: u16 = 22;
+// THe default/standard telnet port.
 const default_telnet_port: u16 = 23;
 
+/// An enum representing possible sources for a (cli) definition.
 pub const DefinitionSource = union(enum) {
     string: []const u8,
     file: []const u8,
     definition: *platform.Definition,
 };
 
+/// A config object holding info for a cli driver.
 pub const Config = struct {
     logger: ?logging.Logger = null,
     definition: DefinitionSource,
@@ -33,6 +37,7 @@ pub const Config = struct {
     },
 };
 
+/// Options for the cli driver, driven from a config struct.
 pub const Options = struct {
     allocator: std.mem.Allocator,
     logger: ?logging.Logger,
@@ -70,6 +75,7 @@ pub const Options = struct {
     }
 };
 
+/// The cli "driver" -- the thing that drives a cli (telnet/ssh/etc.) connection.
 pub const Driver = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -261,8 +267,8 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        var op_buf = std.array_list.Managed(u8).init(allocator);
-        defer op_buf.deinit();
+        var op_buf: std.ArrayList(u8) = .{};
+        defer op_buf.deinit(allocator);
 
         if (self.definition.onCloseCallback != null or
             self.definition.bound_on_close_callback != null)
@@ -693,7 +699,7 @@ pub const Driver = struct {
         callbacks: []const operation.ReadCallback,
         bufs: *bytes.ProcessedBuf,
         buf_pos: usize,
-        triggered_callbacks: *std.array_list.Managed([]const u8),
+        triggered_callbacks: *std.ArrayList([]const u8),
     ) !void {
         while (true) {
             _ = try self.session.readTimeout(
@@ -809,8 +815,8 @@ pub const Driver = struct {
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
-        var triggered_callbacks = std.array_list.Managed([]const u8).init(allocator);
-        defer triggered_callbacks.deinit();
+        var triggered_callbacks: std.ArrayList = .{};
+        defer triggered_callbacks.deinit(allocator);
 
         try self.innerReadWithCallbacks(
             &t,
