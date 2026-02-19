@@ -209,19 +209,6 @@ fn buildZlinter(
                             },
                         );
                     },
-                    .field_ordering => {
-                        builder.addRule(
-                            .{
-                                .builtin = .field_ordering,
-                            },
-                            .{
-                                .enum_field_order = .{
-                                    .order = .alphabetical_ascending,
-                                    .severity = .off,
-                                },
-                            },
-                        );
-                    },
                     .no_inferred_error_unions => {
                         builder.addRule(
                             .{
@@ -249,6 +236,7 @@ fn buildZlinter(
                             },
                         );
                     },
+                    .field_ordering => {},
                     .no_literal_args => {},
                     .max_positional_args => {},
                     else => {

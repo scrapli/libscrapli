@@ -19,6 +19,8 @@ const ProcessThreadState = enum(u8) {
     stop,
 };
 
+/// Capability is a struct that holds information about an advertised capability from the netconf
+/// server.
 pub const Capability = struct {
     allocator: std.mem.Allocator,
     namespace: []const u8,
@@ -46,6 +48,7 @@ pub const ClientCapabilitiesCallback = union(enum) {
     ) callconv(.c) *[]const u8,
 };
 
+// zlinter-disable require_doc_comment
 const default_netconf_port = 830;
 
 pub const delimiter_version_1_0 = "]]>]]>";
@@ -66,7 +69,9 @@ pub const notification_prefix = "<notification";
 const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
+// zlinter-enable require_doc_comment
 
+/// Config holds a configuration that is the input to netconf Options struct.
 pub const Config = struct {
     logger: ?logging.Logger = null,
     port: ?u16 = null,
@@ -81,6 +86,7 @@ pub const Config = struct {
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
 };
 
+/// Options holds available options for the netconf driver.
 pub const Options = struct {
     allocator: std.mem.Allocator,
     logger: ?logging.Logger,
@@ -136,6 +142,7 @@ pub const Options = struct {
     }
 };
 
+/// Driver is the netconf "driver" struct.
 pub const Driver = struct {
     allocator: std.mem.Allocator,
     io: std.Io,

@@ -1,10 +1,13 @@
+/// A const used for matching rpc-error tags.
 pub const default_rpc_error_tag = "rpc-error>";
 
+/// Version is an enum of the netconf versions.
 pub const Version = enum {
     version_1_0,
     version_1_1,
 };
 
+/// Kind is an enum holding all the libscrapli operation kinds.
 pub const Kind = enum {
     // not "standard" netconf operations, but operations for us!
     open,
@@ -39,6 +42,7 @@ pub const Kind = enum {
     action,
 };
 
+/// RpcOptions is a union of possible rpcs and their options.
 pub const RpcOptions = union(Kind) {
     open: OpenOptions,
     close: CloseOptions,
@@ -72,6 +76,7 @@ pub const RpcOptions = union(Kind) {
     }
 };
 
+/// DatastoreType is an enum representing possible datastore targets/destinations for rpcs.
 pub const DatastoreType = enum {
     // https://datatracker.ietf.org/doc/html/rfc8342
     conventional,
@@ -83,11 +88,13 @@ pub const DatastoreType = enum {
     operational,
 };
 
+/// FilterType is an enum representing possible filter types for rpcs.
 pub const FilterType = enum {
     subtree,
     xpath,
 };
 
+/// DefaultsType is an enum representing possible defaults types for rcp operations.
 /// with-defaults supported on get, get-config, copy-config operations. see rfc-6243.
 pub const DefaultsType = enum {
     report_all,
@@ -114,6 +121,7 @@ pub const DefaultsType = enum {
     }
 };
 
+/// SchemaFormat is an enum representing possible schema formats.
 pub const SchemaFormat = enum {
     // https://datatracker.ietf.org/doc/html/rfc6022#section-2.1.3
     xsd,
@@ -123,14 +131,16 @@ pub const SchemaFormat = enum {
     rnc,
 };
 
-// for example with edit-config, see rfc4741
+/// DefaultOperation is an enum representing defaul operation settings to pass to rpcs.
+/// for example with edit-config, see rfc4741
 pub const DefaultOperation = enum {
     merge,
     replace,
     none,
 };
 
-// also see rfc4741
+/// TestOption is an enum representing test options to pass to rpcs.
+/// also see rfc4741
 pub const TestOption = enum {
     test_then_set,
     set,
@@ -148,7 +158,8 @@ pub const TestOption = enum {
     }
 };
 
-// and... also see rfc4741
+/// ErrorOption is an enum representing error options to pass to rpcs.
+/// and... also see rfc4741
 pub const ErrorOption = enum {
     stop_on_error,
     continue_on_error,
@@ -170,10 +181,12 @@ pub const ErrorOption = enum {
     }
 };
 
+/// OpenOptions holds options for the open operation.
 pub const OpenOptions = struct {
     cancel: ?*bool = null,
 };
 
+/// CloseOptions holds options for the close operation.
 pub const CloseOptions = struct {
     cancel: ?*bool = null,
     // force does *not* send a close-session rpc, just stops the process thread and closes the
@@ -181,6 +194,8 @@ pub const CloseOptions = struct {
     force: bool = false,
 };
 
+/// RawRpcOptions holds options for a "raw" rpc -- basically a generic rpc that users can use to
+/// send any not natively supported rpc.
 pub const RawRpcOptions = struct {
     cancel: ?*bool = null,
     // the inner payload, we wrap this with the outer rpc tag w/ appropriate message id
@@ -197,6 +212,7 @@ pub const RawRpcOptions = struct {
     _extra_namespaces_ffi: ?[]const u8 = null,
 };
 
+/// GetConfigOptions holds options for the get-config rpc.
 pub const GetConfigOptions = struct {
     cancel: ?*bool = null,
     source: DatastoreType = DatastoreType.running,
@@ -207,6 +223,7 @@ pub const GetConfigOptions = struct {
     defaults_type: ?DefaultsType = null,
 };
 
+/// EditConfigOptions holds options for the edit-config rpc.
 pub const EditConfigOptions = struct {
     cancel: ?*bool = null,
     config: []const u8,
@@ -216,22 +233,26 @@ pub const EditConfigOptions = struct {
     error_option: ?ErrorOption = null,
 };
 
+/// CopyConfigOptions holds options for the copy-config rpc.
 pub const CopyConfigOptions = struct {
     cancel: ?*bool = null,
     target: DatastoreType = DatastoreType.startup,
     source: DatastoreType = DatastoreType.running,
 };
 
+/// DeleteConfigOptions holds options for the delete-config rpc.
 pub const DeleteConfigOptions = struct {
     cancel: ?*bool = null,
     target: DatastoreType = DatastoreType.running,
 };
 
+/// LockUnlockOptions holds options for the lock or unlock rpc.
 pub const LockUnlockOptions = struct {
     cancel: ?*bool = null,
     target: DatastoreType = DatastoreType.running,
 };
 
+/// GetOptions holds options for the get-options rpc.
 pub const GetOptions = struct {
     cancel: ?*bool = null,
     filter: ?[]const u8 = null,
@@ -241,33 +262,40 @@ pub const GetOptions = struct {
     defaults_type: ?DefaultsType = null,
 };
 
+/// CloseSessionOptions holds options for the close-session rpc.
 pub const CloseSessionOptions = struct {
     cancel: ?*bool = null,
 };
 
+/// KillSessionOptions holds options for the kill-session rpc.
 pub const KillSessionOptions = struct {
     cancel: ?*bool = null,
     session_id: u64,
 };
 
+/// CommitOptions holds options for the commit rpc.
 pub const CommitOptions = struct {
     cancel: ?*bool = null,
 };
 
+/// DiscardOptions holds options for the discard rpc.
 pub const DiscardOptions = struct {
     cancel: ?*bool = null,
 };
 
+/// CancelCommitOptions holds options for the cancel-commit rpc.
 pub const CancelCommitOptions = struct {
     cancel: ?*bool = null,
     persist_id: ?[]const u8 = null,
 };
 
+/// ValidateOptions holds options for the validate rpc.
 pub const ValidateOptions = struct {
     cancel: ?*bool = null,
     source: DatastoreType = DatastoreType.running,
 };
 
+/// GetSchemaOptions holds options for the get-schema rpc.
 pub const GetSchemaOptions = struct {
     cancel: ?*bool = null,
     identifier: []const u8,
@@ -275,6 +303,7 @@ pub const GetSchemaOptions = struct {
     format: SchemaFormat = SchemaFormat.yang,
 };
 
+/// GetDataOptions holds options for the get-data rpc.
 pub const GetDataOptions = struct {
     // https://datatracker.ietf.org/doc/rfc8526/ section 3.1.1
     cancel: ?*bool = null,
@@ -290,6 +319,7 @@ pub const GetDataOptions = struct {
     defaults_type: ?DefaultsType = null,
 };
 
+/// EditDataOptions holds options for the edit-data rpc.
 pub const EditDataOptions = struct {
     cancel: ?*bool = null,
     datastore: DatastoreType = DatastoreType.running,
@@ -297,6 +327,7 @@ pub const EditDataOptions = struct {
     default_operation: ?DefaultOperation = null,
 };
 
+/// ActionOptions holds options for the action rpc.
 pub const ActionOptions = struct {
     cancel: ?*bool = null,
     action: []const u8,

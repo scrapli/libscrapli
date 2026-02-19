@@ -34,6 +34,7 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
     )) {
         return transport.Kind.test_;
     } else {
+        // zlinter-disable-next-line no_panic - should never happen
         @panic("unsupported transport");
     }
 }

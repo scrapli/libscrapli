@@ -696,6 +696,7 @@ fn openPtyChild(
 
     const rc = c.execvp(args[0], args);
     if (rc != 0) {
+        // zlinter-disable-next-line no_panic - will catch it from parent if we fail anyway
         @panic("exec failed");
     }
 }

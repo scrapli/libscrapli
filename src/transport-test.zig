@@ -81,6 +81,7 @@ pub const Transport = struct {
         _ = cancel;
 
         if (self.options.f == null) {
+            // zlinter-disable-next-line no_panic - should never happen
             @panic("must set file for test transport!");
         }
 
