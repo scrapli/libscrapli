@@ -9,14 +9,16 @@ const operation = @import("cli-operation.zig");
 const result = @import("cli-result.zig");
 const strings = @import("strings.zig");
 
+/// OnXCallback is a type of a on open/close callback.
 pub const OnXCallback = *const fn (
     d: *cli.Driver,
     allocator: std.mem.Allocator,
     cancel: ?*bool,
 ) anyerror!*result.Result;
 
-// this is uniquely its own thing because modes (which have similar things) dont support
-// "enter-mode" because duh.
+/// BoundOnXCallbackInstruction is a taggged union of available options that a yaml definition can
+/// turn into a on open/close callback. This is uniquely its own thing because modes (which have
+/// similar things) dont support "enter-mode" because duh.
 pub const BoundOnXCallbackInstruction = union(enum) {
     write: struct {
         write: struct {
@@ -43,6 +45,8 @@ pub const BoundOnXCallbackInstruction = union(enum) {
     },
 };
 
+/// BoundonXCallback is a wrapper for "on x" (open/close) callbacks that gives users a way to sorta
+/// kinda have their callback be a method of the cli driver.
 pub const BoundOnXCallback = struct {
     allocator: std.mem.Allocator,
     kind: operation.Kind,
@@ -235,6 +239,7 @@ pub const BoundOnXCallback = struct {
     }
 };
 
+/// Options is the struct holding available options to pass to a Definition object.
 pub const Options = struct {
     prompt_pattern: []const u8,
     default_mode: []const u8,
@@ -250,6 +255,8 @@ pub const Options = struct {
     genie_platform: ?[]const u8 = null,
 };
 
+/// Definition is a cli "definition" -- that is the information that helps libscrapli drive a cli
+/// connection to some device, it holds callbacks and information about available "modes" etc..
 pub const Definition = struct {
     allocator: std.mem.Allocator,
     prompt_pattern: []const u8,
@@ -359,11 +366,15 @@ pub const Definition = struct {
     }
 };
 
+/// YamlSource is a tagged union holding either the content or a filename of the yaml that will
+/// form a YamlDefinition.
 pub const YamlSource = union(enum) {
     string: []const u8,
     file: []const u8,
 };
 
+/// YamlDefinition represents a definition in yaml form and contains a method to return the
+/// "normal" zig Definition object from the yaml source.
 pub const YamlDefinition = struct {
     prompt_pattern: []const u8,
     default_mode: []const u8,

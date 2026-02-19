@@ -1,3 +1,4 @@
+// zlinter-disable require_doc_comment
 pub const ascii = @import("ascii.zig");
 pub const auth = @import("auth.zig");
 pub const bytes = @import("bytes.zig");

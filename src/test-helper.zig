@@ -13,6 +13,7 @@ const netconf_timestamp_pattern = "\\d{4}-\\d{2}-\\d{2}T\\d+:\\d+:\\d+.\\d+Z";
 const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
 const netconf_password_pattern = "<password>.*</password>";
 
+/// Args holds process args for testing.
 pub var args: ?std.process.Args = null;
 
 /// Simple bool flag parser for use with test flags.

@@ -1,5 +1,6 @@
 const std = @import("std");
 
+/// LogLevel is an enum holding the supported log levels for libscrapli.
 pub const LogLevel = enum(u8) {
     trace,
     debug,
@@ -57,6 +58,7 @@ pub fn stdLogf(level: u8, message: *[]u8) callconv(.c) void {
     }
 }
 
+/// Logger is a simple logger for use in libscrapli.
 pub const Logger = struct {
     allocator: std.mem.Allocator,
     f: ?*const fn (level: u8, message: *[]u8) callconv(.c) void = null,

@@ -11,9 +11,12 @@ const session = @import("session.zig");
 
 const c = @cImport(@cInclude("signal.h"));
 
+// zlinter-disable require_doc_comment
 pub export const _ls_force_include_root_cli = &ffi_root_cli.noop;
 pub export const _ls_force_include_root_netconf = &ffi_root_netconf.noop;
+// zlinter-enable require_doc_comment
 
+/// Setting std options mostly for quieting yaml logger things.
 pub const std_options = std.Options{
     .log_scope_levels = &[_]std.log.ScopeLevel{
         .{

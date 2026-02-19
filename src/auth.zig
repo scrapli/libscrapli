@@ -4,13 +4,23 @@ const bytes = @import("bytes.zig");
 const errors = @import("errors.zig");
 const re = @import("re.zig");
 
+/// The default pattern to find a ssh/telnet username prompt.
 pub const default_username_pattern: []const u8 = "^(.*user(name)?:)|(.*login:)\\s?$";
+
+/// The default pattern to find a ssh/telnet password prompt.
 pub const default_password_pattern: []const u8 = "(.*@.*)?password:\\s?$";
+
+/// The default pattern to find an ssh key passphrase prompt.
 pub const default_passphrase_pattern: []const u8 = "enter passphrase for key";
 
+/// The prefix that indicates the remaineder of a string is the name of a key to lookup in the
+/// lookup mapping.
 pub const lookup_prefix = "__lookup::";
+
+/// The dfeault "key" to use when looking up a credential.
 pub const lookup_default_key = "__default__";
 
+/// State holds the possible states of the authenticaiton process.
 pub const State = enum {
     complete,
     username_prompted,
@@ -19,6 +29,8 @@ pub const State = enum {
     _continue,
 };
 
+/// LookupItems is a struct that holds up to 16 LookupKeyValues (explicitly sized to not deal w/
+/// allocations).
 pub const LookupItems = struct {
     items: [16]LookupKeyValue = undefined,
     count: usize = 0,
@@ -65,15 +77,17 @@ pub const LookupItems = struct {
     }
 };
 
+/// LookupKeyValue is a simple kv store used with libscrapli authenticaiton.
 pub const LookupKeyValue = struct {
     key: []const u8,
     value: []const u8,
 };
 
-// it would be worth investigating not doing this weird input then option struct -- the main reason
-// for this is so that we can have easily passed, non-allocated, values here, then when we init the
-// "real" struct we do our duping and stuff, this is just to make it easier for users to pass things
-// and not think about what needs to be heap allocated vs not
+/// OptionsInputs holds the inputs to generate an (auth) Options struct.
+/// it would be worth investigating not doing this weird input then option struct -- the main reason
+/// for this is so that we can have easily passed, non-allocated, values here, then when we init the
+/// "real" struct we do our duping and stuff, this is just to make it easier for users to pass things
+/// and not think about what needs to be heap allocated vs not
 pub const OptionsInputs = struct {
     username: ?[]const u8 = null,
     password: ?[]const u8 = null,
@@ -98,6 +112,8 @@ pub const OptionsInputs = struct {
     private_key_passphrase_pattern: ?[]const u8 = null,
 };
 
+/// Options holds the options for authentication bits -- things like prompts to know when to send
+/// a username/password/passphrase, the inputs for those things, and more.
 pub const Options = struct {
     allocator: std.mem.Allocator,
     username: ?[]const u8,

@@ -8,7 +8,7 @@ const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
 
-// for forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
+/// For forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer.
 pub const noop = true;
 
 /// writes the ntc template platform from the driver's definition into the character slice at

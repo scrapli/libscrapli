@@ -126,6 +126,7 @@ pub const Options = union(Kind) {
     }
 };
 
+/// Transport is a wrapper around any of the supported libscrapli transport structs.
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     log: logging.Logger,

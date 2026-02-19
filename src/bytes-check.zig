@@ -3,8 +3,11 @@ const std = @import("std");
 const bytes = @import("bytes.zig");
 const re = @import("re.zig");
 
+/// CheckF defines a check function that can be used with the in bytes check functions.
 pub const CheckF = fn (args: CheckArgs, buf: []u8) anyerror!MatchPositions;
 
+/// MatchPositions holds the start and end positions of a match in some parent haystack -- it
+/// includes a conveinence function to return the len of the match.
 pub const MatchPositions = struct {
     start: usize,
     end: usize,
@@ -19,6 +22,7 @@ pub const MatchPositions = struct {
     }
 };
 
+/// CheckArgs holds args that can be used with check functions.
 pub const CheckArgs = struct {
     pattern: ?*re.pcre2CompiledPattern = null,
     patterns: ?[]const ?*re.pcre2CompiledPattern = null,

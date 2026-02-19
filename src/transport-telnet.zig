@@ -52,6 +52,7 @@ pub const Options = struct {
     }
 };
 
+/// Transport is the telnet transport implementation.
 pub const Transport = struct {
     allocator: std.mem.Allocator,
     io: std.Io,

@@ -1,20 +1,23 @@
+const operation = @import("cli-operation.zig");
+const operation_netconf = @import("netconf-operation.zig");
 const result = @import("cli-result.zig");
 const result_netconf = @import("netconf-result.zig");
 
-const operation = @import("cli-operation.zig");
-const operation_netconf = @import("netconf-operation.zig");
-
+/// Result is a tagged union of cli and netconf result types.
 pub const Result = union(enum) {
     cli: ?*result.Result,
     netconf: ?*result_netconf.Result,
 };
 
+/// OperationResult is a simple struct holding information about the result of an operation.
 pub const OperationResult = struct {
     done: bool,
     result: Result,
     err: ?anyerror,
 };
 
+/// OperationOptions is a struct holding tagged unions which in turn hold available options for all
+/// cli or netconf operations.
 pub const OperationOptions = struct {
     id: u32,
     operation: union(enum) {

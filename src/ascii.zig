@@ -1,9 +1,8 @@
-// zlint-disable unused-decls
-// note: leaving consts in here for future sanity/to not have to look stuff up
 const std = @import("std");
 
 const thelper = @import("test-helper.zig");
 
+// zlinter-disable require_doc_comment
 pub const control_chars = struct {
     // Null | 0x00 | 0
     pub const nul = 0x00;
@@ -86,6 +85,7 @@ pub const control_chars = struct {
     // dec: 60 | hex: 0x3C | "<"
     pub const open_element_char = 0x3C;
 };
+// zlinter-enable require_doc_comment
 
 /// Strips ascii and ansi chars in place in the haystack.
 pub fn stripAsciiAndAnsiControlCharsInPlace(
