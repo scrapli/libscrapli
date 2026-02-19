@@ -356,17 +356,19 @@ pub const FFIOptions = extern struct {
 
     /// Returns a cli config from this ffi options struct.
     pub fn cliConfig(self: *FFIOptions, allocator: std.mem.Allocator) cli.Config {
+        var l: ?logging.Logger = null;
+        if (self.loggerCallback) |cb| {
+            l = logging.Logger{
+                .allocator = allocator,
+                .f = cb,
+                .level = logging.LogLevel.fromString(
+                    self.logger_level[0..self.logger_level_len],
+                ),
+            };
+        }
+
         return cli.Config{
-            .logger = if (self.loggerCallback) |cb|
-                logging.Logger{
-                    .allocator = allocator,
-                    .f = cb,
-                    .level = logging.LogLevel.fromString(
-                        self.logger_level[0..self.logger_level_len],
-                    ),
-                }
-            else
-                null,
+            .logger = l,
             .definition = .{
                 .string = self.cli.definition_str[0..self.cli.definition_str_len],
             },
@@ -379,17 +381,19 @@ pub const FFIOptions = extern struct {
 
     /// Returns a netconf config from this ffi options struct.
     pub fn netconfConfig(self: *FFIOptions, allocator: std.mem.Allocator) netconf.Config {
+        var l: ?logging.Logger = null;
+        if (self.loggerCallback) |cb| {
+            l = logging.Logger{
+                .allocator = allocator,
+                .f = cb,
+                .level = logging.LogLevel.fromString(
+                    self.logger_level[0..self.logger_level_len],
+                ),
+            };
+        }
+
         var c = netconf.Config{
-            .logger = if (self.loggerCallback) |cb|
-                logging.Logger{
-                    .allocator = allocator,
-                    .f = cb,
-                    .level = logging.LogLevel.fromString(
-                        self.logger_level[0..self.logger_level_len],
-                    ),
-                }
-            else
-                null,
+            .logger = l,
             .port = if (self.port) |v| v.* else null,
             .auth = self.authOptionsInputs(),
             .session = self.sessionOptionsInputs(),

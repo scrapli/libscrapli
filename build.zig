@@ -236,9 +236,51 @@ fn buildZlinter(
                             },
                         );
                     },
+                    .field_naming => {
+                        builder.addRule(
+                            .{
+                                .builtin = .field_naming,
+                            },
+                            .{
+                                .error_field_min_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
+                                .error_field_max_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
+                                .struct_field_min_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
+                                .struct_field_max_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
+                                .union_field_min_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
+                                .union_field_max_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
+                                .enum_field_min_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
+                                .enum_field_max_len = .{
+                                    .len = 0,
+                                    .severity = .off,
+                                },
+                            },
+                        );
+                    },
                     .field_ordering => {},
                     .no_literal_args => {},
                     .max_positional_args => {},
+                    .import_ordering => {}, // broken w/ bulitin i think
                     else => {
                         builder.addRule(
                             .{

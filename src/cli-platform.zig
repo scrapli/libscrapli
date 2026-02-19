@@ -422,6 +422,24 @@ pub const YamlDefinition = struct {
             YamlDefinition,
         );
 
+        var on_open_callback: ?*BoundOnXCallback = null;
+        if (parsed_definition.on_open_instructions) |instr| {
+            on_open_callback = try BoundOnXCallback.init(
+                allocator,
+                operation.Kind.on_open,
+                instr,
+            );
+        }
+
+        var on_close_callback: ?*BoundOnXCallback = null;
+        if (parsed_definition.on_close_instructions) |instr| {
+            on_close_callback = try BoundOnXCallback.init(
+                allocator,
+                operation.Kind.on_close,
+                instr,
+            );
+        }
+
         return Definition.init(
             allocator,
             .{
@@ -429,19 +447,8 @@ pub const YamlDefinition = struct {
                 .default_mode = parsed_definition.default_mode,
                 .modes = parsed_definition.modes,
                 .failure_indicators = parsed_definition.failure_indicators,
-                .bound_on_open_callback = if (parsed_definition.on_open_instructions) |instr|
-                    try BoundOnXCallback.init(
-                        allocator,
-                        operation.Kind.on_open,
-                        instr,
-                    )
-                else
-                    null,
-                .bound_on_close_callback = if (parsed_definition.on_close_instructions) |instr| try BoundOnXCallback.init(
-                    allocator,
-                    operation.Kind.on_close,
-                    instr,
-                ) else null,
+                .bound_on_open_callback = on_open_callback,
+                .bound_on_close_callback = on_close_callback,
                 .force_in_session_auth = parsed_definition.force_in_session_auth orelse false,
                 .bypass_in_session_auth = parsed_definition.bypass_in_session_auth orelse false,
                 .ntc_templates_platform = parsed_definition.ntc_templates_platform,
