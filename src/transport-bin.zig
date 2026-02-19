@@ -136,10 +136,10 @@ pub const Transport = struct {
 
     f: ?std.Io.File = null,
 
-    r_buffer: [1024]u8 = undefined,
+    r_buffer: [1024]u8 = [_]u8{0} ** 1024,
     reader: ?std.Io.File.Reader = null,
 
-    w_buffer: [1024]u8 = undefined,
+    w_buffer: [1024]u8 = [_]u8{0} ** 1024,
     writer: ?std.Io.File.Writer = null,
 
     open_args: std.ArrayList(strings.MaybeHeapString),

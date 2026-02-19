@@ -49,7 +49,7 @@ pub const Transport = struct {
 
     // we do a zillion reads, but w/e having the intermediate buffer be 1 seems to be marginally
     // faster than having it be bigger for some reason
-    r_buffer: [1]u8 = undefined,
+    r_buffer: [1]u8 = [_]u8{0} ** 1,
     reader: ?std.Io.File.Reader,
 
     /// Initialize the transport object.

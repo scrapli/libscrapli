@@ -8,6 +8,7 @@ pub fn inlineInitStringHashMap(
     items: []const T,
 ) !std.StringHashMap(T) {
     var hm = std.StringHashMap(T).init(allocator);
+    errdefer hm.deinit();
 
     if (keys.len != items.len) {
         return error.InitError;

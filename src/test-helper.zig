@@ -353,13 +353,10 @@ fn normalizeTimestamps(
     haystack: []const u8,
 ) anyerror![]const u8 {
     if (haystack.len != 0) {
-        // SAFETY: will always be set;
-        var pattern: []const u8 = undefined;
+        var pattern: []const u8 = timestamp_pattern;
 
         if (std.mem.find(u8, haystack, "<rpc") != null) {
             pattern = netconf_timestamp_pattern;
-        } else {
-            pattern = timestamp_pattern;
         }
 
         const compiled_timestamp_pattern = re.pcre2Compile(pattern);

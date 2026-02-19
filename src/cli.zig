@@ -815,7 +815,7 @@ pub const Driver = struct {
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
-        var triggered_callbacks: std.ArrayList = .{};
+        var triggered_callbacks: std.ArrayList([]const u8) = .{};
         defer triggered_callbacks.deinit(allocator);
 
         try self.innerReadWithCallbacks(

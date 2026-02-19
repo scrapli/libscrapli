@@ -39,6 +39,7 @@ fn getTransport(transport_kind: []const u8) transport.Kind {
     }
 }
 
+// zlinter-disable no_undefined
 /// An options struct that can have fields set from a calling language (i.e. py/go).
 /// note: many fields are optional pointers because we cant just have ?u64 on extern struct
 /// for example. so for most things zero values are acutally valid options so this way we
@@ -152,6 +153,7 @@ pub const FFIOptions = extern struct {
             f_len: usize = 0,
         },
     },
+    // zlinter-enable no_undefined
 
     fn authOptionsInputs(self: *FFIOptions) auth.OptionsInputs {
         var o = auth.OptionsInputs{};

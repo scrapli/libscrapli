@@ -1444,6 +1444,7 @@ pub const Transport = struct {
         // we have to create a socket pair/pipe so we can give libssh2 a real socket -- we then
         // run this little proxy loop around it to read/write to/from the pipe and then to the
         // final (proxy-jump-d) session.
+        // zlinter-disable-next-line no_undefined - doing c things
         var fds: [2]c_int = undefined;
         const sockrc = c.socketpair(c.AF_UNIX, c.SOCK_STREAM, 0, &fds);
         if (sockrc != 0) {

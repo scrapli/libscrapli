@@ -198,7 +198,7 @@ pub const Session = struct {
     ),
     read_thread_errored: bool = false,
 
-    recorder_buf: [1024]u8 = undefined,
+    recorder_buf: [1024]u8 = [_]u8{0} ** 1024,
     recorder: Recorder,
 
     compiled_username_pattern: ?*re.pcre2CompiledPattern = null,
@@ -975,8 +975,7 @@ pub const Session = struct {
 
         try self.write(input, false);
 
-        // SAFETY: will always be set or we'll error
-        var match_indexes: bytes_check.MatchPositions = undefined;
+        var match_indexes: bytes_check.MatchPositions = .{ .start = 0, .end = 0 };
 
         var search_depth = self.options.operation_max_search_depth;
         if (input.len >= search_depth) {
@@ -1014,7 +1013,7 @@ pub const Session = struct {
                 // when in "ignore" handling mode
                 try self.writeReturn();
 
-                return bytes_check.MatchPositions{ .start = 0, .end = 0 };
+                return match_indexes;
             },
         }
 

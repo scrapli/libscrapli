@@ -15,9 +15,9 @@ pub fn pcre2Free(regexp: *pcre2CompiledPattern) void {
 
 /// Conveinence function to compile pattern to a pcre2 compiled object..
 pub fn pcre2Compile(pattern: []const u8) ?*pcre2CompiledPattern {
-    // SAFETY: required for interop w/ C library
+    // zlinter-disable-next-line no_undefined - doing c things
     var err_number: c_int = undefined;
-    // SAFETY: required for interop w/ C library
+    // zlinter-disable-next-line no_undefined - doing c things
     var err_offset: pcre2.PCRE2_SIZE = undefined;
 
     const compile_context = pcre2.pcre2_compile_context_create_8(null);
