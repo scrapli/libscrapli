@@ -47,7 +47,7 @@ pub const KqueueWaiter = struct {
 
     /// Deinitializes the kqueue waiter.
     pub fn deinit(self: *KqueueWaiter) void {
-        std.posix.close(self.kq);
+        _ = std.c.close(self.kq);
         self.allocator.destroy(self);
     }
 

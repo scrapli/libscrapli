@@ -304,7 +304,7 @@ const ProxyWrapper = struct {
 
     /// Deinitializes the ssh2 transport proxy wrapper.
     pub fn deinit(self: *ProxyWrapper) void {
-        std.posix.close(self.remote_fd);
+        _ = std.c.close(self.remote_fd);
         self.allocator.destroy(self);
     }
 

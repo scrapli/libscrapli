@@ -634,7 +634,7 @@ fn openPty(
     }
 
     // parent process, close the slave and return the master (pty) to read/write to
-    std.posix.close(slave_fd.handle);
+    _ = std.c.close(slave_fd.handle);
 
     // disable onlcr to make outputs nicer
     try setonlcr(master_fd.handle);
@@ -650,7 +650,7 @@ fn openPtyChild(
     term_height: u16,
     netconf: bool,
 ) !void {
-    std.posix.close(master_fd.handle);
+    _ = std.c.close(master_fd.handle);
 
     // calling setsid and ioctl to set ctty in zig os.linux functions does *not* work for...
     // reasons? but... the C bits work juuuuust fine
@@ -692,7 +692,7 @@ fn openPtyChild(
     _ = c.dup2(slave_fd.handle, 1); // stdout
     _ = c.dup2(slave_fd.handle, 2); // stderr
 
-    std.posix.close(slave_fd.handle);
+    _ = std.c.close(slave_fd.handle);
 
     const rc = c.execvp(args[0], args);
     if (rc != 0) {
