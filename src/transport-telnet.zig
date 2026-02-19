@@ -65,10 +65,10 @@ pub const Transport = struct {
     stream: ?std.Io.net.Stream,
     initial_buf: std.ArrayList(u8),
 
-    r_buffer: [1024]u8 = undefined,
+    r_buffer: [1024]u8 = [_]u8{0} ** 1024,
     reader: ?std.Io.net.Stream.Reader = null,
 
-    w_buffer: [1024]u8 = undefined,
+    w_buffer: [1024]u8 = [_]u8{0} ** 1024,
     writer: ?std.Io.net.Stream.Writer = null,
 
     /// Initialize the transport object.

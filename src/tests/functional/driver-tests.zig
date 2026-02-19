@@ -23,9 +23,9 @@ fn GetDriver(
     passphrase: ?[]const u8,
 ) !*cli.Driver {
     // on darwin we'll be targetting localhost, on linux we'll target the ips exposed via clab/docker
-    var host: []const u8 = undefined;
+    var host: []const u8 = "";
 
-    var platform_definition_path: []const u8 = undefined;
+    var platform_definition_path: []const u8 = "";
 
     var config = cli.Config{
         .definition = .{

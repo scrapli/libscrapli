@@ -929,16 +929,10 @@ pub const Driver = struct {
         var message_buf: std.ArrayList(u8) = .{};
         defer message_buf.deinit(self.allocator);
 
-        // SAFETY: will always be set in switch
-        var message_complete_delim: []const u8 = undefined;
-        switch (self.negotiated_version) {
-            .version_1_0 => {
-                message_complete_delim = delimiter_version_1_0;
-            },
-            .version_1_1 => {
-                message_complete_delim = delimiter_version_1_1;
-            },
-        }
+        var message_complete_delim = switch (self.negotiated_version) {
+            .version_1_0 => delimiter_version_1_0,
+            .version_1_1 => delimiter_version_1_1,
+        };
 
         while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
             var n = self.session.read(buf) catch |err| {
@@ -2634,8 +2628,7 @@ pub const Driver = struct {
 
         var cancel: ?*bool = null;
 
-        // SAFETY: will always be set or we will have errored
-        var input: []const u8 = undefined;
+        var input: []const u8 = "";
 
         switch (options) {
             .raw_rpc => |o| {

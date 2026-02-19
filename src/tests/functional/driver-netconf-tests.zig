@@ -16,7 +16,7 @@ fn GetDriver(
     passphrase: ?[]const u8,
 ) !*netconf.Driver {
     // on darwin we'll be targetting localhost, on linux we'll target the ip exposed via clab/docker
-    var host: []const u8 = undefined;
+    var host: []const u8 = "";
 
     var config = netconf.Config{};
 
