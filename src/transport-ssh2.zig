@@ -135,6 +135,7 @@ fn libssh2DisconnectSession(
                 break;
             }
 
+            // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
             std.Io.Clock.Duration.sleep(
                 .{
                     .clock = .awake,
@@ -174,6 +175,7 @@ fn libssh2FreeSession(
                 break;
             }
 
+            // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
             std.Io.Clock.Duration.sleep(
                 .{
                     .clock = .awake,
@@ -213,6 +215,7 @@ fn libssh2CloseChannel(
                 break;
             }
 
+            // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
             std.Io.Clock.Duration.sleep(
                 .{
                     .clock = .awake,
@@ -252,6 +255,7 @@ fn libssh2FreeChannel(
                 break;
             }
 
+            // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
             std.Io.Clock.Duration.sleep(
                 .{
                     .clock = .awake,
@@ -1444,8 +1448,7 @@ pub const Transport = struct {
         // we have to create a socket pair/pipe so we can give libssh2 a real socket -- we then
         // run this little proxy loop around it to read/write to/from the pipe and then to the
         // final (proxy-jump-d) session.
-        // zlinter-disable-next-line no_undefined - doing c things
-        var fds: [2]c_int = undefined;
+        var fds: [2]c_int = .{ 0, 0 };
         const sockrc = c.socketpair(c.AF_UNIX, c.SOCK_STREAM, 0, &fds);
         if (sockrc != 0) {
             return error.ErrorCreatingSocketPair;
@@ -1621,6 +1624,7 @@ pub const Transport = struct {
     pub fn close(self: *Transport) void {
         self.log.info("ssh2.Transport close requested", .{});
 
+        // zlinter-disable-next-line no_swallow_error - standard lock should "never" fail
         self.session_lock.lock(self.io) catch {
             // going to just ignore it and let it rip since we are tearing this thing
             // down anyway and this seems like it should generally not error out...?
@@ -1801,22 +1805,26 @@ pub const Transport = struct {
 
         // need to make sure we are flushing things the *other* way too -- as in back to the server
         // because if we dont do this our acks and such wont get there
-        self.proxy_wrapper.?.pipeToChannel() catch {};
+        self.proxy_wrapper.?.pipeToChannel() catch |err| {
+            switch (err) {
+                error.WouldBlock => {},
+                else => return err,
+            }
+        };
 
         if (n == c.LIBSSH2_ERROR_EAGAIN) {
-            const res = self.proxy_wrapper.?.channelToPipe();
-            if (res) {
-                // re-read since we copied data from the cahnnel to the pipe, so now something
-                // should be available for libssh2_channel-read_ex
-                return self.readProxied(buf);
-            } else |_| {
-                // didn't copy data, wait on the socket so libssh2 has something to read on
-                // the next iteration
-            }
+            self.proxy_wrapper.?.channelToPipe() catch |err| {
+                switch (err) {
+                    error.WouldBlock => {
+                        try self.waiter.wait(self.socket.?);
 
-            try self.waiter.wait(self.socket.?);
+                        return 0;
+                    },
+                    else => return err,
+                }
+            };
 
-            return 0;
+            return self.readProxied(buf);
         } else if (n < 0) {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,

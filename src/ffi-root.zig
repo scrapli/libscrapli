@@ -216,6 +216,7 @@ export fn ls_session_write(
     };
 
     s.write(std.mem.span(buf), redacted) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -243,6 +244,7 @@ export fn ls_session_write_and_return(
     };
 
     s.writeAndReturn(std.mem.span(buf), redacted) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -268,6 +270,7 @@ export fn ls_session_write_return(
     };
 
     s.writeReturn() catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),

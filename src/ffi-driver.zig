@@ -146,7 +146,7 @@ pub const FfiDriver = struct {
         self.operation_stop.store(true, std.builtin.AtomicOrder.unordered);
 
         // signal to the operation thread to iterate, it should then catch the stored stop condition
-        // we should really never fail to acquire the lock... but if we do... what happens??
+        // zlinter-disable-next-line no_swallow_error - standard lock should "never" fail
         self.operation_lock.lock(self.io) catch {};
         self.operation_condition.signal(self.io);
         self.operation_lock.unlock(self.io);
@@ -232,7 +232,12 @@ pub const FfiDriver = struct {
                     .raw = .fromNanoseconds(operation_thread_ready_sleep),
                 },
                 self.io,
-            ) catch {};
+            ) catch |err| {
+                self.log.warn(
+                    "ffi-driver.FfiDriver open: sleep error '{}', ignoring",
+                    .{err},
+                );
+            };
         }
     }
 

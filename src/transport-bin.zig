@@ -683,7 +683,7 @@ fn openPtyChild(
             return error.PtyError;
         }
     } else {
-        // zlint-disable suppressed-errors
+        // zlinter-disable-next-line no_swallow_error - handled in parent process
         setnoecho(slave_fd.handle) catch {};
     }
 

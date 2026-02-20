@@ -960,11 +960,11 @@ pub const Driver = struct {
                             // we'll just squash any errors we get from processing as we maybe
                             // didnt even have valid data anyway
                             .version_1_0 => {
-                                // zlint-disable suppressed-errors
+                                // zlinter-disable-next-line no_swallow_error
                                 self.processFoundMessageVersion1_0(owned_buf) catch {};
                             },
                             .version_1_1 => {
-                                // zlint-disable suppressed-errors
+                                // zlinter-disable-next-line no_swallow_error
                                 self.processFoundMessageVersion1_1(owned_buf) catch {};
                             },
                         }
@@ -2831,7 +2831,12 @@ pub const Driver = struct {
                         .raw = .fromNanoseconds(self.options.message_poll_interval_ns),
                     },
                     self.io,
-                ) catch {};
+                ) catch |err| {
+                    self.log.warn(
+                        "netconf.Driver sendRpc: sleep error '{}', ignoring",
+                        .{err},
+                    );
+                };
 
                 continue;
             }

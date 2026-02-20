@@ -75,6 +75,7 @@ export fn ls_cli_open(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -100,6 +101,7 @@ export fn ls_cli_open(
                     },
                 },
             ) catch |err| {
+                // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
                 errors.wrapCriticalError(
                     errors.ScrapliError.Operation,
                     @src(),
@@ -112,6 +114,7 @@ export fn ls_cli_open(
             };
         },
         .netconf => {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
             errors.wrapCriticalError(
                 errors.ScrapliError.Operation,
                 @src(),
@@ -144,7 +147,12 @@ export fn ls_cli_open(
                 .raw = .fromNanoseconds(ffi_driver.operation_thread_ready_sleep),
             },
             d.io,
-        ) catch {};
+        ) catch |err| {
+            d.getLogger().warn(
+                "ffirootcli ls_cli_open: sleep error '{}', ignoring",
+                .{err},
+            );
+        };
     }
 
     return 0;
@@ -171,6 +179,7 @@ export fn ls_cli_close(
                     },
                 },
             ) catch |err| {
+                // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
                 errors.wrapCriticalError(
                     errors.ScrapliError.Operation,
                     @src(),
@@ -183,6 +192,7 @@ export fn ls_cli_close(
             };
         },
         .netconf => {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
             errors.wrapCriticalError(
                 errors.ScrapliError.Operation,
                 @src(),
@@ -211,6 +221,7 @@ export fn ls_cli_fetch_operation_sizes(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.dequeueOperation(operation_id, false) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -269,6 +280,7 @@ export fn ls_cli_fetch_operation(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.dequeueOperation(operation_id, true) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -390,6 +402,7 @@ export fn ls_cli_enter_mode(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -425,6 +438,7 @@ export fn ls_cli_get_prompt(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -472,6 +486,7 @@ export fn ls_cli_send_input(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -527,6 +542,7 @@ export fn ls_cli_send_prompted_input(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -562,6 +578,7 @@ export fn ls_cli_read_any(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),

@@ -311,7 +311,12 @@ pub const Session = struct {
             // but... we ignore errors here since we want deinit to return void and it really
             // shouldn't matter if something errors during close
             // zlint-disable-next-line suppressed-errors
-            self.close() catch {};
+            self.close() catch |err| {
+                self.log.warn(
+                    "session.Session, deinit: close returned an error '{}', ignoring",
+                    .{err},
+                );
+            };
         }
 
         // if close didnt happen and the read thread state was already set to stop, we may have not
@@ -416,7 +421,12 @@ pub const Session = struct {
                     .raw = .fromNanoseconds(self.options.read_min_delay_ns),
                 },
                 self.io,
-            ) catch {};
+            ) catch |err| {
+                self.log.warn(
+                    "session.Session open: sleep error '{}', ignoring",
+                    .{err},
+                );
+            };
         }
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
@@ -538,6 +548,7 @@ pub const Session = struct {
         // need to unblock the transport waiter after signaling the read thread to stop, this will
         // stop the waiter (which happens in transport.read), then the readloop can nicely exit;
         // we only need to do this here in addition to close because we
+        // zlinter-disable-next-line no_swallow_error - best effort
         errdefer self.transport.unblock() catch {};
 
         // in the case of auth, if we error out, we almost certainly need to stop the read loop
@@ -834,7 +845,12 @@ pub const Session = struct {
                         .raw = .fromNanoseconds(cur_read_delay_ns),
                     },
                     self.io,
-                ) catch {};
+                ) catch |err| {
+                    self.log.warn(
+                        "session.Session readTimeout: sleep error '{}', ignoring",
+                        .{err},
+                    );
+                };
             }
 
             const n = try self.read(buf);

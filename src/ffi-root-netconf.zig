@@ -19,6 +19,7 @@ export fn ls_netconf_open(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     d.open() catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -32,6 +33,7 @@ export fn ls_netconf_open(
 
     switch (d.real_driver) {
         .cli => {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
             errors.wrapCriticalError(
                 errors.ScrapliError.Operation,
                 @src(),
@@ -55,6 +57,7 @@ export fn ls_netconf_open(
                     },
                 },
             ) catch |err| {
+                // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
                 errors.wrapCriticalError(
                     errors.ScrapliError.Operation,
                     @src(),
@@ -88,7 +91,12 @@ export fn ls_netconf_open(
                 .raw = .fromNanoseconds(ffi_driver.operation_thread_ready_sleep),
             },
             d.io,
-        ) catch {};
+        ) catch |err| {
+            d.getLogger().warn(
+                "ffirootnetconf ls_netconf_open: sleep error '{}', ignoring",
+                .{err},
+            );
+        };
     }
 
     return 0;
@@ -104,6 +112,7 @@ export fn ls_netconf_close(
 
     switch (d.real_driver) {
         .cli => {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
             errors.wrapCriticalError(
                 errors.ScrapliError.Operation,
                 @src(),
@@ -128,6 +137,7 @@ export fn ls_netconf_close(
                     },
                 },
             ) catch |err| {
+                // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
                 errors.wrapCriticalError(
                     errors.ScrapliError.Operation,
                     @src(),
@@ -174,6 +184,7 @@ export fn ls_netconf_fetch_operation_sizes(
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
     const ret = d.dequeueOperation(operation_id, false) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -227,6 +238,7 @@ export fn ls_netconf_fetch_operation(
         operation_id,
         true,
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -449,6 +461,7 @@ export fn ls_netconf_raw_rpc(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -498,6 +511,7 @@ export fn ls_netconf_get_config(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -545,6 +559,7 @@ export fn ls_netconf_edit_config(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -586,6 +601,7 @@ export fn ls_netconf_copy_config(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -625,6 +641,7 @@ export fn ls_netconf_delete_config(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -664,6 +681,7 @@ export fn ls_netconf_lock(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -703,6 +721,7 @@ export fn ls_netconf_unlock(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -750,6 +769,7 @@ export fn ls_netconf_get(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -785,6 +805,7 @@ export fn ls_netconf_close_session(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -822,6 +843,7 @@ export fn ls_netconf_kill_session(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -857,6 +879,7 @@ export fn ls_netconf_commit(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -892,6 +915,7 @@ export fn ls_netconf_discard(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -929,6 +953,7 @@ export fn ls_netconf_cancel_commit(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -966,6 +991,7 @@ export fn ls_netconf_validate(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -1007,6 +1033,7 @@ export fn ls_netconf_get_schema(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -1062,6 +1089,7 @@ export fn ls_netconf_get_data(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -1103,6 +1131,7 @@ export fn ls_netconf_edit_data(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
@@ -1140,6 +1169,7 @@ export fn ls_netconf_action(
             },
         },
     ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
             @src(),
