@@ -168,8 +168,8 @@ pub const FfiDriver = struct {
         }
 
         // close the ffi layer poll fds
-        std.posix.close(self.poll_fds[0]);
-        std.posix.close(self.poll_fds[1]);
+        _ = std.c.close(self.poll_fds[0]);
+        _ = std.c.close(self.poll_fds[1]);
 
         self.allocator.destroy(self);
     }
@@ -233,7 +233,7 @@ pub const FfiDriver = struct {
                 },
                 self.io,
             ) catch |err| {
-                self.log.warn(
+                self.getLogger().warn(
                     "ffi-driver.FfiDriver open: sleep error '{}', ignoring",
                     .{err},
                 );
