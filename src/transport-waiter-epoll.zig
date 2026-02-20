@@ -58,7 +58,7 @@ pub const EpollWaiter = struct {
             &event,
         );
 
-        var out: [1]std.os.linux.epoll_event = undefined;
+        var out: [1]std.os.linux.epoll_event = .{0};
 
         _ = std.os.linux.epoll_wait(self.ep, &out, 1, -1);
     }

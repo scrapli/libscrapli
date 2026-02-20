@@ -270,7 +270,7 @@ fn libssh2FreeChannel(
 }
 
 const AuthCallbackData = extern struct {
-    password: [*c]u8 = undefined,
+    password: [*c]u8 = null,
     password_len: usize = 0,
 };
 

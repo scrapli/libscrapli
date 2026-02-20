@@ -84,7 +84,10 @@ pub const KqueueWaiter = struct {
 
         // fairly sure we need this to be sized to 2 -- for each event type we care about receiving
         // -- that is the there is data available and our unblock messages
-        var out: [2]std.posix.Kevent = undefined;
+        var out: [2]std.posix.Kevent = .{
+            std.mem.zeroes(std.posix.Kevent),
+            std.mem.zeroes(std.posix.Kevent),
+        };
 
         const o_out = &out;
         const changelist = &[_]std.posix.Kevent{};

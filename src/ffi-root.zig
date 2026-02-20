@@ -7,7 +7,6 @@ const ffi_driver = @import("ffi-driver.zig");
 const ffi_options = @import("ffi-options.zig");
 const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
-const session = @import("session.zig");
 
 const c = @cImport(@cInclude("signal.h"));
 
@@ -188,17 +187,10 @@ export fn ls_session_read(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    // SAFETY: will always be set!
-    var s: *session.Session = undefined;
-
-    switch (d.real_driver) {
-        .cli => |rd| {
-            s = rd.session;
-        },
-        .netconf => |rd| {
-            s = rd.session;
-        },
-    }
+    const s = switch (d.real_driver) {
+        .cli => |rd| rd.session,
+        .netconf => |rd| rd.session,
+    };
 
     const n = s.read(buf.*) catch {
         return 1;
@@ -218,17 +210,10 @@ export fn ls_session_write(
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    // SAFETY: will always be set!
-    var s: *session.Session = undefined;
-
-    switch (d.real_driver) {
-        .cli => |rd| {
-            s = rd.session;
-        },
-        .netconf => |rd| {
-            s = rd.session;
-        },
-    }
+    const s = switch (d.real_driver) {
+        .cli => |rd| rd.session,
+        .netconf => |rd| rd.session,
+    };
 
     s.write(std.mem.span(buf), redacted) catch |err| {
         errors.wrapCriticalError(
@@ -252,17 +237,10 @@ export fn ls_session_write_and_return(
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    // SAFETY: will always be set!
-    var s: *session.Session = undefined;
-
-    switch (d.real_driver) {
-        .cli => |rd| {
-            s = rd.session;
-        },
-        .netconf => |rd| {
-            s = rd.session;
-        },
-    }
+    const s = switch (d.real_driver) {
+        .cli => |rd| rd.session,
+        .netconf => |rd| rd.session,
+    };
 
     s.writeAndReturn(std.mem.span(buf), redacted) catch |err| {
         errors.wrapCriticalError(
@@ -284,17 +262,10 @@ export fn ls_session_write_return(
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
 
-    // SAFETY: will always be set!
-    var s: *session.Session = undefined;
-
-    switch (d.real_driver) {
-        .cli => |rd| {
-            s = rd.session;
-        },
-        .netconf => |rd| {
-            s = rd.session;
-        },
-    }
+    const s = switch (d.real_driver) {
+        .cli => |rd| rd.session,
+        .netconf => |rd| rd.session,
+    };
 
     s.writeReturn() catch |err| {
         errors.wrapCriticalError(

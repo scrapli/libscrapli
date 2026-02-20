@@ -32,15 +32,12 @@ pub const State = enum {
 /// LookupItems is a struct that holds up to 16 LookupKeyValues (explicitly sized to not deal w/
 /// allocations).
 pub const LookupItems = struct {
-    items: [16]LookupKeyValue = undefined,
+    items: [16]LookupKeyValue = .{std.mem.zeroes(LookupKeyValue)} ** 16,
     count: usize = 0,
 
     /// Init the lookup items object.
     pub fn init(kvs: []const LookupKeyValue) LookupItems {
-        var out = LookupItems{
-            .items = undefined,
-            .count = 0,
-        };
+        var out: LookupItems = .{};
 
         for (kvs) |kv| {
             out.items[out.count] = kv;
@@ -52,7 +49,7 @@ pub const LookupItems = struct {
 
     fn cloneOwned(self: *const LookupItems, allocator: std.mem.Allocator) !LookupItems {
         var out = LookupItems{
-            .items = undefined,
+            .items = .{std.mem.zeroes(LookupKeyValue)} ** 16,
             .count = self.count,
         };
 

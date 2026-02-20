@@ -27,7 +27,7 @@ pub const FfiDriver = struct {
 
     real_driver: RealDriver,
 
-    poll_fds: [2]std.posix.fd_t = undefined,
+    poll_fds: [2]std.posix.fd_t = .{ 0, 0 },
 
     operation_id_counter: u32,
     operation_thread: ?std.Thread,
