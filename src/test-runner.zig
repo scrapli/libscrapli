@@ -257,15 +257,17 @@ const Status = enum {
 const SlowTracker = struct {
     const SlowestQueue = std.PriorityDequeue(TestInfo, void, compareTiming);
 
+    allocator: std.mem.Allocator,
     io: std.Io,
     max: usize,
     slowest: SlowestQueue,
     timer: std.Io.Timestamp,
 
-    fn init(allocator: Allocator, io: std.Io, count: u32) SlowTracker {
-        var slowest = SlowestQueue.init(allocator, {});
-        slowest.ensureTotalCapacity(count) catch @panic("OOM");
+    fn init(allocator: std.mem.Allocator, io: std.Io, count: u32) SlowTracker {
+        var slowest = std.PriorityDequeue(TestInfo, void, compareTiming).empty;
+        slowest.ensureTotalCapacity(allocator, count) catch @panic("OOM");
         return .{
+            .allocator = allocator,
             .io = io,
             .max = count,
             .timer = std.Io.Timestamp.now(io, .real),
@@ -279,7 +281,7 @@ const SlowTracker = struct {
     };
 
     fn deinit(self: SlowTracker) void {
-        self.slowest.deinit();
+        self.slowest.deinit(self.allocator);
     }
 
     fn startTiming(self: *SlowTracker) void {
@@ -294,7 +296,8 @@ const SlowTracker = struct {
         if (slowest.count() < self.max) {
             // Capacity is fixed to the # of slow tests we want to track
             // If we've tracked fewer tests than this capacity, than always add
-            slowest.add(
+            slowest.push(
+                self.allocator,
                 TestInfo{
                     .ns = ns,
                     .name = test_name,
@@ -315,9 +318,10 @@ const SlowTracker = struct {
         }
 
         // the previous fastest of our slow tests, has been pushed off.
-        _ = slowest.removeMin();
+        _ = slowest.popMin();
 
-        slowest.add(
+        slowest.push(
+            self.allocator,
             TestInfo{
                 .ns = ns,
                 .name = test_name,
@@ -331,7 +335,7 @@ const SlowTracker = struct {
         var slowest = self.slowest;
         const count = slowest.count();
         printer.fmt("Slowest {d} test{s}: \n", .{ count, if (count != 1) "s" else "" });
-        while (slowest.removeMinOrNull()) |info| {
+        while (slowest.popMin()) |info| {
             const ms = @as(f64, @floatFromInt(info.ns)) / 1_000_000.0;
             printer.fmt("  {d:.2}ms\t{s}\n", .{ ms, info.name });
         }

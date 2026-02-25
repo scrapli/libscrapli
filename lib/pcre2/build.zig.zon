@@ -1,7 +1,7 @@
 .{
     .name = .pcre2,
     .version = "10.45.0",
-    .minimum_zig_version = "0.16.0-dev.2535+b5bd49460",
+    .minimum_zig_version = "0.16.0-dev.2637+6a9510c0e",
     .fingerprint = 0x914b3d631d62ad24,
     .dependencies = .{},
     .paths = .{

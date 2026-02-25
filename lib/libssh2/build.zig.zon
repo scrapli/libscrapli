@@ -1,7 +1,7 @@
 .{
     .name = .libssh2,
     .version = "1.11.1",
-    .minimum_zig_version = "0.16.0-dev.2535+b5bd49460",
+    .minimum_zig_version = "0.16.0-dev.2637+6a9510c0e",
     .fingerprint = 0x57bdea04e1bb13d8,
     .dependencies = .{
         .openssl = .{
