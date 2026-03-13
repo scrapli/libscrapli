@@ -46,7 +46,7 @@ pub fn readFromPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) 
     var r_buf: [1024]u8 = undefined;
     var r = f.reader(io, &r_buf);
 
-    var out: std.ArrayList(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     defer out.deinit(allocator);
 
     try std.Io.Reader.appendRemainingUnlimited(&r.interface, allocator, &out);

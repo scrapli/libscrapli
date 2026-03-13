@@ -243,7 +243,7 @@ pub const Driver = struct {
             .host = host,
             .options = opts,
             .session = s,
-            .server_capabilities = .{},
+            .server_capabilities = .empty,
             .negotiated_version = .version_1_0,
             .session_id = null,
             .process_thread = null,
@@ -258,7 +258,7 @@ pub const Driver = struct {
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
             .messages_lock = std.Io.Mutex.init,
-            .notifications = .{},
+            .notifications = .empty,
             .notifications_lock = std.Io.Mutex.init,
             .subscriptions = std.HashMap(
                 u64,
@@ -542,7 +542,7 @@ pub const Driver = struct {
     ) ![]u8 {
         self.log.info("netconf.Driver receiveServerCapabilities requested", .{});
 
-        var cap_buf: std.ArrayList([]u8) = .{};
+        var cap_buf: std.ArrayList([]u8) = .empty;
         defer {
             for (cap_buf.items) |cap| {
                 allocator.free(cap);
@@ -926,7 +926,7 @@ pub const Driver = struct {
         const buf = try self.allocator.alloc(u8, self.session.options.read_size);
         defer self.allocator.free(buf);
 
-        var message_buf: std.ArrayList(u8) = .{};
+        var message_buf: std.ArrayList(u8) = .empty;
         defer message_buf.deinit(self.allocator);
 
         var message_complete_delim = switch (self.negotiated_version) {
@@ -1141,7 +1141,7 @@ pub const Driver = struct {
 
             const ret = try self.subscriptions.getOrPut(id_info.found_id);
             if (!ret.found_existing) {
-                ret.value_ptr.* = .{};
+                ret.value_ptr.* = .empty;
             }
 
             try ret.value_ptr.*.append(self.allocator, processed_buf);

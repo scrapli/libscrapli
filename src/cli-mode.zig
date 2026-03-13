@@ -426,7 +426,7 @@ pub fn getPathToMode(
     requested_mode_name: []const u8,
     visited: *std.StringHashMap(bool),
 ) !std.ArrayList([]const u8) {
-    var steps: std.ArrayList([]const u8) = .{};
+    var steps: std.ArrayList([]const u8) = .empty;
 
     if (std.mem.eql(u8, current_mode_name, requested_mode_name)) {
         try steps.append(allocator, current_mode_name);

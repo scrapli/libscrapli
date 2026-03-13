@@ -89,7 +89,7 @@ pub const Transport = struct {
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
             .stream = null,
-            .initial_buf = .{},
+            .initial_buf = .empty,
         };
 
         return t;
@@ -173,7 +173,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
     ) !void {
-        var control_buf: std.ArrayList(u8) = .{};
+        var control_buf: std.ArrayList(u8) = .empty;
         defer control_buf.deinit(self.allocator);
 
         while (true) {

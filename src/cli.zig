@@ -267,7 +267,7 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        var op_buf: std.ArrayList(u8) = .{};
+        var op_buf: std.ArrayList(u8) = .empty;
         defer op_buf.deinit(allocator);
 
         if (self.definition.onCloseCallback != null or
@@ -815,7 +815,7 @@ pub const Driver = struct {
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
-        var triggered_callbacks: std.ArrayList([]const u8) = .{};
+        var triggered_callbacks: std.ArrayList([]const u8) = .empty;
         defer triggered_callbacks.deinit(allocator);
 
         try self.innerReadWithCallbacks(
@@ -916,7 +916,7 @@ test "readCallbackShouldExecute" {
             .buf = "foo bar baz",
             .cb_name = "cb1",
             .contains = "bloop",
-            .triggered_callbacks = .{},
+            .triggered_callbacks = .empty,
             .expected = false,
         },
         .{
@@ -924,7 +924,7 @@ test "readCallbackShouldExecute" {
             .buf = "foo bar baz",
             .cb_name = "cb1",
             .contains = "bar",
-            .triggered_callbacks = .{},
+            .triggered_callbacks = .empty,
             .expected = true,
         },
         .{
@@ -933,7 +933,7 @@ test "readCallbackShouldExecute" {
             .cb_name = "cb1",
             .contains = "bar",
             .not_contains = "baz",
-            .triggered_callbacks = .{},
+            .triggered_callbacks = .empty,
             .expected = false,
         },
         .{
@@ -941,7 +941,7 @@ test "readCallbackShouldExecute" {
             .buf = "foo bar baz",
             .cb_name = "cb1",
             .contains_pattern = "\\sbar\\s",
-            .triggered_callbacks = .{},
+            .triggered_callbacks = .empty,
             .expected = true,
         },
         .{
@@ -950,7 +950,7 @@ test "readCallbackShouldExecute" {
             .cb_name = "cb1",
             .contains_pattern = "\\sbar\\s",
             .not_contains = "baz",
-            .triggered_callbacks = .{},
+            .triggered_callbacks = .empty,
             .expected = false,
         },
     };

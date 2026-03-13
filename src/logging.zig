@@ -69,7 +69,7 @@ pub const Logger = struct {
         comptime format: []const u8,
         args: anytype,
     ) []u8 {
-        var buf: std.ArrayList(u8) = .{};
+        var buf: std.ArrayList(u8) = .empty;
         defer buf.deinit(self.allocator);
 
         buf.print(self.allocator, format, args) catch {

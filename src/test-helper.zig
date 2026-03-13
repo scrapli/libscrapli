@@ -578,7 +578,7 @@ pub fn inlineInitArrayList(
     comptime T: type,
     items: []const T,
 ) !std.ArrayList(T) {
-    var al: std.ArrayList(T) = .{};
+    var al: std.ArrayList(T) = .empty;
 
     for (items) |item| {
         try al.append(allocator, item);

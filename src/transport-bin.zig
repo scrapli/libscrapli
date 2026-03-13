@@ -161,7 +161,7 @@ pub const Transport = struct {
             .log = log,
             .options = options,
             .waiter = try transport_waiter.Waiter.init(allocator),
-            .open_args = .{},
+            .open_args = .empty,
         };
 
         return t;

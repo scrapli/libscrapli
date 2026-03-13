@@ -140,8 +140,8 @@ pub const Result = struct {
             .start_time_ns = std.Io.Timestamp.now(io, .real).nanoseconds,
             .end_time_ns = 0,
             .result_failure_indicated = false,
-            .result_warning_messages = .{},
-            .result_error_messages = .{},
+            .result_warning_messages = .empty,
+            .result_error_messages = .empty,
         };
 
         return r;

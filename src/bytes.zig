@@ -193,8 +193,8 @@ pub const ProcessedBuf = struct {
     pub fn init(allocator: std.mem.Allocator) ProcessedBuf {
         return ProcessedBuf{
             .allocator = allocator,
-            .raw = .{},
-            .processed = .{},
+            .raw = .empty,
+            .processed = .empty,
         };
     }
 

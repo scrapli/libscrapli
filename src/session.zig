@@ -248,7 +248,7 @@ pub const Session = struct {
             ).init(allocator),
             .recorder = try Recorder.init(io, options.record_destination, &s.recorder_buf),
             .prompt_pattern = prompt_pattern,
-            .last_consumed_prompt = .{},
+            .last_consumed_prompt = .empty,
         };
         errdefer s.deinit();
 

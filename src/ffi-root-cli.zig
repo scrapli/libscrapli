@@ -603,7 +603,7 @@ export fn ls_cli_read_callback_should_execute(
     not_contains: [*c]const u8,
     execute: *bool,
 ) callconv(.c) u8 {
-    var triggered_callbacks: std.ArrayList([]const u8) = .{};
+    var triggered_callbacks: std.ArrayList([]const u8) = .empty;
 
     const should_execute = cli.readCallbackShouldExecute(
         std.mem.span(buf),
