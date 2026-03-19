@@ -187,7 +187,7 @@ pub const Transport = struct {
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .real).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),

@@ -270,7 +270,7 @@ const SlowTracker = struct {
             .allocator = allocator,
             .io = io,
             .max = count,
-            .timer = std.Io.Timestamp.now(io, .real),
+            .timer = std.Io.Timestamp.now(io, .awake),
             .slowest = slowest,
         };
     }
@@ -285,11 +285,11 @@ const SlowTracker = struct {
     }
 
     fn startTiming(self: *SlowTracker) void {
-        self.timer = std.Io.Timestamp.now(self.io, .real);
+        self.timer = std.Io.Timestamp.now(self.io, .awake);
     }
 
     fn endTiming(self: *SlowTracker, test_name: []const u8) u64 {
-        const ns: u64 = @intCast(self.timer.untilNow(self.io, .real).nanoseconds);
+        const ns: u64 = @intCast(self.timer.untilNow(self.io, .awake).nanoseconds);
 
         var slowest = &self.slowest;
 

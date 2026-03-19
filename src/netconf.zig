@@ -360,7 +360,7 @@ pub const Driver = struct {
     ) !*result.Result {
         self.log.info("netconf.Driver open requested", .{});
 
-        const start_timestamp = std.Io.Timestamp.now(self.io, .real);
+        const start_timestamp = std.Io.Timestamp.now(self.io, .awake);
 
         var res = try self.newResult(
             allocator,
@@ -1361,16 +1361,25 @@ pub const Driver = struct {
 
         // if timeout is 0 we dont timeout -- we do this to let users 1) disable it but also
         // 2) to let the ffi layer via (go) context control it for example
-        if (self.session.options.operation_timeout_ns != 0 and
-            (start_timestamp.untilNow(self.io, .real).nanoseconds > self.session.options.operation_timeout_ns))
-        {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.TimeoutExceeded,
-                @src(),
-                self.log,
-                "netconf.Driver processCancelAndTimeout: operation timeout exceeded",
-                .{},
-            );
+        if (self.session.options.operation_timeout_ns != 0) {
+            const ns_since_start = start_timestamp.untilNow(self.io, .awake).nanoseconds;
+
+            if (ns_since_start > self.session.options.operation_timeout_ns) {
+                const ns_exceeded_by = ns_since_start - self.session.options.operation_timeout_ns;
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "netconf.Driver processCancelAndTimeout: operation timeout exceeded. " ++
+                        "{d}ns since start, {d}ns timeout, {d}ns over timeout",
+                    .{
+                        ns_since_start,
+                        self.session.options.operation_timeout_ns,
+                        ns_exceeded_by,
+                    },
+                );
+            }
         }
     }
 
@@ -2624,7 +2633,7 @@ pub const Driver = struct {
             .{@tagName(options)},
         );
 
-        const start_timestamp = std.Io.Timestamp.now(self.io, .real);
+        const start_timestamp = std.Io.Timestamp.now(self.io, .awake);
 
         var cancel: ?*bool = null;
 

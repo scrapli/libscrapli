@@ -361,7 +361,7 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("session.Session open requested", .{});
 
-        const start_time = std.Io.Timestamp.now(self.io, .real);
+        const start_time = std.Io.Timestamp.now(self.io, .awake);
 
         try self.transport.open(
             start_time,
@@ -528,7 +528,7 @@ pub const Session = struct {
     fn authenticate(
         self: *Session,
         allocator: std.mem.Allocator,
-        start_time: std.Io.Timestamp,
+        start_timestamp: std.Io.Timestamp,
         cancel: ?*bool,
     ) ![2][]const u8 {
         self.log.info("session.Session authenticate requested", .{});
@@ -566,16 +566,22 @@ pub const Session = struct {
                 );
             }
 
-            if (self.options.operation_timeout_ns != 0 and
-                start_time.untilNow(self.io, .real).nanoseconds >= self.options.operation_timeout_ns)
-            {
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.TimeoutExceeded,
-                    @src(),
-                    self.log,
-                    "session.Session authenticate: operation timeout exceeded",
-                    .{},
-                );
+            if (self.options.operation_timeout_ns != 0) {
+                const ns_since_start = start_timestamp.untilNow(self.io, .awake).nanoseconds;
+
+                if (ns_since_start > self.options.operation_timeout_ns) {
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.TimeoutExceeded,
+                        @src(),
+                        self.log,
+                        "session.Session authenticate: operation timeout exceeded. " ++
+                            "{d}ns since start, {d}ns timeout",
+                        .{
+                            ns_since_start,
+                            self.options.operation_timeout_ns,
+                        },
+                    );
+                }
             }
 
             const n = self.read(buf) catch |err| {
@@ -793,7 +799,7 @@ pub const Session = struct {
     /// output is seen in the transport output.
     pub fn readTimeout(
         self: *Session,
-        start_time: std.Io.Timestamp,
+        start_timestamp: std.Io.Timestamp,
         cancel: ?*bool,
         checkF: bytes_check.CheckF,
         check_args: bytes_check.CheckArgs,
@@ -824,18 +830,22 @@ pub const Session = struct {
                 );
             }
 
-            // if timeout is 0 we dont timeout -- we do this to let users 1) disable it but also
-            // 2) to let the ffi layer via (go) context control it for example
-            if (self.options.operation_timeout_ns != 0 and
-                (start_time.untilNow(self.io, .real).nanoseconds + cur_read_delay_ns) >= self.options.operation_timeout_ns)
-            {
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.TimeoutExceeded,
-                    @src(),
-                    self.log,
-                    "session.Session readTimeout: operation timeout exceeded",
-                    .{},
-                );
+            if (self.options.operation_timeout_ns != 0) {
+                const ns_since_start = start_timestamp.untilNow(self.io, .awake).nanoseconds;
+
+                if (ns_since_start > self.options.operation_timeout_ns) {
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.TimeoutExceeded,
+                        @src(),
+                        self.log,
+                        "session.Session readTimeout: operation timeout exceeded. " ++
+                            "{d}ns since start, {d}ns timeout",
+                        .{
+                            ns_since_start,
+                            self.options.operation_timeout_ns,
+                        },
+                    );
+                }
             }
 
             defer {
@@ -904,7 +914,7 @@ pub const Session = struct {
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
-        const start_time = std.Io.Timestamp.now(self.io, .real);
+        const start_time = std.Io.Timestamp.now(self.io, .awake);
 
         _ = try self.readTimeout(
             start_time,
@@ -932,7 +942,7 @@ pub const Session = struct {
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
 
-        const start_time = std.Io.Timestamp.now(self.io, .real);
+        const start_time = std.Io.Timestamp.now(self.io, .awake);
 
         _ = try self.readTimeout(
             start_time,
@@ -1051,7 +1061,7 @@ pub const Session = struct {
         self.log.info("session.Session sendInput requested", .{});
         self.log.debug("session.Session sendInput: input '{s}'", .{options.input});
 
-        const start_time = std.Io.Timestamp.now(self.io, .real);
+        const start_time = std.Io.Timestamp.now(self.io, .awake);
 
         var bufs = bytes.ProcessedBuf.init(allocator);
         defer bufs.deinit();
@@ -1125,7 +1135,7 @@ pub const Session = struct {
             .{ options.input, options.response },
         );
 
-        const start_time = std.Io.Timestamp.now(self.io, .real);
+        const start_time = std.Io.Timestamp.now(self.io, .awake);
 
         var compiled_pattern: ?*re.pcre2CompiledPattern = null;
 
