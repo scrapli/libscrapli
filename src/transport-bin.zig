@@ -502,7 +502,7 @@ pub const Transport = struct {
 
     /// Writes content to the transport session.
     pub fn write(self: *Transport, buf: []const u8) !void {
-        self.log.info("bin.Transport write requested", .{});
+        self.log.debug("bin.Transport write requested", .{});
 
         if (self.writer == null) {
             return errors.wrapCriticalError(
@@ -529,7 +529,7 @@ pub const Transport = struct {
 
     /// Reads content from the transport session.
     pub fn read(self: *Transport, buf: []u8) !usize {
-        self.log.debug("bin.Transport read requested", .{});
+        self.log.trace("bin.Transport read requested", .{});
 
         if (self.reader == null) {
             return errors.wrapCriticalError(

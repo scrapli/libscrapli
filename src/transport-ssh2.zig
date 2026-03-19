@@ -1735,7 +1735,7 @@ pub const Transport = struct {
     /// Writes content to the transport session -- dispatches to the appropriate write method based
     /// on being a "normal" or a proxied connection.
     pub fn write(self: *Transport, buf: []const u8) !void {
-        self.log.info("ssh2.Transport write requested", .{});
+        self.log.debug("ssh2.Transport write requested", .{});
 
         if (self.options.proxy_jump_options == null) {
             return self.writeStandard(buf);
@@ -1841,7 +1841,7 @@ pub const Transport = struct {
     /// Reads content from the transport session -- dispatches to the appropriate write method based
     /// on being a "normal" or a proxied connection.
     pub fn read(self: *Transport, buf: []u8) !usize {
-        self.log.debug("ssh2.Transport read requested", .{});
+        self.log.trace("ssh2.Transport read requested", .{});
 
         if (self.options.proxy_jump_options == null) {
             return self.readStandard(buf);

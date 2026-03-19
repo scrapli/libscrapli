@@ -557,27 +557,7 @@ pub const Driver = struct {
         var found_cap_start = false;
 
         while (true) {
-            if (options.cancel != null and options.cancel.?.*) {
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Cancelled,
-                    @src(),
-                    self.log,
-                    "netconf.Driver receiveServerCapabilities: operation cancelled",
-                    .{},
-                );
-            }
-
-            if (self.session.options.operation_timeout_ns != 0 and
-                start_timestamp.untilNow(self.io, .real).nanoseconds >= self.session.options.operation_timeout_ns)
-            {
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.TimeoutExceeded,
-                    @src(),
-                    self.log,
-                    "netconf.Driver receiveServerCapabilities: operation timeout exceeded",
-                    .{},
-                );
-            }
+            try self.processCancelAndTimeout(start_timestamp, options.cancel);
 
             const n = try self.session.read(read_cap_buf);
 
@@ -929,13 +909,13 @@ pub const Driver = struct {
         var message_buf: std.ArrayList(u8) = .empty;
         defer message_buf.deinit(self.allocator);
 
-        var message_complete_delim = switch (self.negotiated_version) {
+        const message_complete_delim = switch (self.negotiated_version) {
             .version_1_0 => delimiter_version_1_0,
             .version_1_1 => delimiter_version_1_1,
         };
 
         while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
-            var n = self.session.read(buf) catch |err| {
+            const n = self.session.read(buf) catch |err| {
                 switch (err) {
                     errors.ScrapliError.EOF => {
                         // the session read thread has errored/closed and there is nothing remaining
@@ -985,63 +965,83 @@ pub const Driver = struct {
 
             try message_buf.appendSlice(self.allocator, buf[0..n]);
 
-            if (n < 10 and message_buf.items.len > 10) {
-                // probably we are using the file/test transport, in which case we need to look back
-                // further than our reads (which are always 1), either way this was a small read and
-                // we want to ensure that when we look back for the prompt we are looking back far
-                // enough to ensure we find it
-                n = 10;
-            }
+            const found = try Driver.processLoopBufContainsCompleteDelim(
+                n,
+                message_buf,
+                message_complete_delim,
+            );
 
-            // here we will look through the last batch of the buffer backwards ignoring
-            // whitespace (ascii.LF (line feed), ascii.CR (carriage return)) and checking if
-            // the last chars of the buf are either nc1.0 or nc1.1 delimiter. we'll count each
-            // non whitespace char we see, if/when we have seen as many chars as the delimiter
-            // would be without seeing the delimiter itself we know this is not the end of a
-            // message and we can break
-            var seen_chars: usize = 0;
-            var matched_chars: usize = 0;
+            if (found) {
+                self.log.info("netconf.Driver processLoop: found end of message", .{});
 
-            for (0..n) |forward_idx| {
-                if (seen_chars > message_complete_delim.len) {
-                    break;
-                }
+                const owned_buf = try message_buf.toOwnedSlice(self.allocator);
+                defer self.allocator.free(owned_buf);
 
-                const reverse_idx = message_buf.items.len - forward_idx - 1;
-
-                if (message_buf.items[reverse_idx] == ascii.control_chars.lf or
-                    message_buf.items[reverse_idx] == ascii.control_chars.cr)
-                {
-                    continue;
-                }
-
-                seen_chars += 1;
-
-                if (message_buf.items[reverse_idx] != message_complete_delim[message_complete_delim.len - matched_chars - 1]) {
-                    continue;
-                }
-
-                matched_chars += 1;
-
-                if (matched_chars == message_complete_delim.len) {
-                    const owned_buf = try message_buf.toOwnedSlice(self.allocator);
-                    defer self.allocator.free(owned_buf);
-
-                    switch (self.negotiated_version) {
-                        .version_1_0 => {
-                            try self.processFoundMessageVersion1_0(owned_buf);
-                        },
-                        .version_1_1 => {
-                            try self.processFoundMessageVersion1_1(owned_buf);
-                        },
-                    }
-
-                    break;
+                switch (self.negotiated_version) {
+                    .version_1_0 => {
+                        try self.processFoundMessageVersion1_0(owned_buf);
+                    },
+                    .version_1_1 => {
+                        try self.processFoundMessageVersion1_1(owned_buf);
+                    },
                 }
             }
         }
 
         self.log.info("netconf.Driver message processing thread stopped", .{});
+    }
+
+    fn processLoopBufContainsCompleteDelim(
+        read_n: usize,
+        message_buf: std.ArrayList(u8),
+        message_complete_delim: []const u8,
+    ) !bool {
+        var n = read_n;
+
+        if (n < 10 and message_buf.items.len > 10) {
+            // probably we are using the file/test transport, in which case we need to look back
+            // further than our reads (which are always 1), either way this was a small read and
+            // we want to ensure that when we look back for the prompt we are looking back far
+            // enough to ensure we find it
+            n = 10;
+        }
+
+        // here we will look through the last batch of the buffer backwards ignoring
+        // whitespace (ascii.LF (line feed), ascii.CR (carriage return)) and checking if
+        // the last chars of the buf are either nc1.0 or nc1.1 delimiter. we'll count each
+        // non whitespace char we see, if/when we have seen as many chars as the delimiter
+        // would be without seeing the delimiter itself we know this is not the end of a
+        // message and we can break
+        var seen_chars: usize = 0;
+        var matched_chars: usize = 0;
+
+        for (0..n) |forward_idx| {
+            if (seen_chars > message_complete_delim.len) {
+                break;
+            }
+
+            const reverse_idx = message_buf.items.len - forward_idx - 1;
+
+            if (message_buf.items[reverse_idx] == ascii.control_chars.lf or
+                message_buf.items[reverse_idx] == ascii.control_chars.cr)
+            {
+                continue;
+            }
+
+            seen_chars += 1;
+
+            if (message_buf.items[reverse_idx] != message_complete_delim[message_complete_delim.len - matched_chars - 1]) {
+                continue;
+            }
+
+            matched_chars += 1;
+
+            if (matched_chars == message_complete_delim.len) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     fn processFoundMessageIds(
@@ -1262,6 +1262,11 @@ pub const Driver = struct {
             for (iter_idx..chunk_size_end_idx) |chunk_idx| {
                 chunk_size = chunk_size * 10 + (buf[chunk_idx] - '0');
             }
+
+            self.log.debug(
+                "netconf.Driver processFoundMessageVersion1_1: found message chunk of size {d}",
+                .{chunk_size},
+            );
 
             if (chunk_size == 0) {
                 return errors.wrapCriticalError(
@@ -4441,4 +4446,25 @@ test "builActionElem" {
             case.expected,
         );
     }
+}
+
+test "processLoopBufContainsCompleteDelim" {
+    var message_buf: std.ArrayList(u8) = .empty;
+    defer message_buf.deinit(std.testing.allocator);
+
+    const c =
+        \\ <vlan-id>100</vlan-id><config><vlan-id>100</vlan-id><name>ADM</name></config></vlan><vlan><vlan-id>101</vlan-id><config><vlan-id>101</vlan-id><name>BOUCLE_CXR</name></config></vlan><vlan><vlan-id>666</vlan-id><config><vlan-id>666</vlan-id><name>DISCARD</name></config></vlan><vlan><vlan-id>1000</vlan-id><config><vlan-id>1000</vlan-id><name>NATIVE</name></config></vlan></vlans></data></rpc-reply>
+        \\ ##
+        \\
+    ;
+
+    try message_buf.appendSlice(std.testing.allocator, c);
+
+    try std.testing.expect(
+        try Driver.processLoopBufContainsCompleteDelim(
+            100,
+            message_buf,
+            delimiter_version_1_1,
+        ),
+    );
 }

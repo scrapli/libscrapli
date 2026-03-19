@@ -277,7 +277,7 @@ pub const Transport = struct {
 
     /// Write to the transport object.
     pub fn write(self: *Transport, buf: []const u8) !void {
-        self.log.info("telnet.Transport write requested", .{});
+        self.log.debug("telnet.Transport write requested", .{});
 
         if (self.stream == null) {
             return errors.wrapCriticalError(
@@ -305,7 +305,7 @@ pub const Transport = struct {
 
     /// Read from the transport object.
     pub fn read(self: *Transport, buf: []u8) !usize {
-        self.log.debug("telnet.Transport read requested", .{});
+        self.log.trace("telnet.Transport read requested", .{});
 
         if (self.stream == null) {
             return errors.wrapCriticalError(
