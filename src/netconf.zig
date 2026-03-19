@@ -846,11 +846,11 @@ pub const Driver = struct {
         try writer.elementStart("capability");
 
         switch (self.negotiated_version) {
+            .version_1_0 => {
+                try writer.text(version_1_0_capability_name);
+            },
             .version_1_1 => {
                 try writer.text(version_1_1_capability_name);
-            },
-            else => {
-                try writer.text(version_1_0_capability_name);
             },
         }
 

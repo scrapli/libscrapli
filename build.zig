@@ -112,7 +112,7 @@ fn buildScrapli(
                 ).artifact("ssh2"),
             );
         },
-        else => {
+        .dynamic => {
             // always include our patched libssh2 header first, this fixes a translate-c issue
             // that resulted in a struct having the same field twice which caused the linker to
             // fail in very confusing ways!
@@ -280,6 +280,7 @@ fn buildZlinter(
                     .field_ordering => {},
                     .no_literal_args => {},
                     .max_positional_args => {},
+                    .require_labeled_continue => {},
                     .import_ordering => {}, // broken w/ bulitin i think
                     else => {
                         builder.addRule(
@@ -581,6 +582,7 @@ fn genFfiLibOutputDir(
 ) ![]const u8 {
     const target = lib.rootModuleTarget();
 
+    // zlinter-disable require_exhaustive_enum_switch
     switch (target.os.tag) {
         .macos => {
             return std.fmt.allocPrint(

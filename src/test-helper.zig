@@ -579,6 +579,7 @@ pub fn inlineInitArrayList(
     items: []const T,
 ) !std.ArrayList(T) {
     var al: std.ArrayList(T) = .empty;
+    errdefer al.deinit(allocator);
 
     for (items) |item| {
         try al.append(allocator, item);
