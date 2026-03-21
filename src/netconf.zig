@@ -1133,6 +1133,12 @@ pub const Driver = struct {
         }
 
         if (id_info.is_subscription_message) {
+            self.log.debug(
+                "netconf.Driver storeMessageOrSubscription: storing subscription message " ++
+                    "id {d}",
+                .{id_info.found_id},
+            );
+
             // we ignore raw buf of subscriptions/notifications
             self.allocator.free(raw_buf);
 
@@ -1146,6 +1152,11 @@ pub const Driver = struct {
 
             try ret.value_ptr.*.append(self.allocator, processed_buf);
         } else if (id_info.is_notification_message) {
+            self.log.debug(
+                "netconf.Driver storeMessageOrSubscription: storing notification message",
+                .{},
+            );
+
             self.allocator.free(raw_buf);
 
             try self.notifications_lock.lock(self.io);
@@ -1153,6 +1164,11 @@ pub const Driver = struct {
 
             try self.notifications.append(self.allocator, processed_buf);
         } else {
+            self.log.debug(
+                "netconf.Driver storeMessageOrSubscription: storing message, id {d}",
+                .{id_info.found_id},
+            );
+
             try self.messages_lock.lock(self.io);
             defer self.messages_lock.unlock(self.io);
 
