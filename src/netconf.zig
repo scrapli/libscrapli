@@ -2828,6 +2828,7 @@ pub const Driver = struct {
         message_id: u64,
     ) ![2][]const u8 {
         self.log.info("netconf.Driver sendRpc requested", .{});
+
         // trace because will be lots of output potentially
         self.log.trace(
             "netconf.Driver sendRpc: input '{s}', message_id '{d}'",
@@ -2846,37 +2847,50 @@ pub const Driver = struct {
         while (true) {
             try self.processCancelAndTimeout(start_timestamp, cancel);
 
-            try self.messages_lock.lock(self.io);
-
-            if (!self.messages.contains(message_id)) {
-                self.messages_lock.unlock(self.io);
-
-                if (self.process_thread_exited) {
-                    return errors.ScrapliError.EOF;
-                }
-
-                std.Io.Clock.Duration.sleep(
+            if (try self.getMessage(message_id)) |v| {
+                self.log.debug(
+                    "netconf.Driver sendRpc message id {d} found, returning",
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(self.options.message_poll_interval_ns),
+                        message_id,
                     },
-                    self.io,
-                ) catch |err| {
-                    self.log.warn(
-                        "netconf.Driver sendRpc: sleep error '{}', ignoring",
-                        .{err},
-                    );
-                };
+                );
 
-                continue;
+                return v;
             }
 
-            const kv = self.messages.fetchRemove(message_id);
+            if (self.process_thread_exited) {
+                return errors.ScrapliError.EOF;
+            }
 
-            self.messages_lock.unlock(self.io);
-
-            return kv.?.value;
+            std.Io.Clock.Duration.sleep(
+                .{
+                    .clock = .awake,
+                    .raw = .fromNanoseconds(self.options.message_poll_interval_ns),
+                },
+                self.io,
+            ) catch |err| {
+                self.log.warn(
+                    "netconf.Driver sendRpc: sleep error '{}', ignoring",
+                    .{err},
+                );
+            };
         }
+    }
+
+    fn getMessage(
+        self: *Driver,
+        message_id: u64,
+    ) !?[2][]const u8 {
+        try self.messages_lock.lock(self.io);
+        defer self.messages_lock.unlock(self.io);
+
+        const kv = self.messages.fetchRemove(message_id);
+
+        if (kv == null) {
+            return null;
+        }
+
+        return kv.?.value;
     }
 };
 
