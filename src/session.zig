@@ -898,6 +898,15 @@ pub const Session = struct {
                 match_indexes.start += (bufs.processed.items.len - searchable_buf.len);
                 match_indexes.end += (bufs.processed.items.len - searchable_buf.len) + 1;
 
+                self.log.debug(
+                    "session.Session readTimeout: found check match in " ++
+                        "searchable buffer '{s}', match: '{s}'",
+                    .{
+                        searchable_buf,
+                        bufs.processed.items[match_indexes.start..match_indexes.end],
+                    },
+                );
+
                 return match_indexes;
             }
         }
