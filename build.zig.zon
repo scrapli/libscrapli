@@ -3,7 +3,7 @@
     // set in ci
     .version = "0.0.0",
     .fingerprint = 0xb0e01d3de97bbf58,
-    .minimum_zig_version = "0.16.0-dev.2860+9c5460316",
+    .minimum_zig_version = "0.16.0-dev.3028+a85495ca2",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",
@@ -20,8 +20,8 @@
             .hash = "zig_yaml-0.3.0-C1161vSrAgCEKLk0825Y_GtmnThQI6O_cqtkBHb57KT-",
         },
         .zlinter = .{
-            .url = "https://github.com/kurtwagner/zlinter/archive/c2a38dd.tar.gz",
-            .hash = "zlinter-0.0.1-OjQ08b_hCwCAUZoBBBvlaZUCOJMzQN2mqC0c-G39U7Cr",
+            .url = "https://github.com/kurtwagner/zlinter/archive/9549002.tar.gz",
+            .hash = "zlinter-0.0.1-OjQ08f_mCwBpSBibSBkAPppQQRpFGyt3f7FAdbINE3Qw",
         },
     },
     .paths = .{
