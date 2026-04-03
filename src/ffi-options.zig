@@ -94,6 +94,8 @@ pub const FFIOptions = extern struct {
         username_len: usize = 0,
         password: [*c]const u8 = undefined,
         password_len: usize = 0,
+        private_key: [*c]const u8 = undefined,
+        private_key_len: usize = 0,
         private_key_path: [*c]const u8 = undefined,
         private_key_path_len: usize = 0,
         private_key_passphrase: [*c]const u8 = undefined,
@@ -125,6 +127,8 @@ pub const FFIOptions = extern struct {
             override_open_args_len: usize = 0,
             ssh_config_path: [*c]const u8 = undefined,
             ssh_config_path_len: usize = 0,
+            known_hosts: [*c]const u8 = undefined,
+            known_hosts_len: usize = 0,
             known_hosts_path: [*c]const u8 = undefined,
             known_hosts_path_len: usize = 0,
             enable_strict_key: ?*bool = null,
@@ -132,6 +136,8 @@ pub const FFIOptions = extern struct {
             term_width: ?*u16 = null,
         },
         ssh2: extern struct {
+            known_hosts: [*c]const u8 = undefined,
+            known_hosts_len: usize = 0,
             known_hosts_path: [*c]const u8 = undefined,
             known_hosts_path_len: usize = 0,
             libssh2trace: ?*bool = null,
@@ -164,6 +170,10 @@ pub const FFIOptions = extern struct {
 
         if (self.auth.password_len > 0) {
             o.password = self.auth.password[0..self.auth.password_len];
+        }
+
+        if (self.auth.private_key_len > 0) {
+            o.private_key = self.auth.private_key[0..self.auth.private_key_len];
         }
 
         if (self.auth.private_key_path_len > 0) {
@@ -274,6 +284,10 @@ pub const FFIOptions = extern struct {
                     o.bin.ssh_config_path = self.transport.bin.ssh_config_path[0..self.transport.bin.ssh_config_path_len];
                 }
 
+                if (self.transport.bin.known_hosts_len > 0) {
+                    o.bin.known_hosts = self.transport.bin.known_hosts[0..self.transport.bin.known_hosts_len];
+                }
+
                 if (self.transport.bin.known_hosts_path_len > 0) {
                     o.bin.known_hosts_path = self.transport.bin.known_hosts_path[0..self.transport.bin.known_hosts_path_len];
                 }
@@ -296,6 +310,10 @@ pub const FFIOptions = extern struct {
                 var o = transport.OptionsInputs{
                     .ssh2 = .{},
                 };
+
+                if (self.transport.ssh2.known_hosts_len > 0) {
+                    o.ssh2.known_hosts = self.transport.ssh2.known_hosts[0..self.transport.ssh2.known_hosts_len];
+                }
 
                 if (self.transport.ssh2.known_hosts_path_len > 0) {
                     o.ssh2.known_hosts_path = self.transport.ssh2.known_hosts_path[0..self.transport.ssh2.known_hosts_path_len];
