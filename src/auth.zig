@@ -256,6 +256,16 @@ test "optionsInit" {
     o.deinit();
 }
 
+test "optionsInitWithPrivateKey" {
+    const o = try Options.init(
+        std.testing.allocator,
+        .{ .private_key = "test-key-data" },
+    );
+    defer o.deinit();
+
+    try std.testing.expectEqualStrings("test-key-data", o.private_key.?);
+}
+
 /// Processes the "searchable buf" for in session auth by checking if any of the auth patterns
 /// show up.
 pub fn processSearchableAuthBuf(

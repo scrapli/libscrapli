@@ -744,3 +744,13 @@ test "transportInit" {
     t.deinit();
     o.deinit();
 }
+
+test "optionsInitWithKnownHosts" {
+    const o = try Options.init(
+        std.testing.allocator,
+        .{ .known_hosts = "host1 ssh-rsa AAAA..." },
+    );
+    defer o.deinit();
+
+    try std.testing.expectEqualStrings("host1 ssh-rsa AAAA...", o.known_hosts.?);
+}
