@@ -3,6 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const errors = @import("errors.zig");
+const ffi_common = @import("ffi-common.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_options = @import("ffi-options.zig");
 const ffi_root_cli = @import("ffi-root-cli.zig");
@@ -15,75 +16,21 @@ pub export const _ls_force_include_root_cli = &ffi_root_cli.noop;
 pub export const _ls_force_include_root_netconf = &ffi_root_netconf.noop;
 // zlinter-enable require_doc_comment
 
-/// Setting std options mostly for quieting yaml logger things.
-pub const std_options = std.Options{
-    .log_scope_levels = &[_]std.log.ScopeLevel{
-        .{
-            .scope = .yaml,
-            .level = .err,
-        },
-        .{
-            .scope = .tokenizer,
-            .level = .err,
-        },
-        .{
-            .scope = .parser,
-            .level = .err,
-        },
-    },
-};
-
-const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
-var da: std.heap.DebugAllocator(.{}) = .init;
-const debug_allocator = da.allocator();
-
-fn isDebugMode() bool {
-    if (builtin.mode == .Debug) {
-        return true;
-    }
-
-    return std.c.getenv(libscrapli_ffi_debug_mode_env_var) != null;
-}
-
-/// Returns the allocator for use in ffi mode.
-pub fn getAllocator() std.mem.Allocator {
-    if (isDebugMode()) {
-        return debug_allocator;
-    } else {
-        return std.heap.c_allocator;
-    }
-}
-
-// this may need to be revisited, but doing it this way there is no requirement for
-// deinit to free anything so this seems safest/most ideal for the ffi side of things
-var threaded: std.Io.Threaded = .init_single_threaded;
-const io = threaded.io();
-
-fn segfaultHandler(_: c_int) callconv(.c) void {
-    std.debug.dumpCurrentStackTrace(
-        .{
-            .first_address = @returnAddress(),
-        },
-    );
-
-    std.process.exit(1);
-}
-
 // all exported functions are named using c standard and prepended with "ls" for libscrapli for
 // namespacing reasons.
 export fn ls_assert_no_leaks() callconv(.c) bool {
-    if (!isDebugMode()) {
+    if (!ffi_common.isDebugMode()) {
         return true;
     }
 
-    switch (da.deinit()) {
+    switch (ffi_common.da.deinit()) {
         .leak => return false,
         .ok => return true,
     }
 }
 
 export fn ls_alloc_driver_options() callconv(.c) usize {
-    const allocator = getAllocator();
+    const allocator = ffi_common.getAllocator();
 
     const o = allocator.create(ffi_options.FFIOptions) catch {
         return 0;
@@ -107,7 +54,7 @@ export fn ls_alloc_driver_options() callconv(.c) usize {
 }
 
 export fn ls_free_driver_options(options_ptr: usize) callconv(.c) void {
-    const allocator = getAllocator();
+    const allocator = ffi_common.getAllocator();
 
     const o: *ffi_options.FFIOptions = @ptrFromInt(options_ptr);
 
@@ -118,17 +65,17 @@ export fn ls_cli_alloc(
     host: [*c]const u8,
     options_ptr: usize,
 ) callconv(.c) usize {
-    if (isDebugMode()) {
-        _ = c.signal(c.SIGSEGV, segfaultHandler);
+    if (ffi_common.isDebugMode()) {
+        _ = c.signal(c.SIGSEGV, ffi_common.segfaultHandler);
     }
 
-    const allocator = getAllocator();
+    const allocator = ffi_common.getAllocator();
 
     const o: *ffi_options.FFIOptions = @ptrFromInt(options_ptr);
 
     const d = ffi_driver.FfiDriver.init(
         allocator,
-        io,
+        ffi_common.io,
         std.mem.span(host),
         o.cliConfig(allocator),
     ) catch {
@@ -142,17 +89,17 @@ export fn ls_netconf_alloc(
     host: [*c]const u8,
     options_ptr: usize,
 ) callconv(.c) usize {
-    if (isDebugMode()) {
-        _ = c.signal(c.SIGSEGV, segfaultHandler);
+    if (ffi_common.isDebugMode()) {
+        _ = c.signal(c.SIGSEGV, ffi_common.segfaultHandler);
     }
 
-    const allocator = getAllocator();
+    const allocator = ffi_common.getAllocator();
 
     const o: *ffi_options.FFIOptions = @ptrFromInt(options_ptr);
 
     const d = ffi_driver.FfiDriver.initNetconf(
-        getAllocator(),
-        io,
+        allocator,
+        ffi_common.io,
         std.mem.span(host),
         o.*.netconfConfig(allocator),
     ) catch {
