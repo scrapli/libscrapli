@@ -280,7 +280,7 @@ const SlowTracker = struct {
         name: []const u8,
     };
 
-    fn deinit(self: SlowTracker) void {
+    fn deinit(self: *SlowTracker) void {
         self.slowest.deinit(self.allocator);
     }
 
