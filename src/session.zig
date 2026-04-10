@@ -903,7 +903,13 @@ pub const Session = struct {
                         "searchable buffer '{s}', match: '{s}'",
                     .{
                         searchable_buf,
-                        bufs.processed.items[match_indexes.start..match_indexes.end],
+                        // i think its only a test transport issue but we can have a processed
+                        // items that is v short, so obviously, in order to be defensive we can
+                        // just get min of either what we want or the buf we are looking into
+                        bufs.processed.items[match_indexes.start..@min(
+                            match_indexes.end,
+                            bufs.processed.items.len,
+                        )],
                     },
                 );
 
