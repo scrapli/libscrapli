@@ -2,6 +2,7 @@ const std = @import("std");
 
 const auth = @import("auth.zig");
 const cli = @import("cli.zig");
+const ffi_common = @import("ffi-common.zig");
 const logging = @import("logging.zig");
 const netconf = @import("netconf.zig");
 const netconf_operation = @import("netconf-operation.zig");
@@ -428,3 +429,324 @@ pub const FFIOptions = extern struct {
         return c;
     }
 };
+
+export fn ls_fetch_options_size(
+    o_ptr: usize,
+    options_json_len: *u64,
+) callconv(.c) u8 {
+    const o: *FFIOptions = @ptrFromInt(o_ptr);
+
+    const allocator = ffi_common.getAllocator();
+
+    const opt_string = ffiOptionsToJSON(allocator, o) catch {
+        return 1;
+    };
+
+    defer allocator.free(opt_string);
+
+    options_json_len.* = opt_string.len;
+
+    return 0;
+}
+
+export fn ls_fetch_options(
+    o_ptr: usize,
+    options_json: *[]u8,
+) callconv(.c) u8 {
+    const o: *FFIOptions = @ptrFromInt(o_ptr);
+
+    const allocator = ffi_common.getAllocator();
+
+    const opt_string = ffiOptionsToJSON(allocator, o) catch {
+        return 1;
+    };
+
+    defer allocator.free(opt_string);
+
+    @memcpy(options_json.*[0..], opt_string);
+
+    return 0;
+}
+
+fn optU16(val: ?*const u16) ?u16 {
+    return if (val) |v| v.* else null;
+}
+
+fn optU64(val: ?*const u64) ?u64 {
+    return if (val) |v| v.* else null;
+}
+
+fn optBool(val: ?*const bool) ?bool {
+    return if (val) |v| v.* else null;
+}
+
+fn cStr(ptr: [*c]const u8, len: usize) []const u8 {
+    if (len == 0) return "";
+
+    return ptr[0..len];
+}
+
+const ffi_options_top_level_args_json_ish_placeholder =
+    \\    "logger_level": "{s}",
+    \\    "transport_kind": "{s}",
+    \\    "port": {any}
+;
+
+fn ffiOptionsTopLevelToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        ffi_options_top_level_args_json_ish_placeholder,
+        .{
+            cStr(o.logger_level, o.logger_level_len),
+            cStr(o.transport_kind, o.transport_kind_len),
+            optU16(o.port),
+        },
+    );
+}
+
+const ffi_options_cli_args_json_ish_placeholder =
+    \\    "definition_str": "{s}"
+;
+
+fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    const raw = cStr(
+        o.cli.definition_str,
+        o.cli.definition_str_len,
+    );
+
+    const encoder = std.base64.standard.Encoder;
+
+    const out_len = encoder.calcSize(raw.len);
+    const encoded = try allocator.alloc(u8, out_len);
+
+    _ = encoder.encode(encoded, raw);
+
+    return std.fmt.allocPrint(
+        allocator,
+        ffi_options_cli_args_json_ish_placeholder,
+        .{encoded},
+    );
+}
+
+const ffi_options_netconf_args_json_ish_placeholder =
+    \\    "error_tag": "{s}",
+    \\    "preferred_version": "{s}",
+    \\    "message_poll_interval": {any}
+;
+
+fn ffiOptionsNETCONFToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        ffi_options_netconf_args_json_ish_placeholder,
+        .{
+            cStr(o.netconf.error_tag, o.netconf.error_tag_len),
+            cStr(o.netconf.preferred_version, o.netconf.preferred_version_len),
+            optU64(o.netconf.message_poll_interval),
+        },
+    );
+}
+
+const ffi_options_session_args_json_ish_placeholder =
+    \\    "read_size": {any},
+    \\    "read_min_delay_ns": {any},
+    \\    "read_max_delay_ns": {any},
+    \\    "return_char": "{s}",
+    \\    "operation_timeout_ns": {any},
+    \\    "operation_max_search_depth": {any},
+    \\    "record_destination": "{s}"
+;
+
+fn ffiOptionsSessionToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        ffi_options_session_args_json_ish_placeholder,
+        .{
+            optU64(o.session.read_size),
+            optU64(o.session.read_min_delay_ns),
+            optU64(o.session.read_max_delay_ns),
+            cStr(o.session.return_char, o.session.return_char_len),
+            optU64(o.session.operation_timeout_ns),
+            optU64(o.session.operation_max_search_depth),
+            cStr(o.session.record_destination, o.session.record_destination_len),
+        },
+    );
+}
+
+const ffi_options_auth_args_json_ish_placeholder =
+    \\    "username": "{s}",
+    \\    "password": "{s}",
+    \\    "private_key_path": "{s}",
+    \\    "private_key_passphrase": "{s}",
+    \\    "force_in_session_auth": {any},
+    \\    "bypass_in_session_auth": {any},
+    \\    "username_pattern": "{s}",
+    \\    "password_pattern": "{s}",
+    \\    "private_key_passphrase_pattern": "{s}",
+    \\    "lookups": {{ "count": {d} }}
+;
+
+fn ffiOptionsAuthToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        ffi_options_auth_args_json_ish_placeholder,
+        .{
+            cStr(o.auth.username, o.auth.username_len),
+            cStr(o.auth.password, o.auth.password_len),
+            cStr(o.auth.private_key_path, o.auth.private_key_path_len),
+            cStr(o.auth.private_key_passphrase, o.auth.private_key_passphrase_len),
+            optBool(o.auth.force_in_session_auth),
+            optBool(o.auth.bypass_in_session_auth),
+            cStr(o.auth.username_pattern, o.auth.username_pattern_len),
+            cStr(o.auth.password_pattern, o.auth.password_pattern_len),
+            cStr(o.auth.private_key_passphrase_pattern, o.auth.private_key_passphrase_pattern_len),
+            o.auth.lookups.count,
+        },
+    );
+}
+
+const ffi_options_transport_bin_args_json_ish_placeholder =
+    \\    "bin": "{s}",
+    \\    "extra_open_args": "{s}",
+    \\    "override_open_args": "{s}",
+    \\    "ssh_config_path": "{s}",
+    \\    "known_hosts_path": "{s}",
+    \\    "enable_strict_key": {any},
+    \\    "term_height": {any},
+    \\    "term_width": {any}
+;
+
+fn ffiOptionsTransportBinToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        ffi_options_transport_bin_args_json_ish_placeholder,
+        .{
+            cStr(o.transport.bin.bin, o.transport.bin.bin_len),
+            cStr(o.transport.bin.extra_open_args, o.transport.bin.extra_open_args_len),
+            cStr(o.transport.bin.override_open_args, o.transport.bin.override_open_args_len),
+            cStr(o.transport.bin.ssh_config_path, o.transport.bin.ssh_config_path_len),
+            cStr(o.transport.bin.known_hosts_path, o.transport.bin.known_hosts_path_len),
+            optBool(o.transport.bin.enable_strict_key),
+            optU16(o.transport.bin.term_height),
+            optU16(o.transport.bin.term_width),
+        },
+    );
+}
+
+const ffi_options_transport_ssh2_args_json_ish_placeholder =
+    \\    "known_hosts_path": "{s}",
+    \\    "libssh2trace": {any},
+    \\    "proxy_jump_host": "{s}",
+    \\    "proxy_jump_port": {any},
+    \\    "proxy_jump_username": "{s}",
+    \\    "proxy_jump_password": "{s}",
+    \\    "proxy_jump_private_key_path": "{s}",
+    \\    "proxy_jump_private_key_passphrase": "{s}",
+    \\    "proxy_jump_libssh2trace": {any}
+;
+
+fn ffiOptionsTransportSSH2ToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        ffi_options_transport_ssh2_args_json_ish_placeholder,
+        .{
+            cStr(o.transport.ssh2.known_hosts_path, o.transport.ssh2.known_hosts_path_len),
+            optBool(o.transport.ssh2.libssh2trace),
+            cStr(o.transport.ssh2.proxy_jump_host, o.transport.ssh2.proxy_jump_host_len),
+            optU16(o.transport.ssh2.proxy_jump_port),
+            cStr(o.transport.ssh2.proxy_jump_username, o.transport.ssh2.proxy_jump_username_len),
+            cStr(o.transport.ssh2.proxy_jump_password, o.transport.ssh2.proxy_jump_password_len),
+            cStr(o.transport.ssh2.proxy_jump_private_key_path, o.transport.ssh2.proxy_jump_private_key_path_len),
+            cStr(o.transport.ssh2.proxy_jump_private_key_passphrase, o.transport.ssh2.proxy_jump_private_key_passphrase_len),
+            optBool(o.transport.ssh2.proxy_jump_libssh2trace),
+        },
+    );
+}
+
+const ffi_options_transport_test_args_json_ish_placeholder =
+    \\    "f": "{s}"
+;
+
+fn ffiOptionsTransportTestToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        ffi_options_transport_test_args_json_ish_placeholder,
+        .{
+            cStr(o.transport.test_.f, o.transport.test_.f_len),
+        },
+    );
+}
+
+const ffi_options_json_ish_placeholder =
+    \\{{
+    \\  "root": {{
+    \\{s}
+    \\  }},
+    \\  "cli": {{
+    \\{s}
+    \\  }},
+    \\  "netconf": {{
+    \\{s}
+    \\  }},
+    \\  "session": {{
+    \\{s}
+    \\  }},
+    \\  "auth": {{
+    \\{s}
+    \\  }},
+    \\  "transportBin": {{
+    \\{s}
+    \\  }},
+    \\  "transportSSH2": {{
+    \\{s}
+    \\  }},
+    \\  "transportTest": {{
+    \\{s}
+    \\  }}
+    \\}}
+;
+
+fn ffiOptionsToJSON(
+    allocator: std.mem.Allocator,
+    o: *const FFIOptions,
+) ![]u8 {
+    const top = try ffiOptionsTopLevelToJSON(allocator, o);
+    defer allocator.free(top);
+
+    const c = try ffiOptionsCLIToJSON(allocator, o);
+    defer allocator.free(c);
+
+    const n = try ffiOptionsNETCONFToJSON(allocator, o);
+    defer allocator.free(n);
+
+    const s = try ffiOptionsSessionToJSON(allocator, o);
+    defer allocator.free(s);
+
+    const a = try ffiOptionsAuthToJSON(allocator, o);
+    defer allocator.free(a);
+
+    const bt = try ffiOptionsTransportBinToJSON(allocator, o);
+    defer allocator.free(bt);
+
+    const st = try ffiOptionsTransportSSH2ToJSON(allocator, o);
+    defer allocator.free(st);
+
+    const tt = try ffiOptionsTransportTestToJSON(allocator, o);
+    defer allocator.free(tt);
+
+    const final_json = try std.fmt.allocPrint(
+        allocator,
+        ffi_options_json_ish_placeholder,
+        .{
+            top,
+            c,
+            n,
+            s,
+            a,
+            bt,
+            st,
+            tt,
+        },
+    );
+
+    return final_json;
+}
