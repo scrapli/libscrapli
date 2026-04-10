@@ -509,15 +509,22 @@ const ffi_options_cli_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    const raw = cStr(
+        o.cli.definition_str,
+        o.cli.definition_str_len,
+    );
+
+    const encoder = std.base64.standard.Encoder;
+
+    const out_len = encoder.calcSize(raw.len);
+    const encoded = try allocator.alloc(u8, out_len);
+
+    _ = encoder.encode(encoded, raw);
+
     return std.fmt.allocPrint(
         allocator,
         ffi_options_cli_args_json_ish_placeholder,
-        .{
-            cStr(
-                o.cli.definition_str,
-                o.cli.definition_str_len,
-            ),
-        },
+        .{encoded},
     );
 }
 
