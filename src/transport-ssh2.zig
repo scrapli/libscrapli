@@ -465,6 +465,7 @@ pub const ProxyJumpOptions = struct {
 
 /// Holds option inputs for the ssh2 transport.
 pub const OptionsInputs = struct {
+    known_hosts: ?[]const u8 = null,
     known_hosts_path: ?[]const u8 = null,
     libssh2_trace: bool = false,
     netconf: bool = false,
@@ -474,6 +475,7 @@ pub const OptionsInputs = struct {
 /// Holds ssh2 transport options.
 pub const Options = struct {
     allocator: std.mem.Allocator,
+    known_hosts: ?[]const u8,
     known_hosts_path: ?[]const u8,
     libssh2_trace: bool,
     netconf: bool,
@@ -486,6 +488,7 @@ pub const Options = struct {
 
         o.* = Options{
             .allocator = allocator,
+            .known_hosts = opts.known_hosts,
             .known_hosts_path = opts.known_hosts_path,
             .libssh2_trace = opts.libssh2_trace,
             .netconf = opts.netconf,
@@ -814,19 +817,12 @@ pub const Transport = struct {
     ) !void {
         self.log.debug("ssh2.Transport initKnownHost requested", .{});
 
-        if (self.options.known_hosts_path == null) {
+        if (self.options.known_hosts_path == null and self.options.known_hosts == null) {
             return;
         }
 
         const _host = try self.allocator.dupeSentinel(u8, host, 0);
         defer self.allocator.free(_host);
-
-        const _known_hosts_path = try self.allocator.dupeSentinel(
-            u8,
-            self.options.known_hosts_path.?,
-            0,
-        );
-        defer self.allocator.free(_known_hosts_path);
 
         const nh = c.libssh2_knownhost_init(self.initial_session.?);
         if (nh == null) {
@@ -840,19 +836,30 @@ pub const Transport = struct {
         }
         defer c.libssh2_knownhost_free(nh);
 
-        const read_rc = c.libssh2_knownhost_readfile(
-            nh,
-            _known_hosts_path,
-            c.LIBSSH2_KNOWNHOST_FILE_OPENSSH,
-        );
-        if (read_rc < 0) {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport initKnownHost: failed to read known hosts file",
-                .{},
+        if (self.options.known_hosts) |known_hosts_content| {
+            try self.readKnownHostsFromMemory(nh.?, known_hosts_content);
+        } else {
+            const _known_hosts_path = try self.allocator.dupeSentinel(
+                u8,
+                self.options.known_hosts_path.?,
+                0,
             );
+            defer self.allocator.free(_known_hosts_path);
+
+            const read_rc = c.libssh2_knownhost_readfile(
+                nh,
+                _known_hosts_path,
+                c.LIBSSH2_KNOWNHOST_FILE_OPENSSH,
+            );
+            if (read_rc < 0) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport initKnownHost: failed to read known hosts file",
+                    .{},
+                );
+            }
         }
 
         var len: usize = 0;
@@ -928,6 +935,63 @@ pub const Transport = struct {
         }
     }
 
+    fn readKnownHostsFromMemory(
+        self: *Transport,
+        nh: *c.LIBSSH2_KNOWNHOSTS,
+        content: []const u8,
+    ) !void {
+        var start: usize = 0;
+
+        for (content, 0..) |byte, i| {
+            if (byte == '\n') {
+                const line = content[start..i];
+                start = i + 1;
+
+                if (line.len == 0 or line[0] == '#') {
+                    continue;
+                }
+
+                const rc = c.libssh2_knownhost_readline(
+                    nh,
+                    @ptrCast(line.ptr),
+                    line.len,
+                    c.LIBSSH2_KNOWNHOST_FILE_OPENSSH,
+                );
+                if (rc < 0) {
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Transport,
+                        @src(),
+                        self.log,
+                        "ssh2.Transport readKnownHostsFromMemory: failed to parse known hosts line",
+                        .{},
+                    );
+                }
+            }
+        }
+
+        if (start < content.len) {
+            const line = content[start..];
+
+            if (line.len > 0 and line[0] != '#') {
+                const rc = c.libssh2_knownhost_readline(
+                    nh,
+                    @ptrCast(line.ptr),
+                    line.len,
+                    c.LIBSSH2_KNOWNHOST_FILE_OPENSSH,
+                );
+                if (rc < 0) {
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Transport,
+                        @src(),
+                        self.log,
+                        "ssh2.Transport readKnownHostsFromMemory: failed to parse known hosts line",
+                        .{},
+                    );
+                }
+            }
+        }
+    }
+
     fn authenticate(
         self: *Transport,
         start_time: std.Io.Timestamp,
@@ -937,6 +1001,27 @@ pub const Transport = struct {
         auth_options: *auth.Options,
     ) !void {
         self.log.debug("ssh2.Transport authenticate requested", .{});
+
+        if (auth_options.private_key != null) {
+            self.handlePrivateKeyMemoryAuth(
+                start_time,
+                cancel,
+                operation_timeout_ns,
+                session,
+                auth_options,
+            ) catch blk: {
+                break :blk;
+            };
+
+            if (try self.isAuthenticated(
+                start_time,
+                cancel,
+                operation_timeout_ns,
+                session,
+            )) {
+                return;
+            }
+        }
 
         if (auth_options.private_key_path != null) {
             self.handlePrivateKeyAuth(
@@ -1153,6 +1238,99 @@ pub const Transport = struct {
                 @src(),
                 self.log,
                 "ssh2.Transport handlePrivateKeyAuth: failed private key authentication " ++
+                    "error code {d}",
+                .{rc},
+            );
+        }
+    }
+
+    fn handlePrivateKeyMemoryAuth(
+        self: *Transport,
+        start_time: std.Io.Timestamp,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+        session: *c.LIBSSH2_SESSION,
+        auth_options: *auth.Options,
+    ) !void {
+        const private_key_passphrase_c = try self.allocator.dupeSentinel(
+            u8,
+            try auth_options.resolveAuthValue(
+                auth_options.private_key_passphrase orelse "",
+            ),
+            0,
+        );
+        defer self.allocator.free(private_key_passphrase_c);
+
+        while (true) {
+            if (cancel != null and cancel.?.*) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport handlePrivateKeyMemoryAuth: operation cancelled",
+                    .{},
+                );
+            }
+
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport handlePrivateKeyMemoryAuth: operation timeout exceeded",
+                    .{},
+                );
+            }
+
+            const private_key = auth_options.private_key.?;
+
+            const rc = c.libssh2_userauth_publickey_frommemory(
+                session,
+                @ptrCast(@constCast(auth_options.username.?)),
+                auth_options.username.?.len,
+                null,
+                0,
+                @ptrCast(private_key.ptr),
+                private_key.len,
+                private_key_passphrase_c.ptr,
+            );
+
+            if (rc == 0) {
+                break;
+            } else if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
+
+                continue;
+            }
+
+            var errmsg: [*c]u8 = null;
+            var errlen: c_int = 0;
+
+            const err: c_int = c.libssh2_session_last_error(
+                session,
+                &errmsg,
+                &errlen,
+                0,
+            );
+
+            if (errmsg != null and errlen > 0) {
+                const msg_slice = errmsg[0..@intCast(errlen)];
+                std.debug.print("libssh2 error: {} {s}\n", .{ err, msg_slice });
+            } else {
+                std.debug.print("libssh2 error: {} (no message)\n", .{err});
+            }
+
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "ssh2.Transport handlePrivateKeyMemoryAuth: failed private key authentication " ++
                     "error code {d}",
                 .{rc},
             );
@@ -1905,4 +2083,17 @@ test "transportInit" {
 
     t.deinit();
     o.deinit();
+}
+
+test "optionsInitWithKnownHosts" {
+    const o = try Options.init(
+        std.testing.allocator,
+        .{ .known_hosts = "host1 ssh-rsa AAAA...\nhost2 ssh-ed25519 AAAA..." },
+    );
+    defer o.deinit();
+
+    try std.testing.expectEqualStrings(
+        "host1 ssh-rsa AAAA...\nhost2 ssh-ed25519 AAAA...",
+        o.known_hosts.?,
+    );
 }

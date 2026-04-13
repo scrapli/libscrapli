@@ -88,6 +88,7 @@ pub const LookupKeyValue = struct {
 pub const OptionsInputs = struct {
     username: ?[]const u8 = null,
     password: ?[]const u8 = null,
+    private_key: ?[]const u8 = null,
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
     // for now(? forever?) lookups are limited to 16 times. adding a lookup callback in the future
@@ -115,6 +116,7 @@ pub const Options = struct {
     allocator: std.mem.Allocator,
     username: ?[]const u8,
     password: ?[]const u8,
+    private_key: ?[]const u8,
     private_key_path: ?[]const u8,
     private_key_passphrase: ?[]const u8,
     lookups: LookupItems,
@@ -133,6 +135,7 @@ pub const Options = struct {
             .allocator = allocator,
             .username = opts.username,
             .password = opts.password,
+            .private_key = opts.private_key,
             .private_key_path = opts.private_key_path,
             .private_key_passphrase = opts.private_key_passphrase,
             .lookups = try opts.lookups.cloneOwned(allocator),
@@ -146,6 +149,10 @@ pub const Options = struct {
 
         if (o.password != null) {
             o.password = try o.allocator.dupe(u8, o.password.?);
+        }
+
+        if (o.private_key != null) {
+            o.private_key = try o.allocator.dupe(u8, o.private_key.?);
         }
 
         if (o.private_key_path != null) {
@@ -179,6 +186,10 @@ pub const Options = struct {
 
         if (self.password != null) {
             self.allocator.free(self.password.?);
+        }
+
+        if (self.private_key != null) {
+            self.allocator.free(self.private_key.?);
         }
 
         if (self.private_key_path != null) {
@@ -243,6 +254,16 @@ test "optionsInit" {
     );
 
     o.deinit();
+}
+
+test "optionsInitWithPrivateKey" {
+    const o = try Options.init(
+        std.testing.allocator,
+        .{ .private_key = "test-key-data" },
+    );
+    defer o.deinit();
+
+    try std.testing.expectEqualStrings("test-key-data", o.private_key.?);
 }
 
 /// Processes the "searchable buf" for in session auth by checking if any of the auth patterns

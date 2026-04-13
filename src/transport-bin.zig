@@ -34,6 +34,7 @@ pub const OptionsInputs = struct {
     override_open_args: ?[]const u8 = null,
 
     ssh_config_path: ?[]const u8 = null,
+    known_hosts: ?[]const u8 = null,
     known_hosts_path: ?[]const u8 = null,
 
     enable_strict_key: bool = false,
@@ -51,6 +52,7 @@ pub const Options = struct {
     extra_open_args: ?[]const u8,
     override_open_args: ?[]const u8,
     ssh_config_path: ?[]const u8,
+    known_hosts: ?[]const u8,
     known_hosts_path: ?[]const u8,
     enable_strict_key: bool,
     term_height: u16,
@@ -68,6 +70,7 @@ pub const Options = struct {
             .extra_open_args = opts.extra_open_args,
             .override_open_args = opts.override_open_args,
             .ssh_config_path = opts.ssh_config_path,
+            .known_hosts = opts.known_hosts,
             .known_hosts_path = opts.known_hosts_path,
             .enable_strict_key = opts.enable_strict_key,
             .term_height = opts.term_height,
@@ -89,6 +92,10 @@ pub const Options = struct {
 
         if (o.ssh_config_path != null) {
             o.ssh_config_path = try o.allocator.dupe(u8, o.ssh_config_path.?);
+        }
+
+        if (o.known_hosts != null) {
+            o.known_hosts = try o.allocator.dupe(u8, o.known_hosts.?);
         }
 
         if (o.known_hosts_path != null) {
@@ -114,6 +121,10 @@ pub const Options = struct {
 
         if (self.ssh_config_path != null) {
             self.allocator.free(self.ssh_config_path.?);
+        }
+
+        if (self.known_hosts != null) {
+            self.allocator.free(self.known_hosts.?);
         }
 
         if (self.known_hosts_path != null) {
@@ -732,4 +743,14 @@ test "transportInit" {
 
     t.deinit();
     o.deinit();
+}
+
+test "optionsInitWithKnownHosts" {
+    const o = try Options.init(
+        std.testing.allocator,
+        .{ .known_hosts = "host1 ssh-rsa AAAA..." },
+    );
+    defer o.deinit();
+
+    try std.testing.expectEqualStrings("host1 ssh-rsa AAAA...", o.known_hosts.?);
 }
