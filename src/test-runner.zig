@@ -142,9 +142,9 @@ pub fn main(init: std.process.Init) !void {
                     "\n{s}\n\"{s}\" - {s}\n{s}\n",
                     .{ border, friendly_name, @errorName(err), border },
                 );
-                if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace);
-                }
+
+                std.debug.dumpCurrentStackTrace(.{});
+
                 if (env.fail_first) {
                     break;
                 }

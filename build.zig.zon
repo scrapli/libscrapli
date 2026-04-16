@@ -3,7 +3,7 @@
     // set in ci
     .version = "0.0.0",
     .fingerprint = 0xb0e01d3de97bbf58,
-    .minimum_zig_version = "0.16.0-dev.3028+a85495ca2",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",
@@ -16,13 +16,13 @@
             .hash = "xml-0.2.0-ZTbP3xY6AgDJfDkfwttfskdwZVn2B41zGlE7_g2pnQQf",
         },
         .yaml = .{
-            .url = "https://github.com/kubkon/zig-yaml/archive/84d747b.tar.gz",
-            .hash = "zig_yaml-0.3.0-C1161vSrAgCEKLk0825Y_GtmnThQI6O_cqtkBHb57KT-",
+            .url = "https://github.com/carlmontanari/zig-yaml/archive/cffc641.tar.gz",
+            .hash = "zig_yaml-0.3.0-C1161vurAgCTAgiRzjMH2p7rjKKjJOMEBQ81bbclHk5v",
         },
-        .zlinter = .{
-            .url = "https://github.com/kurtwagner/zlinter/archive/9549002.tar.gz",
-            .hash = "zlinter-0.0.1-OjQ08f_mCwBpSBibSBkAPppQQRpFGyt3f7FAdbINE3Qw",
-        },
+        // .zlinter = .{
+        //     .url = "https://github.com/kurtwagner/zlinter/archive/9549002.tar.gz",
+        //     .hash = "zlinter-0.0.1-OjQ08f_mCwBpSBibSBkAPppQQRpFGyt3f7FAdbINE3Qw",
+        // },
     },
     .paths = .{
         "build.zig",
