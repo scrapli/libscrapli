@@ -938,7 +938,27 @@ pub const Transport = struct {
     ) !void {
         self.log.debug("ssh2.Transport authenticate requested", .{});
 
-        if (auth_options.private_key_path != null) {
+        if (auth_options.private_key_content != null) {
+            self.handlePrivateKeyContentAuth(
+                start_time,
+                cancel,
+                operation_timeout_ns,
+                session,
+                auth_options,
+            ) catch blk: {
+                // we can still try to auth with a password if the user provided it, so we continue
+                break :blk;
+            };
+
+            if (try self.isAuthenticated(
+                start_time,
+                cancel,
+                operation_timeout_ns,
+                session,
+            )) {
+                return;
+            }
+        } else if (auth_options.private_key_path != null) {
             self.handlePrivateKeyAuth(
                 start_time,
                 cancel,
@@ -1153,6 +1173,100 @@ pub const Transport = struct {
                 @src(),
                 self.log,
                 "ssh2.Transport handlePrivateKeyAuth: failed private key authentication " ++
+                    "error code {d}",
+                .{rc},
+            );
+        }
+    }
+
+    fn handlePrivateKeyContentAuth(
+        self: *Transport,
+        start_time: std.Io.Timestamp,
+        cancel: ?*bool,
+        operation_timeout_ns: u64,
+        session: *c.LIBSSH2_SESSION,
+        auth_options: *auth.Options,
+    ) !void {
+        const private_key_passphrase_c = try self.allocator.dupeSentinel(
+            u8,
+            try auth_options.resolveAuthValue(
+                auth_options.private_key_passphrase orelse "",
+            ),
+            0,
+        );
+        defer self.allocator.free(private_key_passphrase_c);
+
+        const key_content = auth_options.private_key_content.?;
+
+        while (true) {
+            if (cancel != null and cancel.?.*) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Cancelled,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport handlePrivateKeyContentAuth: operation cancelled",
+                    .{},
+                );
+            }
+
+            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.TimeoutExceeded,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport handlePrivateKeyContentAuth: operation timeout exceeded",
+                    .{},
+                );
+            }
+
+            const rc = c.libssh2_userauth_publickey_frommemory(
+                session,
+                @ptrCast(@constCast(auth_options.username.?)),
+                auth_options.username.?.len,
+                null, // public key data (derived by openssl backend)
+                0,
+                @ptrCast(@constCast(key_content)),
+                key_content.len,
+                private_key_passphrase_c.ptr,
+            );
+
+            if (rc == 0) {
+                break;
+            } else if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
+
+                continue;
+            }
+
+            var errmsg: [*c]u8 = null;
+            var errlen: c_int = 0;
+
+            // 0 => do not clear the error
+            const err: c_int = c.libssh2_session_last_error(
+                session,
+                &errmsg,
+                &errlen,
+                0,
+            );
+
+            if (errmsg != null and errlen > 0) {
+                const msg_slice = errmsg[0..@intCast(errlen)];
+                std.debug.print("libssh2 error: {} {s}\n", .{ err, msg_slice });
+            } else {
+                std.debug.print("libssh2 error: {} (no message)\n", .{err});
+            }
+
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                "ssh2.Transport handlePrivateKeyContentAuth: failed private key authentication " ++
                     "error code {d}",
                 .{rc},
             );
