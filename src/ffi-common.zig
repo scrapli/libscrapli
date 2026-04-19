@@ -2,12 +2,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const errors = @import("errors.zig");
-const ffi_driver = @import("ffi-driver.zig");
-const ffi_options = @import("ffi-options.zig");
-const ffi_root_cli = @import("ffi-root-cli.zig");
-const ffi_root_netconf = @import("ffi-root-netconf.zig");
-
 const c = @cImport(@cInclude("signal.h"));
 
 /// Setting std options mostly for quieting yaml logger things.
@@ -29,9 +23,13 @@ pub const std_options = std.Options{
 };
 
 const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
+
+/// The base debug allocator for ffi operations.
 pub var da: std.heap.DebugAllocator(.{}) = .init;
 const debug_allocator = da.allocator();
 
+/// Returns true if built w/ debug optimizations or the `libscrapli_ffi_debug_mode_env_var` is not
+/// empty.
 pub fn isDebugMode() bool {
     if (builtin.mode == .Debug) {
         return true;
@@ -52,8 +50,11 @@ pub fn getAllocator() std.mem.Allocator {
 // this may need to be revisited, but doing it this way there is no requirement for
 // deinit to free anything so this seems safest/most ideal for the ffi side of things
 var threaded: std.Io.Threaded = .init_single_threaded;
+
+/// The base io object for ffi ops.
 pub const io = threaded.io();
 
+/// The handler to attached to segfault signals when in debug mode.
 pub fn segfaultHandler(_: c_int) callconv(.c) void {
     std.debug.dumpCurrentStackTrace(
         .{

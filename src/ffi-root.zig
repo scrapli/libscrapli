@@ -1,6 +1,5 @@
 // zlint-disable suppressed-errors
 const std = @import("std");
-const builtin = @import("builtin");
 
 const errors = @import("errors.zig");
 const ffi_common = @import("ffi-common.zig");

@@ -19,10 +19,10 @@
             .url = "https://github.com/carlmontanari/zig-yaml/archive/cffc641.tar.gz",
             .hash = "zig_yaml-0.3.0-C1161vurAgCTAgiRzjMH2p7rjKKjJOMEBQ81bbclHk5v",
         },
-        // .zlinter = .{
-        //     .url = "https://github.com/kurtwagner/zlinter/archive/9549002.tar.gz",
-        //     .hash = "zlinter-0.0.1-OjQ08f_mCwBpSBibSBkAPppQQRpFGyt3f7FAdbINE3Qw",
-        // },
+        .zlinter = .{
+            .url = "https://github.com/kurtwagner/zlinter/archive/d358076.tar.gz",
+            .hash = "zlinter-0.0.1-OjQ08dLoCwBUQ4PmDPvrZNU8QXjHUrs7jp-JLwX5fmO0",
+        },
     },
     .paths = .{
         "build.zig",
