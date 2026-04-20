@@ -123,10 +123,10 @@ jobs:
 
       - name: build builder image
         run: |
-          docker build -f build/builder.Dockerfile build/ -t ghcr.io/scrapli/libscrapli/builder:${{ env.RELEASE_VERSION }}
+          docker build -f build/builder.Dockerfile build/ -t ghcr.io/kentik/libscrapli/builder:${{ env.RELEASE_VERSION }}
 
       - name: tag and push builder image to ghcr
         run: |
-          docker tag ghcr.io/scrapli/libscrapli/builder:${{ env.RELEASE_VERSION }} ghcr.io/scrapli/libscrapli/builder:latest
-          docker push ghcr.io/scrapli/libscrapli/builder:${{ env.RELEASE_VERSION }}
-          docker push ghcr.io/scrapli/libscrapli/builder:latest
+          docker tag ghcr.io/kentik/libscrapli/builder:${{ env.RELEASE_VERSION }} ghcr.io/kentik/libscrapli/builder:latest
+          docker push ghcr.io/kentik/libscrapli/builder:${{ env.RELEASE_VERSION }}
+          docker push ghcr.io/kentik/libscrapli/builder:latest

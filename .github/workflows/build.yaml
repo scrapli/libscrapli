@@ -50,7 +50,7 @@ jobs:
 
       - name: login to ghcr
         uses: docker/login-action@v3
-        if: github.repository == 'scrapli/libscrapli'
+        if: github.repository == 'kentik/libscrapli'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -58,9 +58,9 @@ jobs:
 
       - name: build builder image
         run: |
-          docker build -f build/builder.Dockerfile build/ -t ghcr.io/scrapli/libscrapli/builder:dev-latest
+          docker build -f build/builder.Dockerfile build/ -t ghcr.io/kentik/libscrapli/builder:dev-latest
 
       - name: push builder (dev) image to ghcr
-        if: github.repository == 'scrapli/libscrapli'
+        if: github.repository == 'kentik/libscrapli'
         run: |
-          docker push ghcr.io/scrapli/libscrapli/builder:dev-latest
+          docker push ghcr.io/kentik/libscrapli/builder:dev-latest
