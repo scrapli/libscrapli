@@ -497,12 +497,13 @@ pub const Session = struct {
     /// Writes the given buffer to the transport -- redacted ensures we do not show the input in
     /// the logging output.
     pub fn write(self: *Session, buf: []const u8, redacted: bool) !void {
-        self.log.info("session.Session write requested", .{});
-
         if (!redacted) {
-            self.log.debug("session.Session write: '{f}'", .{std.ascii.hexEscape(buf, .lower)});
+            self.log.debug(
+                "session.Session write requested, buf: '{f}'",
+                .{std.ascii.hexEscape(buf, .lower)},
+            );
         } else {
-            self.log.debug("session.Session write: <redacted>", .{});
+            self.log.debug("session.Session write: buf: <redacted>", .{});
         }
 
         try self.transport.write(buf);
@@ -510,7 +511,7 @@ pub const Session = struct {
 
     /// Writes the configured return character to the transport.
     pub fn writeReturn(self: *Session) !void {
-        self.log.info("session.Session writeReturn requested", .{});
+        self.log.debug("session.Session writeReturn requested", .{});
 
         try self.write(self.options.return_char, false);
     }
@@ -806,7 +807,10 @@ pub const Session = struct {
         bufs: *bytes.ProcessedBuf,
         search_depth: u64,
     ) !bytes_check.MatchPositions {
-        self.log.info("session.Session readTimeout requested", .{});
+        self.log.debug(
+            "session.Session readTimeout requested. start timestamp ms: {d}, search depth: {d}",
+            .{ start_timestamp.toNanoseconds(), search_depth },
+        );
 
         var cur_read_delay_ns: u64 = self.options.read_min_delay_ns;
 
