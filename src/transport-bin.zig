@@ -665,6 +665,8 @@ fn openPtyChild(
         return error.PtyError;
     }
 
+    try setonlcr(slave_fd.handle);
+
     if (!netconf) {
         var ws = c.winsize{
             .ws_row = term_height,

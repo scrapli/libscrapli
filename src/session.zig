@@ -197,6 +197,7 @@ pub const Session = struct {
         .dynamic,
     ),
     read_thread_errored: bool = false,
+    read_into_buf: ?[]u8 = null,
 
     recorder_buf: [1024]u8 = [_]u8{0} ** 1024,
     recorder: Recorder,
@@ -327,6 +328,10 @@ pub const Session = struct {
         }
 
         self.last_consumed_prompt.deinit(self.allocator);
+
+        if (self.read_into_buf) |buf| {
+            self.allocator.free(buf);
+        }
 
         if (self.compiled_username_pattern != null) {
             re.pcre2Free(self.compiled_username_pattern.?);
@@ -543,8 +548,7 @@ pub const Session = struct {
         var auth_password_prompt_seen_count: u8 = 0;
         var auth_passphrase_prompt_seen_count: u8 = 0;
 
-        var buf = try allocator.alloc(u8, self.options.read_size);
-        defer allocator.free(buf);
+        var buf = self.read_into_buf orelse try self.allocator.alloc(u8, self.options.read_size);
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
         // stop the waiter (which happens in transport.read), then the readloop can nicely exit;
@@ -820,8 +824,7 @@ pub const Session = struct {
         // increase the found start/end positions by this value too!
         const op_processed_buf_starting_len = bufs.processed.items.len;
 
-        var buf = try self.allocator.alloc(u8, self.options.read_size);
-        defer self.allocator.free(buf);
+        var buf = self.read_into_buf orelse try self.allocator.alloc(u8, self.options.read_size);
 
         while (true) {
             if (cancel != null and cancel.?.*) {
