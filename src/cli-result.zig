@@ -280,45 +280,7 @@ pub const Result = struct {
         self: *Result,
         options: GetResultOptions,
     ) usize {
-        var len: usize = 0;
-
-        var line_start: usize = 0;
-        var pending_ws: usize = 0;
-
-        for (0.., self.results.items) |idx, result| {
-            for (result) |ch| {
-                if (options.normalize_line_feeds and ch == '\r') continue;
-
-                if (options.normalize_trailing_whitespace) {
-                    if (ch == '\n') {
-                        pending_ws = 0;
-                        len += 1;
-                        line_start = len;
-                    } else if (ch == ' ' or ch == '\t') {
-                        pending_ws += 1;
-                    } else {
-                        len += pending_ws;
-                        pending_ws = 0;
-                        len += 1;
-                    }
-                } else {
-                    len += 1;
-                }
-            }
-
-            if (idx != self.results.items.len - 1) {
-                if (options.normalize_trailing_whitespace) {
-                    pending_ws = 0;
-                }
-
-                len += options.delimiter.len;
-
-                line_start = len;
-                pending_ws = 0;
-            }
-        }
-
-        return len;
+        return getJoinedLen(self.results.items, options);
     }
 
     /// Returns all results joined on options.delim string, caller owns joined string.
@@ -402,3 +364,87 @@ pub const Result = struct {
         }
     }
 };
+
+fn getJoinedLen(
+    items: []const []const u8,
+    options: GetResultOptions,
+) usize {
+    var len: usize = 0;
+
+    var line_start: usize = 0;
+    var pending_ws: usize = 0;
+
+    for (0.., items) |idx, result| {
+        for (result) |ch| {
+            if (options.normalize_line_feeds and ch == '\r') continue;
+
+            if (options.normalize_trailing_whitespace) {
+                if (ch == '\n') {
+                    pending_ws = 0;
+                    len += 1;
+                    line_start = len;
+                } else if (ch == ' ' or ch == '\t') {
+                    pending_ws += 1;
+                } else {
+                    len += pending_ws;
+                    pending_ws = 0;
+                    len += 1;
+                }
+            } else {
+                len += 1;
+            }
+        }
+
+        if (idx != items.len - 1) {
+            if (options.normalize_trailing_whitespace) {
+                pending_ws = 0;
+            }
+
+            len += options.delimiter.len;
+
+            line_start = len;
+            pending_ws = 0;
+        }
+    }
+
+    return len;
+}
+
+test "getJoinedLen" {
+    const cases = [_]struct {
+        items: []const []const u8,
+        options: GetResultOptions,
+        expected: usize,
+    }{
+        .{
+            // nothing to change
+            .items = &.{ "foo", "bar" },
+            .options = .{},
+            .expected = 7,
+        },
+        .{
+            // trailing whitespace
+            .items = &.{ "foo ", "bar" },
+            .options = .{},
+            .expected = 7,
+        },
+        .{
+            // crlf
+            .items = &.{ "foo\x0D\x0A", "bar" },
+            .options = .{},
+            .expected = 8, // will be 8 because 6 for foo+bar + one for joining + one for replacing the crlf
+        },
+        .{
+            // crlf
+            .items = &.{"foo\x0D\x0A"},
+            .options = .{},
+            .expected = 4,
+        },
+    };
+
+    for (cases) |case| {
+        const actual = getJoinedLen(case.items, case.options);
+
+        try std.testing.expectEqual(case.expected, actual);
+    }
+}
