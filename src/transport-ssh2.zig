@@ -1171,7 +1171,7 @@ pub const Transport = struct {
         start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
-        session: *c.LIBSSH2_SESSION,
+        session: *ssh2.LIBSSH2_SESSION,
         auth_options: *auth.Options,
     ) !void {
         const private_key_passphrase_c = try self.allocator.dupeSentinel(
@@ -1206,7 +1206,7 @@ pub const Transport = struct {
                 );
             }
 
-            const rc = c.libssh2_userauth_publickey_frommemory(
+            const rc = ssh2.libssh2_userauth_publickey_frommemory(
                 session,
                 @ptrCast(@constCast(auth_options.username.?)),
                 auth_options.username.?.len,
@@ -1219,7 +1219,7 @@ pub const Transport = struct {
 
             if (rc == 0) {
                 break;
-            } else if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
                 try std.Io.Clock.Duration.sleep(
                     .{
                         .clock = .awake,
@@ -1235,7 +1235,7 @@ pub const Transport = struct {
             var errlen: c_int = 0;
 
             // 0 => do not clear the error
-            const err: c_int = c.libssh2_session_last_error(
+            const err: c_int = ssh2.libssh2_session_last_error(
                 session,
                 &errmsg,
                 &errlen,

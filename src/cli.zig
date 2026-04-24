@@ -73,6 +73,19 @@ pub const Options = struct {
         self.transport.deinit();
         self.allocator.destroy(self);
     }
+
+    fn validate(self: *Options, log: logging.Logger) !void {
+        switch (self.transport.*) {
+            .bin => {
+                if (self.auth.private_key_content != null) {
+                    // its only a warning, for future things we may want to actually return errors
+                    // here but in this particular case we'll just warn
+                    log.warn("auth private_key_content set, but is ignored for bin transport", .{});
+                }
+            },
+            else => {},
+        }
+    }
 };
 
 /// The cli "driver" -- the thing that drives a cli (telnet/ssh/etc.) connection.
@@ -102,6 +115,8 @@ pub const Driver = struct {
         };
 
         logging.traceWithSrc(log, @src(), "cli.Driver initializing", .{});
+
+        try opts.validate(log);
 
         const definition = switch (config.definition) {
             .string => |d| try platform.YamlDefinition.toDefinition(
