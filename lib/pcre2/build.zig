@@ -47,7 +47,9 @@ pub fn build(b: *std.Build) !void {
 
     const config_header = b.addConfigHeader(
         .{
-            .style = .{ .cmake = b.path("pcre2/config-cmake.h.in") },
+            .style = .{ .cmake = b.path(
+                "pcre2/src/config-cmake.h.in",
+            ) },
             .include_path = "config.h",
         },
         .{
@@ -121,6 +123,7 @@ pub fn build(b: *std.Build) !void {
                 "pcre2/src/pcre2_chkdint.c",
                 "pcre2/src/pcre2_compile.c",
                 "pcre2/src/pcre2_compile_class.c",
+                "pcre2/src/pcre2_compile_cgroup.c",
                 "pcre2/src/pcre2_config.c",
                 "pcre2/src/pcre2_context.c",
                 "pcre2/src/pcre2_convert.c",

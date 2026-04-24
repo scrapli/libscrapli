@@ -7,7 +7,7 @@ export GIT_CONFIG_PARAMETERS="'advice.detachedHead=false'"
 SUCCESS_MESSAGE="PCRE2 clone/setup OK!"
 
 PCRE2_DIR="pcre2"
-PCRE2_TAG="pcre2-10.45"
+PCRE2_TAG="pcre2-10.47"
 PCRE2_REPO="https://github.com/PCRE2Project/pcre2"
 
 # we only need to clone/pull if we dont have the tag we want

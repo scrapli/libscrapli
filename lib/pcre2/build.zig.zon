@@ -1,6 +1,6 @@
 .{
     .name = .pcre2,
-    .version = "10.45.0",
+    .version = "10.47.0",
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0x914b3d631d62ad24,
     .dependencies = .{},
