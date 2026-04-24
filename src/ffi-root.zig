@@ -1,14 +1,14 @@
 // zlint-disable suppressed-errors
 const std = @import("std");
 
+const c = @import("c");
+
 const errors = @import("errors.zig");
 const ffi_common = @import("ffi-common.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_options = @import("ffi-options.zig");
 const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
-
-const c = @cImport(@cInclude("signal.h"));
 
 // zlinter-disable require_doc_comment
 pub export const _ls_force_include_root_cli = &ffi_root_cli.noop;

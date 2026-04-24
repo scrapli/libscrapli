@@ -1,20 +1,13 @@
 const std = @import("std");
 
+const c = @import("c");
+
 const auth = @import("auth.zig");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
 const strings = @import("strings.zig");
 const transport_waiter = @import("transport-waiter.zig");
-
-const c = @cImport(
-    {
-        @cDefine("_XOPEN_SOURCE", "500");
-        @cInclude("stdlib.h");
-        @cInclude("unistd.h");
-        @cInclude("sys/ioctl.h");
-    },
-);
 
 extern fn setsid() callconv(.c) i32;
 

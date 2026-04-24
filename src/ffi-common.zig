@@ -2,7 +2,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const c = @cImport(@cInclude("signal.h"));
+const c = @import("c");
 
 const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
 

@@ -57,6 +57,17 @@ fn buildScrapli(
     dependency_linkage: std.builtin.LinkMode,
     is_ffi: bool,
 ) !*std.Build.Module {
+    const translate_c = b.addTranslateC(
+        .{
+            .root_source_file = b.path("src/c.h"),
+            .target = target,
+            .optimize = optimize,
+        },
+    );
+
+    translate_c.defineCMacro("_XOPEN_SOURCE", "500");
+    translate_c.defineCMacro("PCRE2_CODE_UNIT_WIDTH", "8");
+
     const root_source_file = if (is_ffi) "src/ffi-root.zig" else "src/root.zig";
 
     const scrapli = b.addModule(
@@ -66,6 +77,10 @@ fn buildScrapli(
             .target = target,
             .optimize = optimize,
             .imports = &.{
+                .{
+                    .name = "c",
+                    .module = translate_c.createModule(),
+                },
                 .{
                     .name = "yaml",
                     .module = b.dependency(
