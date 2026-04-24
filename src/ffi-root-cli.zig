@@ -256,13 +256,7 @@ export fn ls_cli_fetch_operation_sizes(
                 .delimiter = bytes.libscrapli_delimiter,
             },
         );
-        operation_result_size.* = dret.getResultLen(
-            .{
-                .delimiter = bytes.libscrapli_delimiter,
-                .normalize_line_feeds = true,
-                .normalize_trailing_whitespace = true,
-            },
-        );
+        operation_result_size.* = dret.getResultLen(d.cli_get_results_options);
         operation_failure_indicator_size.* = 0;
         operation_error_size.* = 0;
 
@@ -362,7 +356,7 @@ export fn ls_cli_fetch_operation(
             }
         }
 
-        dret.getResultPreAllocated(operation_result.*, .{}) catch |err| {
+        dret.getResultPreAllocated(operation_result.*, d.cli_get_results_options) catch |err| {
             // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
             errors.wrapCriticalError(
                 errors.ScrapliError.Operation,

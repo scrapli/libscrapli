@@ -4,24 +4,6 @@ const builtin = @import("builtin");
 
 const c = @cImport(@cInclude("signal.h"));
 
-/// Setting std options mostly for quieting yaml logger things.
-pub const std_options = std.Options{
-    .log_scope_levels = &[_]std.log.ScopeLevel{
-        .{
-            .scope = .yaml,
-            .level = .err,
-        },
-        .{
-            .scope = .tokenizer,
-            .level = .err,
-        },
-        .{
-            .scope = .parser,
-            .level = .err,
-        },
-    },
-};
-
 const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
 
 /// The base debug allocator for ffi operations.

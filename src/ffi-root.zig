@@ -15,6 +15,24 @@ pub export const _ls_force_include_root_cli = &ffi_root_cli.noop;
 pub export const _ls_force_include_root_netconf = &ffi_root_netconf.noop;
 // zlinter-enable require_doc_comment
 
+/// Setting std options mostly for quieting yaml logger things.
+pub const std_options = std.Options{
+    .log_scope_levels = &[_]std.log.ScopeLevel{
+        .{
+            .scope = .yaml,
+            .level = .err,
+        },
+        .{
+            .scope = .tokenizer,
+            .level = .err,
+        },
+        .{
+            .scope = .parser,
+            .level = .err,
+        },
+    },
+};
+
 // all exported functions are named using c standard and prepended with "ls" for libscrapli for
 // namespacing reasons.
 export fn ls_assert_no_leaks() callconv(.c) bool {
