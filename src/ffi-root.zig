@@ -81,6 +81,14 @@ export fn ls_cli_alloc(
         return 0;
     };
 
+    if (o.cli.normalize_line_feeds) |b| {
+        d.cli_get_results_options.normalize_line_feeds = b.*;
+    }
+
+    if (o.cli.normalize_trailing_whitespace) |b| {
+        d.cli_get_results_options.normalize_trailing_whitespace = b.*;
+    }
+
     return @intFromPtr(d);
 }
 

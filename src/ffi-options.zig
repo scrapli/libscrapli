@@ -62,6 +62,8 @@ pub const FFIOptions = extern struct {
     cli: extern struct {
         definition_str: [*c]const u8 = undefined,
         definition_str_len: usize = 0,
+        normalize_line_feeds: ?*bool = null,
+        normalize_trailing_whitespace: ?*bool = null,
     },
 
     netconf: extern struct {
@@ -505,7 +507,9 @@ fn ffiOptionsTopLevelToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) 
 }
 
 const ffi_options_cli_args_json_ish_placeholder =
-    \\    "definition_str": "{s}"
+    \\    "definition_str": "{s}",
+    \\    "normalize_line_feeds": "{any}",
+    \\    "normalize_trailing_whitespace": "{any}"
 ;
 
 fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
@@ -524,7 +528,11 @@ fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8
     return std.fmt.allocPrint(
         allocator,
         ffi_options_cli_args_json_ish_placeholder,
-        .{encoded},
+        .{
+            encoded,
+            optBool(o.cli.normalize_line_feeds),
+            optBool(o.cli.normalize_trailing_whitespace),
+        },
     );
 }
 

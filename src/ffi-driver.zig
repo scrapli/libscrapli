@@ -45,6 +45,8 @@ pub const FfiDriver = struct {
         ffi_operations.OperationResult,
     ),
 
+    cli_get_results_options: result.GetResultOptions = .{},
+
     fn setPollFds(self: *FfiDriver) !void {
         switch (std.posix.errno(std.c.pipe(&self.poll_fds))) {
             .SUCCESS => return,
