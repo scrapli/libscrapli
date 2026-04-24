@@ -273,18 +273,18 @@ pub const Transport = struct {
         }
     }
 
-    /// Unblocks the transport waiter to stop any in flight reads; useful before closing the
+    /// Unblocks the transport waiter to stop any in flight reads; used before closing the
     /// session to free up the session read loop.
-    pub fn unblock(self: *Transport) !void {
+    pub fn prepareClose(self: *Transport) !void {
         switch (self.implementation) {
             Kind.bin => |t| {
-                try t.unblock();
+                try t.prepareClose();
             },
             Kind.telnet => |t| {
-                try t.unblock();
+                try t.prepareClose();
             },
             Kind.ssh2 => |t| {
-                try t.unblock();
+                try t.prepareClose();
             },
             Kind.test_ => {},
         }

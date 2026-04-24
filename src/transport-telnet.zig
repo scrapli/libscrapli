@@ -64,6 +64,7 @@ pub const Transport = struct {
     options: *Options,
 
     waiter: transport_waiter.Waiter,
+    closing: bool = false,
 
     stream: ?std.Io.net.Stream = null,
     socket: ?std.posix.socket_t = null,
@@ -324,6 +325,10 @@ pub const Transport = struct {
 
         try self.waiter.wait(self.socket.?);
 
+        if (self.closing) {
+            return 0;
+        }
+
         const n = std.posix.read(self.socket.?, buf) catch |err| {
             return errors.wrapWarnError(
                 err,
@@ -337,8 +342,9 @@ pub const Transport = struct {
         return n;
     }
 
-    /// Unblock any in flight reads.
-    pub fn unblock(self: *Transport) !void {
+    /// Unblocks any in progress reads and sets the prepare close flag, this prevents us from
+    /// making a final read the fd that we are about to nuke.
+    pub fn prepareClose(self: *Transport) !void {
         try self.waiter.unblock();
     }
 };

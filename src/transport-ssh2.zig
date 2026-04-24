@@ -1857,8 +1857,9 @@ pub const Transport = struct {
         }
     }
 
-    /// Unblocks any in progress reads.
-    pub fn unblock(self: *Transport) !void {
+    /// Unblocks any in progress reads and sets the prepare close flag, this prevents us from
+    /// making a final read the fd that we are about to nuke.
+    pub fn prepareClose(self: *Transport) !void {
         try self.waiter.unblock();
     }
 };

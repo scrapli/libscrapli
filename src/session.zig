@@ -436,7 +436,7 @@ pub const Session = struct {
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
         // stop the waiter (which happens in transport.read), then the readloop can nicely exit
-        try self.transport.unblock();
+        try self.transport.prepareClose();
 
         if (self.read_thread) |t| {
             t.join();
@@ -558,7 +558,7 @@ pub const Session = struct {
         // stop the waiter (which happens in transport.read), then the readloop can nicely exit;
         // we only need to do this here in addition to close because we
         // zlinter-disable-next-line no_swallow_error - best effort
-        errdefer self.transport.unblock() catch {};
+        errdefer self.transport.prepareClose() catch {};
 
         // in the case of auth, if we error out, we almost certainly need to stop the read loop
         // as the transport is probably gone from under our feet anyway.
