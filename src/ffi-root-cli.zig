@@ -247,13 +247,21 @@ export fn ls_cli_fetch_operation_sizes(
         operation_count.* = @intCast(dret.results.items.len);
 
         operation_input_size.* = dret.getInputLen(
-            .{ .delimiter = bytes.libscrapli_delimiter },
+            .{
+                .delimiter = bytes.libscrapli_delimiter,
+            },
         );
         operation_result_raw_size.* = dret.getResultRawLen(
-            .{ .delimiter = bytes.libscrapli_delimiter },
+            .{
+                .delimiter = bytes.libscrapli_delimiter,
+            },
         );
         operation_result_size.* = dret.getResultLen(
-            .{ .delimiter = bytes.libscrapli_delimiter },
+            .{
+                .delimiter = bytes.libscrapli_delimiter,
+                .normalize_line_feeds = true,
+                .normalize_trailing_whitespace = true,
+            },
         );
         operation_failure_indicator_size.* = 0;
         operation_error_size.* = 0;
@@ -354,19 +362,18 @@ export fn ls_cli_fetch_operation(
             }
         }
 
-        cur = 0;
+        dret.getResultPreAllocated(operation_result.*, .{}) catch |err| {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: error during fetch operation {any}",
+                .{err},
+            ) catch {};
 
-        for (0.., dret.results.items) |idx, result| {
-            @memcpy(operation_result.*[cur .. cur + result.len], result);
-            cur += result.len;
-
-            if (idx != dret.results.items.len - 1) {
-                for (bytes.libscrapli_delimiter) |delimiter_char| {
-                    operation_result.*[cur] = delimiter_char;
-                    cur += 1;
-                }
-            }
-        }
+            return 1;
+        };
 
         if (dret.result_failure_indicated) {
             @memcpy(

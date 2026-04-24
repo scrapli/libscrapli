@@ -20,6 +20,6 @@ Gateway of last resort:
  C        172.20.20.0/24
            directly connected, Management0
 
-eos1#
+eos1#
 hostname eos1
-eos1#
+eos1#

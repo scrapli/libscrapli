@@ -180,7 +180,6 @@ test "driver open" {
             .key = "src/tests/fixtures/libscrapli_test_ssh_key_passphrase",
             .passphrase = "libscrapli",
         },
-        // TODO with callbacks and bound callbacks too
     };
 
     const is_ci = helper.parseCustomFlag("--ci", false);

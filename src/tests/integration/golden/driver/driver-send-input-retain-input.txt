@@ -1,5 +1,5 @@
 eos1#show ip route
-
+
 VRF: default
 Source Codes:
        C - connected, S - static, K - kernel,

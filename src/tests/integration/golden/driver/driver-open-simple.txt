@@ -1,4 +1,4 @@
-(user@host) Password: 
+(user@host) Password:
 
 eos1>
 eos1>

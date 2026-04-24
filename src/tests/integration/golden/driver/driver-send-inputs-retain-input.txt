@@ -1,5 +1,5 @@
 eos1#show ip route
-
+
 VRF: default
 Source Codes:
        C - connected, S - static, K - kernel,
@@ -22,4 +22,4 @@ Gateway of last resort:
  C        172.20.20.0/24
            directly connected, Management0
 eos1#show run | i hostname
-hostname eos1
+hostname eos1

@@ -210,7 +210,6 @@ pub const Transport = struct {
 
         try self.open_args.append(
             self.allocator,
-            // TODO -- equivalent of go exec.LookPath
             strings.MaybeHeapString{
                 .allocator = null,
                 .string = self.options.bin,

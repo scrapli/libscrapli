@@ -548,7 +548,11 @@ pub const Session = struct {
         var auth_password_prompt_seen_count: u8 = 0;
         var auth_passphrase_prompt_seen_count: u8 = 0;
 
-        var buf = self.read_into_buf orelse try self.allocator.alloc(u8, self.options.read_size);
+        if (self.read_into_buf == null) {
+            self.read_into_buf = try self.allocator.alloc(u8, self.options.read_size);
+        }
+
+        const buf = self.read_into_buf.?;
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
         // stop the waiter (which happens in transport.read), then the readloop can nicely exit;
@@ -824,7 +828,11 @@ pub const Session = struct {
         // increase the found start/end positions by this value too!
         const op_processed_buf_starting_len = bufs.processed.items.len;
 
-        var buf = self.read_into_buf orelse try self.allocator.alloc(u8, self.options.read_size);
+        if (self.read_into_buf == null) {
+            self.read_into_buf = try self.allocator.alloc(u8, self.options.read_size);
+        }
+
+        const buf = self.read_into_buf.?;
 
         while (true) {
             if (cancel != null and cancel.?.*) {

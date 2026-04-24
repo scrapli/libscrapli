@@ -3,6 +3,13 @@ const std = @import("std");
 const bytes = @import("bytes.zig");
 const operation = @import("cli-operation.zig");
 
+/// Holds options related to how a result should look.
+pub const GetResultOptions = struct {
+    delimiter: []const u8 = "\n",
+    normalize_line_feeds: bool = true,
+    normalize_trailing_whitespace: bool = true,
+};
+
 /// Holds result information for Cli opereations.
 pub const Result = struct {
     allocator: std.mem.Allocator,
@@ -271,54 +278,114 @@ pub const Result = struct {
     /// result out of zig into the ffi layer.
     pub fn getResultLen(
         self: *Result,
-        options: struct {
-            delimiter: []const u8 = "\n",
-        },
+        options: GetResultOptions,
     ) usize {
-        var out_size: usize = 0;
+        var len: usize = 0;
+
+        var line_start: usize = 0;
+        var pending_ws: usize = 0;
 
         for (0.., self.results.items) |idx, result| {
-            out_size += result.len;
+            for (result) |ch| {
+                if (options.normalize_line_feeds and ch == '\r') continue;
+
+                if (options.normalize_trailing_whitespace) {
+                    if (ch == '\n') {
+                        pending_ws = 0;
+                        len += 1;
+                        line_start = len;
+                    } else if (ch == ' ' or ch == '\t') {
+                        pending_ws += 1;
+                    } else {
+                        len += pending_ws;
+                        pending_ws = 0;
+                        len += 1;
+                    }
+                } else {
+                    len += 1;
+                }
+            }
 
             if (idx != self.results.items.len - 1) {
-                // not last result, add spacing for the delimiter
-                out_size += options.delimiter.len;
+                if (options.normalize_trailing_whitespace) {
+                    pending_ws = 0; // trim trailing ws before delimiter
+                }
+                len += options.delimiter.len;
+                line_start = len;
+                pending_ws = 0;
             }
         }
 
-        return out_size;
+        return len;
     }
 
     /// Returns all results joined on options.delim string, caller owns joined string.
     pub fn getResult(
         self: *Result,
         allocator: std.mem.Allocator,
-        options: struct {
-            delimiter: []const u8 = "\n",
-        },
+        options: GetResultOptions,
     ) ![]const u8 {
         const out = try allocator.alloc(
             u8,
             self.getResultLen(
-                .{
-                    .delimiter = options.delimiter,
-                },
+                options,
             ),
         );
 
+        try self.getResultPreAllocated(
+            out,
+            options,
+        );
+
+        return out;
+    }
+
+    /// Returns all results joined on options.delim string, but expects user to have already
+    /// allocated buf to the appropriate size (hint: use getResultLen w/ the same options).
+    pub fn getResultPreAllocated(
+        self: *Result,
+        out: []u8,
+        options: GetResultOptions,
+    ) !void {
         var cur: usize = 0;
+        var line_start: usize = 0;
+
         for (0.., self.results.items) |idx, result| {
-            @memcpy(out[cur .. cur + result.len], result);
-            cur += result.len;
+            for (result) |ch| {
+                if (options.normalize_line_feeds and ch == '\r') continue;
+
+                if (options.normalize_trailing_whitespace and ch == '\n') {
+                    while (cur > line_start and (out[cur - 1] == ' ' or out[cur - 1] == '\t')) {
+                        cur -= 1;
+                    }
+                    out[cur] = ch;
+                    cur += 1;
+                    line_start = cur;
+                } else {
+                    out[cur] = ch;
+                    cur += 1;
+                }
+            }
 
             if (idx != self.results.items.len - 1) {
+                if (options.normalize_trailing_whitespace) {
+                    while (cur > line_start and (out[cur - 1] == ' ' or out[cur - 1] == '\t')) {
+                        cur -= 1;
+                    }
+                }
                 for (options.delimiter) |delimiter_char| {
                     out[cur] = delimiter_char;
                     cur += 1;
                 }
+
+                line_start = cur;
             }
         }
 
-        return out;
+        if (options.normalize_trailing_whitespace) {
+            while (cur > line_start and (out[cur - 1] == ' ' or out[cur - 1] == '\t')) {
+                cur -= 1;
+            }
+        }
     }
 };
