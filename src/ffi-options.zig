@@ -522,6 +522,7 @@ fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8
 
     const out_len = encoder.calcSize(raw.len);
     const encoded = try allocator.alloc(u8, out_len);
+    defer allocator.free(encoded);
 
     _ = encoder.encode(encoded, raw);
 

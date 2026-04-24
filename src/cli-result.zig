@@ -308,9 +308,11 @@ pub const Result = struct {
 
             if (idx != self.results.items.len - 1) {
                 if (options.normalize_trailing_whitespace) {
-                    pending_ws = 0; // trim trailing ws before delimiter
+                    pending_ws = 0;
                 }
+
                 len += options.delimiter.len;
+
                 line_start = len;
                 pending_ws = 0;
             }
@@ -347,20 +349,36 @@ pub const Result = struct {
         out: []u8,
         options: GetResultOptions,
     ) !void {
+        if (out.len == 0) return;
+
         var cur: usize = 0;
+
         var line_start: usize = 0;
+        var ws_start: usize = 0;
+        var pending_ws: usize = 0;
 
         for (0.., self.results.items) |idx, result| {
             for (result) |ch| {
                 if (options.normalize_line_feeds and ch == '\r') continue;
 
-                if (options.normalize_trailing_whitespace and ch == '\n') {
-                    while (cur > line_start and (out[cur - 1] == ' ' or out[cur - 1] == '\t')) {
-                        cur -= 1;
+                if (options.normalize_trailing_whitespace) {
+                    if (ch == '\n') {
+                        pending_ws = 0;
+                        out[cur] = ch;
+                        cur += 1;
+                        line_start = cur;
+                        ws_start = cur;
+                    } else if (ch == ' ' or ch == '\t') {
+                        if (pending_ws == 0) ws_start = cur;
+                        out[ws_start + pending_ws] = ch;
+                        pending_ws += 1;
+                    } else {
+                        cur = ws_start + pending_ws;
+                        pending_ws = 0;
+                        out[cur] = ch;
+                        cur += 1;
+                        ws_start = cur;
                     }
-                    out[cur] = ch;
-                    cur += 1;
-                    line_start = cur;
                 } else {
                     out[cur] = ch;
                     cur += 1;
@@ -369,22 +387,17 @@ pub const Result = struct {
 
             if (idx != self.results.items.len - 1) {
                 if (options.normalize_trailing_whitespace) {
-                    while (cur > line_start and (out[cur - 1] == ' ' or out[cur - 1] == '\t')) {
-                        cur -= 1;
-                    }
+                    pending_ws = 0;
                 }
+
                 for (options.delimiter) |delimiter_char| {
                     out[cur] = delimiter_char;
                     cur += 1;
                 }
 
                 line_start = cur;
-            }
-        }
-
-        if (options.normalize_trailing_whitespace) {
-            while (cur > line_start and (out[cur - 1] == ' ' or out[cur - 1] == '\t')) {
-                cur -= 1;
+                ws_start = cur;
+                pending_ws = 0;
             }
         }
     }
