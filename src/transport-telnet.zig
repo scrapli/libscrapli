@@ -26,8 +26,6 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
-const would_block = if (@import("builtin").os.tag == .linux) std.posix.E.WOULDBLOCK else std.posix.E.AGAIN;
-
 /// Holds option inputs for the telnet transport.
 // zlinter-disable-next-line declaration_naming
 pub const OptionsInputs = struct {};
@@ -288,7 +286,7 @@ pub const Transport = struct {
             );
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
-                would_block => break,
+                std.posix.E.AGAIN => break,
                 else => |err| {
                     return errors.wrapCriticalError(
                         std.posix.unexpectedErrno(err),

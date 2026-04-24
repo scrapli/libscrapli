@@ -15,8 +15,6 @@ const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
 
-const would_block = if (@import("builtin").os.tag == .linux) std.posix.E.WOULDBLOCK else std.posix.E.AGAIN;
-
 /// Holds option inputs for the bin transport.
 pub const OptionsInputs = struct {
     bin: []const u8 = default_ssh_bin,
@@ -512,7 +510,7 @@ pub const Transport = struct {
             );
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
-                would_block => break,
+                std.posix.E.AGAIN => break,
                 else => |err| {
                     return errors.wrapCriticalError(
                         std.posix.unexpectedErrno(err),
