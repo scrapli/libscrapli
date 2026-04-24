@@ -141,13 +141,25 @@ build: fmt clean-zig-cache
 		-Ddependency-linkage=static \
 		--summary all
 
-## Build all the shared objects w/ release optimization
+## Build all the shared objects w/ release optimization and static deps
 build-release: fmt clean-zig-out clean-zig-cache
 	zig build ffi \
 	    -Doptimize=ReleaseSafe \
 		-freference-trace=4 \
 		-Ddependency-linkage=static \
 		-Dall-targets=true \
+		--summary all
+	find zig-out -type f \
+	    \( -name 'libscrapli.*.dylib' -o -name 'libscrapli.so.*' \) \
+	    -exec sha256sum {} + \
+	    > zig-out/checksums.txt
+
+## Build the shared object for the local system w/ release optimization and dynamic deps
+build-release-dynamic: fmt clean-zig-cache
+	zig build ffi \
+	    -Doptimize=ReleaseSafe \
+		-freference-trace=4 \
+		-Ddependency-linkage=dynamic \
 		--summary all
 	find zig-out -type f \
 	    \( -name 'libscrapli.*.dylib' -o -name 'libscrapli.so.*' \) \
