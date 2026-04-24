@@ -314,9 +314,6 @@ pub const Result = struct {
         if (out.len == 0) return;
 
         var cur: usize = 0;
-
-        var line_start: usize = 0;
-        var ws_start: usize = 0;
         var pending_ws: usize = 0;
 
         for (0.., self.results.items) |idx, result| {
@@ -326,20 +323,21 @@ pub const Result = struct {
                 if (options.normalize_trailing_whitespace) {
                     if (ch == '\n') {
                         pending_ws = 0;
+
                         out[cur] = ch;
                         cur += 1;
-                        line_start = cur;
-                        ws_start = cur;
                     } else if (ch == ' ' or ch == '\t') {
-                        if (pending_ws == 0) ws_start = cur;
-                        out[ws_start + pending_ws] = ch;
                         pending_ws += 1;
                     } else {
-                        cur = ws_start + pending_ws;
+                        var i: usize = 0;
+                        while (i < pending_ws) : (i += 1) {
+                            out[cur] = ' ';
+                            cur += 1;
+                        }
                         pending_ws = 0;
+
                         out[cur] = ch;
                         cur += 1;
-                        ws_start = cur;
                     }
                 } else {
                     out[cur] = ch;
@@ -356,10 +354,6 @@ pub const Result = struct {
                     out[cur] = delimiter_char;
                     cur += 1;
                 }
-
-                line_start = cur;
-                ws_start = cur;
-                pending_ws = 0;
             }
         }
     }
@@ -436,9 +430,15 @@ test "getJoinedLen" {
         },
         .{
             // crlf
-            .items = &.{"foo\x0D\x0A"},
+            .items = &.{"\x0D\x0Afoo"},
             .options = .{},
-            .expected = 4,
+            .expected = 4, // again, 4 because replaced w/ \n
+        },
+        .{
+            // trailing space
+            .items = &.{"foo "},
+            .options = .{},
+            .expected = 3,
         },
     };
 
