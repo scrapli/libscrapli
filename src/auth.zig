@@ -90,6 +90,7 @@ pub const OptionsInputs = struct {
     password: ?[]const u8 = null,
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
+    private_key_content: ?[]const u8 = null,
     // for now(? forever?) lookups are limited to 16 times. adding a lookup callback in the future
     // would be next step i think, but for now this should be more than ok and the fixed size and
     // the count indicator makes this very easy to work with on the ffi bits.
@@ -117,6 +118,7 @@ pub const Options = struct {
     password: ?[]const u8,
     private_key_path: ?[]const u8,
     private_key_passphrase: ?[]const u8,
+    private_key_content: ?[]const u8,
     lookups: LookupItems,
     force_in_session_auth: bool,
     bypass_in_session_auth: bool,
@@ -135,6 +137,7 @@ pub const Options = struct {
             .password = opts.password,
             .private_key_path = opts.private_key_path,
             .private_key_passphrase = opts.private_key_passphrase,
+            .private_key_content = opts.private_key_content,
             .lookups = try opts.lookups.cloneOwned(allocator),
             .force_in_session_auth = opts.force_in_session_auth,
             .bypass_in_session_auth = opts.bypass_in_session_auth,
@@ -154,6 +157,10 @@ pub const Options = struct {
 
         if (o.private_key_passphrase != null) {
             o.private_key_passphrase = try o.allocator.dupe(u8, o.private_key_passphrase.?);
+        }
+
+        if (o.private_key_content != null) {
+            o.private_key_content = try o.allocator.dupe(u8, o.private_key_content.?);
         }
 
         if (opts.username_pattern) |p| {
@@ -187,6 +194,10 @@ pub const Options = struct {
 
         if (self.private_key_passphrase != null) {
             self.allocator.free(self.private_key_passphrase.?);
+        }
+
+        if (self.private_key_content != null) {
+            self.allocator.free(self.private_key_content.?);
         }
 
         self.lookups.deinitOwned(self.allocator);
