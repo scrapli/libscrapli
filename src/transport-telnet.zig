@@ -323,6 +323,7 @@ pub const Transport = struct {
         }
 
         try self.waiter.wait(self.socket.?);
+
         const n = std.posix.read(self.socket.?, buf) catch |err| {
             return errors.wrapWarnError(
                 err,

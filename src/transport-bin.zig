@@ -22,6 +22,8 @@ const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
 
+const would_block = if (@import("builtin").os.tag == .linux) std.posix.E.WOULDBLOCK else std.posix.E.AGAIN;
+
 /// Holds option inputs for the bin transport.
 pub const OptionsInputs = struct {
     bin: []const u8 = default_ssh_bin,
@@ -135,12 +137,7 @@ pub const Transport = struct {
     waiter: transport_waiter.Waiter,
 
     f: ?std.Io.File = null,
-
-    r_buffer: [1024]u8 = [_]u8{0} ** 1024,
-    reader: ?std.Io.File.Reader = null,
-
-    w_buffer: [1024]u8 = [_]u8{0} ** 1024,
-    writer: ?std.Io.File.Writer = null,
+    fd: ?std.posix.fd_t = null,
 
     open_args: std.ArrayList(strings.MaybeHeapString),
 
@@ -484,8 +481,7 @@ pub const Transport = struct {
             );
         };
 
-        self.reader = self.f.?.reader(self.io, &self.r_buffer);
-        self.writer = self.f.?.writer(self.io, &self.w_buffer);
+        self.fd = self.f.?.handle;
     }
 
     /// Closes the transport.
@@ -503,7 +499,7 @@ pub const Transport = struct {
     pub fn write(self: *Transport, buf: []const u8) !void {
         self.log.debug("bin.Transport write requested", .{});
 
-        if (self.writer == null) {
+        if (self.fd == null) {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
@@ -513,24 +509,34 @@ pub const Transport = struct {
             );
         }
 
-        _ = self.writer.?.interface.write(buf) catch |err| {
-            return errors.wrapCriticalError(
-                err,
-                @src(),
-                self.log,
-                "bin.Transport write: writing to pty failed",
-                .{},
+        var written: usize = 0;
+        while (written < buf.len) {
+            const rc = std.posix.system.write(
+                self.fd.?,
+                buf[written..].ptr,
+                buf[written..].len,
             );
-        };
-
-        try self.writer.?.interface.flush();
+            switch (std.posix.errno(rc)) {
+                .SUCCESS => written += @intCast(rc),
+                would_block => break,
+                else => |err| {
+                    return errors.wrapCriticalError(
+                        std.posix.unexpectedErrno(err),
+                        @src(),
+                        self.log,
+                        "bin.Transport write: writing to fd failed",
+                        .{},
+                    );
+                },
+            }
+        }
     }
 
     /// Reads content from the transport session.
     pub fn read(self: *Transport, buf: []u8) !usize {
         self.log.trace("bin.Transport read requested", .{});
 
-        if (self.reader == null) {
+        if (self.fd == null) {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
@@ -540,25 +546,14 @@ pub const Transport = struct {
             );
         }
 
-        const ri = &self.reader.?.interface;
+        try self.waiter.wait(self.fd.?);
 
-        try self.waiter.wait(self.f.?.handle);
-
-        // i think because this is not a "stream" (like telnet transport) we actually need to call
-        // this in order to get things off the pty and into the intermediate buffer. we know that
-        // there will be *something* to fill because of our waiter, so that should be good...
-        try ri.fillMore();
-
-        var w: std.Io.Writer = .fixed(buf);
-
-        const n = ri.stream(&w, .unlimited) catch |err| {
-            // a warning as this can happen during close so we dont necessarily want to
-            // log a crit
+        const n = std.posix.read(self.fd.?, buf) catch |err| {
             return errors.wrapWarnError(
                 err,
                 @src(),
                 self.log,
-                "bin.Transport read: failed reading from pty",
+                "bin.Transport read: failed reading from fd",
                 .{},
             );
         };
