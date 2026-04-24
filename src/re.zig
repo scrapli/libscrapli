@@ -1,9 +1,5 @@
 const std = @import("std");
-
-const pcre2 = @cImport({
-    @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
-    @cInclude("pcre2.h");
-});
+const pcre2 = @import("pcre2");
 
 /// Alias for pcre2 compiled pattern to a more clear name.
 pub const pcre2CompiledPattern = pcre2.pcre2_code_8;

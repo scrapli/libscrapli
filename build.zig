@@ -57,6 +57,14 @@ fn buildScrapli(
     dependency_linkage: std.builtin.LinkMode,
     is_ffi: bool,
 ) !*std.Build.Module {
+    const pcre2_dep = b.dependency(
+        "pcre2",
+        .{
+            .target = target,
+            .optimize = optimize,
+        },
+    );
+
     const libssh2_dep = b.dependency(
         "libssh2",
         .{
@@ -110,6 +118,10 @@ fn buildScrapli(
                     ).module("xml"),
                 },
                 .{
+                    .name = "pcre2",
+                    .module = pcre2_dep.module("pcre2"),
+                },
+                .{
                     .name = "ssh2",
                     .module = libssh2_dep.module("ssh2"),
                 },
@@ -121,13 +133,7 @@ fn buildScrapli(
     switch (dependency_linkage) {
         .static => {
             scrapli.linkLibrary(
-                b.dependency(
-                    "pcre2",
-                    .{
-                        .target = target,
-                        .optimize = optimize,
-                    },
-                ).artifact("pcre2-8"),
+                pcre2_dep.artifact("pcre2-8"),
             );
             scrapli.linkLibrary(
                 libssh2_dep.artifact("ssh2"),

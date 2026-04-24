@@ -77,6 +77,17 @@ pub fn build(b: *std.Build) !void {
         },
     );
 
+    const pcre2_translate_c = b.addTranslateC(
+        .{
+            .root_source_file = pcre2_header,
+            .target = target,
+            .optimize = optimize,
+        },
+    );
+    pcre2_translate_c.defineCMacro("PCRE2_CODE_UNIT_WIDTH", @tagName(codeUnitWidth));
+    pcre2_translate_c.defineCMacro("PCRE2_STATIC", "");
+    _ = pcre2_translate_c.addModule("pcre2");
+
     // pcre2-8/16/32.so
     const lib_mod = b.createModule(
         .{
