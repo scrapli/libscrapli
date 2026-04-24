@@ -57,7 +57,11 @@ pub const KqueueWaiter = struct {
         const ev = std.posix.Kevent{
             .ident = @intCast(fd),
             .filter = std.c.EVFILT.READ,
-            .flags = std.c.EV.ADD | std.c.EV.CLEAR,
+            // level triggered, so bascially as long as there is data on the fd, if we added
+            // EV.CLEAR it becomes edge triggered so its only on *new* data -- that would break for
+            // at a minimum the telnet control char handling where we read only a single byte while
+            // figuring out what to do for the control sequences.
+            .flags = std.c.EV.ADD,
             .fflags = 0,
             .data = 0,
             .udata = 0,

@@ -11,6 +11,7 @@ pub const EpollWaiter = struct {
     allocator: std.mem.Allocator,
     ep: std.posix.fd_t,
     ev: std.posix.fd_t,
+    fd: ?std.posix.fd_t = null,
 
     /// Initializes the epoll waiter.
     pub fn init(allocator: std.mem.Allocator) !*EpollWaiter {
@@ -45,18 +46,22 @@ pub const EpollWaiter = struct {
     }
 
     /// Waits until the given fd has something to read, or if the fd is unblocked.
-    pub fn wait(self: EpollWaiter, fd: std.posix.fd_t) !void {
-        var event = std.os.linux.epoll_event{
-            .events = std.os.linux.EPOLL.IN,
-            .data = .{ .fd = fd },
-        };
+    pub fn wait(self: *EpollWaiter, fd: std.posix.fd_t) !void {
+        if (self.fd == null) {
+            self.fd = fd;
 
-        _ = std.os.linux.epoll_ctl(
-            self.ep,
-            std.os.linux.EPOLL.CTL_ADD,
-            fd,
-            &event,
-        );
+            var event = std.os.linux.epoll_event{
+                .events = std.os.linux.EPOLL.IN,
+                .data = .{ .fd = fd },
+            };
+
+            _ = std.os.linux.epoll_ctl(
+                self.ep,
+                std.os.linux.EPOLL.CTL_ADD,
+                fd,
+                &event,
+            );
+        }
 
         var out: [1]std.os.linux.epoll_event = .{
             std.mem.zeroes(std.os.linux.epoll_event),

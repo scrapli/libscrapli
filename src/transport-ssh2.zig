@@ -517,6 +517,7 @@ pub const Transport = struct {
     session_lock: std.Io.Mutex,
 
     // may be to the actual host or to the jumphost
+    stream: ?std.Io.net.Stream = null,
     socket: ?std.posix.socket_t = null,
 
     // the session/channel to the host in normal operation, or to the "initial" host in proxy jump
@@ -700,7 +701,7 @@ pub const Transport = struct {
     ) !void {
         self.log.debug("ssh2.Transport initSocket requested", .{});
 
-        const stream = transport_socket.getStream(self.io, host, port) catch {
+        self.stream = transport_socket.getStream(self.io, host, port) catch {
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
@@ -711,7 +712,7 @@ pub const Transport = struct {
             );
         };
 
-        self.socket = stream.socket.handle;
+        self.socket = self.stream.?.socket.handle;
     }
 
     fn initSession(
@@ -1647,6 +1648,12 @@ pub const Transport = struct {
 
         if (self.initial_session) |sess| {
             libssh2DisconnectSession(self.io, sess, self.log);
+        }
+
+        if (self.stream != null) {
+            self.stream.?.close(self.io);
+            self.stream = null;
+            self.socket = null;
         }
     }
 
