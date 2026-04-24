@@ -57,6 +57,14 @@ fn buildScrapli(
     dependency_linkage: std.builtin.LinkMode,
     is_ffi: bool,
 ) !*std.Build.Module {
+    const libssh2_dep = b.dependency(
+        "libssh2",
+        .{
+            .target = target,
+            .optimize = optimize,
+        },
+    );
+
     const translate_c = b.addTranslateC(
         .{
             .root_source_file = b.path("src/c.h"),
@@ -101,6 +109,10 @@ fn buildScrapli(
                         },
                     ).module("xml"),
                 },
+                .{
+                    .name = "ssh2",
+                    .module = libssh2_dep.module("ssh2"),
+                },
             },
             .link_libc = true,
         },
@@ -118,25 +130,10 @@ fn buildScrapli(
                 ).artifact("pcre2-8"),
             );
             scrapli.linkLibrary(
-                b.dependency(
-                    "libssh2",
-                    .{
-                        .target = target,
-                        .optimize = optimize,
-                    },
-                ).artifact("ssh2"),
+                libssh2_dep.artifact("ssh2"),
             );
         },
         .dynamic => {
-            // always include our patched libssh2 header first, this fixes a translate-c issue
-            // that resulted in a struct having the same field twice which caused the linker to
-            // fail in very confusing ways!
-            scrapli.addIncludePath(
-                .{
-                    .cwd_relative = "./lib/libssh2/include",
-                },
-            );
-
             if (target.result.os.tag == .macos) {
                 if (target.result.cpu.arch == .aarch64) {
                     // arm homebrew paths
