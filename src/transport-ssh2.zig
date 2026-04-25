@@ -693,8 +693,8 @@ pub const Transport = struct {
                 @src(),
                 self.log,
                 "ssh2.Transport initSocket: failed initializing socket, " ++
-                    "unable to resolve host",
-                .{},
+                    "unable to resolve host '{s}'",
+                .{host},
             );
         };
 
