@@ -166,6 +166,42 @@ build-release-dynamic: fmt clean-zig-cache
 	    -exec sha256sum {} + \
 	    > zig-out/checksums.txt
 
+## Build the macOS release artifact with static deps
+release-macos-static: clean-zig-cache
+	zig build ffi \
+	    -Doptimize=ReleaseSafe \
+		-freference-trace=4 \
+		-Ddependency-linkage=static \
+		-Dtarget=aarch64-macos \
+		--summary all
+
+## Build the macOS release artifact with dynamic deps
+release-macos-dynamic: clean-zig-cache
+	zig build ffi \
+	    -Doptimize=ReleaseSafe \
+		-freference-trace=4 \
+		-Ddependency-linkage=dynamic \
+		-Dtarget=aarch64-macos \
+		--summary all
+
+## Build a linux release artifact with static deps
+release-linux-static: clean-zig-cache
+	zig build ffi \
+	    -Doptimize=ReleaseSafe \
+		-freference-trace=4 \
+		-Ddependency-linkage=static \
+		-Dtarget=$(TARGET) \
+		--summary all
+
+## Build a linux release artifact with dynamic deps
+release-linux-dynamic: clean-zig-cache
+	zig build ffi \
+	    -Doptimize=ReleaseSafe \
+		-freference-trace=4 \
+		-Ddependency-linkage=dynamic \
+		-Dtarget=$(TARGET) \
+		--summary all
+
 ## Build the example binaries, uses Debug build so you get leak checking
 build-examples: fmt clean-zig-cache
 	zig build examples \
