@@ -165,6 +165,26 @@ fn buildScrapli(
                         },
                     );
                 }
+            } else if (target.result.os.tag == .linux and target.result.abi == .gnu) {
+                scrapli.addIncludePath(
+                    .{
+                        .cwd_relative = "/usr/include",
+                    },
+                );
+
+                if (target.result.cpu.arch == .aarch64) {
+                    scrapli.addLibraryPath(
+                        .{
+                            .cwd_relative = "/usr/lib/aarch64-linux-gnu",
+                        },
+                    );
+                } else if (target.result.cpu.arch == .x86_64) {
+                    scrapli.addLibraryPath(
+                        .{
+                            .cwd_relative = "/usr/lib/x86_64-linux-gnu",
+                        },
+                    );
+                }
             }
 
             scrapli.linkSystemLibrary("pcre2-8", .{});
