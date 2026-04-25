@@ -1,0 +1,80 @@
+---
+name: release-macos
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: true
+
+jobs:
+  release-macos-static:
+    runs-on: macos-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: install build deps
+        run: |
+          brew install coreutils
+
+      - name: release setup
+        run: |
+          bash ./build/release_setup.sh ${{ inputs.release_tag }}
+
+      - name: setup zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: build shared object
+        run: |
+          make release-macos-static
+
+      - name: publish shared object
+        run: |
+          bash ./build/release_publish.sh \
+            ${{ inputs.release_tag }} \
+            zig-out/aarch64-macos/libscrapli.${{ env.RELEASE_VERSION }}.dylib \
+            zig-out/aarch64-macos/libscrapli-aarch64-macos.${{ env.RELEASE_VERSION }}.dylib
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-macos-dynamic:
+    runs-on: macos-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: install build deps
+        run: |
+          brew install coreutils pcre2 libssh2
+
+      - name: release setup
+        run: |
+          bash ./build/release_setup.sh ${{ inputs.release_tag }}
+
+      - name: setup zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: build shared object
+        run: |
+          make release-macos-dynamic
+
+      - name: publish shared object
+        run: |
+          bash ./build/release_publish.sh \
+            ${{ inputs.release_tag }} \
+            zig-out/aarch64-macos/libscrapli.${{ env.RELEASE_VERSION }}.dylib \
+            zig-out/aarch64-macos/libscrapli-aarch64-macos-dynamic.${{ env.RELEASE_VERSION }}.dylib
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
