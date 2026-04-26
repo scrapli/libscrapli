@@ -888,6 +888,8 @@ pub fn readCallbackShouldExecute(
             return errors.ScrapliError.Operation;
         }
 
+        defer re.pcre2Free(compiled_cp.?);
+
         const match = try re.pcre2Find(
             compiled_cp.?,
             buf,
