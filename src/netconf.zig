@@ -1041,7 +1041,13 @@ pub const Driver = struct {
 
             seen_chars += 1;
 
-            if (message_buf.items[reverse_idx] != message_complete_delim[message_complete_delim.len - matched_chars - 1]) {
+            if (message_buf.items[reverse_idx] !=
+                message_complete_delim[
+                    message_complete_delim.len - matched_chars - 1
+                ])
+            {
+                matched_chars = 0;
+
                 continue;
             }
 
@@ -4490,22 +4496,42 @@ test "builActionElem" {
 }
 
 test "processLoopBufContainsCompleteDelim" {
-    var message_buf: std.ArrayList(u8) = .empty;
-    defer message_buf.deinit(std.testing.allocator);
+    const cases = [_]struct {
+        name: []const u8,
+        content: []const u8,
+        read_n: usize,
+        expected: bool,
+    }{
+        .{
+            .name = "simple",
+            .content =
+            \\ <vlan-id>100</vlan-id><config><vlan-id>100</vlan-id><name>ADM</name></config></vlan><vlan><vlan-id>101</vlan-id><config><vlan-id>101</vlan-id><name>BOUCLE_CXR</name></config></vlan><vlan><vlan-id>666</vlan-id><config><vlan-id>666</vlan-id><name>DISCARD</name></config></vlan><vlan><vlan-id>1000</vlan-id><config><vlan-id>1000</vlan-id><name>NATIVE</name></config></vlan></vlans></data></rpc-reply>
+            \\ ##
+            \\
+            ,
+            .read_n = 100,
+            .expected = true,
+        },
+        .{
+            .name = "mismatch before end",
+            .content = "#x#\n",
+            .read_n = 4,
+            .expected = false,
+        },
+    };
 
-    const c =
-        \\ <vlan-id>100</vlan-id><config><vlan-id>100</vlan-id><name>ADM</name></config></vlan><vlan><vlan-id>101</vlan-id><config><vlan-id>101</vlan-id><name>BOUCLE_CXR</name></config></vlan><vlan><vlan-id>666</vlan-id><config><vlan-id>666</vlan-id><name>DISCARD</name></config></vlan><vlan><vlan-id>1000</vlan-id><config><vlan-id>1000</vlan-id><name>NATIVE</name></config></vlan></vlans></data></rpc-reply>
-        \\ ##
-        \\
-    ;
+    for (cases) |case| {
+        var message_buf: std.ArrayList(u8) = .empty;
+        defer message_buf.deinit(std.testing.allocator);
 
-    try message_buf.appendSlice(std.testing.allocator, c);
+        try message_buf.appendSlice(std.testing.allocator, case.content);
 
-    try std.testing.expect(
-        try Driver.processLoopBufContainsCompleteDelim(
-            100,
+        const actual = try Driver.processLoopBufContainsCompleteDelim(
+            case.read_n,
             message_buf,
             delimiter_version_1_1,
-        ),
-    );
+        );
+
+        try std.testing.expectEqual(case.expected, actual);
+    }
 }
