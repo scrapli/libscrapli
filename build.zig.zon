@@ -12,8 +12,8 @@
             .path = "lib/libssh2",
         },
         .xml = .{
-            .url = "https://github.com/carlmontanari/zig-xml/archive/3a521fa.tar.gz",
-            .hash = "xml-0.2.0-ZTbP3xY6AgDJfDkfwttfskdwZVn2B41zGlE7_g2pnQQf",
+            .url = "https://github.com/ianprime0509/zig-xml/archive/b97f2ab.tar.gz",
+            .hash = "xml-0.2.0-ZTbP3yI6AgB9Rpd2hQrueO63ib0Bm6mQiL_WB1t7JAmP",
         },
         .yaml = .{
             .url = "https://github.com/carlmontanari/zig-yaml/archive/cffc641.tar.gz",
