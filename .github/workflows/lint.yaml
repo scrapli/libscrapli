@@ -24,10 +24,6 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
-      - name: install zig lint tools
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/DonIsaac/zlint/refs/heads/main/tasks/install.sh | bash -s ${{ env.ZLINT_VERSION }}
-
       - name: run the linters
         run: |
           make lint
