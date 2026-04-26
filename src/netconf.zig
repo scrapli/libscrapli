@@ -1105,7 +1105,7 @@ pub const Driver = struct {
         var _idx: usize = 0;
         var _id_buf: [10]u8 = undefined;
 
-        for (_start_index.._start_index + 10) |idx| {
+        for (_start_index..@min(message_view.len, _start_index + 10)) |idx| {
             if (!std.ascii.isDigit(message_view[idx])) {
                 break;
             }
