@@ -278,12 +278,9 @@ pub const Driver = struct {
 
         var res = try self.newResult(
             allocator,
-            operation.Kind.open,
+            operation.Kind.close,
         );
         errdefer res.deinit();
-
-        var op_buf: std.ArrayList(u8) = .empty;
-        defer op_buf.deinit(allocator);
 
         if (self.definition.onCloseCallback != null or
             self.definition.bound_on_close_callback != null)
