@@ -809,30 +809,26 @@ pub const Driver = struct {
             .version_1_0 => {
                 if (has_version_1_0) {
                     self.negotiated_version = .version_1_0;
-                }
 
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Driver,
-                    @src(),
-                    self.log,
-                    "netconf.Driver determineVersion: preferred capability unavailable",
-                    .{},
-                );
+                    return;
+                }
             },
             .version_1_1 => {
                 if (has_version_1_1) {
                     self.negotiated_version = .version_1_1;
-                }
 
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Driver,
-                    @src(),
-                    self.log,
-                    "netconf.Driver determineVersion: preferred capability unavailable",
-                    .{},
-                );
+                    return;
+                }
             },
         }
+
+        return errors.wrapCriticalError(
+            errors.ScrapliError.Driver,
+            @src(),
+            self.log,
+            "netconf.Driver determineVersion: preferred capability unavailable",
+            .{},
+        );
     }
 
     fn sendClientCapabilities(
