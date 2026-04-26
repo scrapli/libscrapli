@@ -353,7 +353,7 @@ pub const Driver = struct {
                 @src(),
                 self.log,
                 "cli.Driver no mode '{s}' in definition",
-                .{self.current_mode},
+                .{options.requested_mode},
             );
         }
 
