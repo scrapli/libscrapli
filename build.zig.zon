@@ -20,8 +20,8 @@
             .hash = "zig_yaml-0.3.0-C1161vurAgCTAgiRzjMH2p7rjKKjJOMEBQ81bbclHk5v",
         },
         .zlinter = .{
-            .url = "https://github.com/kurtwagner/zlinter/archive/d358076.tar.gz",
-            .hash = "zlinter-0.0.1-OjQ08dLoCwBUQ4PmDPvrZNU8QXjHUrs7jp-JLwX5fmO0",
+            .url = "https://github.com/kurtwagner/zlinter/archive/9b4d67b.tar.gz",
+            .hash = "zlinter-0.0.1-OjQ08c7oCwDIwhlde7eDKMACNTsqAhGXy5vB7GdfGobG",
         },
     },
     .paths = .{
