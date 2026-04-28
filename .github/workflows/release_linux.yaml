@@ -49,7 +49,7 @@ jobs:
           bash ./build/release_publish.sh \
             ${{ inputs.release_tag }} \
             zig-out/${{ matrix.target }}/libscrapli.so.${{ env.RELEASE_VERSION }} \
-            zig-out/${{ matrix.target }}/libscrapli-${{ matrix.target }}.so.${{ env.RELEASE_VERSION }}
+            libscrapli-${{ matrix.target }}.${{ env.RELEASE_VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -94,6 +94,6 @@ jobs:
           bash ./build/release_publish.sh \
             ${{ inputs.release_tag }} \
             zig-out/${{ matrix.target }}/libscrapli.so.${{ env.RELEASE_VERSION }} \
-            zig-out/${{ matrix.target }}/libscrapli-${{ matrix.target }}-dynamic.so.${{ env.RELEASE_VERSION }}
+            libscrapli-${{ matrix.target }}-dynamic.${{ env.RELEASE_VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

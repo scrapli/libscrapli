@@ -40,7 +40,7 @@ jobs:
           bash ./build/release_publish.sh \
             ${{ inputs.release_tag }} \
             zig-out/aarch64-macos/libscrapli.${{ env.RELEASE_VERSION }}.dylib \
-            zig-out/aarch64-macos/libscrapli-aarch64-macos.${{ env.RELEASE_VERSION }}.dylib
+            libscrapli-aarch64-macos.${{ env.RELEASE_VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -75,6 +75,6 @@ jobs:
           bash ./build/release_publish.sh \
             ${{ inputs.release_tag }} \
             zig-out/aarch64-macos/libscrapli.${{ env.RELEASE_VERSION }}.dylib \
-            zig-out/aarch64-macos/libscrapli-aarch64-macos-dynamic.${{ env.RELEASE_VERSION }}.dylib
+            libscrapli-aarch64-macos-dynamic.${{ env.RELEASE_VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
