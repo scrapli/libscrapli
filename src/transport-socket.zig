@@ -6,7 +6,7 @@ const errors = @import("errors.zig");
 pub fn getStream(io: std.Io, host: []const u8, port: u16) !std.Io.net.Stream {
     var lookup_buf: [16]std.Io.net.HostName.LookupResult = undefined;
     var lookup_queue = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookup_buf);
-    var canonica_name_buf: [255]u8 = undefined;
+    var canonical_name_buf: [255]u8 = undefined;
 
     try io.vtable.netLookup(
         io.userdata,
@@ -14,7 +14,7 @@ pub fn getStream(io: std.Io, host: []const u8, port: u16) !std.Io.net.Stream {
         &lookup_queue,
         .{
             .port = port,
-            .canonical_name_buffer = &canonica_name_buf,
+            .canonical_name_buffer = &canonical_name_buf,
         },
     );
 
@@ -46,8 +46,10 @@ pub fn getStream(io: std.Io, host: []const u8, port: u16) !std.Io.net.Stream {
                 return stream;
             },
             .canonical_name => {
-                return errors.ScrapliError.Transport;
+                continue;
             },
         }
     }
+
+    return errors.ScrapliError.Transport;
 }
