@@ -53,6 +53,32 @@ pub fn sendInputOptionsFromArgs(
     return options;
 }
 
+/// Return SendInputsOptions from ffi provided arguments.
+pub fn sendInputsOptionsFromArgs(
+    cancel: *bool,
+    inputs: [*c]const u8,
+    requested_mode: [*c]const u8,
+    input_handling: [*c]const u8,
+    retain_input: bool,
+    retain_trailing_prompt: bool,
+) operation.SendInputsOptions {
+    var options = operation.SendInputsOptions{
+        .cancel = cancel,
+        .inputs = &[_][]const u8{},
+        ._ffi_inputs = std.mem.span(inputs),
+        .input_handling = getInputHandling(input_handling),
+        .retain_input = retain_input,
+        .retain_trailing_prompt = retain_trailing_prompt,
+    };
+
+    const _requested_mode = std.mem.span(requested_mode);
+    if (_requested_mode.len > 0) {
+        options.requested_mode = _requested_mode;
+    }
+
+    return options;
+}
+
 /// Return SendPromptedInputOptions from ffi provided arguments.
 pub fn sendPromptedInputOptionsFromArgs(
     cancel: *bool,

@@ -77,6 +77,9 @@ pub const SendInputOptions = struct {
 pub const SendInputsOptions = struct {
     cancel: ?*bool = null,
     inputs: []const []const u8,
+    // only used (hopefully!) by ffi where passing lists of strings is more of a pita -- inputs are
+    // joined on the libscrapli delimiter. ignored entirely if inputs is len > 0.
+    _ffi_inputs: ?[]const u8 = null,
     // the mode (formerly "privilege level") to send the input at
     requested_mode: []const u8 = mode.default_mode,
     // how to handle the input -- do we ensure we read it off the channel before sending a return

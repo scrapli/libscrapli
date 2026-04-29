@@ -27,6 +27,7 @@ pub const OperationOptions = struct {
             enter_mode: operation.EnterModeOptions,
             get_prompt: operation.GetPromptOptions,
             send_input: operation.SendInputOptions,
+            send_inputs: operation.SendInputsOptions,
             send_prompted_input: operation.SendPromptedInputOptions,
             read_any: operation.ReadAnyOptions,
         },

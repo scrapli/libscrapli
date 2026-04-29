@@ -601,26 +601,60 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        for (options.inputs) |input| {
-            try res.record(
-                .{
-                    .input = input,
-                    .rets = try self.session.sendInput(
-                        allocator,
-                        .{
-                            .cancel = options.cancel,
-                            .input = input,
-                            .requested_mode = options.requested_mode,
-                            .input_handling = options.input_handling,
-                            .retain_input = options.retain_input,
-                            .retain_trailing_prompt = options.retain_trailing_prompt,
-                        },
-                    ),
-                },
+        if (options._ffi_inputs != null and options.inputs.len == 0) {
+            // annoying to have to do this for the ffi bits but this keeps the ffi able to very
+            // easily call this (rather than ranging over inputs and calling sendInput from the
+            // calling program) so we have consistent behavior
+            var ffi_inputs_iterator = std.mem.splitSequence(
+                u8,
+                options._ffi_inputs.?,
+                bytes.libscrapli_delimiter,
             );
 
-            if (options.stop_on_indicated_failure and res.result_failure_indicated) {
-                return res;
+            while (ffi_inputs_iterator.next()) |input| {
+                try res.record(
+                    .{
+                        .input = input,
+                        .rets = try self.session.sendInput(
+                            allocator,
+                            .{
+                                .cancel = options.cancel,
+                                .input = input,
+                                .requested_mode = options.requested_mode,
+                                .input_handling = options.input_handling,
+                                .retain_input = options.retain_input,
+                                .retain_trailing_prompt = options.retain_trailing_prompt,
+                            },
+                        ),
+                    },
+                );
+
+                if (options.stop_on_indicated_failure and res.result_failure_indicated) {
+                    return res;
+                }
+            }
+        } else {
+            for (options.inputs) |input| {
+                try res.record(
+                    .{
+                        .input = input,
+                        .rets = try self.session.sendInput(
+                            allocator,
+                            .{
+                                .cancel = options.cancel,
+                                .input = input,
+                                .requested_mode = options.requested_mode,
+                                .input_handling = options.input_handling,
+                                .retain_input = options.retain_input,
+                                .retain_trailing_prompt = options.retain_trailing_prompt,
+                            },
+                        ),
+                    },
+                );
+
+                if (options.stop_on_indicated_failure and res.result_failure_indicated) {
+                    return res;
+                }
             }
         }
 

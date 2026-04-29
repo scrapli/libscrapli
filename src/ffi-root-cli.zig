@@ -504,6 +504,55 @@ export fn ls_cli_send_input(
     return 0;
 }
 
+export fn ls_cli_send_inputs(
+    d_ptr: usize,
+    operation_id: *u32,
+    cancel: *bool,
+    // inputs delimited on the libscrapli delim... annoying but simple/dumb
+    inputs: [*c]const u8,
+    requested_mode: [*c]const u8,
+    input_handling: [*c]const u8,
+    retain_input: bool,
+    retain_trailing_prompt: bool,
+) callconv(.c) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrFromInt(d_ptr);
+
+    const options = ffi_args_to_options.sendInputsOptionsFromArgs(
+        cancel,
+        inputs,
+        requested_mode,
+        input_handling,
+        retain_input,
+        retain_trailing_prompt,
+    );
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .send_inputs = options,
+                },
+            },
+        },
+    ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue sendInputs {any}",
+            .{err},
+        ) catch {};
+
+        return 1;
+    };
+
+    operation_id.* = _operation_id;
+
+    return 0;
+}
+
 export fn ls_cli_send_prompted_input(
     d_ptr: usize,
     operation_id: *u32,

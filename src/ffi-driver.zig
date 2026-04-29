@@ -349,6 +349,15 @@ pub const FfiDriver = struct {
                         break :blk null;
                     };
                 },
+                .send_inputs => |o| {
+                    ret_ok = rd.sendInputs(
+                        self.allocator,
+                        o,
+                    ) catch |err| blk: {
+                        ret_err = err;
+                        break :blk null;
+                    };
+                },
                 .send_prompted_input => |o| {
                     ret_ok = rd.sendPromptedInput(
                         self.allocator,
