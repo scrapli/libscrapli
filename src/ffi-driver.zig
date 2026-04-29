@@ -1,6 +1,7 @@
 // zlinter-disable no_panic - ignoring as we do panic on things that *really* should not happen
 const std = @import("std");
 
+const bytes = @import("bytes.zig");
 const cli = @import("cli.zig");
 const errors = @import("errors.zig");
 const ffi_operations = @import("ffi-operations.zig");
@@ -45,7 +46,9 @@ pub const FfiDriver = struct {
         ffi_operations.OperationResult,
     ),
 
-    cli_get_results_options: result.GetResultOptions = .{},
+    cli_get_results_options: result.GetResultOptions = .{
+        .delimiter = bytes.libscrapli_delimiter,
+    },
 
     fn setPollFds(self: *FfiDriver) !void {
         switch (std.posix.errno(std.c.pipe(&self.poll_fds))) {
