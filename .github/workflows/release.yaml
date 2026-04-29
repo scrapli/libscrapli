@@ -7,6 +7,12 @@ on:
       - created
 
 jobs:
+  release-source:
+    uses: ./.github/workflows/release_source.yaml
+    with:
+      release_tag: ${{ github.ref_name }}
+    secrets: inherit
+
   release-macos:
     uses: ./.github/workflows/release_macos.yaml
     with:
@@ -20,34 +26,7 @@ jobs:
     secrets: inherit
 
   release-builder-image:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-
-      - name: login to ghcr
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: set release version
-        run: |
-          RELEASE_TAG=${{ github.ref_name }}
-          RELEASE_VERSION=${RELEASE_TAG#v}
-
-          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
-
-      - name: build builder image
-        run: |
-          docker build -f build/builder.Dockerfile build/ -t ghcr.io/scrapli/libscrapli/builder:${{ env.RELEASE_VERSION }}
-
-      - name: tag and push builder image to ghcr
-        run: |
-          docker tag ghcr.io/scrapli/libscrapli/builder:${{ env.RELEASE_VERSION }} ghcr.io/scrapli/libscrapli/builder:latest
-          docker push ghcr.io/scrapli/libscrapli/builder:${{ env.RELEASE_VERSION }}
-          docker push ghcr.io/scrapli/libscrapli/builder:latest
+    uses: ./.github/workflows/release_builder_image.yaml
+    with:
+      release_tag: ${{ github.ref_name }}
+    secrets: inherit

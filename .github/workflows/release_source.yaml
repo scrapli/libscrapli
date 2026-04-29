@@ -1,0 +1,37 @@
+---
+name: release-source
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: true
+
+jobs:
+  release-source:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: set release version
+        run: |
+          bash ./build/release_setup.sh ${{ github.ref_name }}
+
+      - name: make release tarball
+        run: |
+          tar \
+            --exclude=.git \
+            --exclude=.zig-cache \
+            --exclude=zig-out \
+            -czf /tmp/libscrapli-${{ github.ref_name }}.tar.gz .
+
+      - name: upload tarball to release
+        run: |
+          gh release upload ${{ github.ref_name }} /tmp/libscrapli-${{ github.ref_name }}.tar.gz --clobber
+        env:
+          GITHUB_TOKEN: ${{ github.TOKEN }}
