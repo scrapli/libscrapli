@@ -28,7 +28,7 @@ pub const FfiDriver = struct {
 
     real_driver: RealDriver,
 
-    poll_fds: [2]std.posix.fd_t = .{ 0, 0 },
+    poll_fds: [2]std.posix.fd_t = .{ -1, -1 },
 
     operation_id_counter: u32,
     operation_thread: ?std.Thread,
@@ -68,18 +68,24 @@ pub const FfiDriver = struct {
         host: []const u8,
         config: cli.Config,
     ) !*FfiDriver {
-        const ffi_driver = try allocator.create(FfiDriver);
+        const real_driver = try cli.Driver.init(
+            allocator,
+            io,
+            host,
+            config,
+        );
+
+        const ffi_driver = allocator.create(FfiDriver) catch |err| {
+            real_driver.deinit();
+
+            return err;
+        };
 
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .io = io,
-            .real_driver = RealDriver{
-                .cli = try cli.Driver.init(
-                    allocator,
-                    io,
-                    host,
-                    config,
-                ),
+            .real_driver = .{
+                .cli = real_driver,
             },
             .operation_id_counter = 0,
             .operation_thread = null,
@@ -97,6 +103,8 @@ pub const FfiDriver = struct {
                 ffi_operations.OperationResult,
             ).init(allocator),
         };
+
+        errdefer ffi_driver.deinit();
 
         try ffi_driver.setPollFds();
 
@@ -110,18 +118,24 @@ pub const FfiDriver = struct {
         host: []const u8,
         config: netconf.Config,
     ) !*FfiDriver {
-        const ffi_driver = try allocator.create(FfiDriver);
+        const real_driver = try netconf.Driver.init(
+            allocator,
+            io,
+            host,
+            config,
+        );
+
+        const ffi_driver = allocator.create(FfiDriver) catch |err| {
+            real_driver.deinit();
+
+            return err;
+        };
 
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .io = io,
-            .real_driver = RealDriver{
-                .netconf = try netconf.Driver.init(
-                    allocator,
-                    io,
-                    host,
-                    config,
-                ),
+            .real_driver = .{
+                .netconf = real_driver,
             },
             .operation_id_counter = 0,
             .operation_thread = null,
@@ -140,6 +154,8 @@ pub const FfiDriver = struct {
             ).init(allocator),
         };
 
+        errdefer ffi_driver.deinit();
+
         try ffi_driver.setPollFds();
 
         return ffi_driver;
@@ -147,7 +163,6 @@ pub const FfiDriver = struct {
 
     /// Deinitialize the FfiDriver and its underlying "real" driver.
     pub fn deinit(self: *FfiDriver) void {
-        // store the stop signal before signaling the operation thread to iterate
         self.operation_stop.store(true, std.builtin.AtomicOrder.unordered);
 
         // signal to the operation thread to iterate, it should then catch the stored stop condition
@@ -172,9 +187,13 @@ pub const FfiDriver = struct {
             },
         }
 
-        // close the ffi layer poll fds
-        _ = std.c.close(self.poll_fds[0]);
-        _ = std.c.close(self.poll_fds[1]);
+        if (self.poll_fds[0] >= 0) {
+            _ = std.c.close(self.poll_fds[0]);
+        }
+
+        if (self.poll_fds[1] >= 0) {
+            _ = std.c.close(self.poll_fds[1]);
+        }
 
         self.allocator.destroy(self);
     }
