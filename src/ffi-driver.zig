@@ -175,6 +175,22 @@ pub const FfiDriver = struct {
             ot.join();
         }
 
+        var operation_results_iter = self.operation_results.iterator();
+        while (operation_results_iter.next()) |entry| {
+            switch (entry.value_ptr.*.result) {
+                .cli => |r| {
+                    if (r) |result_ptr| {
+                        result_ptr.deinit();
+                    }
+                },
+                .netconf => |r| {
+                    if (r) |result_ptr| {
+                        result_ptr.deinit();
+                    }
+                },
+            }
+        }
+
         self.operation_queue.deinit();
         self.operation_results.deinit();
 
