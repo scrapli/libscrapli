@@ -388,11 +388,7 @@ export fn ls_netconf_next_subscription_message_size(
     };
     defer d.real_driver.netconf.subscriptions_lock.unlock(d.io);
 
-    if (!d.real_driver.netconf.subscriptions.contains(subscription_id)) {
-        return;
-    }
-
-    if (d.real_driver.netconf.subscriptions.get(subscription_id)) |sub| {
+    if (d.real_driver.netconf.subscriptions.getPtr(subscription_id)) |sub| {
         if (sub.items.len == 0) {
             return;
         }
@@ -413,7 +409,7 @@ export fn ls_netconf_next_subscription_message(
     };
     defer d.real_driver.netconf.subscriptions_lock.unlock(d.io);
 
-    var subs = d.real_driver.netconf.subscriptions.get(subscription_id);
+    const subs = d.real_driver.netconf.subscriptions.getPtr(subscription_id);
 
     if (subs == null or subs.?.items.len == 0) {
         // an error because they shoulda peeked at sizes first
@@ -426,12 +422,6 @@ export fn ls_netconf_next_subscription_message(
     @memcpy(subscription.*, sub);
 
     d.real_driver.netconf.allocator.free(sub);
-
-    // we got a copy of the arraylist, so clobber/put back the updated copy that has our
-    // element removed; probably sohould have a pointer to it instead but for now this is ok
-    d.real_driver.netconf.subscriptions.put(subscription_id, subs.?) catch {
-        return 1;
-    };
 
     return 0;
 }

@@ -201,9 +201,7 @@ pub const Result = struct {
     /// result out of zig into the ffi layer.
     pub fn getInputLen(
         self: *Result,
-        options: struct {
-            delimiter: []const u8 = "\n",
-        },
+        options: GetResultOptions,
     ) usize {
         var out_size: usize = 0;
 
@@ -223,9 +221,7 @@ pub const Result = struct {
     /// result out of zig into the ffi layer.
     pub fn getResultRawLen(
         self: *Result,
-        options: struct {
-            delimiter: []const u8 = "\n",
-        },
+        options: GetResultOptions,
     ) usize {
         var out_size: usize = 0;
 
@@ -245,9 +241,7 @@ pub const Result = struct {
     pub fn getResultRaw(
         self: *Result,
         allocator: std.mem.Allocator,
-        options: struct {
-            delimiter: []const u8 = "\n",
-        },
+        options: GetResultOptions,
     ) ![]const u8 {
         const out = try allocator.alloc(
             u8,
@@ -352,6 +346,28 @@ pub const Result = struct {
 
                 for (options.delimiter) |delimiter_char| {
                     out[cur] = delimiter_char;
+                    cur += 1;
+                }
+            }
+        }
+    }
+
+    /// Returns all raw results joined on options.delim string, but expects user to have already
+    /// allocated buf to the appropriate size (hint: use getResultRawLen w/ the same options).
+    pub fn getResultRawPreAllocated(
+        self: *Result,
+        out: []u8,
+        options: GetResultOptions,
+    ) !void {
+        var cur: usize = 0;
+
+        for (0.., self.results_raw.items) |idx, result_raw| {
+            @memcpy(out.*[cur .. cur + result_raw.len], result_raw);
+            cur += result_raw.len;
+
+            if (idx != self.results_raw.items.len - 1) {
+                for (options.delimiter) |delimiter_char| {
+                    out.*[cur] = delimiter_char;
                     cur += 1;
                 }
             }

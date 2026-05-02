@@ -55,3 +55,14 @@ pub const OperationOptions = struct {
         },
     },
 };
+
+/// CliOperationSizes holds operation sizes for an operation, returned from ffi driver to the ffi
+/// layer. Doesn't contain error size as that would be processed in a different branch before this
+/// would ever be used.
+pub const CliOperationSizes = struct {
+    operation_count: usize,
+    operation_input_size: usize,
+    operation_result_raw_size: usize,
+    operation_result_size: usize,
+    operation_failure_indicator_size: usize,
+};

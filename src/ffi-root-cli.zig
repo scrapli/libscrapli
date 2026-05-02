@@ -1,7 +1,6 @@
 // zlinter-disable no_panic - ignoring as we do panic on things that *really* should not happen
 const std = @import("std");
 
-const bytes = @import("bytes.zig");
 const cli = @import("cli.zig");
 const errors = @import("errors.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
@@ -244,25 +243,13 @@ export fn ls_cli_fetch_operation_sizes(
             else => @panic("ffi: attempting to access non cli result from cli type"),
         };
 
-        operation_count.* = @intCast(dret.results.items.len);
-
-        operation_input_size.* = dret.getInputLen(
-            .{
-                .delimiter = bytes.libscrapli_delimiter,
-            },
-        );
-        operation_result_raw_size.* = dret.getResultRawLen(
-            .{
-                .delimiter = bytes.libscrapli_delimiter,
-            },
-        );
-        operation_result_size.* = dret.getResultLen(d.cli_get_results_options);
-        operation_failure_indicator_size.* = 0;
+        const sizes = d.getCliResultLens(dret);
+        operation_count.* = @intCast(sizes.operation_count);
+        operation_input_size.* = sizes.operation_input_size;
+        operation_result_raw_size.* = sizes.operation_result_raw_size;
+        operation_result_size.* = sizes.operation_result_size;
+        operation_failure_indicator_size.* = sizes.operation_failure_indicator_size;
         operation_error_size.* = 0;
-
-        if (dret.result_failure_indicated) {
-            operation_failure_indicator_size.* = dret.failed_indicators.?.items[@intCast(dret.result_failure_indicator)].len;
-        }
     }
 
     return 0;
@@ -314,49 +301,16 @@ export fn ls_cli_fetch_operation(
             else => @panic("ffi: attempting to access non cli result from cli type"),
         };
 
-        if (dret.splits_ns.items.len > 0) {
-            operation_start_time.* = @intCast(dret.start_time_ns);
-            for (0.., dret.splits_ns.items) |idx, split| {
-                operation_splits.*[idx] = @intCast(split);
-            }
-        } else {
-            // was a noop -- like enterMode but where mode didn't change
-            operation_start_time.* = @intCast(dret.start_time_ns);
-        }
-
-        // to avoid a pointless allocation since we are already copying from the result into the
-        // given string pointers, we'll do basically the same thing the result does in normal (zig)
-        // operations in getResult/getResultRaw by iterating over the underlying array list and
-        // copying from there, inserting newlines between results, into the given pointer(s)
-        var cur: usize = 0;
-
-        for (0.., dret.inputs.items) |idx, input| {
-            @memcpy(operation_input.*[cur .. cur + input.len], input);
-            cur += input.len;
-
-            if (idx != dret.inputs.items.len - 1) {
-                for (bytes.libscrapli_delimiter) |delimiter_char| {
-                    operation_input.*[cur] = delimiter_char;
-                    cur += 1;
-                }
-            }
-        }
-
-        cur = 0;
-
-        for (0.., dret.results_raw.items) |idx, result_raw| {
-            @memcpy(operation_result_raw.*[cur .. cur + result_raw.len], result_raw);
-            cur += result_raw.len;
-
-            if (idx != dret.results_raw.items.len - 1) {
-                for (bytes.libscrapli_delimiter) |delimiter_char| {
-                    operation_result_raw.*[cur] = delimiter_char;
-                    cur += 1;
-                }
-            }
-        }
-
-        dret.getResultPreAllocated(operation_result.*, d.cli_get_results_options) catch |err| {
+        d.getCliResults(
+            dret,
+            operation_start_time,
+            operation_splits,
+            operation_input,
+            operation_result_raw,
+            operation_result,
+            operation_result_failed_indicator,
+            operation_error,
+        ) catch |err| {
             // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
             errors.wrapCriticalError(
                 errors.ScrapliError.Operation,
@@ -368,15 +322,6 @@ export fn ls_cli_fetch_operation(
 
             return 1;
         };
-
-        if (dret.result_failure_indicated) {
-            @memcpy(
-                operation_result_failed_indicator.*,
-                dret.failed_indicators.?.items[@intCast(dret.result_failure_indicator)],
-            );
-        }
-
-        operation_error.* = "";
     }
 
     return 0;
