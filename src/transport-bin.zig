@@ -485,6 +485,7 @@ pub const Transport = struct {
         }
 
         self.f = null;
+        self.fd = null;
     }
 
     /// Writes content to the transport session.
