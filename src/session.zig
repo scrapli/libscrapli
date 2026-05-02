@@ -467,9 +467,12 @@ pub const Session = struct {
                 continue;
             }
 
-            try self.read_lock.lock(self.io);
-            try self.read_queue.write(buf[0..n]);
-            self.read_lock.unlock(self.io);
+            {
+                try self.read_lock.lock(self.io);
+                defer self.read_lock.unlock(self.io);
+
+                try self.read_queue.write(buf[0..n]);
+            }
 
             // log all the reads w/ ascii unprintables shown
             logging.traceWithSrc(
