@@ -605,25 +605,33 @@ fn openPty(
     if (pid < 0) {
         return error.PtyError;
     } else if (pid == 0) {
-        const args = try allocator.alloc([*c]u8, open_args.len + 1);
+        const args = allocator.alloc([*c]u8, open_args.len + 1) catch {
+            c._exit(1);
+        };
         defer allocator.free(args);
 
         for (open_args, 0..) |arg, i| {
-            args[i] = try allocator.dupeSentinel(u8, arg, 0);
+            args[i] = allocator.dupeSentinel(u8, arg, 0) catch {
+                c._exit(1);
+            };
         }
 
         args[open_args.len] = null;
 
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
         // to see what happened
-        try openPtyChild(
+        openPtyChild(
             master_fd,
             slave_fd,
             @ptrCast(args.ptr),
             term_width,
             term_height,
             netconf,
-        );
+        ) catch {
+            c._exit(1);
+        };
+
+        unreachable;
     }
 
     // parent process, close the slave and return the master (pty) to read/write to
@@ -691,8 +699,7 @@ fn openPtyChild(
 
     const rc = c.execvp(args[0], args);
     if (rc != 0) {
-        // zlinter-disable-next-line no_panic - will catch it from parent if we fail anyway
-        @panic("exec failed");
+        c._exit(1);
     }
 }
 
