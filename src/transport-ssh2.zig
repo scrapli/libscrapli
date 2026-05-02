@@ -1758,81 +1758,96 @@ pub const Transport = struct {
     fn writeStandard(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeStandard requested", .{});
 
-        try self.session_lock.lock(self.io);
-        defer self.session_lock.unlock(self.io);
+        while (true) {
+            try self.session_lock.lock(self.io);
+            const n = ssh2.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
+            self.session_lock.unlock(self.io);
 
-        const n = ssh2.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
-        if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            return self.writeStandard(buf);
-        }
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
+                continue;
+            }
 
-        if (n < 0) {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport writeStandard: write failed, return code: {d}",
-                .{n},
-            );
-        }
+            if (n < 0) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport writeStandard: write failed, return code: {d}",
+                    .{n},
+                );
+            }
 
-        if (n != buf.len) {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport writeStandard: wrote {d} bytes, expected to write {d}",
-                .{ n, buf.len },
-            );
+            if (n != buf.len) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport writeStandard: wrote {d} bytes, expected to write {d}",
+                    .{ n, buf.len },
+                );
+            }
+
+            return;
         }
     }
 
     fn writeProxied(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeProxied requested", .{});
 
-        try self.session_lock.lock(self.io);
-        defer self.session_lock.unlock(self.io);
+        while (true) {
+            try self.session_lock.lock(self.io);
+            const n = ssh2.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
+            self.session_lock.unlock(self.io);
 
-        const n = ssh2.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
-        if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            return self.writeProxied(buf);
-        }
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+                try std.Io.Clock.Duration.sleep(
+                    .{
+                        .clock = .awake,
+                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    },
+                    self.io,
+                );
+                continue;
+            }
 
-        if (n < 0) {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport writeProxied: write failed, return code: {d}",
-                .{n},
-            );
-        }
+            if (n < 0) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport writeProxied: write failed, return code: {d}",
+                    .{n},
+                );
+            }
 
-        if (n != buf.len) {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport writeProxied: wrote {d} bytes, expected to write {d}",
-                .{ n, buf.len },
-            );
+            if (n != buf.len) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport writeProxied: wrote {d} bytes, expected to write {d}",
+                    .{ n, buf.len },
+                );
+            }
+
+            break;
         }
 
         if (self.proxy_wrapper) |pw| {
-            // have to copy from the libssh2 channel to the pipe connecting the outer and inner
-            // sessions basically
             while (true) {
-                const result = pw.pipeToChannel();
-                if (result) {
-                    break;
-                } else |err| {
-                    switch (err) {
-                        error.WouldBlock => {
-                            continue;
-                        },
-                        else => return err,
-                    }
-                }
+                pw.pipeToChannel() catch |err| switch (err) {
+                    error.WouldBlock => continue,
+                    else => return err,
+                };
+
+                break;
             }
         }
     }
