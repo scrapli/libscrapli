@@ -362,12 +362,12 @@ pub const Result = struct {
         var cur: usize = 0;
 
         for (0.., self.results_raw.items) |idx, result_raw| {
-            @memcpy(out.*[cur .. cur + result_raw.len], result_raw);
+            @memcpy(out[cur .. cur + result_raw.len], result_raw);
             cur += result_raw.len;
 
             if (idx != self.results_raw.items.len - 1) {
                 for (options.delimiter) |delimiter_char| {
-                    out.*[cur] = delimiter_char;
+                    out[cur] = delimiter_char;
                     cur += 1;
                 }
             }
