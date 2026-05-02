@@ -389,7 +389,7 @@ const ProxyWrapper = struct {
 
         const n = ssh2.libssh2_channel_read(self.channel, buf[0..].ptr, 4096);
         if (n == 0) {
-            return;
+            return errors.ScrapliError.EOF;
         } else if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
             return error.WouldBlock;
         } else if (n < 0) {
@@ -403,17 +403,35 @@ const ProxyWrapper = struct {
         }
 
         var wrote: usize = 0;
+        const total: usize = @intCast(n);
 
-        while (true) {
-            const wrote_n: usize = @intCast(
-                std.c.write(self.remote_fd, buf[0..@intCast(n)].ptr, @intCast(n)),
+        while (wrote < total) {
+            const rc = std.c.write(
+                self.remote_fd,
+                buf[wrote..total].ptr,
+                total - wrote,
             );
 
-            wrote += wrote_n;
-
-            if (wrote == n) {
-                return;
+            if (rc < 0) {
+                const err = std.posix.errno(rc);
+                if (err == .AGAIN) {
+                    return error.WouldBlock;
+                }
+                return errors.wrapCriticalError(
+                    std.posix.unexpectedErrno(err),
+                    @src(),
+                    self.log,
+                    "channelToPipe: write to remote fd failed",
+                    .{},
+                );
             }
+
+            const wrote_n: usize = @intCast(rc);
+            if (wrote_n == 0) {
+                return error.WouldBlock;
+            }
+
+            wrote += wrote_n;
         }
     }
 
@@ -428,9 +446,9 @@ const ProxyWrapper = struct {
                         },
                         self.io,
                     );
-
                     continue;
                 },
+                errors.ScrapliError.EOF => return,
                 else => return err,
             };
         }
