@@ -511,7 +511,13 @@ pub const Transport = struct {
             );
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
-                std.posix.E.AGAIN => break,
+                std.posix.E.AGAIN => return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "bin.Transport write: eagain on write, short write",
+                    .{},
+                ),
                 else => |err| {
                     return errors.wrapCriticalError(
                         std.posix.unexpectedErrno(err),
