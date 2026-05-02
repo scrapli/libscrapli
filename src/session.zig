@@ -196,7 +196,7 @@ pub const Session = struct {
         u8,
         .dynamic,
     ),
-    read_thread_errored: bool = false,
+    read_thread_errored: std.atomic.Value(bool),
     read_into_buf: ?[]u8 = null,
 
     recorder_buf: [1024]u8 = [_]u8{0} ** 1024,
@@ -247,6 +247,7 @@ pub const Session = struct {
                 u8,
                 .dynamic,
             ).init(allocator),
+            .read_thread_errored = std.atomic.Value(bool).init(false),
             .recorder = try Recorder.init(io, options.record_destination, &s.recorder_buf),
             .prompt_pattern = prompt_pattern,
             .last_consumed_prompt = .empty,
@@ -451,14 +452,14 @@ pub const Session = struct {
     fn readLoop(self: *Session) !void {
         self.log.info("session.Session read thread started", .{});
 
-        errdefer self.read_thread_errored = true;
+        errdefer self.read_thread_errored.store(true, std.builtin.AtomicOrder.release);
 
         var buf = try self.allocator.alloc(u8, self.options.read_size);
         defer self.allocator.free(buf);
 
         while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
             const n = self.transport.read(buf) catch {
-                self.read_thread_errored = true;
+                self.read_thread_errored.store(true, std.builtin.AtomicOrder.release);
 
                 return;
             };
@@ -493,7 +494,9 @@ pub const Session = struct {
         try self.read_lock.lock(self.io);
         defer self.read_lock.unlock(self.io);
 
-        if (self.read_thread_errored and self.read_queue.readableLength() == 0) {
+        if (self.read_thread_errored.load(std.builtin.AtomicOrder.acquire) and
+            self.read_queue.readableLength() == 0)
+        {
             // once the read thread is errored out and there is nothing else to
             // read
             return errors.ScrapliError.EOF;
