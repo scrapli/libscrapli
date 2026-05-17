@@ -678,6 +678,30 @@ export fn ls_cli_read_callback_should_execute(
     return @intFromEnum(ffi_common.FfiResult.success);
 }
 
+export fn ls_cli_replace_definition(
+    d_ptr: *ffi_common.LsDriver,
+    definition_string: [*c]const u8,
+) callconv(.c) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+
+    switch (d.real_driver) {
+        .cli => |rd| {
+            rd.replaceDefinition(
+                .{
+                    .string = std.mem.span(definition_string),
+                },
+            ) catch |err| {
+                return ffi_common.toFfiResult(err);
+            };
+
+            return @intFromEnum(ffi_common.FfiResult.success);
+        },
+        else => {
+            return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        },
+    }
+}
+
 test "ffi: ls_cli_enter_mode null requested_mode" {
     var op_id: u32 = 0;
     var cancel: bool = false;

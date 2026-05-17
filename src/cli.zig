@@ -22,7 +22,7 @@ const default_telnet_port: u16 = 23;
 pub const DefinitionSource = union(enum) {
     string: []const u8,
     file: []const u8,
-    definition: *platform.Definition,
+    definition: *platform.Options,
 };
 
 /// A config object holding info for a cli driver.
@@ -118,23 +118,7 @@ pub const Driver = struct {
 
         try opts.validate(log);
 
-        const definition = switch (config.definition) {
-            .string => |d| try platform.YamlDefinition.toDefinition(
-                allocator,
-                io,
-                .{
-                    .string = d,
-                },
-            ),
-            .file => |d| try platform.YamlDefinition.toDefinition(
-                allocator,
-                io,
-                .{
-                    .file = d,
-                },
-            ),
-            .definition => |d| d,
-        };
+        const definition = try Driver.loadDefinition(allocator, io, config.definition);
 
         const d = try allocator.create(Driver);
 
@@ -181,6 +165,33 @@ pub const Driver = struct {
         self.definition.deinit();
         self.options.deinit();
         self.allocator.destroy(self);
+    }
+
+    fn loadDefinition(
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        definition_source: DefinitionSource,
+    ) !*platform.Definition {
+        return switch (definition_source) {
+            .string => |d| try platform.YamlDefinition.toDefinition(
+                allocator,
+                io,
+                .{
+                    .string = d,
+                },
+            ),
+            .file => |d| try platform.YamlDefinition.toDefinition(
+                allocator,
+                io,
+                .{
+                    .file = d,
+                },
+            ),
+            .definition => |d| try platform.Definition.init(
+                allocator,
+                d.*,
+            ),
+        };
     }
 
     /// Create a new result object for the given operation.
@@ -888,6 +899,58 @@ pub const Driver = struct {
         );
 
         return res;
+    }
+
+    //// Replaces the configured definition. This frees the existing definition and compiled prompt
+    /// pattern, replacing them both with the given definition source. You may want to use this in
+    /// situations like connecting to a device via a console server (starting with a definition that
+    /// has no concept of modes and an ultra grabby prompt pattern (maybe even `.*`)) - then once
+    /// attached to a network device you want to replace the definition to be "cisco_iosxe" or
+    /// similar. Basically the same as the historical scrapli `commandeer` functionality.
+    pub fn replaceDefinition(
+        self: *Driver,
+        definition_source: DefinitionSource,
+    ) !void {
+        const new_definition = try Driver.loadDefinition(
+            self.allocator,
+            self.io,
+            definition_source,
+        );
+        errdefer new_definition.deinit();
+
+        const pattern_changed = !std.mem.eql(
+            u8,
+            new_definition.prompt_pattern,
+            self.definition.prompt_pattern,
+        );
+
+        var new_compiled_pattern = self.session.compiled_prompt_pattern;
+
+        if (pattern_changed) {
+            new_compiled_pattern = re.pcre2Compile(new_definition.prompt_pattern);
+
+            if (new_compiled_pattern == null) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    "cli.replaceDefinition: failed compiling prompt pattern {s}",
+                    .{new_definition.prompt_pattern},
+                );
+            }
+        }
+
+        self.definition.deinit();
+        self.definition = new_definition;
+
+        if (pattern_changed) {
+            if (self.session.compiled_prompt_pattern) |p| {
+                re.pcre2Free(p);
+            }
+
+            self.session.prompt_pattern = new_definition.prompt_pattern;
+            self.session.compiled_prompt_pattern = new_compiled_pattern;
+        }
     }
 };
 
