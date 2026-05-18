@@ -911,6 +911,8 @@ pub const Driver = struct {
         self: *Driver,
         definition_source: DefinitionSource,
     ) !void {
+        self.log.info("cli.Driver replaceDefinition requested", .{});
+
         const new_definition = try Driver.loadDefinition(
             self.allocator,
             self.io,
