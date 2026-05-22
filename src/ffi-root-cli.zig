@@ -773,6 +773,7 @@ test "ffi: ls_cli_send_inputs null arguments" {
             "fuzzy",
             false,
             false,
+            false,
         ),
     );
 
@@ -787,6 +788,7 @@ test "ffi: ls_cli_send_inputs null arguments" {
             "fuzzy",
             false,
             false,
+            false,
         ),
     );
 
@@ -799,6 +801,7 @@ test "ffi: ls_cli_send_inputs null arguments" {
             "inputs",
             "mode",
             null,
+            false,
             false,
             false,
         ),
