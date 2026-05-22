@@ -115,7 +115,7 @@ pub const Result = struct {
 
                 // this can be slow if rets[1] is v large, and theres no reason continuing if we
                 // failed, so we are done here.
-                break;
+                return;
             }
         }
     }

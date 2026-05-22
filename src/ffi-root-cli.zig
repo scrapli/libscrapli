@@ -488,6 +488,7 @@ export fn ls_cli_send_inputs(
     input_handling: [*c]const u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
+    stop_on_indicated_failure: bool,
 ) callconv(.c) u8 {
     if (inputs == null or requested_mode == null or input_handling == null) {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
@@ -502,6 +503,7 @@ export fn ls_cli_send_inputs(
         input_handling,
         retain_input,
         retain_trailing_prompt,
+        stop_on_indicated_failure,
     );
 
     const _operation_id = d.queueOperation(

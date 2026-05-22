@@ -61,6 +61,7 @@ pub fn sendInputsOptionsFromArgs(
     input_handling: [*c]const u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
+    stop_on_indicated_failure: bool,
 ) operation.SendInputsOptions {
     var options = operation.SendInputsOptions{
         .cancel = cancel,
@@ -69,6 +70,7 @@ pub fn sendInputsOptionsFromArgs(
         .input_handling = getInputHandling(input_handling),
         .retain_input = retain_input,
         .retain_trailing_prompt = retain_trailing_prompt,
+        .stop_on_indicated_failure = stop_on_indicated_failure,
     };
 
     const _requested_mode = std.mem.span(requested_mode);
