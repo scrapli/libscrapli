@@ -919,6 +919,21 @@ pub const Session = struct {
 
             var match_indexes = try checkF(check_args, searchable_buf);
 
+            logging.traceWithSrc(
+                self.log,
+                @src(),
+                "session.Session readTimeout: processed_len {d}, searchable_len {d}, " ++
+                    "match start/end in searchable buf {d}/{d}, " ++
+                    "searchable_buf '{s}'",
+                .{
+                    bufs.processed.items.len,
+                    searchable_buf.len,
+                    match_indexes.start,
+                    match_indexes.end,
+                    searchable_buf,
+                },
+            );
+
             if (!(match_indexes.start == 0 and match_indexes.end == 0)) {
                 match_indexes.start += (bufs.processed.items.len - searchable_buf.len);
                 match_indexes.end += (bufs.processed.items.len - searchable_buf.len);
@@ -1034,6 +1049,17 @@ pub const Session = struct {
         input_handling: operation.InputHandling,
         bufs: *bytes.ProcessedBuf,
     ) !bytes_check.MatchPositions {
+        logging.traceWithSrc(
+            self.log,
+            @src(),
+            "session.Session innerSendInput: input_handling '{s}', input_len {d}, input '{s}'",
+            .{
+                @tagName(input_handling),
+                input.len,
+                input,
+            },
+        );
+
         const check_args = bytes_check.CheckArgs{
             .pattern = self.compiled_prompt_pattern,
             .actual = input,
