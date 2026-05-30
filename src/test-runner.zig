@@ -77,36 +77,18 @@ pub fn main(init: std.process.Init) !void {
     }
 
     for (builtin.test_functions) |t| {
-        if (isSetup(t) or isTeardown(t)) {
-            continue;
-        }
-
-        if (!isIntegration(t) and !unit_tests) {
-            continue;
-        }
-
-        if (isIntegration(t) and !integration_tests) {
-            continue;
-        }
-
-        if (isFunctional(t) and !functional_tests) {
-            continue;
-        }
-
-        var status = Status.pass;
-        slowest.startTiming();
-
-        const is_unnamed_test = isUnnamed(t);
-
-        if (is_unnamed_test) {
+        if (!shouldRunTest(t, unit_tests, integration_tests, functional_tests)) {
             continue;
         }
 
         if (env.filter) |f| {
-            if (!is_unnamed_test and std.mem.indexOf(u8, t.name, f) == null) {
+            if (!matchesFilter(t.name, f)) {
                 continue;
             }
         }
+
+        var status = Status.pass;
+        slowest.startTiming();
 
         std.testing.allocator_instance = .{};
 
@@ -118,17 +100,9 @@ pub fn main(init: std.process.Init) !void {
 
         const ns_taken = slowest.endTiming(friendly_name);
 
-        if (std.testing.allocator_instance.deinit() == .leak) {
-            leak += 1;
-            printer.status(
-                .fail,
-                "\n{s}\n\"{s}\" - Memory Leak\n{s}\n",
-                .{ border, friendly_name, border },
-            );
-        }
-
+        var passed = false;
         if (result) |_| {
-            pass += 1;
+            passed = true;
         } else |err| switch (err) {
             error.SkipZigTest => {
                 skip += 1;
@@ -149,6 +123,26 @@ pub fn main(init: std.process.Init) !void {
                     break;
                 }
             },
+        }
+
+        const leaked = std.testing.allocator_instance.deinit() == .leak;
+        if (leaked) {
+            leak += 1;
+            printer.status(
+                .fail,
+                "\n{s}\n\"{s}\" - memory leak\n{s}\n",
+                .{
+                    border,
+                    friendly_name,
+                    border,
+                },
+            );
+            if (status != .fail) {
+                status = .fail;
+                fail += 1;
+            }
+        } else if (passed) {
+            pass += 1;
         }
 
         if (env.verbose) {
@@ -211,6 +205,35 @@ fn friendlyName(name: []const u8) []const u8 {
     return name;
 }
 
+fn shouldRunTest(
+    t: std.builtin.TestFn,
+    unit_tests: bool,
+    integration_tests: bool,
+    functional_tests: bool,
+) bool {
+    if (isSetup(t) or isTeardown(t)) {
+        return false;
+    }
+
+    if (isUnnamed(t)) {
+        return false;
+    }
+
+    if (isIntegration(t)) {
+        return integration_tests;
+    }
+
+    if (isFunctional(t)) {
+        return functional_tests;
+    }
+
+    return unit_tests;
+}
+
+fn matchesFilter(name: []const u8, filter: []const u8) bool {
+    return std.mem.indexOf(u8, name, filter) != null;
+}
+
 const Printer = struct {
     f: std.Io.File,
 
@@ -233,7 +256,6 @@ const Printer = struct {
             .pass => "\x1b[32m",
             .fail => "\x1b[31m",
             .skip => "\x1b[33m",
-            else => "",
         };
 
         var stdout_buffer: [1024]u8 = undefined;
@@ -251,7 +273,6 @@ const Status = enum {
     pass,
     fail,
     skip,
-    text,
 };
 
 const SlowTracker = struct {
