@@ -34,9 +34,9 @@ jobs:
         run: |
           make build-examples
 
-      - name: build the library and ffi layer
+      - name: build static library
         run: |
-          make build
+          make release-linux-static TARGET=x86_64-linux-gnu
 
   build-linux-dynamic:
     runs-on: ubuntu-latest
@@ -65,4 +65,3 @@ jobs:
       - name: build the dynamic library
         run: |
           make release-linux-dynamic TARGET=x86_64-linux-gnu
-
