@@ -606,7 +606,11 @@ fn buildFFITarget(
                     .custom = try genFfiLibOutputDir(b, libscrapli),
                 },
             },
-            .dest_sub_path = try genFfiLibOutputName(b, libscrapli),
+            .dest_sub_path = try genFfiLibOutputName(
+                b,
+                libscrapli,
+                dependency_linkage,
+            ),
             .dylib_symlinks = false,
         },
     );
@@ -649,26 +653,33 @@ fn genFfiLibOutputDir(
 fn genFfiLibOutputName(
     b: *std.Build,
     lib: *std.Build.Step.Compile,
+    dependency_linkage: std.builtin.LinkMode,
 ) ![]const u8 {
+    const base_name = switch (dependency_linkage) {
+        .static => "libscrapli",
+        .dynamic => "libscrapli-dynamic",
+    };
+
     switch (lib.rootModuleTarget().os.tag) {
         .macos => {
-            const base_name = try std.fmt.allocPrint(
+            const versioned_name = try std.fmt.allocPrint(
                 b.allocator,
-                "libscrapli.{d}.{d}.{d}",
+                "{s}.{d}.{d}.{d}",
                 .{
+                    base_name,
                     version.major,
                     version.minor,
                     version.patch,
                 },
             );
-            defer b.allocator.free(base_name);
+            defer b.allocator.free(versioned_name);
 
             if (version.pre) |pre| {
                 return std.fmt.allocPrint(
                     b.allocator,
                     "{s}-{s}.dylib",
                     .{
-                        base_name,
+                        versioned_name,
                         pre,
                     },
                 );
@@ -678,15 +689,16 @@ fn genFfiLibOutputName(
                 b.allocator,
                 "{s}.dylib",
                 .{
-                    base_name,
+                    versioned_name,
                 },
             );
         },
         else => {
-            const base_name = try std.fmt.allocPrint(
+            const versioned_name = try std.fmt.allocPrint(
                 b.allocator,
-                "libscrapli.so.{d}.{d}.{d}",
+                "{s}.so.{d}.{d}.{d}",
                 .{
+                    base_name,
                     version.major,
                     version.minor,
                     version.patch,
@@ -694,19 +706,19 @@ fn genFfiLibOutputName(
             );
 
             if (version.pre) |pre| {
-                defer b.allocator.free(base_name);
+                defer b.allocator.free(versioned_name);
 
                 return std.fmt.allocPrint(
                     b.allocator,
                     "{s}-{s}",
                     .{
-                        base_name,
+                        versioned_name,
                         pre,
                     },
                 );
             }
 
-            return base_name;
+            return versioned_name;
         },
     }
 }

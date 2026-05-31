@@ -93,7 +93,7 @@ jobs:
         run: |
           bash ./build/release_publish.sh \
             ${{ inputs.release_tag }} \
-            zig-out/${{ matrix.target }}/libscrapli.so.${{ env.RELEASE_VERSION }} \
+            zig-out/${{ matrix.target }}/libscrapli-dynamic.so.${{ env.RELEASE_VERSION }} \
             libscrapli-${{ matrix.target }}-dynamic.${{ env.RELEASE_VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
