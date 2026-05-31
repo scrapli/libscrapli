@@ -1,0 +1,68 @@
+---
+name: build-linux
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+jobs:
+  build-linux-static:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: load env vars for workflow run
+        run: |
+          source .github/vars.env
+          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
+
+      - name: setup zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: ensure openssl generate step cached
+        run: |
+          zig build
+        working-directory: lib/openssl
+
+      - name: build the examples
+        run: |
+          make build-examples
+
+      - name: build the library and ffi layer
+        run: |
+          make build
+
+  build-linux-dynamic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcre2-dev libssh2-1-dev
+
+      - name: load env vars for workflow run
+        run: |
+          source .github/vars.env
+          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
+
+      - name: setup zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: build the dynamic library
+        run: |
+          make release-linux-dynamic TARGET=x86_64-linux-gnu
+

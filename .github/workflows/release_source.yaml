@@ -20,7 +20,7 @@ jobs:
 
       - name: set release version
         run: |
-          bash ./build/release_setup.sh ${{ github.ref_name }}
+          bash ./build/release_setup.sh ${{ inputs.release_tag }}
 
       - name: make release tarball
         run: |
@@ -28,10 +28,12 @@ jobs:
             --exclude=.git \
             --exclude=.zig-cache \
             --exclude=zig-out \
-            -czf /tmp/libscrapli-${{ github.ref_name }}.tar.gz .
+            -czf /tmp/libscrapli-${{ inputs.release_tag }}.tar.gz .
 
       - name: upload tarball to release
         run: |
-          gh release upload ${{ github.ref_name }} /tmp/libscrapli-${{ github.ref_name }}.tar.gz --clobber
+          gh release upload ${{ inputs.release_tag }} \
+          /tmp/libscrapli-${{ inputs.release_tag }}.tar.gz \
+          --clobber
         env:
-          GITHUB_TOKEN: ${{ github.TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
