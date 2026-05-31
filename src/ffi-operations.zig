@@ -1,5 +1,5 @@
+const netconf_operation = @import("netconf-operation.zig");
 const operation = @import("cli-operation.zig");
-const operation_netconf = @import("netconf-operation.zig");
 const result = @import("cli-result.zig");
 const result_netconf = @import("netconf-result.zig");
 
@@ -32,26 +32,26 @@ pub const OperationOptions = struct {
             read_any: operation.ReadAnyOptions,
         },
         netconf: union(enum) {
-            open: operation_netconf.OpenOptions,
-            close: operation_netconf.CloseOptions,
-            raw_rpc: operation_netconf.RawRpcOptions,
-            get_config: operation_netconf.GetConfigOptions,
-            edit_config: operation_netconf.EditConfigOptions,
-            copy_config: operation_netconf.CopyConfigOptions,
-            delete_config: operation_netconf.DeleteConfigOptions,
-            lock: operation_netconf.LockUnlockOptions,
-            unlock: operation_netconf.LockUnlockOptions,
-            get: operation_netconf.GetOptions,
-            close_session: operation_netconf.CloseSessionOptions,
-            kill_session: operation_netconf.KillSessionOptions,
-            commit: operation_netconf.CommitOptions,
-            discard: operation_netconf.DiscardOptions,
-            cancel_commit: operation_netconf.CancelCommitOptions,
-            validate: operation_netconf.ValidateOptions,
-            get_schema: operation_netconf.GetSchemaOptions,
-            get_data: operation_netconf.GetDataOptions,
-            edit_data: operation_netconf.EditDataOptions,
-            action: operation_netconf.ActionOptions,
+            open: netconf_operation.OpenOptions,
+            close: netconf_operation.CloseOptions,
+            raw_rpc: netconf_operation.RawRpcOptions,
+            get_config: netconf_operation.GetConfigOptions,
+            edit_config: netconf_operation.EditConfigOptions,
+            copy_config: netconf_operation.CopyConfigOptions,
+            delete_config: netconf_operation.DeleteConfigOptions,
+            lock: netconf_operation.LockUnlockOptions,
+            unlock: netconf_operation.LockUnlockOptions,
+            get: netconf_operation.GetOptions,
+            close_session: netconf_operation.CloseSessionOptions,
+            kill_session: netconf_operation.KillSessionOptions,
+            commit: netconf_operation.CommitOptions,
+            discard: netconf_operation.DiscardOptions,
+            cancel_commit: netconf_operation.CancelCommitOptions,
+            validate: netconf_operation.ValidateOptions,
+            get_schema: netconf_operation.GetSchemaOptions,
+            get_data: netconf_operation.GetDataOptions,
+            edit_data: netconf_operation.EditDataOptions,
+            action: netconf_operation.ActionOptions,
         },
     },
 };

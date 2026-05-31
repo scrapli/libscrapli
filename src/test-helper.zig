@@ -49,6 +49,7 @@ fn processCommon(
     actual: []const u8,
 ) !?[2][]const u8 {
     const update = parseCustomFlag("--update", false);
+    const record = parseCustomFlag("--record", false);
 
     var _actual = try std.testing.allocator.alloc(u8, actual.len);
     errdefer std.testing.allocator.free(_actual);
@@ -64,11 +65,11 @@ fn processCommon(
         @memcpy(_actual, ret);
     }
 
-    if (update) {
+    if (update or record) {
         try file.writeToPath(std.testing.io, golden_filename, _actual);
 
-        // sometimes we can have things like ETX that do not have an ESC in the sequence... just for
-        // testing reasons we'll remove that (since when using recorder we also remove!)
+        // sometimes we can have things like ETX that do not have an ESC in the sequence...
+        // just for testing reasons we'll remove that (since when using recorder we also remove!)
         try ascii.stripAsciiAndAnsiControlCharsInFile(std.testing.io, golden_filename);
 
         std.testing.allocator.free(_actual);
