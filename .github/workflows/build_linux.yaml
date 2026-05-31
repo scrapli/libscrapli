@@ -30,10 +30,6 @@ jobs:
           zig build
         working-directory: lib/openssl
 
-      - name: build the examples
-        run: |
-          make build-examples
-
       - name: build static library
         run: |
           make release-linux-static TARGET=x86_64-linux-gnu

@@ -1,0 +1,35 @@
+---
+name: build-examples
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+jobs:
+  build-examples:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: load env vars for workflow run
+        run: |
+          source .github/vars.env
+          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
+
+      - name: setup zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: ensure openssl generate step cached
+        run: |
+          zig build
+        working-directory: lib/openssl
+
+      - name: build the examples
+        run: |
+          make build-examples

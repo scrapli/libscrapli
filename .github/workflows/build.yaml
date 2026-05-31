@@ -6,6 +6,9 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  build-examples:
+    uses: ./.github/workflows/build_examples.yaml
+
   build-linux:
     uses: ./.github/workflows/build_linux.yaml
 
