@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -exuo pipefail
 
 release_tag="${1:-}"
 source_path="${2:-}"
