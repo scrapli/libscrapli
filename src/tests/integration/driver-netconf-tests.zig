@@ -4,7 +4,7 @@ const scrapli = @import("scrapli");
 const netconf = scrapli.netconf;
 const helper = scrapli.test_helper;
 
-fn GetRecordTestDriver(record_path: []const u8) !*netconf.Driver {
+fn makeRecordTestDriver(record_path: []const u8) !*netconf.Driver {
     return netconf.Driver.init(
         std.testing.allocator,
         std.testing.io,
@@ -24,7 +24,7 @@ fn GetRecordTestDriver(record_path: []const u8) !*netconf.Driver {
     );
 }
 
-fn GetTestDriver(f: []const u8) !*netconf.Driver {
+fn makeReplayTestDriver(fixture_path: []const u8) !*netconf.Driver {
     const d = try netconf.Driver.init(
         std.testing.allocator,
         std.testing.io,
@@ -44,7 +44,7 @@ fn GetTestDriver(f: []const u8) !*netconf.Driver {
             },
             .transport = .{
                 .test_ = .{
-                    .f = f,
+                    .f = fixture_path,
                 },
             },
         },
@@ -59,6 +59,13 @@ fn GetTestDriver(f: []const u8) !*netconf.Driver {
     return d;
 }
 
+fn initTestDriver(record: bool, fixture_path: []const u8) !*netconf.Driver {
+    return if (record)
+        try makeRecordTestDriver(fixture_path)
+    else
+        try makeReplayTestDriver(fixture_path);
+}
+
 test "driver-netconf open" {
     const test_name = "driver-netconf-open";
 
@@ -71,38 +78,31 @@ test "driver-netconf open" {
     };
 
     for (cases) |case| {
-        const record = helper.parseCustomFlag("--record", false);
+        const record = helper.isRecording();
 
-        const fixture_filename = try std.fmt.allocPrint(
+        const fixture_filename = try helper.fixturePath(
             std.testing.allocator,
-            "src/tests/integration/fixtures/netconf/{s}-{s}.txt",
-            .{ test_name, case.name },
+            "netconf",
+            test_name,
+            case.name,
         );
         defer std.testing.allocator.free(fixture_filename);
 
-        const golden_filename = try std.fmt.allocPrint(
+        const golden_filename = try helper.goldenPath(
             std.testing.allocator,
-            "src/tests/integration/golden/netconf/{s}-{s}.txt",
-            .{ test_name, case.name },
+            "netconf",
+            test_name,
+            case.name,
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d: *netconf.Driver = undefined;
-
-        if (record) {
-            d = try GetRecordTestDriver(fixture_filename);
-        } else {
-            d = try GetTestDriver(fixture_filename);
-        }
+        const d = try initTestDriver(record, fixture_filename);
         defer d.deinit();
 
         const actual_res = try d.open(std.testing.allocator, .{});
         defer actual_res.deinit();
 
-        defer {
-            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
-            close_ret.deinit();
-        }
+        defer helper.closeDriver(netconf.Driver, d, std.testing.allocator);
 
         try std.testing.expect(!actual_res.result_failure_indicated);
 
@@ -127,29 +127,25 @@ test "driver-netconf get-config" {
     };
 
     for (cases) |case| {
-        const record = helper.parseCustomFlag("--record", false);
+        const record = helper.isRecording();
 
-        const fixture_filename = try std.fmt.allocPrint(
+        const fixture_filename = try helper.fixturePath(
             std.testing.allocator,
-            "src/tests/integration/fixtures/netconf/{s}-{s}.txt",
-            .{ test_name, case.name },
+            "netconf",
+            test_name,
+            case.name,
         );
         defer std.testing.allocator.free(fixture_filename);
 
-        const golden_filename = try std.fmt.allocPrint(
+        const golden_filename = try helper.goldenPath(
             std.testing.allocator,
-            "src/tests/integration/golden/netconf/{s}-{s}.txt",
-            .{ test_name, case.name },
+            "netconf",
+            test_name,
+            case.name,
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d: *netconf.Driver = undefined;
-
-        if (record) {
-            d = try GetRecordTestDriver(fixture_filename);
-        } else {
-            d = try GetTestDriver(fixture_filename);
-        }
+        const d = try initTestDriver(record, fixture_filename);
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, .{});
@@ -158,10 +154,7 @@ test "driver-netconf get-config" {
         const actual_res = try d.getConfig(std.testing.allocator, .{});
         defer actual_res.deinit();
 
-        defer {
-            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
-            close_ret.deinit();
-        }
+        defer helper.closeDriver(netconf.Driver, d, std.testing.allocator);
 
         try std.testing.expect(!actual_res.result_failure_indicated);
 
@@ -192,29 +185,25 @@ test "driver-netconf lock" {
     };
 
     for (cases) |case| {
-        const record = helper.parseCustomFlag("--record", false);
+        const record = helper.isRecording();
 
-        const fixture_filename = try std.fmt.allocPrint(
+        const fixture_filename = try helper.fixturePath(
             std.testing.allocator,
-            "src/tests/integration/fixtures/netconf/{s}-{s}.txt",
-            .{ test_name, case.name },
+            "netconf",
+            test_name,
+            case.name,
         );
         defer std.testing.allocator.free(fixture_filename);
 
-        const golden_filename = try std.fmt.allocPrint(
+        const golden_filename = try helper.goldenPath(
             std.testing.allocator,
-            "src/tests/integration/golden/netconf/{s}-{s}.txt",
-            .{ test_name, case.name },
+            "netconf",
+            test_name,
+            case.name,
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d: *netconf.Driver = undefined;
-
-        if (record) {
-            d = try GetRecordTestDriver(fixture_filename);
-        } else {
-            d = try GetTestDriver(fixture_filename);
-        }
+        const d = try initTestDriver(record, fixture_filename);
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, .{});
@@ -228,10 +217,7 @@ test "driver-netconf lock" {
         );
         defer actual_res.deinit();
 
-        defer {
-            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
-            close_ret.deinit();
-        }
+        defer helper.closeDriver(netconf.Driver, d, std.testing.allocator);
 
         try std.testing.expect(!actual_res.result_failure_indicated);
 
@@ -256,29 +242,25 @@ test "driver-netconf unlock" {
     };
 
     for (cases) |case| {
-        const record = helper.parseCustomFlag("--record", false);
+        const record = helper.isRecording();
 
-        const fixture_filename = try std.fmt.allocPrint(
+        const fixture_filename = try helper.fixturePath(
             std.testing.allocator,
-            "src/tests/integration/fixtures/netconf/{s}-{s}.txt",
-            .{ test_name, case.name },
+            "netconf",
+            test_name,
+            case.name,
         );
         defer std.testing.allocator.free(fixture_filename);
 
-        const golden_filename = try std.fmt.allocPrint(
+        const golden_filename = try helper.goldenPath(
             std.testing.allocator,
-            "src/tests/integration/golden/netconf/{s}-{s}.txt",
-            .{ test_name, case.name },
+            "netconf",
+            test_name,
+            case.name,
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d: *netconf.Driver = undefined;
-
-        if (record) {
-            d = try GetRecordTestDriver(fixture_filename);
-        } else {
-            d = try GetTestDriver(fixture_filename);
-        }
+        const d = try initTestDriver(record, fixture_filename);
         defer d.deinit();
 
         const open_res = try d.open(std.testing.allocator, .{});
@@ -300,10 +282,7 @@ test "driver-netconf unlock" {
         );
         defer actual_res.deinit();
 
-        defer {
-            const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
-            close_ret.deinit();
-        }
+        defer helper.closeDriver(netconf.Driver, d, std.testing.allocator);
 
         try std.testing.expect(!actual_res.result_failure_indicated);
 

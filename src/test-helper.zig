@@ -587,3 +587,146 @@ pub fn inlineInitArrayList(
 
     return al;
 }
+
+/// returns true if the `record` flag has been passed for the test suite.
+pub fn isRecording() bool {
+    return parseCustomFlag("--record", false);
+}
+
+/// returns the fixture path for the given suite/test/case.
+pub fn fixturePath(
+    allocator: std.mem.Allocator,
+    suite: []const u8,
+    test_name: []const u8,
+    case_name: ?[]const u8,
+) ![]u8 {
+    return testPath(
+        allocator,
+        "fixtures",
+        suite,
+        test_name,
+        case_name,
+    );
+}
+
+/// returns the golden path for the given suite/test/case.
+pub fn goldenPath(
+    allocator: std.mem.Allocator,
+    suite: []const u8,
+    test_name: []const u8,
+    case_name: ?[]const u8,
+) ![]u8 {
+    return testPath(
+        allocator,
+        "golden",
+        suite,
+        test_name,
+        case_name,
+    );
+}
+
+/// closes the driver and deinits the result.
+pub fn closeDriver(
+    comptime Driver: type,
+    driver: *Driver,
+    allocator: std.mem.Allocator,
+) void {
+    // zlinter-disable-next-line no_swallow_error
+    const r = driver.close(allocator, .{}) catch unreachable;
+
+    r.deinit();
+}
+
+/// A simple object holding cancel/cancelled pointers for use in testing cancellation in cases.
+pub const CancelProbe = struct {
+    cancel: *bool,
+    cancelled: *bool,
+
+    /// Initializes the test cancellation probe.
+    pub fn init(allocator: std.mem.Allocator) !CancelProbe {
+        const cancel = try allocator.create(bool);
+        errdefer allocator.destroy(cancel);
+
+        const cancelled = try allocator.create(bool);
+        errdefer allocator.destroy(cancelled);
+
+        cancel.* = false;
+        cancelled.* = false;
+
+        return .{
+            .cancel = cancel,
+            .cancelled = cancelled,
+        };
+    }
+
+    /// Deinitializes the probe.
+    pub fn deinit(self: CancelProbe, allocator: std.mem.Allocator) void {
+        allocator.destroy(self.cancel);
+        allocator.destroy(self.cancelled);
+    }
+};
+
+/// helper to assert expected cancellations in test cases.
+pub fn expectCancelled(
+    comptime operation_fn: anytype,
+    driver: anytype,
+    allocator: std.mem.Allocator,
+    probe: *CancelProbe,
+    options: anytype,
+) !void {
+    var thread_options = options;
+    thread_options.cancel = probe.cancel;
+
+    const worker = struct {
+        fn run(
+            drv: @TypeOf(driver),
+            cancelled: *bool,
+            alloc: std.mem.Allocator,
+            opts: @TypeOf(thread_options),
+        ) !void {
+            try std.testing.expectError(
+                error.Cancelled,
+                @call(.auto, operation_fn, .{ drv, alloc, opts }),
+            );
+
+            cancelled.* = true;
+        }
+    };
+
+    var thread = try std.Thread.spawn(
+        .{},
+        worker.run,
+        .{ driver, probe.cancelled, allocator, thread_options },
+    );
+
+    probe.cancel.* = true;
+    thread.join();
+
+    try std.testing.expect(probe.cancelled.*);
+}
+
+fn testPath(
+    allocator: std.mem.Allocator,
+    root: []const u8,
+    suite: []const u8,
+    test_name: []const u8,
+    case_name: ?[]const u8,
+) ![]u8 {
+    const filename = if (case_name) |case|
+        try std.fmt.allocPrint(allocator, "{s}-{s}.txt", .{ test_name, case })
+    else
+        try std.fmt.allocPrint(allocator, "{s}.txt", .{test_name});
+    defer allocator.free(filename);
+
+    return try std.Io.Dir.path.join(
+        allocator,
+        &.{
+            "src",
+            "tests",
+            "integration",
+            root,
+            suite,
+            filename,
+        },
+    );
+}
