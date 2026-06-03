@@ -35,13 +35,14 @@ pub fn getStream(
                         .mode = .stream,
                         .protocol = .tcp,
                     },
-                ) catch {
+                ) catch |err| {
                     log.debug(
                         "socket: failed connecting to resolved address {any} for host '{s}'," ++
-                            " trying next candidate",
+                            " trying next candidate. error: {any}",
                         .{
                             addr.address,
                             host,
+                            err,
                         },
                     );
                     continue;
