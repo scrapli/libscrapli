@@ -808,6 +808,16 @@ pub const FfiDriver = struct {
             unreachable;
         }
 
+        if (!ret.?.done) {
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                self.getLogger(),
+                "operation not complete",
+                .{},
+            );
+        }
+
         if (remove) {
             // clean it up
             _ = self.operation_results.remove(operation_id);

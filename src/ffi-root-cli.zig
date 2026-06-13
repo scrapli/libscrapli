@@ -876,3 +876,51 @@ test "ffi: ls_cli_read_callback_should_execute null arguments" {
         ),
     );
 }
+
+test "ffi: ls_cli_fetch_operation_sizes incomplete operation" {
+    const d = try ffi_driver.FfiDriver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "dummy",
+        .{
+            .definition = .{
+                .file = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml",
+            },
+        },
+    );
+    defer d.deinit();
+
+    var cancel = false;
+    const operation_id = try d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .close = .{
+                        .cancel = &cancel,
+                    },
+                },
+            },
+        },
+    );
+
+    var operation_count: u32 = 0;
+    var operation_input_size: usize = 0;
+    var operation_result_raw_size: usize = 0;
+    var operation_result_size: usize = 0;
+    var operation_failure_indicator_size: usize = 0;
+    var operation_error_size: usize = 0;
+
+    const ret = ls_cli_fetch_operation_sizes(
+        @ptrCast(d),
+        operation_id,
+        &operation_count,
+        &operation_input_size,
+        &operation_result_raw_size,
+        &operation_result_size,
+        &operation_failure_indicator_size,
+        &operation_error_size,
+    );
+
+    try std.testing.expectEqual(@intFromEnum(ffi_common.FfiResult.operation), ret);
+}
