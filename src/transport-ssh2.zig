@@ -1177,9 +1177,9 @@ pub const Transport = struct {
 
             if (errmsg != null and errlen > 0) {
                 const msg_slice = errmsg[0..@intCast(errlen)];
-                std.debug.print("libssh2 error: {} {s}\n", .{ err, msg_slice });
+                self.log.debug("libssh2 error: {} {s}\n", .{ err, msg_slice });
             } else {
-                std.debug.print("libssh2 error: {} (no message)\n", .{err});
+                self.log.debug("libssh2 error: {} (no message)\n", .{err});
             }
 
             return errors.wrapCriticalError(
