@@ -229,7 +229,7 @@ release-linux-dynamic: clean-zig-cache
 ## Build the example binaries, uses Debug build so you get leak checking
 build-examples: fmt clean-zig-cache
 	zig build examples \
-	    -Doptimize=Debug \
+	    -Doptimize=ReleaseSafe \
 		-freference-trace=4 \
 		-Ddependency-linkage=static \
 		--summary all
@@ -237,7 +237,7 @@ build-examples: fmt clean-zig-cache
 ## Build the "main" binary in repo root, uses Debug build so you get leak checking
 build-main: fmt clean-zig-cache
 	zig build main \
-	    -Doptimize=Debug \
+	    -Doptimize=ReleaseSafe \
 		-freference-trace=4 \
 		-Ddependency-linkage=static \
 		--summary all

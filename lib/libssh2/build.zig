@@ -8,7 +8,14 @@ pub fn build(b: *std.Build) void {
         "openssl",
         .{
             .target = target,
-            .optimize = optimize,
+            // w/ ReleaseSafe this caused some out of bounds trap to fire in openssl; it
+            // *seems* like this is safe. annoying that it is not consistent w/ everything
+            // else but... it works and we now are able to safely(?) use the dzfrias openssl
+            // zig package which is very handy
+            // maybe this one or similar things in/around it fixed it (but we have 3.6.0 and
+            // looks like this was 5mo after that release)
+            // https://github.com/openssl/openssl/pull/30342
+            .optimize = .ReleaseFast,
         },
     );
 

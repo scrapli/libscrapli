@@ -5,7 +5,8 @@
     .fingerprint = 0x57bdea04e1bb13d8,
     .dependencies = .{
         .openssl = .{
-            .path = "../openssl",
+            .url = "https://github.com/dzfrias/openssl-zig/archive/303ff47.tar.gz",
+            .hash = "openssl-3.6.0-YymhPkUpAQBvGMYJLeoNCns4esnK4ysEzokvFoypRQv1",
         },
         .libssh2 = .{
             .url = "https://github.com/libssh2/libssh2/archive/refs/tags/libssh2-1.11.1.tar.gz",
