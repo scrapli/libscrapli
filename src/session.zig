@@ -204,7 +204,7 @@ pub const Session = struct {
     read_into_buf: ?[]u8 = null,
     read_loop_buf: ?[]u8 = null,
 
-    recorder_buf: [1024]u8 = [_]u8{0} ** 1024,
+    recorder_buf: [1024]u8 = @splat(0),
     recorder: Recorder,
 
     compiled_username_pattern: ?*re.pcre2CompiledPattern = null,

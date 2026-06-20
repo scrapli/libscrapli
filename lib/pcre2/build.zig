@@ -13,20 +13,14 @@ pub fn build(b: *std.Build) !void {
     // super janky, but lets us be decoupled from upstream (because even if we used upstream as
     // a dep and then tried to tweak it we would still be hosed if/until they update zig versions
     // and stuff).
-    const proc = std.process.run(
+    _ = try std.process.run(
         b.allocator,
         b.graph.io,
         .{
-            .cwd = .{ .path = b.build_root.path orelse "." },
+            .cwd = .{ .path = b.fmt("{f}", .{b.root}) },
             .argv = &[_][]const u8{"./generate.sh"},
         },
-    ) catch {
-        return std.Build.RunError.ExitCodeFailure;
-    };
-
-    if (proc.term.exited != 0) {
-        return std.Build.RunError.ExitCodeFailure;
-    }
+    );
 
     const linkage = b.option(
         std.builtin.LinkMode,
@@ -56,9 +50,6 @@ pub fn build(b: *std.Build) !void {
             .HAVE_ASSERT_H = true,
             .HAVE_UNISTD_H = (target.result.os.tag != .windows),
             .HAVE_WINDOWS_H = (target.result.os.tag == .windows),
-
-            .HAVE_MEMMOVE = true,
-            .HAVE_STRERROR = true,
 
             .SUPPORT_PCRE2_8 = codeUnitWidth == CodeUnitWidth.@"8",
             .SUPPORT_PCRE2_16 = codeUnitWidth == CodeUnitWidth.@"16",
