@@ -2,6 +2,7 @@
 const std = @import("std");
 
 const cli = @import("cli.zig");
+const cli_operation = @import("cli-operation.zig");
 const errors = @import("errors.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
 const ffi_common = @import("ffi-common.zig");
@@ -10,6 +11,79 @@ const ffi_operations = @import("ffi-operations.zig");
 
 /// For forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer.
 pub const noop = true;
+
+fn dupeSlice(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
+    return try allocator.dupe(u8, value);
+}
+
+fn ffiOwnedEnterModeOptions(
+    allocator: std.mem.Allocator,
+    cancel: *bool,
+    requested_mode: [*c]const u8,
+) !cli_operation.EnterModeOptions {
+    return .{
+        .cancel = cancel,
+        .requested_mode = try dupeSlice(allocator, std.mem.span(requested_mode)),
+    };
+}
+
+fn ffiOwnedSendInputOptions(
+    allocator: std.mem.Allocator,
+    options: cli_operation.SendInputOptions,
+) !cli_operation.SendInputOptions {
+    var owned = options;
+    owned.input = try dupeSlice(allocator, options.input);
+    errdefer allocator.free(owned.input);
+    owned.requested_mode = try dupeSlice(allocator, options.requested_mode);
+
+    return owned;
+}
+
+fn ffiOwnedSendInputsOptions(
+    allocator: std.mem.Allocator,
+    options: cli_operation.SendInputsOptions,
+) !cli_operation.SendInputsOptions {
+    var owned = options;
+    if (options._ffi_inputs) |ffi_inputs| {
+        owned._ffi_inputs = try dupeSlice(allocator, ffi_inputs);
+    }
+    errdefer if (owned._ffi_inputs) |ffi_inputs| allocator.free(ffi_inputs);
+    owned.requested_mode = try dupeSlice(allocator, options.requested_mode);
+
+    return owned;
+}
+
+fn ffiOwnedSendPromptedInputOptions(
+    allocator: std.mem.Allocator,
+    options: cli_operation.SendPromptedInputOptions,
+) !cli_operation.SendPromptedInputOptions {
+    var owned = options;
+
+    owned.input = try dupeSlice(allocator, options.input);
+    errdefer allocator.free(owned.input);
+
+    if (options.prompt_exact) |prompt_exact| {
+        owned.prompt_exact = try dupeSlice(allocator, prompt_exact);
+    }
+    errdefer if (owned.prompt_exact) |prompt_exact| allocator.free(prompt_exact);
+
+    if (options.prompt_pattern) |prompt_pattern| {
+        owned.prompt_pattern = try dupeSlice(allocator, prompt_pattern);
+    }
+    errdefer if (owned.prompt_pattern) |prompt_pattern| allocator.free(prompt_pattern);
+
+    owned.response = try dupeSlice(allocator, options.response);
+    errdefer allocator.free(owned.response);
+
+    owned.requested_mode = try dupeSlice(allocator, options.requested_mode);
+    errdefer allocator.free(owned.requested_mode);
+
+    if (options.abort_input) |abort_input| {
+        owned.abort_input = try dupeSlice(allocator, abort_input);
+    }
+
+    return owned;
+}
 
 /// writes the ntc template platform from the driver's definition into the character slice at
 /// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
@@ -360,19 +434,26 @@ export fn ls_cli_enter_mode(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .cli = .{
-                    .enter_mode = .{
-                        .cancel = cancel,
-                        .requested_mode = std.mem.span(requested_mode),
-                    },
-                },
+    const options = ffiOwnedEnterModeOptions(
+        d.allocator,
+        cancel,
+        requested_mode,
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .cli = .{
+                .enter_mode = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -442,25 +523,29 @@ export fn ls_cli_send_input(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const options = ffi_args_to_options.sendInputOptionsFromArgs(
+    const options = ffiOwnedSendInputOptions(d.allocator, ffi_args_to_options.sendInputOptionsFromArgs(
         cancel,
         input,
         requested_mode,
         input_handling,
         retain_input,
         retain_trailing_prompt,
-    );
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .cli = .{
-                    .send_input = options,
-                },
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .cli = .{
+                .send_input = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -496,7 +581,7 @@ export fn ls_cli_send_inputs(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const options = ffi_args_to_options.sendInputsOptionsFromArgs(
+    const options = ffiOwnedSendInputsOptions(d.allocator, ffi_args_to_options.sendInputsOptionsFromArgs(
         cancel,
         inputs,
         requested_mode,
@@ -504,18 +589,22 @@ export fn ls_cli_send_inputs(
         retain_input,
         retain_trailing_prompt,
         stop_on_indicated_failure,
-    );
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .cli = .{
-                    .send_inputs = options,
-                },
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .cli = .{
+                .send_inputs = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -560,7 +649,7 @@ export fn ls_cli_send_prompted_input(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const options = ffi_args_to_options.sendPromptedInputOptionsFromArgs(
+    const options = ffiOwnedSendPromptedInputOptions(d.allocator, ffi_args_to_options.sendPromptedInputOptionsFromArgs(
         cancel,
         input,
         prompt_exact,
@@ -571,18 +660,22 @@ export fn ls_cli_send_prompted_input(
         requested_mode,
         input_handling,
         retain_trailing_prompt,
-    );
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .cli = .{
-                    .send_prompted_input = options,
-                },
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .cli = .{
+                .send_prompted_input = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,

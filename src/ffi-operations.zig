@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const netconf_operation = @import("netconf-operation.zig");
 const operation = @import("cli-operation.zig");
 const result = @import("cli-result.zig");
@@ -20,6 +22,7 @@ pub const OperationResult = struct {
 /// cli or netconf operations.
 pub const OperationOptions = struct {
     id: u32,
+    ffi_owned: bool = false,
     operation: union(enum) {
         cli: union(enum) {
             open: operation.OpenOptions,
@@ -55,6 +58,108 @@ pub const OperationOptions = struct {
         },
     },
 };
+
+pub fn deinitFfiOwnedOperationOptions(
+    allocator: std.mem.Allocator,
+    options: OperationOptions,
+) void {
+    if (!options.ffi_owned) {
+        return;
+    }
+
+    switch (options.operation) {
+        .cli => |cli_op| switch (cli_op) {
+            .enter_mode => |o| allocator.free(o.requested_mode),
+            .send_input => |o| {
+                allocator.free(o.input);
+                allocator.free(o.requested_mode);
+            },
+            .send_inputs => |o| {
+                if (o._ffi_inputs) |ffi_inputs| {
+                    allocator.free(ffi_inputs);
+                }
+                allocator.free(o.requested_mode);
+            },
+            .send_prompted_input => |o| {
+                allocator.free(o.input);
+                if (o.prompt_exact) |prompt_exact| {
+                    allocator.free(prompt_exact);
+                }
+                if (o.prompt_pattern) |prompt_pattern| {
+                    allocator.free(prompt_pattern);
+                }
+                allocator.free(o.response);
+                allocator.free(o.requested_mode);
+                if (o.abort_input) |abort_input| {
+                    allocator.free(abort_input);
+                }
+            },
+            else => {},
+        },
+        .netconf => |netconf_op| switch (netconf_op) {
+            .raw_rpc => |o| {
+                allocator.free(o.payload);
+                if (o.base_namespace_prefix) |base_namespace_prefix| {
+                    allocator.free(base_namespace_prefix);
+                }
+                if (o._extra_namespaces_ffi) |extra_namespaces| {
+                    allocator.free(extra_namespaces);
+                }
+            },
+            .get_config => |o| {
+                if (o.filter) |filter| {
+                    allocator.free(filter);
+                }
+                if (o.filter_namespace_prefix) |filter_namespace_prefix| {
+                    allocator.free(filter_namespace_prefix);
+                }
+                if (o.filter_namespace) |filter_namespace| {
+                    allocator.free(filter_namespace);
+                }
+            },
+            .edit_config => |o| allocator.free(o.config),
+            .get => |o| {
+                if (o.filter) |filter| {
+                    allocator.free(filter);
+                }
+                if (o.filter_namespace_prefix) |filter_namespace_prefix| {
+                    allocator.free(filter_namespace_prefix);
+                }
+                if (o.filter_namespace) |filter_namespace| {
+                    allocator.free(filter_namespace);
+                }
+            },
+            .cancel_commit => |o| {
+                if (o.persist_id) |persist_id| {
+                    allocator.free(persist_id);
+                }
+            },
+            .get_schema => |o| {
+                allocator.free(o.identifier);
+                if (o.version) |version| {
+                    allocator.free(version);
+                }
+            },
+            .get_data => |o| {
+                if (o.filter) |filter| {
+                    allocator.free(filter);
+                }
+                if (o.filter_namespace_prefix) |filter_namespace_prefix| {
+                    allocator.free(filter_namespace_prefix);
+                }
+                if (o.filter_namespace) |filter_namespace| {
+                    allocator.free(filter_namespace);
+                }
+                if (o.origin_filters) |origin_filters| {
+                    allocator.free(origin_filters);
+                }
+            },
+            .edit_data => |o| allocator.free(o.edit_content),
+            .action => |o| allocator.free(o.action),
+            else => {},
+        },
+    }
+}
 
 /// CliOperationSizes holds operation sizes for an operation, returned from ffi driver to the ffi
 /// layer. Doesn't contain error size as that would be processed in a different branch before this

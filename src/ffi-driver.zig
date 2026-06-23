@@ -329,6 +329,8 @@ pub const FfiDriver = struct {
                 continue;
             }
 
+            defer ffi_operations.deinitFfiOwnedOperationOptions(self.allocator, op.?);
+
             var ret_ok: ?*result.Result = null;
             var ret_err: ?anyerror = null;
 
@@ -491,6 +493,8 @@ pub const FfiDriver = struct {
             if (op == null) {
                 continue;
             }
+
+            defer ffi_operations.deinitFfiOwnedOperationOptions(self.allocator, op.?);
 
             var ret_ok: ?*result_netconf.Result = null;
             var ret_err: ?anyerror = null;

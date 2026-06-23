@@ -7,10 +7,133 @@ const ffi_args_to_options = @import("ffi-args-to-netconf-options.zig");
 const ffi_common = @import("ffi-common.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
+const netconf_operation = @import("netconf-operation.zig");
 const result = @import("netconf-result.zig");
 
 /// For forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
+
+fn dupeSlice(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
+    return try allocator.dupe(u8, value);
+}
+
+fn dupeOptionalSlice(allocator: std.mem.Allocator, value: ?[]const u8) !?[]const u8 {
+    if (value) |v| {
+        return try dupeSlice(allocator, v);
+    }
+
+    return null;
+}
+
+fn ffiOwnedRawRpcOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.RawRpcOptions,
+) !netconf_operation.RawRpcOptions {
+    var owned = options;
+    owned.payload = try dupeSlice(allocator, options.payload);
+    errdefer allocator.free(owned.payload);
+    owned.base_namespace_prefix = try dupeOptionalSlice(allocator, options.base_namespace_prefix);
+    errdefer if (owned.base_namespace_prefix) |base_namespace_prefix| allocator.free(base_namespace_prefix);
+    owned._extra_namespaces_ffi = try dupeOptionalSlice(allocator, options._extra_namespaces_ffi);
+
+    return owned;
+}
+
+fn ffiOwnedGetConfigOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.GetConfigOptions,
+) !netconf_operation.GetConfigOptions {
+    var owned = options;
+    owned.filter = try dupeOptionalSlice(allocator, options.filter);
+    errdefer if (owned.filter) |filter| allocator.free(filter);
+    owned.filter_namespace_prefix = try dupeOptionalSlice(allocator, options.filter_namespace_prefix);
+    errdefer if (owned.filter_namespace_prefix) |prefix| allocator.free(prefix);
+    owned.filter_namespace = try dupeOptionalSlice(allocator, options.filter_namespace);
+
+    return owned;
+}
+
+fn ffiOwnedEditConfigOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.EditConfigOptions,
+) !netconf_operation.EditConfigOptions {
+    var owned = options;
+    owned.config = try dupeSlice(allocator, options.config);
+
+    return owned;
+}
+
+fn ffiOwnedGetOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.GetOptions,
+) !netconf_operation.GetOptions {
+    var owned = options;
+    owned.filter = try dupeOptionalSlice(allocator, options.filter);
+    errdefer if (owned.filter) |filter| allocator.free(filter);
+    owned.filter_namespace_prefix = try dupeOptionalSlice(allocator, options.filter_namespace_prefix);
+    errdefer if (owned.filter_namespace_prefix) |prefix| allocator.free(prefix);
+    owned.filter_namespace = try dupeOptionalSlice(allocator, options.filter_namespace);
+
+    return owned;
+}
+
+fn ffiOwnedCancelCommitOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.CancelCommitOptions,
+) !netconf_operation.CancelCommitOptions {
+    var owned = options;
+    owned.persist_id = try dupeOptionalSlice(allocator, options.persist_id);
+
+    return owned;
+}
+
+fn ffiOwnedGetSchemaOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.GetSchemaOptions,
+) !netconf_operation.GetSchemaOptions {
+    var owned = options;
+    owned.identifier = try dupeSlice(allocator, options.identifier);
+    errdefer allocator.free(owned.identifier);
+    owned.version = try dupeOptionalSlice(allocator, options.version);
+
+    return owned;
+}
+
+fn ffiOwnedGetDataOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.GetDataOptions,
+) !netconf_operation.GetDataOptions {
+    var owned = options;
+    owned.filter = try dupeOptionalSlice(allocator, options.filter);
+    errdefer if (owned.filter) |filter| allocator.free(filter);
+    owned.filter_namespace_prefix = try dupeOptionalSlice(allocator, options.filter_namespace_prefix);
+    errdefer if (owned.filter_namespace_prefix) |prefix| allocator.free(prefix);
+    owned.filter_namespace = try dupeOptionalSlice(allocator, options.filter_namespace);
+    errdefer if (owned.filter_namespace) |namespace| allocator.free(namespace);
+    owned.origin_filters = try dupeOptionalSlice(allocator, options.origin_filters);
+
+    return owned;
+}
+
+fn ffiOwnedEditDataOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.EditDataOptions,
+) !netconf_operation.EditDataOptions {
+    var owned = options;
+    owned.edit_content = try dupeSlice(allocator, options.edit_content);
+
+    return owned;
+}
+
+fn ffiOwnedActionOptions(
+    allocator: std.mem.Allocator,
+    options: netconf_operation.ActionOptions,
+) !netconf_operation.ActionOptions {
+    var owned = options;
+    owned.action = try dupeSlice(allocator, options.action);
+
+    return owned;
+}
 
 export fn ls_netconf_open(
     d_ptr: *ffi_common.LsDriver,
@@ -471,21 +594,27 @@ export fn ls_netconf_raw_rpc(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .raw_rpc = ffi_args_to_options.rawRpcOptionsFromArgs(
-                        cancel,
-                        payload,
-                        base_namespace_prefix,
-                        extra_namespaces,
-                    ),
-                },
+    const options = ffiOwnedRawRpcOptions(d.allocator, ffi_args_to_options.rawRpcOptionsFromArgs(
+        cancel,
+        payload,
+        base_namespace_prefix,
+        extra_namespaces,
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .raw_rpc = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -526,7 +655,7 @@ export fn ls_netconf_get_config(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const options = ffi_args_to_options.getConfigOptionsFromArgs(
+    const options = ffiOwnedGetConfigOptions(d.allocator, ffi_args_to_options.getConfigOptionsFromArgs(
         cancel,
         source,
         filter,
@@ -534,18 +663,22 @@ export fn ls_netconf_get_config(
         filter_namespace_prefix,
         filter_namespace,
         defaults_type,
-    );
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .get_config = options,
-                },
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .get_config = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -584,25 +717,29 @@ export fn ls_netconf_edit_config(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const options = ffi_args_to_options.editConfigOptionsFromArgs(
+    const options = ffiOwnedEditConfigOptions(d.allocator, ffi_args_to_options.editConfigOptionsFromArgs(
         cancel,
         config,
         target,
         default_operation,
         test_option,
         error_option,
-    );
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .edit_config = options,
-                },
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .edit_config = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -819,25 +956,29 @@ export fn ls_netconf_get(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const options = ffi_args_to_options.getOptionsFromArgs(
+    const options = ffiOwnedGetOptions(d.allocator, ffi_args_to_options.getOptionsFromArgs(
         cancel,
         filter,
         filter_type,
         filter_namespace_prefix,
         filter_namespace,
         defaults_type,
-    );
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .get = options,
-                },
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .get = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -1013,19 +1154,25 @@ export fn ls_netconf_cancel_commit(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .cancel_commit = ffi_args_to_options.cancelCommitOptionsFromArgs(
-                        cancel,
-                        persist_id,
-                    ),
-                },
+    const options = ffiOwnedCancelCommitOptions(d.allocator, ffi_args_to_options.cancelCommitOptionsFromArgs(
+        cancel,
+        persist_id,
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .cancel_commit = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -1102,21 +1249,27 @@ export fn ls_netconf_get_schema(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .get_schema = ffi_args_to_options.getSchemaOptionsFromArgs(
-                        cancel,
-                        identifier,
-                        version,
-                        format,
-                    ),
-                },
+    const options = ffiOwnedGetSchemaOptions(d.allocator, ffi_args_to_options.getSchemaOptionsFromArgs(
+        cancel,
+        identifier,
+        version,
+        format,
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .get_schema = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -1163,28 +1316,34 @@ export fn ls_netconf_get_data(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .get_data = ffi_args_to_options.getDataOptionsFromArgs(
-                        cancel,
-                        datastore,
-                        filter,
-                        filter_type,
-                        filter_namespace_prefix,
-                        filter_namespace,
-                        config_filter,
-                        origin_filters,
-                        max_depth,
-                        with_origin,
-                        defaults_type,
-                    ),
-                },
+    const options = ffiOwnedGetDataOptions(d.allocator, ffi_args_to_options.getDataOptionsFromArgs(
+        cancel,
+        datastore,
+        filter,
+        filter_type,
+        filter_namespace_prefix,
+        filter_namespace,
+        config_filter,
+        origin_filters,
+        max_depth,
+        with_origin,
+        defaults_type,
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .get_data = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -1219,21 +1378,27 @@ export fn ls_netconf_edit_data(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .edit_data = ffi_args_to_options.editDataOptionsFromArgs(
-                        cancel,
-                        datastore,
-                        edit_content,
-                        default_operation,
-                    ),
-                },
+    const options = ffiOwnedEditDataOptions(d.allocator, ffi_args_to_options.editDataOptionsFromArgs(
+        cancel,
+        datastore,
+        edit_content,
+        default_operation,
+    )) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .edit_data = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
@@ -1263,19 +1428,25 @@ export fn ls_netconf_action(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const _operation_id = d.queueOperation(
-        ffi_operations.OperationOptions{
-            .id = 0,
-            .operation = .{
-                .netconf = .{
-                    .action = .{
-                        .cancel = cancel,
-                        .action = std.mem.span(action),
-                    },
-                },
+    const options = ffiOwnedActionOptions(d.allocator, .{
+        .cancel = cancel,
+        .action = std.mem.span(action),
+    }) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    const operation_options = ffi_operations.OperationOptions{
+        .id = 0,
+        .ffi_owned = true,
+        .operation = .{
+            .netconf = .{
+                .action = options,
             },
         },
-    ) catch |err| {
+    };
+
+    const _operation_id = d.queueOperation(operation_options) catch |err| {
+        ffi_operations.deinitFfiOwnedOperationOptions(d.allocator, operation_options);
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
         errors.wrapCriticalError(
             errors.ScrapliError.Operation,
