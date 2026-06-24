@@ -432,11 +432,11 @@ export fn ls_cli_send_input(
     cancel: *bool,
     input: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
 ) callconv(.c) u8 {
-    if (input == null or requested_mode == null or input_handling == null) {
+    if (input == null or requested_mode == null) {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
@@ -485,12 +485,12 @@ export fn ls_cli_send_inputs(
     // inputs delimited on the libscrapli delim... annoying but simple/dumb
     inputs: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
     stop_on_indicated_failure: bool,
 ) callconv(.c) u8 {
-    if (inputs == null or requested_mode == null or input_handling == null) {
+    if (inputs == null or requested_mode == null) {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
@@ -543,7 +543,7 @@ export fn ls_cli_send_prompted_input(
     response: [*c]const u8,
     abort_input: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: u8,
     hidden_response: bool,
     retain_trailing_prompt: bool,
 ) callconv(.c) u8 {
@@ -552,8 +552,7 @@ export fn ls_cli_send_prompted_input(
         prompt_pattern == null or
         response == null or
         abort_input == null or
-        requested_mode == null or
-        input_handling == null)
+        requested_mode == null)
     {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
@@ -723,7 +722,7 @@ test "ffi: ls_cli_send_input null arguments" {
             &cancel,
             null,
             "mode",
-            "fuzzy",
+            1,
             false,
             false,
         ),
@@ -737,21 +736,7 @@ test "ffi: ls_cli_send_input null arguments" {
             &cancel,
             "input",
             null,
-            "fuzzy",
-            false,
-            false,
-        ),
-    );
-
-    try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
-        ls_cli_send_input(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            "input",
-            "mode",
-            null,
+            1,
             false,
             false,
         ),
@@ -770,7 +755,7 @@ test "ffi: ls_cli_send_inputs null arguments" {
             &cancel,
             null,
             "mode",
-            "fuzzy",
+            1,
             false,
             false,
             false,
@@ -785,22 +770,7 @@ test "ffi: ls_cli_send_inputs null arguments" {
             &cancel,
             "inputs",
             null,
-            "fuzzy",
-            false,
-            false,
-            false,
-        ),
-    );
-
-    try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
-        ls_cli_send_inputs(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            "inputs",
-            "mode",
-            null,
+            1,
             false,
             false,
             false,
@@ -824,7 +794,7 @@ test "ffi: ls_cli_send_prompted_input null arguments" {
             "response",
             "abort",
             "mode",
-            "fuzzy",
+            1,
             false,
             false,
         ),
@@ -842,7 +812,7 @@ test "ffi: ls_cli_send_prompted_input null arguments" {
             "response",
             "abort",
             "mode",
-            "fuzzy",
+            1,
             false,
             false,
         ),
