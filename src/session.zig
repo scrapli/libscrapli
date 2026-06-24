@@ -419,7 +419,7 @@ pub const Session = struct {
     pub fn close(self: *Session) !void {
         self.log.info("session.Session close requested", .{});
 
-        if (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.run) {
+        if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.stop) {
             return;
         }
 
@@ -479,9 +479,6 @@ pub const Session = struct {
 
     /// Reads from the internal queue into the given buffer.
     pub fn read(self: *Session, buf: []u8) !usize {
-        try self.read_lock.lock(self.io);
-        defer self.read_lock.unlock(self.io);
-
         if (self.read_thread_errored.load(std.builtin.AtomicOrder.acquire) and
             self.read_queue.readableLength() == 0)
         {
@@ -493,6 +490,9 @@ pub const Session = struct {
 
             return errors.ScrapliError.EOF;
         }
+
+        try self.read_lock.lock(self.io);
+        defer self.read_lock.unlock(self.io);
 
         return self.read_queue.read(buf);
     }
