@@ -78,6 +78,10 @@ pub const Result = struct {
             self.allocator.free(result);
         }
 
+        for (self.inputs.items) |input| {
+            self.allocator.free(input);
+        }
+
         self.results_raw.deinit(self.allocator);
         self.results.deinit(self.allocator);
         self.inputs.deinit(self.allocator);
@@ -95,7 +99,7 @@ pub const Result = struct {
         },
     ) !void {
         try self.splits_ns.append(self.allocator, std.Io.Timestamp.now(self.io, .real).nanoseconds);
-        try self.inputs.append(self.allocator, data.input);
+        try self.inputs.append(self.allocator, try self.allocator.dupe(u8, data.input));
         try self.results_raw.append(self.allocator, data.rets[0]);
 
         try self.results.append(self.allocator, data.rets[1]);
