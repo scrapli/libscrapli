@@ -76,9 +76,10 @@ test-functional: fmt
 
 ## Run functional tests (w/ limited ci platforms);
 ## ensures TERM set, since this is normally unset in GH actions
+## runs with ReleaseSafe to mirror releases
 test-functional-ci: fmt
 	TERM=screen-256color zig build test \
-		-Doptimize=Debug \
+		-Doptimize=ReleaseSafe \
 		-Dfunctional-tests=true \
 		-Dci-functional-tests=true \
 		--summary all
@@ -88,6 +89,7 @@ test-functional-ci: fmt
 test-coverage: fmt
 	rm -rf zig-out/cover || true
 	zig build test \
+	    -Doptimize=Debug \
 	    -Dintegration-tests=true \
 		-Dtest-coverage=true \
 		--summary all
@@ -226,7 +228,7 @@ release-linux-dynamic: clean-zig-cache
 		-Dtarget=$(TARGET) \
 		--summary all
 
-## Build the example binaries, uses Debug build so you get leak checking
+## Build the example binaries
 build-examples: fmt clean-zig-cache
 	zig build examples \
 	    -Doptimize=ReleaseSafe \
@@ -234,7 +236,7 @@ build-examples: fmt clean-zig-cache
 		-Ddependency-linkage=static \
 		--summary all
 
-## Build the "main" binary in repo root, uses Debug build so you get leak checking
+## Build the "main" binary in repo root
 build-main: fmt clean-zig-cache
 	zig build main \
 	    -Doptimize=ReleaseSafe \
