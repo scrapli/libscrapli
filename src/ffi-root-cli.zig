@@ -360,6 +360,10 @@ export fn ls_cli_enter_mode(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
+    const owned_requested_mode = d.allocator.dupe(u8, std.mem.span(requested_mode)) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
@@ -367,7 +371,7 @@ export fn ls_cli_enter_mode(
                 .cli = .{
                     .enter_mode = .{
                         .cancel = cancel,
-                        .requested_mode = std.mem.span(requested_mode),
+                        .requested_mode = owned_requested_mode,
                     },
                 },
             },
@@ -443,13 +447,16 @@ export fn ls_cli_send_input(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.sendInputOptionsFromArgs(
+        d.allocator,
         cancel,
         input,
         requested_mode,
         input_handling,
         retain_input,
         retain_trailing_prompt,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
@@ -497,6 +504,7 @@ export fn ls_cli_send_inputs(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.sendInputsOptionsFromArgs(
+        d.allocator,
         cancel,
         inputs,
         requested_mode,
@@ -504,7 +512,9 @@ export fn ls_cli_send_inputs(
         retain_input,
         retain_trailing_prompt,
         stop_on_indicated_failure,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
@@ -560,6 +570,7 @@ export fn ls_cli_send_prompted_input(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.sendPromptedInputOptionsFromArgs(
+        d.allocator,
         cancel,
         input,
         prompt_exact,
@@ -570,7 +581,9 @@ export fn ls_cli_send_prompted_input(
         requested_mode,
         input_handling,
         retain_trailing_prompt,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
