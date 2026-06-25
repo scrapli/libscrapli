@@ -14,6 +14,7 @@ const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
 const netconf_password_pattern = "<password>.*</password>";
 
 /// Args holds process args for testing.
+// zlinter-disable no_global_vars
 pub var args: ?std.process.Args = null;
 
 /// Simple bool flag parser for use with test flags.

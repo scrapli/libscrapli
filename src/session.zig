@@ -826,7 +826,7 @@ pub const Session = struct {
         self: *Session,
         start_timestamp: std.Io.Timestamp,
         cancel: ?*bool,
-        checkF: bytes_check.CheckF,
+        check_f: bytes_check.CheckF,
         check_args: bytes_check.CheckArgs,
         bufs: *bytes.ProcessedBuf,
         search_depth: u64,
@@ -917,7 +917,7 @@ pub const Session = struct {
                 search_depth,
             );
 
-            var match_indexes = try checkF(check_args, searchable_buf);
+            var match_indexes = try check_f(check_args, searchable_buf);
 
             logging.traceWithSrc(
                 self.log,
@@ -1261,7 +1261,7 @@ pub const Session = struct {
             &bufs,
         );
 
-        const responseCheckF: bytes_check.CheckF =
+        const response_check_f: bytes_check.CheckF =
             if (compiled_pattern) |_| &bytes_check.anyPatternInBuf else &bytes_check.exactInBuf;
 
         var check_args = bytes_check.CheckArgs{
@@ -1280,7 +1280,7 @@ pub const Session = struct {
         _ = try self.readTimeout(
             start_time,
             options.cancel,
-            responseCheckF,
+            response_check_f,
             check_args,
             &bufs,
             self.options.operation_max_search_depth,

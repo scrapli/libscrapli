@@ -12,6 +12,7 @@ const transport_waiter = @import("transport-waiter.zig");
 
 const default_eagain_delay_ns: u64 = 100_000;
 
+// zlinter-disable no_global_vars
 var ssh2_initialized = false;
 
 fn libssh2InitializeOnce() c_int {

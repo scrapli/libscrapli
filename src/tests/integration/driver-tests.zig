@@ -146,7 +146,7 @@ test "driver open" {
 
         const d = try initTestDriver(record, fixture_filename);
 
-        d.definition.onOpenCallback = case.onOpenCallback;
+        d.definition.on_open_callback = case.onOpenCallback;
 
         defer d.deinit();
 

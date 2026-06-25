@@ -16,11 +16,11 @@ const result_netconf = @import("netconf-result.zig");
 pub const operation_thread_ready_sleep: u64 = 2_500;
 
 fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
-    const info = @typeInfo(@TypeOf(s)).@"struct";
+    const Info = @typeInfo(@TypeOf(s)).@"struct";
 
-    inline for (0.., info.field_types) |idx, field_type| {
+    inline for (0.., Info.field_types) |idx, field_type| {
         if (field_type == []const u8) {
-            const value = @field(s, info.field_names[idx]);
+            const value = @field(s, Info.field_names[idx]);
 
             if (std.mem.eql(u8, value, mode.default_mode)) {
                 // noop
@@ -28,7 +28,7 @@ fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
                 allocator.free(value);
             }
         } else if (field_type == ?[]const u8) {
-            const value = @field(s, info.field_names[idx]);
+            const value = @field(s, Info.field_names[idx]);
 
             if (value) |v| {
                 allocator.free(v);

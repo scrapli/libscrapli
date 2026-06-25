@@ -252,12 +252,12 @@ pub const Driver = struct {
             ),
         );
 
-        if (self.definition.onOpenCallback != null or
+        if (self.definition.on_open_callback != null or
             self.definition.bound_on_open_callback != null)
         {
             self.log.info("cli.Driver open: on open callback set, executing...", .{});
 
-            if (self.definition.onOpenCallback) |cb| {
+            if (self.definition.on_open_callback) |cb| {
                 try res.recordExtend(
                     try cb(
                         self,
@@ -293,12 +293,12 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        if (self.definition.onCloseCallback != null or
+        if (self.definition.on_close_callback != null or
             self.definition.bound_on_close_callback != null)
         {
             self.log.info("cli.Driver close: on close callback set, executing...", .{});
 
-            if (self.definition.onCloseCallback) |cb| {
+            if (self.definition.on_close_callback) |cb| {
                 try res.recordExtend(
                     try cb(
                         self,

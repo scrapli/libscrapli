@@ -9,6 +9,7 @@ const errors = @import("errors.zig");
 const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
 
 /// The base debug allocator for ffi operations.
+// zlinter-disable no_global_vars
 pub var da = std.heap.SafeAllocator.init(std.heap.page_allocator, .{});
 const debug_allocator = da.allocator();
 
@@ -33,6 +34,7 @@ pub fn getAllocator() std.mem.Allocator {
 
 // this may need to be revisited, but doing it this way there is no requirement for
 // deinit to free anything so this seems safest/most ideal for the ffi side of things
+// zlinter-disable no_global_vars
 var threaded: std.Io.Threaded = .init_single_threaded;
 
 /// The base io object for ffi ops.
@@ -43,6 +45,7 @@ pub const LsOptions = opaque {};
 /// Opaque types for use in ffi handles.
 pub const LsDriver = opaque {};
 
+// zlinter-disable no_global_vars
 var segfault_handler_registered: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 
 /// The handler to attached to segfault signals when in debug mode.

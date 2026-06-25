@@ -15,7 +15,7 @@ const helper = scrapli.test_helper;
 const nokia_srlinux_platform_path_from_project_root = "src/tests/fixtures/platform_nokia_srlinux_no_open_close_callbacks.yaml";
 const arista_eos_platform_path_from_project_root = "src/tests/fixtures/platform_arista_eos_no_open_close_callbacks.yaml";
 
-fn GetDriver(
+fn getDriver(
     transport_kind: transport.Kind,
     platform: []const u8,
     username: ?[]const u8,
@@ -202,14 +202,14 @@ test "driver open" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d = try GetDriver(
+        var d = try getDriver(
             case.transport_kind,
             case.platform,
             case.username,
             case.key,
             case.passphrase,
         );
-        d.definition.onOpenCallback = case.onOpenCallback;
+        d.definition.on_open_callback = case.onOpenCallback;
 
         defer d.deinit();
 

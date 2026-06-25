@@ -8,7 +8,7 @@ const transport = scrapli.transport;
 const helper = scrapli.test_helper;
 const yaml = @import("yaml");
 
-fn GetDriver(
+fn getDriver(
     transport_kind: transport.Kind,
     platform: []const u8,
     username: ?[]const u8,
@@ -196,7 +196,7 @@ test "driver-netconf open" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d = try GetDriver(
+        var d = try getDriver(
             case.transport_kind,
             case.platform,
             case.username,
@@ -305,7 +305,7 @@ test "driver-netconf get-config" {
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d = try GetDriver(
+        var d = try getDriver(
             case.transport_kind,
             case.platform,
             null,
