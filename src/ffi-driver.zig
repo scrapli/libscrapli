@@ -19,7 +19,6 @@ fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
     const info = @typeInfo(@TypeOf(s)).@"struct";
 
     inline for (0.., info.field_types) |idx, field_type| {
-        std.debug.print("FIELD TYPE >>> {any}\n", .{field_type});
         if (field_type == []const u8) {
             const value = @field(s, info.field_names[idx]);
 
@@ -404,6 +403,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .send_inputs => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.sendInputs(
                         self.allocator,
                         o,
@@ -413,6 +414,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .send_prompted_input => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.sendPromptedInput(
                         self.allocator,
                         o,
