@@ -576,7 +576,7 @@ fn printIndicatorLine(source: []const u8, indicator_index: usize) void {
 /// Conveinence func for initializing arraylists for tests
 pub fn inlineInitArrayList(
     allocator: std.mem.Allocator,
-    comptime T: type,
+    T: type,
     items: []const T,
 ) !std.ArrayList(T) {
     var al: std.ArrayList(T) = .empty;
@@ -628,7 +628,7 @@ pub fn goldenPath(
 
 /// closes the driver and deinits the result.
 pub fn closeDriver(
-    comptime Driver: type,
+    Driver: type,
     driver: *Driver,
     allocator: std.mem.Allocator,
 ) void {

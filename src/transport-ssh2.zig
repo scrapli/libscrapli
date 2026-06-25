@@ -308,7 +308,7 @@ const ProxyWrapper = struct {
         self.channel = channel;
         self.remote_fd = remote_fd;
 
-        self.stop_flag.store(false, std.builtin.AtomicOrder.unordered);
+        self.stop_flag.store(false, std.lang.AtomicOrder.unordered);
 
         self.pipe_to_channel_thread = try std.Thread.spawn(
             .{},
@@ -328,7 +328,7 @@ const ProxyWrapper = struct {
 
     /// Stops piping data between the parent session and the proxied one.
     pub fn stop(self: *ProxyWrapper) void {
-        self.stop_flag.store(true, std.builtin.AtomicOrder.unordered);
+        self.stop_flag.store(true, std.lang.AtomicOrder.unordered);
 
         if (self.pipe_to_channel_thread) |t| t.join();
         if (self.channel_to_pipe_thread) |t| t.join();
@@ -364,7 +364,7 @@ const ProxyWrapper = struct {
     }
 
     fn copyPipeToChannel(self: *ProxyWrapper) !void {
-        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+        while (!self.stop_flag.load(std.lang.AtomicOrder.unordered)) {
             _ = self.pipeToChannel() catch |err| switch (err) {
                 error.WouldBlock => {
                     try std.Io.Clock.Duration.sleep(
@@ -436,7 +436,7 @@ const ProxyWrapper = struct {
     }
 
     fn copyChannelToPipe(self: *ProxyWrapper) !void {
-        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+        while (!self.stop_flag.load(std.lang.AtomicOrder.unordered)) {
             self.channelToPipe() catch |err| switch (err) {
                 error.WouldBlock => {
                     try std.Io.Clock.Duration.sleep(

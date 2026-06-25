@@ -38,10 +38,11 @@ export fn ls_assert_no_leaks() callconv(.c) bool {
         return true;
     }
 
-    switch (ffi_common.da.deinit()) {
-        .leak => return false,
-        .ok => return true,
+    if (ffi_common.da.deinit() > 0) {
+        return false;
     }
+
+    return true;
 }
 
 export fn ls_alloc_driver_options() callconv(.c) ?*ffi_common.LsOptions {

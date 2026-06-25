@@ -291,7 +291,7 @@ pub const Driver = struct {
     pub fn deinit(self: *Driver) void {
         logging.traceWithSrc(self.log, @src(), "netconf.Driver object deinitializing", .{});
 
-        if (self.process_stop.load(std.builtin.AtomicOrder.acquire) == ProcessThreadState.run) {
+        if (self.process_stop.load(std.lang.AtomicOrder.acquire) == ProcessThreadState.run) {
             // same as session, for ignoring errors on close and just gracefully freeing things
             // zlint-disable suppressed-errors
             const ret = self.close(self.allocator, .{ .force = true }) catch null;
@@ -475,7 +475,7 @@ pub const Driver = struct {
 
         self.process_stop.store(
             ProcessThreadState.run,
-            std.builtin.AtomicOrder.unordered,
+            std.lang.AtomicOrder.unordered,
         );
 
         self.process_thread = std.Thread.spawn(
@@ -498,7 +498,7 @@ pub const Driver = struct {
     fn closeJoinProcessThread(self: *Driver) !void {
         self.process_stop.store(
             ProcessThreadState.stop,
-            std.builtin.AtomicOrder.unordered,
+            std.lang.AtomicOrder.unordered,
         );
 
         if (self.process_thread) |t| {
@@ -931,7 +931,7 @@ pub const Driver = struct {
             .version_1_1 => delimiter_version_1_1,
         };
 
-        while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
+        while (self.process_stop.load(std.lang.AtomicOrder.acquire) != ProcessThreadState.stop) {
             const n = self.session.read(buf) catch |err| {
                 switch (err) {
                     errors.ScrapliError.EOF => {

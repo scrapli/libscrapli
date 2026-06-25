@@ -190,7 +190,7 @@ pub const FfiDriver = struct {
 
     /// Deinitialize the FfiDriver and its underlying "real" driver.
     pub fn deinit(self: *FfiDriver) void {
-        self.operation_stop.store(true, std.builtin.AtomicOrder.unordered);
+        self.operation_stop.store(true, std.lang.AtomicOrder.unordered);
 
         // signal to the operation thread to iterate, it should then catch the stored stop condition
         // zlinter-disable-next-line no_swallow_error - standard lock should "never" fail
@@ -290,7 +290,7 @@ pub const FfiDriver = struct {
 
         while (true) {
             // this blocks us until the operation thread is ready and processing before we continue
-            const ready = self.operation_ready.load(std.builtin.AtomicOrder.acquire);
+            const ready = self.operation_ready.load(std.lang.AtomicOrder.acquire);
             if (ready) {
                 break;
             }
@@ -329,10 +329,10 @@ pub const FfiDriver = struct {
     fn operationLoop(self: *FfiDriver) void {
         self.getLogger().info("ffi-driver.FfiDriver: operation thread started", .{});
 
-        self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
+        self.operation_ready.store(true, std.lang.AtomicOrder.unordered);
 
         while (true) {
-            const stop = self.operation_stop.load(std.builtin.AtomicOrder.acquire);
+            const stop = self.operation_stop.load(std.lang.AtomicOrder.acquire);
             if (stop) {
                 break;
             }
@@ -498,10 +498,10 @@ pub const FfiDriver = struct {
     fn operationLoopNetconf(self: *FfiDriver) void {
         self.getLogger().info("ffi-driver.FfiDriver: operation thread started", .{});
 
-        self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
+        self.operation_ready.store(true, std.lang.AtomicOrder.unordered);
 
         while (true) {
-            const stop = self.operation_stop.load(std.builtin.AtomicOrder.acquire);
+            const stop = self.operation_stop.load(std.lang.AtomicOrder.acquire);
             if (stop) {
                 break;
             }

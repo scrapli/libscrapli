@@ -23,10 +23,10 @@ pub fn build(b: *std.Build) !void {
     );
 
     const linkage = b.option(
-        std.builtin.LinkMode,
+        std.lang.LinkMode,
         "linkage",
         "whether to statically or dynamically link the library",
-    ) orelse @as(std.builtin.LinkMode, if (target.result.isGnuLibC()) .dynamic else .static);
+    ) orelse @as(std.lang.LinkMode, if (target.result.isGnuLibC()) .dynamic else .static);
     const codeUnitWidth = b.option(
         CodeUnitWidth,
         "code-unit-width",

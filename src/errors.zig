@@ -25,7 +25,7 @@ pub const ScrapliError = error{
 /// Wraps a critical error with additional logging info.
 pub fn wrapCriticalError(
     err: anyerror,
-    src: std.builtin.SourceLocation,
+    src: std.lang.SourceLocation,
     log: ?logging.Logger,
     comptime format: []const u8,
     args: anytype,
@@ -83,7 +83,7 @@ test "wrapCriticalErrorLog" {
 /// Wraps a warn error with additional logging info.
 pub fn wrapWarnError(
     err: anyerror,
-    src: std.builtin.SourceLocation,
+    src: std.lang.SourceLocation,
     log: ?logging.Logger,
     comptime format: []const u8,
     args: anytype,

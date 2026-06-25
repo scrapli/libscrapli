@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const dependency_linkage = b.option(
-        std.builtin.LinkMode,
+        std.lang.LinkMode,
         "dependency-linkage",
         "static/dynamic linkage for libssh2/pcre2",
     ) orelse .static;
@@ -53,8 +53,8 @@ pub fn build(b: *std.Build) !void {
 fn buildScrapli(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    dependency_linkage: std.builtin.LinkMode,
+    optimize: std.lang.OptimizeMode,
+    dependency_linkage: std.lang.LinkMode,
     is_ffi: bool,
 ) !*std.Build.Module {
     const pcre2_dep = b.dependency(
@@ -480,7 +480,7 @@ fn buildTests(
 fn buildMain(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.OptimizeMode,
     scrapli: *std.Build.Module,
 ) !void {
     const main = b.step("main", "Build main.zig executable");
@@ -510,7 +510,7 @@ fn buildMain(
 fn buildExamples(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.OptimizeMode,
     scrapli: *std.Build.Module,
 ) !void {
     const example = b.step("examples", "Build example binaries");
@@ -554,8 +554,8 @@ fn buildExamples(
 fn buildFFI(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    dependency_linkage: std.builtin.LinkMode,
+    optimize: std.lang.OptimizeMode,
+    dependency_linkage: std.lang.LinkMode,
 ) !void {
     const ffi = b.step("ffi", "Build libscrapli ffi objects");
 
@@ -580,8 +580,8 @@ fn buildFFITarget(
     b: *std.Build,
     ffi: *std.Build.Step,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    dependency_linkage: std.builtin.LinkMode,
+    optimize: std.lang.OptimizeMode,
+    dependency_linkage: std.lang.LinkMode,
 ) !void {
     const libscrapli = b.addLibrary(
         .{
@@ -654,7 +654,7 @@ fn genFfiLibOutputDir(
 fn genFfiLibOutputName(
     b: *std.Build,
     lib: *std.Build.Step.Compile,
-    dependency_linkage: std.builtin.LinkMode,
+    dependency_linkage: std.lang.LinkMode,
 ) ![]const u8 {
     const base_name = switch (dependency_linkage) {
         .static => "libscrapli",

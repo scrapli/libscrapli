@@ -379,7 +379,7 @@ pub const Session = struct {
             self.auth_options,
         );
 
-        self.read_stop.store(ReadThreadState.run, std.builtin.AtomicOrder.unordered);
+        self.read_stop.store(ReadThreadState.run, std.lang.AtomicOrder.unordered);
 
         self.read_thread = std.Thread.spawn(
             .{},
@@ -419,11 +419,11 @@ pub const Session = struct {
     pub fn close(self: *Session) !void {
         self.log.info("session.Session close requested", .{});
 
-        if (self.read_stop.load(std.builtin.AtomicOrder.acquire) == ReadThreadState.stop) {
+        if (self.read_stop.load(std.lang.AtomicOrder.acquire) == ReadThreadState.stop) {
             return;
         }
 
-        self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
+        self.read_stop.store(ReadThreadState.stop, std.lang.AtomicOrder.unordered);
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
         // stop the waiter (which happens in transport.read), then the readloop can nicely exit
@@ -444,10 +444,10 @@ pub const Session = struct {
 
         const buf = self.read_loop_buf.?;
 
-        while (self.read_stop.load(std.builtin.AtomicOrder.acquire) != ReadThreadState.stop) {
+        while (self.read_stop.load(std.lang.AtomicOrder.acquire) != ReadThreadState.stop) {
             const n = self.transport.read(buf) catch |err| {
                 self.read_thread_error = err;
-                self.read_thread_errored.store(true, std.builtin.AtomicOrder.release);
+                self.read_thread_errored.store(true, std.lang.AtomicOrder.release);
 
                 return;
             };
@@ -479,7 +479,7 @@ pub const Session = struct {
 
     /// Reads from the internal queue into the given buffer.
     pub fn read(self: *Session, buf: []u8) !usize {
-        if (self.read_thread_errored.load(std.builtin.AtomicOrder.acquire) and
+        if (self.read_thread_errored.load(std.lang.AtomicOrder.acquire) and
             self.read_queue.readableLength() == 0)
         {
             // once the read thread is errored out and there is nothing else to
@@ -558,7 +558,7 @@ pub const Session = struct {
 
         // in the case of auth, if we error out, we almost certainly need to stop the read loop
         // as the transport is probably gone from under our feet anyway.
-        errdefer self.read_stop.store(ReadThreadState.stop, std.builtin.AtomicOrder.unordered);
+        errdefer self.read_stop.store(ReadThreadState.stop, std.lang.AtomicOrder.unordered);
 
         while (true) {
             if (cancel != null and cancel.?.*) {

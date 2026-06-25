@@ -9,7 +9,7 @@ const errors = @import("errors.zig");
 const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
 
 /// The base debug allocator for ffi operations.
-pub var da: std.heap.DebugAllocator(.{}) = .init;
+pub var da = std.heap.SafeAllocator.init(std.heap.page_allocator, .{});
 const debug_allocator = da.allocator();
 
 /// Returns true if built w/ debug optimizations or the `libscrapli_ffi_debug_mode_env_var` is not
