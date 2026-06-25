@@ -471,17 +471,22 @@ export fn ls_netconf_raw_rpc(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
+    const options = ffi_args_to_options.rawRpcOptionsFromArgs(
+        d.allocator,
+        cancel,
+        payload,
+        base_namespace_prefix,
+        extra_namespaces,
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .raw_rpc = ffi_args_to_options.rawRpcOptionsFromArgs(
-                        cancel,
-                        payload,
-                        base_namespace_prefix,
-                        extra_namespaces,
-                    ),
+                    .raw_rpc = options,
                 },
             },
         },
@@ -507,19 +512,16 @@ export fn ls_netconf_get_config(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    source: [*c]const u8,
+    source: ?*u8,
     filter: [*c]const u8,
-    filter_type: [*c]const u8,
+    filter_type: ?*u8,
     filter_namespace_prefix: [*c]const u8,
     filter_namespace: [*c]const u8,
-    defaults_type: [*c]const u8,
+    defaults_type: ?*u8,
 ) callconv(.c) u8 {
-    if (source == null or
-        filter == null or
-        filter_type == null or
+    if (filter == null or
         filter_namespace_prefix == null or
-        filter_namespace == null or
-        defaults_type == null)
+        filter_namespace == null)
     {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
@@ -527,6 +529,7 @@ export fn ls_netconf_get_config(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.getConfigOptionsFromArgs(
+        d.allocator,
         cancel,
         source,
         filter,
@@ -534,7 +537,9 @@ export fn ls_netconf_get_config(
         filter_namespace_prefix,
         filter_namespace,
         defaults_type,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
@@ -568,30 +573,28 @@ export fn ls_netconf_edit_config(
     operation_id: *u32,
     cancel: *bool,
     config: [*c]const u8,
-    target: [*c]const u8,
-    default_operation: [*c]const u8,
-    test_option: [*c]const u8,
-    error_option: [*c]const u8,
+    target: ?*u8,
+    default_operation: ?*u8,
+    test_option: ?*u8,
+    error_option: ?*u8,
 ) callconv(.c) u8 {
-    if (config == null or
-        target == null or
-        default_operation == null or
-        test_option == null or
-        error_option == null)
-    {
+    if (config == null) {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.editConfigOptionsFromArgs(
+        d.allocator,
         cancel,
         config,
         target,
         default_operation,
         test_option,
         error_option,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
@@ -624,13 +627,9 @@ export fn ls_netconf_copy_config(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    target: [*c]const u8,
-    source: [*c]const u8,
+    target: ?*u8,
+    source: ?*u8,
 ) callconv(.c) u8 {
-    if (target == null or source == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-    }
-
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.copyConfigOptionsFromArgs(
@@ -670,12 +669,8 @@ export fn ls_netconf_delete_config(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    target: [*c]const u8,
+    target: ?*u8,
 ) callconv(.c) u8 {
-    if (target == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-    }
-
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.deleteConfigOptionsFromArgs(
@@ -714,12 +709,8 @@ export fn ls_netconf_lock(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    target: [*c]const u8,
+    target: ?*u8,
 ) callconv(.c) u8 {
-    if (target == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-    }
-
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.lockUnlockOptionsFromArgs(
@@ -758,12 +749,8 @@ export fn ls_netconf_unlock(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    target: [*c]const u8,
+    target: ?*u8,
 ) callconv(.c) u8 {
-    if (target == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-    }
-
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.lockUnlockOptionsFromArgs(
@@ -803,16 +790,14 @@ export fn ls_netconf_get(
     operation_id: *u32,
     cancel: *bool,
     filter: [*c]const u8,
-    filter_type: [*c]const u8,
+    filter_type: ?*u8,
     filter_namespace_prefix: [*c]const u8,
     filter_namespace: [*c]const u8,
-    defaults_type: [*c]const u8,
+    defaults_type: ?*u8,
 ) callconv(.c) u8 {
     if (filter == null or
-        filter_type == null or
         filter_namespace_prefix == null or
-        filter_namespace == null or
-        defaults_type == null)
+        filter_namespace == null)
     {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
@@ -820,13 +805,16 @@ export fn ls_netconf_get(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.getOptionsFromArgs(
+        d.allocator,
         cancel,
         filter,
         filter_type,
         filter_namespace_prefix,
         filter_namespace,
         defaults_type,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
@@ -1013,15 +1001,20 @@ export fn ls_netconf_cancel_commit(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
+    const options = ffi_args_to_options.cancelCommitOptionsFromArgs(
+        d.allocator,
+        cancel,
+        persist_id,
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .cancel_commit = ffi_args_to_options.cancelCommitOptionsFromArgs(
-                        cancel,
-                        persist_id,
-                    ),
+                    .cancel_commit = options,
                 },
             },
         },
@@ -1047,12 +1040,8 @@ export fn ls_netconf_validate(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    source: [*c]const u8,
+    source: ?*u8,
 ) callconv(.c) u8 {
-    if (source == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-    }
-
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const _operation_id = d.queueOperation(
@@ -1091,28 +1080,32 @@ export fn ls_netconf_get_schema(
     cancel: *bool,
     identifier: [*c]const u8,
     version: [*c]const u8,
-    format: [*c]const u8,
+    format: ?*u8,
 ) callconv(.c) u8 {
     if (identifier == null or
-        version == null or
-        format == null)
+        version == null)
     {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
+    const options = ffi_args_to_options.getSchemaOptionsFromArgs(
+        d.allocator,
+        cancel,
+        identifier,
+        version,
+        format,
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .get_schema = ffi_args_to_options.getSchemaOptionsFromArgs(
-                        cancel,
-                        identifier,
-                        version,
-                        format,
-                    ),
+                    .get_schema = options,
                 },
             },
         },
@@ -1138,49 +1131,50 @@ export fn ls_netconf_get_data(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    datastore: [*c]const u8,
+    datastore: ?*u8,
     filter: [*c]const u8,
-    filter_type: [*c]const u8,
+    filter_type: ?*u8,
     filter_namespace_prefix: [*c]const u8,
     filter_namespace: [*c]const u8,
-    config_filter: [*c]const u8,
+    config_filter: ?*bool,
     origin_filters: [*c]const u8,
     max_depth: u32,
     with_origin: bool,
-    defaults_type: [*c]const u8,
+    defaults_type: ?*u8,
 ) callconv(.c) u8 {
-    if (datastore == null or
-        filter == null or
-        filter_type == null or
+    if (filter == null or
         filter_namespace_prefix == null or
         filter_namespace == null or
-        config_filter == null or
-        origin_filters == null or
-        defaults_type == null)
+        origin_filters == null)
     {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
+    const options = ffi_args_to_options.getDataOptionsFromArgs(
+        d.allocator,
+        cancel,
+        datastore,
+        filter,
+        filter_type,
+        filter_namespace_prefix,
+        filter_namespace,
+        config_filter,
+        origin_filters,
+        max_depth,
+        with_origin,
+        defaults_type,
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .get_data = ffi_args_to_options.getDataOptionsFromArgs(
-                        cancel,
-                        datastore,
-                        filter,
-                        filter_type,
-                        filter_namespace_prefix,
-                        filter_namespace,
-                        config_filter,
-                        origin_filters,
-                        max_depth,
-                        with_origin,
-                        defaults_type,
-                    ),
+                    .get_data = options,
                 },
             },
         },
@@ -1206,30 +1200,32 @@ export fn ls_netconf_edit_data(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    datastore: [*c]const u8,
+    datastore: ?*u8,
     edit_content: [*c]const u8,
-    default_operation: [*c]const u8,
+    default_operation: ?*u8,
 ) callconv(.c) u8 {
-    if (datastore == null or
-        edit_content == null or
-        default_operation == null)
-    {
+    if (edit_content == null) {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+
+    const options = ffi_args_to_options.editDataOptionsFromArgs(
+        d.allocator,
+        cancel,
+        datastore,
+        edit_content,
+        default_operation,
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
             .operation = .{
                 .netconf = .{
-                    .edit_data = ffi_args_to_options.editDataOptionsFromArgs(
-                        cancel,
-                        datastore,
-                        edit_content,
-                        default_operation,
-                    ),
+                    .edit_data = options,
                 },
             },
         },
@@ -1263,6 +1259,10 @@ export fn ls_netconf_action(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
+    const owned_action = d.allocator.dupe(u8, std.mem.span(action)) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
@@ -1270,7 +1270,7 @@ export fn ls_netconf_action(
                 .netconf = .{
                     .action = .{
                         .cancel = cancel,
-                        .action = std.mem.span(action),
+                        .action = owned_action,
                     },
                 },
             },
@@ -1345,11 +1345,11 @@ test "ffi: ls_netconf_get_config null arguments" {
             &op_id,
             &cancel,
             null,
+            null,
+            null,
             "",
             "",
-            "",
-            "",
-            "",
+            null,
         ),
     );
 }

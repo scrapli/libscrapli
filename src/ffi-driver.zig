@@ -27,6 +27,12 @@ fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
             } else {
                 allocator.free(value);
             }
+        } else if (field_type == ?[]const u8) {
+            const value = @field(s, info.field_names[idx]);
+
+            if (value) |v| {
+                allocator.free(v);
+            }
         }
     }
 }
@@ -543,6 +549,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .raw_rpc => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.rawRpc(
                         self.allocator,
                         o,
@@ -552,6 +560,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_config => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.getConfig(
                         self.allocator,
                         o,
@@ -561,6 +571,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .edit_config => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.editConfig(
                         self.allocator,
                         o,
@@ -606,6 +618,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.get(
                         self.allocator,
                         o,
@@ -669,6 +683,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_schema => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.getSchema(
                         self.allocator,
                         o,
@@ -678,6 +694,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_data => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.getData(
                         self.allocator,
                         o,
@@ -687,6 +705,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .edit_data => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.editData(
                         self.allocator,
                         o,
@@ -696,6 +716,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .action => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.action(
                         self.allocator,
                         o,

@@ -8,17 +8,20 @@ pub fn sendInputOptionsFromArgs(
     cancel: *bool,
     input: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: u8,
+    input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
 ) !operation.SendInputOptions {
     var options = operation.SendInputOptions{
         .cancel = cancel,
         .input = try allocator.dupe(u8, std.mem.span(input)),
-        .input_handling = @as(operation.InputHandling, @enumFromInt(input_handling)),
         .retain_input = retain_input,
         .retain_trailing_prompt = retain_trailing_prompt,
     };
+
+    if (input_handling) |inh| {
+        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+    }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
     if (spanned_requested_mode.len > 0) {
@@ -34,7 +37,7 @@ pub fn sendInputsOptionsFromArgs(
     cancel: *bool,
     inputs: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: u8,
+    input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
     stop_on_indicated_failure: bool,
@@ -43,11 +46,14 @@ pub fn sendInputsOptionsFromArgs(
         .cancel = cancel,
         .inputs = &[_][]const u8{},
         ._ffi_inputs = try allocator.dupe(u8, std.mem.span(inputs)),
-        .input_handling = @as(operation.InputHandling, @enumFromInt(input_handling)),
         .retain_input = retain_input,
         .retain_trailing_prompt = retain_trailing_prompt,
         .stop_on_indicated_failure = stop_on_indicated_failure,
     };
+
+    if (input_handling) |inh| {
+        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+    }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
     if (spanned_requested_mode.len > 0) {
@@ -68,7 +74,7 @@ pub fn sendPromptedInputOptionsFromArgs(
     hidden_response: bool,
     abort_input: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: u8,
+    input_handling: ?*u8,
     retain_trailing_prompt: bool,
 ) !operation.SendPromptedInputOptions {
     var options = operation.SendPromptedInputOptions{
@@ -77,11 +83,14 @@ pub fn sendPromptedInputOptionsFromArgs(
         .prompt_exact = try allocator.dupe(u8, std.mem.span(prompt_exact)),
         .prompt_pattern = try allocator.dupe(u8, std.mem.span(prompt_pattern)),
         .response = try allocator.dupe(u8, std.mem.span(response)),
-        .input_handling = @as(operation.InputHandling, @enumFromInt(input_handling)),
         .hidden_response = hidden_response,
         .retain_trailing_prompt = retain_trailing_prompt,
         .abort_input = try allocator.dupe(u8, std.mem.span(abort_input)),
     };
+
+    if (input_handling) |inh| {
+        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+    }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
     if (spanned_requested_mode.len > 0) {
