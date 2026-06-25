@@ -2,26 +2,6 @@ const std = @import("std");
 
 const operation = @import("netconf-operation.zig");
 
-fn getConfigFilter(config_filter: [*c]const u8) ?bool {
-    const _config_filter = std.mem.span(config_filter);
-
-    if (std.mem.eql(
-        u8,
-        "true",
-        _config_filter,
-    )) {
-        return true;
-    } else if (std.mem.eql(
-        u8,
-        "false",
-        _config_filter,
-    )) {
-        return false;
-    }
-
-    return null;
-}
-
 /// Builds RawRpcOptions from given ffi inputs.
 pub fn rawRpcOptionsFromArgs(
     allocator: std.mem.Allocator,

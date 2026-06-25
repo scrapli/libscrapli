@@ -49,6 +49,8 @@ pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
 
+    host: []const u8,
+
     real_driver: RealDriver,
 
     poll_fds: [2]std.posix.fd_t = .{ -1, -1 },
@@ -107,6 +109,7 @@ pub const FfiDriver = struct {
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .io = io,
+            .host = try allocator.dupe(u8, host),
             .real_driver = .{
                 .cli = real_driver,
             },
@@ -157,6 +160,7 @@ pub const FfiDriver = struct {
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .io = io,
+            .host = try allocator.dupe(u8, host),
             .real_driver = .{
                 .netconf = real_driver,
             },
@@ -216,6 +220,8 @@ pub const FfiDriver = struct {
 
         self.operation_queue.deinit();
         self.operation_results.deinit();
+
+        self.allocator.free(self.host);
 
         switch (self.real_driver) {
             .cli => |d| {
