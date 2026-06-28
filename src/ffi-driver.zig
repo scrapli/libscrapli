@@ -389,6 +389,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .enter_mode => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.enterMode(
                         self.allocator,
                         o,
