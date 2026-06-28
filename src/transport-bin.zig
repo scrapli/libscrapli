@@ -15,6 +15,9 @@ const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
 
+// zlinter-disable no_global_vars
+var fork_lock: std.Io.Mutex = .init;
+
 /// Holds option inputs for the bin transport.
 pub const OptionsInputs = struct {
     bin: []const u8 = default_ssh_bin,
@@ -611,24 +614,31 @@ fn openPty(
     // ensure the pty is non blocking
     try file.setNonBlocking(master_fd.handle);
 
-    const pid = c.fork();
+    const args = allocator.alloc([*c]u8, open_args.len + 1) catch {
+        c._exit(1);
+    };
 
-    if (pid < 0) {
-        return error.PtyError;
-    } else if (pid == 0) {
-        const args = allocator.alloc([*c]u8, open_args.len + 1) catch {
+    for (open_args, 0..) |arg, i| {
+        args[i] = allocator.dupeSentinel(u8, arg, 0) catch {
             c._exit(1);
         };
-        defer allocator.free(args);
+    }
 
+    args[open_args.len] = null;
+
+    try fork_lock.lock(io);
+    const pid = c.fork();
+    fork_lock.unlock(io);
+
+    if (pid < 0) {
         for (open_args, 0..) |arg, i| {
-            args[i] = allocator.dupeSentinel(u8, arg, 0) catch {
-                c._exit(1);
-            };
+            allocator.free(args[i][0 .. arg.len + 1]);
         }
 
-        args[open_args.len] = null;
+        allocator.free(args);
 
+        return error.PtyError;
+    } else if (pid == 0) {
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
         // to see what happened
         openPtyChild(
@@ -644,6 +654,12 @@ fn openPty(
 
         unreachable;
     }
+
+    for (open_args, 0..) |arg, i| {
+        allocator.free(args[i][0 .. arg.len + 1]);
+    }
+
+    allocator.free(args);
 
     // parent process, close the slave and return the master (pty) to read/write to
     _ = std.c.close(slave_fd.handle);
