@@ -360,7 +360,8 @@ export fn ls_cli_enter_mode(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const owned_requested_mode = d.allocator.dupe(u8, std.mem.span(requested_mode)) catch |err| {
+    const spanned_requested_mode = std.mem.span(requested_mode);
+    const owned_requested_mode = d.allocator.dupe(u8, spanned_requested_mode) catch |err| {
         return ffi_common.toFfiResult(err);
     };
 

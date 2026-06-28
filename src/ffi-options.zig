@@ -9,37 +9,6 @@ const netconf_operation = @import("netconf-operation.zig");
 const session = @import("session.zig");
 const transport = @import("transport.zig");
 
-fn getTransport(transport_kind: []const u8) transport.Kind {
-    if (std.mem.eql(
-        u8,
-        transport_kind,
-        @tagName(transport.Kind.bin),
-    )) {
-        return transport.Kind.bin;
-    } else if (std.mem.eql(
-        u8,
-        transport_kind,
-        @tagName(transport.Kind.telnet),
-    )) {
-        return transport.Kind.telnet;
-    } else if (std.mem.eql(
-        u8,
-        transport_kind,
-        @tagName(transport.Kind.ssh2),
-    )) {
-        return transport.Kind.ssh2;
-    } else if (std.mem.eql(
-        u8,
-        transport_kind,
-        @tagName(transport.Kind.test_),
-    )) {
-        return transport.Kind.test_;
-    } else {
-        // zlinter-disable-next-line no_panic - should never happen
-        @panic("unsupported transport");
-    }
-}
-
 // zlinter-disable no_undefined
 /// An options struct that can have fields set from a calling language (i.e. py/go).
 /// note: many fields are optional pointers because we cant just have ?u64 on extern struct
@@ -52,12 +21,10 @@ pub const FFIOptions = extern struct {
         level: u8,
         message: *const []u8,
     ) callconv(.c) void = null,
-    logger_level: [*c]const u8 = undefined,
-    logger_level_len: usize = 0,
+    logger_level: u8 = 4,
 
     port: ?*u16 = null,
-    transport_kind: [*c]const u8 = undefined,
-    transport_kind_len: usize = 0,
+    transport_kind: u8 = 1,
 
     cli: extern struct {
         definition_str: [*c]const u8 = undefined,
@@ -261,7 +228,9 @@ pub const FFIOptions = extern struct {
     }
 
     fn transportOptionsInputs(self: *FFIOptions) transport.OptionsInputs {
-        switch (getTransport(self.transport_kind[0..self.transport_kind_len])) {
+        const transport_kind: transport.Kind = @enumFromInt(self.transport_kind);
+
+        switch (transport_kind) {
             transport.Kind.bin => {
                 var o = transport.OptionsInputs{
                     .bin = .{},
@@ -372,9 +341,7 @@ pub const FFIOptions = extern struct {
             l = logging.Logger{
                 .allocator = allocator,
                 .f = cb,
-                .level = logging.LogLevel.fromString(
-                    self.logger_level[0..self.logger_level_len],
-                ),
+                .level = @enumFromInt(self.logger_level),
             };
         }
 
@@ -397,9 +364,7 @@ pub const FFIOptions = extern struct {
             l = logging.Logger{
                 .allocator = allocator,
                 .f = cb,
-                .level = logging.LogLevel.fromString(
-                    self.logger_level[0..self.logger_level_len],
-                ),
+                .level = @enumFromInt(self.logger_level),
             };
         }
 
@@ -507,12 +472,15 @@ const ffi_options_top_level_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsTopLevelToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
+    const transport_kind: transport.Kind = @enumFromInt(o.transport_kind);
+    const logger_level: logging.LogLevel = @enumFromInt(o.logger_level);
+
     return std.fmt.allocPrint(
         allocator,
         ffi_options_top_level_args_json_ish_placeholder,
         .{
-            cStr(o.logger_level, o.logger_level_len),
-            cStr(o.transport_kind, o.transport_kind_len),
+            @tagName(logger_level),
+            transport_kind.toString(),
             optU16(o.port),
         },
     );
