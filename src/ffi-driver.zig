@@ -93,10 +93,13 @@ pub const FfiDriver = struct {
         host: []const u8,
         config: cli.Config,
     ) !*FfiDriver {
+        const owned_host = try allocator.dupe(u8, host);
+        errdefer allocator.free(owned_host);
+
         const real_driver = try cli.Driver.init(
             allocator,
             io,
-            host,
+            owned_host,
             config,
         );
 
@@ -109,7 +112,7 @@ pub const FfiDriver = struct {
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .io = io,
-            .host = try allocator.dupe(u8, host),
+            .host = owned_host,
             .real_driver = .{
                 .cli = real_driver,
             },
