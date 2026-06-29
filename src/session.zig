@@ -625,12 +625,11 @@ pub const Session = struct {
             };
 
             if (n == 0) {
-                std.Io.Clock.Duration.sleep(
+                self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(cur_read_delay_ns),
+                        .nanoseconds = cur_read_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 ) catch |err| {
                     self.log.warn(
                         "session.Session authenticate: sleep error '{}', ignoring",
@@ -878,12 +877,11 @@ pub const Session = struct {
             const n = try self.read(buf);
 
             if (n == 0) {
-                std.Io.Clock.Duration.sleep(
+                self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(cur_read_delay_ns),
+                        .nanoseconds = cur_read_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 ) catch |err| {
                     self.log.warn(
                         "session.Session readTimeout: sleep error '{}', ignoring",

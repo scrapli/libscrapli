@@ -139,12 +139,11 @@ export fn ls_cli_open(
             break;
         }
 
-        std.Io.Clock.Duration.sleep(
+        d.io.sleep(
             .{
-                .clock = .awake,
-                .raw = .fromNanoseconds(ffi_driver.operation_thread_ready_sleep),
+                .nanoseconds = ffi_driver.operation_thread_ready_sleep,
             },
-            d.io,
+            .awake,
         ) catch |err| {
             d.getLogger().warn(
                 "ffirootcli ls_cli_open: sleep error '{}', ignoring",

@@ -2902,12 +2902,11 @@ pub const Driver = struct {
                 return errors.ScrapliError.EOF;
             }
 
-            std.Io.Clock.Duration.sleep(
+            self.io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(self.options.message_poll_interval_ns),
+                    .nanoseconds = self.options.message_poll_interval_ns,
                 },
-                self.io,
+                .awake,
             ) catch |err| {
                 self.log.warn(
                     "netconf.Driver sendRpc: sleep error '{}', ignoring",

@@ -123,12 +123,11 @@ fn libssh2DisconnectSession(
             }
 
             // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
-            std.Io.Clock.Duration.sleep(
+            io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    .nanoseconds = default_eagain_delay_ns,
                 },
-                io,
+                .awake,
             ) catch {};
 
             continue;
@@ -163,12 +162,11 @@ fn libssh2FreeSession(
             }
 
             // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
-            std.Io.Clock.Duration.sleep(
+            io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    .nanoseconds = default_eagain_delay_ns,
                 },
-                io,
+                .awake,
             ) catch {};
 
             continue;
@@ -203,12 +201,11 @@ fn libssh2CloseChannel(
             }
 
             // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
-            std.Io.Clock.Duration.sleep(
+            io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    .nanoseconds = default_eagain_delay_ns,
                 },
-                io,
+                .awake,
             ) catch {};
 
             continue;
@@ -243,12 +240,11 @@ fn libssh2FreeChannel(
             }
 
             // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
-            std.Io.Clock.Duration.sleep(
+            io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    .nanoseconds = default_eagain_delay_ns,
                 },
-                io,
+                .awake,
             ) catch {};
 
             continue;
@@ -368,12 +364,11 @@ const ProxyWrapper = struct {
         while (!self.stop_flag.load(std.lang.AtomicOrder.unordered)) {
             _ = self.pipeToChannel() catch |err| switch (err) {
                 error.WouldBlock => {
-                    try std.Io.Clock.Duration.sleep(
+                    try self.io.sleep(
                         .{
-                            .clock = .awake,
-                            .raw = .fromNanoseconds(default_eagain_delay_ns),
+                            .nanoseconds = default_eagain_delay_ns,
                         },
-                        self.io,
+                        .awake,
                     );
 
                     continue;
@@ -440,13 +435,13 @@ const ProxyWrapper = struct {
         while (!self.stop_flag.load(std.lang.AtomicOrder.unordered)) {
             self.channelToPipe() catch |err| switch (err) {
                 error.WouldBlock => {
-                    try std.Io.Clock.Duration.sleep(
+                    try self.io.sleep(
                         .{
-                            .clock = .awake,
-                            .raw = .fromNanoseconds(default_eagain_delay_ns),
+                            .nanoseconds = default_eagain_delay_ns,
                         },
-                        self.io,
+                        .awake,
                     );
+
                     continue;
                 },
                 errors.ScrapliError.EOF => return,
@@ -799,12 +794,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1076,12 +1070,11 @@ pub const Transport = struct {
             if (rc == 1) {
                 return true;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1154,12 +1147,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1250,12 +1242,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1333,12 +1324,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1402,12 +1392,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1460,12 +1449,11 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(session);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1531,12 +1519,11 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(self.initial_session.?);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1681,12 +1668,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1738,12 +1724,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1804,13 +1789,13 @@ pub const Transport = struct {
             self.session_lock.unlock(self.io);
 
             if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
+
                 continue;
             }
 

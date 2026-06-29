@@ -86,12 +86,11 @@ export fn ls_netconf_open(
             break;
         }
 
-        std.Io.Clock.Duration.sleep(
+        d.io.sleep(
             .{
-                .clock = .awake,
-                .raw = .fromNanoseconds(ffi_driver.operation_thread_ready_sleep),
+                .nanoseconds = ffi_driver.operation_thread_ready_sleep,
             },
-            d.io,
+            .awake,
         ) catch |err| {
             d.getLogger().warn(
                 "ffirootnetconf ls_netconf_open: sleep error '{}', ignoring",

@@ -298,12 +298,11 @@ pub const FfiDriver = struct {
                 break;
             }
 
-            std.Io.Clock.Duration.sleep(
+            self.io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(operation_thread_ready_sleep),
+                    .nanoseconds = operation_thread_ready_sleep,
                 },
-                self.io,
+                .awake,
             ) catch |err| {
                 self.getLogger().warn(
                     "ffi-driver.FfiDriver open: sleep error '{}', ignoring",
