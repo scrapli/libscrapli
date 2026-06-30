@@ -165,8 +165,7 @@ pub fn testStrResult(
 ) !void {
     var display_name = test_name;
     if (case_name.len > 0) {
-        display_name = try std.fmt.allocPrint(
-            std.testing.allocator,
+        display_name = try std.testing.allocator.print(
             "{s} {s}",
             .{ test_name, case_name },
         );
@@ -201,8 +200,7 @@ pub fn testStrResultRoughly(
 ) !void {
     var display_name = test_name;
     if (case_name.len > 0) {
-        display_name = try std.fmt.allocPrint(
-            std.testing.allocator,
+        display_name = try std.testing.allocator.print(
             "{s} {s}",
             .{ test_name, case_name },
         );
@@ -715,9 +713,9 @@ fn testPath(
     case_name: ?[]const u8,
 ) ![]u8 {
     const filename = if (case_name) |case|
-        try std.fmt.allocPrint(allocator, "{s}-{s}.txt", .{ test_name, case })
+        try allocator.print("{s}-{s}.txt", .{ test_name, case })
     else
-        try std.fmt.allocPrint(allocator, "{s}.txt", .{test_name});
+        try allocator.print("{s}.txt", .{test_name});
     defer allocator.free(filename);
 
     return try std.Io.Dir.path.join(

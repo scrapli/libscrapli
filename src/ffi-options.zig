@@ -475,8 +475,7 @@ fn ffiOptionsTopLevelToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) 
     const transport_kind: transport.Kind = @enumFromInt(o.transport_kind);
     const logger_level: logging.LogLevel = @enumFromInt(o.logger_level);
 
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         ffi_options_top_level_args_json_ish_placeholder,
         .{
             @tagName(logger_level),
@@ -506,8 +505,7 @@ fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8
 
     _ = encoder.encode(encoded, raw);
 
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         ffi_options_cli_args_json_ish_placeholder,
         .{
             encoded,
@@ -524,8 +522,7 @@ const ffi_options_netconf_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsNETCONFToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         ffi_options_netconf_args_json_ish_placeholder,
         .{
             cStr(o.netconf.error_tag, o.netconf.error_tag_len),
@@ -546,8 +543,7 @@ const ffi_options_session_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsSessionToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         ffi_options_session_args_json_ish_placeholder,
         .{
             optU64(o.session.read_size),
@@ -576,8 +572,7 @@ const ffi_options_auth_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsAuthToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         ffi_options_auth_args_json_ish_placeholder,
         .{
             cStr(o.auth.username, o.auth.username_len),
@@ -607,8 +602,7 @@ const ffi_options_transport_bin_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsTransportBinToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         ffi_options_transport_bin_args_json_ish_placeholder,
         .{
             cStr(o.transport.bin.bin, o.transport.bin.bin_len),
@@ -636,8 +630,7 @@ const ffi_options_transport_ssh2_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsTransportSSH2ToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         ffi_options_transport_ssh2_args_json_ish_placeholder,
         .{
             cStr(o.transport.ssh2.known_hosts_path, o.transport.ssh2.known_hosts_path_len),
@@ -658,8 +651,7 @@ const ffi_options_transport_test_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsTransportTestToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
-    return std.fmt.allocPrint(
-        allocator,
+    return allocator.print(
         ffi_options_transport_test_args_json_ish_placeholder,
         .{
             cStr(o.transport.test_.f, o.transport.test_.f_len),
@@ -724,8 +716,7 @@ fn ffiOptionsToJSON(
     const tt = try ffiOptionsTransportTestToJSON(allocator, o);
     defer allocator.free(tt);
 
-    const final_json = try std.fmt.allocPrint(
-        allocator,
+    const final_json = try allocator.print(
         ffi_options_json_ish_placeholder,
         .{
             top,

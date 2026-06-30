@@ -195,8 +195,7 @@ test "driver open" {
 
         // open has its own golden files since this will include in channel auth for some transports
         // but not others
-        const golden_filename = try std.fmt.allocPrint(
-            std.testing.allocator,
+        const golden_filename = try std.testing.allocator.print(
             "src/tests/functional/golden/driver/{s}-{s}-{s}-{s}.txt",
             .{ test_name, case.name, case.platform, case.transport_kind.toString() },
         );

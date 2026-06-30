@@ -225,8 +225,7 @@ pub const Transport = struct {
             self.allocator,
             strings.MaybeHeapString{
                 .allocator = self.allocator,
-                .string = try std.fmt.allocPrint(
-                    self.allocator,
+                .string = try self.allocator.print(
                     "{d}",
                     .{port},
                 ),
@@ -246,8 +245,7 @@ pub const Transport = struct {
                 self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
-                    .string = try std.fmt.allocPrint(
-                        self.allocator,
+                    .string = try self.allocator.print(
                         "ConnectTimeout={d}",
                         .{operation_timeout_ns / std.time.ns_per_s},
                     ),
@@ -266,8 +264,7 @@ pub const Transport = struct {
                 self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
-                    .string = try std.fmt.allocPrint(
-                        self.allocator,
+                    .string = try self.allocator.print(
                         "ServerAliveInterval={d}",
                         .{operation_timeout_ns / std.time.ns_per_s},
                     ),
@@ -385,8 +382,7 @@ pub const Transport = struct {
                 self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
-                    .string = try std.fmt.allocPrint(
-                        self.allocator,
+                    .string = try self.allocator.print(
                         "UserKnownHostsFile={s}",
                         .{known_hosts_path},
                     ),

@@ -189,8 +189,7 @@ test "driver-netconf open" {
 
         // open has its own golden files since this will include in channel auth for some transports
         // but not others
-        const golden_filename = try std.fmt.allocPrint(
-            std.testing.allocator,
+        const golden_filename = try std.testing.allocator.print(
             "src/tests/functional/golden/netconf/{s}-{s}-capabilities.yaml",
             .{ test_name, case.platform },
         );
@@ -298,8 +297,7 @@ test "driver-netconf get-config" {
             continue;
         }
 
-        const golden_filename = try std.fmt.allocPrint(
-            std.testing.allocator,
+        const golden_filename = try std.testing.allocator.print(
             "src/tests/functional/golden/netconf/{s}-{s}-{s}",
             .{ test_name, case.platform, case.transport_kind.toString() },
         );

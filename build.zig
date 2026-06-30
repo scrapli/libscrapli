@@ -399,8 +399,7 @@ fn buildTests(
     if (test_coverage) {
         const home = b.graph.environ_map.get("HOME") orelse "";
 
-        const exclude = std.fmt.allocPrint(
-            b.allocator,
+        const exclude = b.allocator.print(
             // exclude zig cache stuff
             "--exclude-path={s}/.zig/,{s}/.cache",
             .{ home, home },
@@ -628,8 +627,7 @@ fn genFfiLibOutputDir(
     // zlinter-disable require_exhaustive_enum_switch
     switch (target.os.tag) {
         .macos => {
-            return std.fmt.allocPrint(
-                b.allocator,
+            return b.allocator.print(
                 "{s}-{s}",
                 .{
                     @tagName(target.cpu.arch),
@@ -638,8 +636,7 @@ fn genFfiLibOutputDir(
             );
         },
         else => {
-            return std.fmt.allocPrint(
-                b.allocator,
+            return b.allocator.print(
                 "{s}-{s}-{s}",
                 .{
                     @tagName(target.cpu.arch),
@@ -663,8 +660,7 @@ fn genFfiLibOutputName(
 
     switch (lib.rootModuleTarget().os.tag) {
         .macos => {
-            const versioned_name = try std.fmt.allocPrint(
-                b.allocator,
+            const versioned_name = try b.allocator.print(
                 "{s}.{d}.{d}.{d}",
                 .{
                     base_name,
@@ -676,8 +672,7 @@ fn genFfiLibOutputName(
             defer b.allocator.free(versioned_name);
 
             if (version.pre) |pre| {
-                return std.fmt.allocPrint(
-                    b.allocator,
+                return b.allocator.print(
                     "{s}-{s}.dylib",
                     .{
                         versioned_name,
@@ -686,8 +681,7 @@ fn genFfiLibOutputName(
                 );
             }
 
-            return std.fmt.allocPrint(
-                b.allocator,
+            return b.allocator.print(
                 "{s}.dylib",
                 .{
                     versioned_name,
@@ -695,8 +689,7 @@ fn genFfiLibOutputName(
             );
         },
         else => {
-            const versioned_name = try std.fmt.allocPrint(
-                b.allocator,
+            const versioned_name = try b.allocator.print(
                 "{s}.so.{d}.{d}.{d}",
                 .{
                     base_name,
@@ -709,8 +702,7 @@ fn genFfiLibOutputName(
             if (version.pre) |pre| {
                 defer b.allocator.free(versioned_name);
 
-                return std.fmt.allocPrint(
-                    b.allocator,
+                return b.allocator.print(
                     "{s}-{s}",
                     .{
                         versioned_name,

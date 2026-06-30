@@ -448,8 +448,7 @@ pub const Driver = struct {
                     start_timestamp,
                 );
 
-                res.result = try std.fmt.allocPrint(
-                    allocator,
+                res.result = try allocator.print(
                     "{s}\n{s}",
                     .{
                         res.result,
@@ -902,8 +901,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        const caps = try std.fmt.allocPrint(
-            self.allocator,
+        const caps = try self.allocator.print(
             "{s}{s}",
             .{
                 output.written(),
@@ -1548,14 +1546,12 @@ pub const Driver = struct {
         elem_conent: []const u8,
     ) ![]const u8 {
         if (self.negotiated_version == .version_1_0) {
-            return std.fmt.allocPrint(
-                allocator,
+            return allocator.print(
                 "{s}\n{s}",
                 .{ elem_conent, delimiter_version_1_0 },
             );
         } else {
-            return std.fmt.allocPrint(
-                allocator,
+            return allocator.print(
                 "#{d}\n{s}\n{s}",
                 .{ elem_conent.len, elem_conent, delimiter_version_1_1 },
             );
@@ -1593,7 +1589,7 @@ pub const Driver = struct {
 
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1668,7 +1664,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1735,7 +1731,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1806,7 +1802,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1855,7 +1851,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1903,7 +1899,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1951,7 +1947,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1999,7 +1995,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2067,7 +2063,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2109,14 +2105,12 @@ pub const Driver = struct {
 
                     try res.record(
                         [2][]const u8{
-                            try std.fmt.allocPrint(
-                                allocator,
+                            try allocator.print(
                                 \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
                             ,
                                 .{self.message_id - 1},
                             ),
-                            try std.fmt.allocPrint(
-                                allocator,
+                            try allocator.print(
                                 \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
                             ,
                                 .{self.message_id - 1},
@@ -2150,7 +2144,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2162,7 +2156,7 @@ pub const Driver = struct {
 
         // see also getMessageId, same situation
         var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &session_id_buf,
             "{}",
             .{options.session_id},
@@ -2209,7 +2203,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2256,7 +2250,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2301,7 +2295,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2354,7 +2348,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2404,7 +2398,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2468,7 +2462,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2484,7 +2478,7 @@ pub const Driver = struct {
         // like the message id and such, but for datastore, longest (currently) is 12, so 20
         // just for consistency and overhead
         var datastore_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &datastore_buf,
             "ds:{s}",
             .{@tagName(options.datastore)},
@@ -2522,7 +2516,7 @@ pub const Driver = struct {
         if (options.max_depth) |max_depth| {
             try writer.elementStart("max-depth");
             var session_id_buf: [20]u8 = undefined;
-            try writer.text(try std.fmt.bufPrint(
+            try writer.text(try std.mem.print(
                 &session_id_buf,
                 "{}",
                 .{max_depth},
@@ -2580,7 +2574,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2595,7 +2589,7 @@ pub const Driver = struct {
         // like the message id and such, but for datastore, longest (currently) is 12, so 20
         // just for consistency and overhead
         var datastore_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &datastore_buf,
             "ds:{s}",
             .{@tagName(options.datastore)},
@@ -2650,7 +2644,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
