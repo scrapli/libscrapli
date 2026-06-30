@@ -132,6 +132,9 @@ pub const Transport = struct {
 
     open_args: std.ArrayList(strings.MaybeHeapString),
 
+    last_error: [512]u8 = @splat(0),
+    last_error_len: usize = 0,
+
     /// Initializes the transport.
     pub fn init(
         allocator: std.mem.Allocator,
@@ -168,6 +171,16 @@ pub const Transport = struct {
         self.waiter.deinit();
 
         self.allocator.destroy(self);
+    }
+
+    fn setLastError(
+        self: *Transport,
+        s: []const u8,
+    ) void {
+        const len = @min(s.len, self.last_error.len);
+
+        @memcpy(self.last_error[0..len], s[0..len]);
+        self.last_error_len = len;
     }
 
     fn buildArgs(
@@ -461,11 +474,15 @@ pub const Transport = struct {
             self.options.term_height,
             self.options.netconf,
         ) catch |err| {
+            const last_error = "bin.Transport open: failed inizializing master_fd";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 err,
                 @src(),
                 self.log,
-                "bin.Transport open: failed inizializing master_fd",
+                last_error,
                 .{},
             );
         };
@@ -487,11 +504,15 @@ pub const Transport = struct {
         self.log.debug("bin.Transport write requested", .{});
 
         if (self.fd == null) {
+            const last_error = "bin.Transport write: write attempted, but transport not opened";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "bin.Transport write: write attempted, but transport not opened",
+                last_error,
                 .{},
             );
         }
@@ -505,19 +526,29 @@ pub const Transport = struct {
             );
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
-                std.posix.E.AGAIN => return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "bin.Transport write: eagain on write, short write",
-                    .{},
-                ),
+                std.posix.E.AGAIN => {
+                    const last_error = "bin.Transport write: eagain on write, short write";
+
+                    self.setLastError(last_error);
+
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Transport,
+                        @src(),
+                        self.log,
+                        last_error,
+                        .{},
+                    );
+                },
                 else => |err| {
+                    const last_error = "bin.Transport write: writing to fd failed";
+
+                    self.setLastError(last_error);
+
                     return errors.wrapCriticalError(
                         std.posix.unexpectedErrno(err),
                         @src(),
                         self.log,
-                        "bin.Transport write: writing to fd failed",
+                        last_error,
                         .{},
                     );
                 },
@@ -530,11 +561,15 @@ pub const Transport = struct {
         self.log.trace("bin.Transport read requested", .{});
 
         if (self.fd == null) {
+            const last_error = "bin.Transport read: read attempted, but transport not opened";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "bin.Transport read: read attempted, but transport not opened",
+                last_error,
                 .{},
             );
         }
