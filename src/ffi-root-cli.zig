@@ -898,6 +898,7 @@ test "ffi: ls_cli_fetch_operation_sizes incomplete operation" {
     var operation_result_size: usize = 0;
     var operation_failure_indicator_size: usize = 0;
     var operation_error_size: usize = 0;
+    var operation_last_error_size: usize = 0;
 
     const ret = ls_cli_fetch_operation_sizes(
         @ptrCast(d),
@@ -908,6 +909,7 @@ test "ffi: ls_cli_fetch_operation_sizes incomplete operation" {
         &operation_result_size,
         &operation_failure_indicator_size,
         &operation_error_size,
+        &operation_last_error_size,
     );
 
     try std.testing.expectEqual(@intFromEnum(ffi_common.FfiResult.operation), ret);
