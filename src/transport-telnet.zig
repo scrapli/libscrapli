@@ -69,6 +69,9 @@ pub const Transport = struct {
 
     initial_buf: std.ArrayList(u8),
 
+    last_error: [512]u8 = @splat(0),
+    last_error_len: usize = 0,
+
     /// Initialize the transport object.
     pub fn init(
         allocator: std.mem.Allocator,
@@ -101,6 +104,16 @@ pub const Transport = struct {
         self.waiter.deinit();
 
         self.allocator.destroy(self);
+    }
+
+    fn setLastError(
+        self: *Transport,
+        s: []const u8,
+    ) void {
+        const len = @min(s.len, self.last_error.len);
+
+        @memcpy(self.last_error[0..len], s[0..len]);
+        self.last_error_len = len;
     }
 
     fn handleControlCharResponse(
@@ -176,21 +189,32 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "telnet.Transport handleControlChars: operation cancelled";
+
+                self.setLastError(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "telnet.Transport handleControlChars: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(
+                self.io,
+                .awake,
+            ).nanoseconds > operation_timeout_ns) {
+                const last_error = "telnet.Transport handleControlChars: operation timeout exceeded";
+
+                self.setLastError(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "telnet.Transport handleControlChars: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -201,11 +225,16 @@ pub const Transport = struct {
 
             const n = try std.posix.read(self.socket.?, &control_char_buf);
             if (n == 0) {
+                const last_error = "telnet.Transport handleControlChars: peer closed connection " ++
+                    "during telnet negotiation";
+
+                self.setLastError(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "telnet.Transport handleControlChars: peer closed connection during telnet negotiation",
+                    last_error,
                     .{},
                 );
             }
@@ -232,6 +261,10 @@ pub const Transport = struct {
         self.log.info("telnet.Transport open requested", .{});
 
         self.stream = transport_socket.getStream(self.io, self.log, host, port) catch {
+            self.setLastError(
+                "telnet.Transport initSocket: failed initializing socket unable to resolve host",
+            );
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
@@ -245,11 +278,15 @@ pub const Transport = struct {
         self.socket = self.stream.?.socket.handle;
 
         file.setNonBlocking(self.socket.?) catch {
+            const last_error = "telnet.Transport open: failed ensuring socket set to non blocking";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "telnet.Transport open: failed ensuring socket set to non blocking",
+                last_error,
                 .{},
             );
         };
@@ -277,11 +314,15 @@ pub const Transport = struct {
         self.log.debug("telnet.Transport write requested", .{});
 
         if (self.socket == null) {
+            const last_error = "telnet.Transport write: write attempted, but transport not opened";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "telnet.Transport write: write attempted, but transport not opened",
+                last_error,
                 .{},
             );
         }
@@ -296,20 +337,28 @@ pub const Transport = struct {
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
                 std.posix.E.AGAIN => {
+                    const last_error = "telnet.Transport write: eagain on write, short write";
+
+                    self.setLastError(last_error);
+
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Transport,
                         @src(),
                         self.log,
-                        "telnet.Transport write: eagain on write, short write",
+                        last_error,
                         .{},
                     );
                 },
                 else => |err| {
+                    const last_error = "telnet.Transport write: writing to stream failed";
+
+                    self.setLastError(last_error);
+
                     return errors.wrapCriticalError(
                         std.posix.unexpectedErrno(err),
                         @src(),
                         self.log,
-                        "telnet.Transport write: writing to stream failed",
+                        last_error,
                         .{},
                     );
                 },
@@ -322,11 +371,15 @@ pub const Transport = struct {
         self.log.trace("telnet.Transport read requested", .{});
 
         if (self.socket == null) {
+            const last_error = "telnet.Transport read: read attempted, but transport not opened";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "telnet.Transport read: read attempted, but transport not opened",
+                last_error,
                 .{},
             );
         }
@@ -352,11 +405,15 @@ pub const Transport = struct {
         }
 
         const n = std.posix.read(self.socket.?, buf) catch |err| {
+            const last_error = "telnet.Transport read: failed reading from stream";
+
+            self.setLastError(last_error);
+
             return errors.wrapWarnError(
                 err,
                 @src(),
                 self.log,
-                "telnet.Transport read: failed reading from stream",
+                last_error,
                 .{},
             );
         };
