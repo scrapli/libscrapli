@@ -100,6 +100,9 @@ pub const Driver = struct {
     session: *session.Session,
     current_mode: []const u8 = mode.unknown_mode,
 
+    last_error: [512]u8 = @splat(0),
+    last_error_len: usize = 0,
+
     /// Initialize the cli driver.
     pub fn init(
         allocator: std.mem.Allocator,
@@ -165,6 +168,16 @@ pub const Driver = struct {
         self.definition.deinit();
         self.options.deinit();
         self.allocator.destroy(self);
+    }
+
+    fn setLastError(
+        self: *Driver,
+        s: []const u8,
+    ) void {
+        const len = @min(s.len, self.last_error.len);
+
+        @memcpy(self.last_error[0..len], s[0..len]);
+        self.last_error_len = len;
     }
 
     fn loadDefinition(
@@ -359,6 +372,8 @@ pub const Driver = struct {
         );
 
         if (!self.definition.modes.contains(options.requested_mode)) {
+            self.setLastError("cli.Driver requested mode not in definition");
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Operation,
                 @src(),
@@ -397,6 +412,8 @@ pub const Driver = struct {
             self.definition.modes,
             current_prompt,
         ) catch |err| {
+            self.setLastError("cli.Driver enterMode: failed determining prompt");
+
             return errors.wrapCriticalError(
                 err,
                 @src(),
@@ -442,6 +459,8 @@ pub const Driver = struct {
 
             const step_mode = self.definition.modes.get(step);
             if (step_mode == null) {
+                self.setLastError("cli.Driver enterMode mode not in definition");
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Operation,
                     @src(),
@@ -455,6 +474,8 @@ pub const Driver = struct {
 
             const next_operation = step_mode.?.accessible_modes.get(next_mode_name);
             if (next_operation == null) {
+                self.setLastError("cli.Driver enterMode mode not accessible from current mode");
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Operation,
                     @src(),
@@ -792,6 +813,10 @@ pub const Driver = struct {
                     callback.options.only_once,
                     triggered_callbacks,
                 ) catch |err| {
+                    self.setLastError(
+                        "cli.Driver readWithCallbacks failed compiling contains pattern",
+                    );
+
                     return errors.wrapCriticalError(
                         err,
                         @src(),
@@ -932,6 +957,8 @@ pub const Driver = struct {
             new_compiled_pattern = re.pcre2Compile(new_definition.prompt_pattern);
 
             if (new_compiled_pattern == null) {
+                self.setLastError("cli.replaceDefinition failed compiling prompt pattern");
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
                     @src(),

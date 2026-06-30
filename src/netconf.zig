@@ -197,6 +197,9 @@ pub const Driver = struct {
     ),
     subscriptions_lock: std.Io.Mutex,
 
+    last_error: [512]u8 = @splat(0),
+    last_error_len: usize = 0,
+
     /// Initialize a netconf object.
     pub fn init(
         allocator: std.mem.Allocator,
@@ -344,6 +347,16 @@ pub const Driver = struct {
         self.allocator.destroy(self);
     }
 
+    fn setLastError(
+        self: *Driver,
+        s: []const u8,
+    ) void {
+        const len = @min(s.len, self.last_error.len);
+
+        @memcpy(self.last_error[0..len], s[0..len]);
+        self.last_error_len = len;
+    }
+
     fn newResult(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -410,11 +423,16 @@ pub const Driver = struct {
                     "<hello ",
                 );
                 if (cap_start_index == null) {
+                    const last_error = "netconf.Driver open: could not find start of " ++
+                        "server capabilities";
+
+                    self.setLastError(last_error);
+
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Driver,
                         @src(),
                         self.log,
-                        "netconf.Driver open: could not find start of server capabilities",
+                        last_error,
                         .{},
                     );
                 }
@@ -427,11 +445,16 @@ pub const Driver = struct {
                     "/hello>",
                 );
                 if (cap_end_index == null) {
+                    const last_error = "netconf.Driver open: could not find end of server " ++
+                        "capabilities";
+
+                    self.setLastError(last_error);
+
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Driver,
                         @src(),
                         self.log,
-                        "netconf.Driver open: could not find end of server capabilities",
+                        last_error,
                         .{},
                     );
                 }
@@ -482,11 +505,15 @@ pub const Driver = struct {
             Driver.processLoop,
             .{self},
         ) catch |err| {
+            const last_error = "netconf.Driver open: failed spawning message processing thread";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 err,
                 @src(),
                 self.log,
-                "netconf.Driver open: failed spawning message processing thread",
+                last_error,
                 .{},
             );
         };
@@ -738,11 +765,15 @@ pub const Driver = struct {
         self.log.debug("netconf.Driver hasCapability: name '{s}'", .{name});
 
         if (self.server_capabilities == null) {
+            const last_error = "netconf.Driver hasCapability: requested but capabilities unset";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 self.log,
-                "netconf.Driver hasCapability: requested but capabilities unset",
+                last_error,
                 .{},
             );
         }
@@ -796,11 +827,15 @@ pub const Driver = struct {
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
+            const last_error = "netconf.Driver determineVersion: capabilities negotiation failed";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 self.log,
-                "netconf.Driver determineVersion: capabilities negotiation failed",
+                last_error,
                 .{},
             );
         }
@@ -827,11 +862,15 @@ pub const Driver = struct {
             },
         }
 
+        const last_error = "netconf.Driver determineVersion: preferred capability unavailable";
+
+        self.setLastError(last_error);
+
         return errors.wrapCriticalError(
             errors.ScrapliError.Driver,
             @src(),
             self.log,
-            "netconf.Driver determineVersion: preferred capability unavailable",
+            last_error,
             .{},
         );
     }
@@ -1307,12 +1346,16 @@ pub const Driver = struct {
             );
 
             if (chunk_size == 0) {
+                const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
+                    "parsing netconf message, found chunk size of zero";
+
+                self.setLastError(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
                     @src(),
                     self.log,
-                    "netconf.Driver processFoundMessageVersion1_1: failed parsing netconf " ++
-                        "message, found chunk size of zero",
+                    last_error,
                     .{},
                 );
             }
@@ -1325,12 +1368,16 @@ pub const Driver = struct {
             if (iter_idx + chunk_size >= buf.len) {
                 // just being defensive here, this should *not* happen in normal circumstances but
                 // ya know... shit happens
+                const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
+                    "parsing netconf message, next index to check out of range";
+
+                self.setLastError(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
                     @src(),
                     self.log,
-                    "netconf.Driver processFoundMessageVersion1_1: failed parsing netconf " ++
-                        "message, next index to check out of range",
+                    last_error,
                     .{},
                 );
             }
@@ -1393,11 +1440,15 @@ pub const Driver = struct {
         cancel: ?*bool,
     ) !void {
         if (cancel != null and cancel.?.*) {
+            const last_error = "netconf.Driver processCancelAndTimeout: operation cancelled";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Cancelled,
                 @src(),
                 self.log,
-                "netconf.Driver processCancelAndTimeout: operation cancelled",
+                last_error,
                 .{},
             );
         }
@@ -1409,6 +1460,10 @@ pub const Driver = struct {
 
             if (ns_since_start > self.session.options.operation_timeout_ns) {
                 const ns_exceeded_by = ns_since_start - self.session.options.operation_timeout_ns;
+
+                self.setLastError(
+                    "netconf.Driver processCancelAndTimeout: operation timeout exceeded",
+                );
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -2821,13 +2876,19 @@ pub const Driver = struct {
                     o,
                 );
             },
-            else => return errors.wrapCriticalError(
-                errors.ScrapliError.Driver,
-                @src(),
-                self.log,
-                "netconf.Driver dispatchRpc: unsupported operation type",
-                .{},
-            ),
+            else => {
+                const last_error = "netconf.Driver dispatchRpc: unsupported operation type";
+
+                self.setLastError(last_error);
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    last_error,
+                    .{},
+                );
+            },
         }
 
         var res = try self.newResult(
