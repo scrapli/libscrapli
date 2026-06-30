@@ -14,6 +14,7 @@ pub const OperationResult = struct {
     done: bool,
     result: Result,
     err: ?anyerror,
+    last_error: []const u8 = "",
 };
 
 /// OperationOptions is a struct holding tagged unions which in turn hold available options for all

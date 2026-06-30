@@ -178,12 +178,13 @@ export fn ls_netconf_get_subscription_id(
 export fn ls_netconf_fetch_operation_sizes(
     d_ptr: *ffi_common.LsDriver,
     operation_id: u32,
-    operation_input_size: *u64,
-    operation_result_raw_size: *u64,
-    operation_result_size: *u64,
-    operation_rpc_warnings_size: *u64,
-    operation_rpc_errors_size: *u64,
-    operation_error_size: *u64,
+    operation_input_size: *usize,
+    operation_result_raw_size: *usize,
+    operation_result_size: *usize,
+    operation_rpc_warnings_size: *usize,
+    operation_rpc_errors_size: *usize,
+    operation_error_size: *usize,
+    operation_last_error_size: *usize,
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
@@ -205,6 +206,7 @@ export fn ls_netconf_fetch_operation_sizes(
 
         operation_result_size.* = 0;
         operation_error_size.* = err_name.len;
+        operation_last_error_size.* = ret.last_error.len;
     } else {
         const dret = switch (ret.result) {
             .netconf => |r| r.?,
@@ -246,6 +248,7 @@ export fn ls_netconf_fetch_operation(
     operation_rpc_warnings: *[]u8,
     operation_rpc_errors: *[]u8,
     operation_error: *[]u8,
+    operation_last_error: *[]u8,
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
@@ -279,6 +282,7 @@ export fn ls_netconf_fetch_operation(
         const err_name = @errorName(ret.err.?);
 
         @memcpy(operation_error.*.ptr, err_name);
+        @memcpy(operation_last_error.*, ret.last_error);
     } else {
         const dret = switch (ret.result) {
             .netconf => |r| r.?,

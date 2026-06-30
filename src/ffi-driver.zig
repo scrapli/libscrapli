@@ -464,6 +464,7 @@ pub const FfiDriver = struct {
                             .cli = null,
                         },
                         .err = ret_err,
+                        .last_error = rd.getLastError(),
                     },
                 ) catch {
                     @panic(
@@ -751,6 +752,7 @@ pub const FfiDriver = struct {
                             .netconf = null,
                         },
                         .err = ret_err,
+                        .last_error = rd.getLastError(),
                     },
                 ) catch {
                     @panic(

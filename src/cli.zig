@@ -180,6 +180,22 @@ pub const Driver = struct {
         self.last_error_len = len;
     }
 
+    /// Returns the last error for the driver, the session, or the transport. Slice only valid
+    /// as long as the error does not change and the driver/session/transport are not deinit'd.
+    pub fn getLastError(
+        self: *Driver,
+    ) []const u8 {
+        if (self.last_error_len > 0) {
+            return self.last_error[0..self.last_error_len];
+        }
+
+        if (self.session.last_error_len > 0) {
+            return self.session.last_error[0..self.session.last_error_len];
+        }
+
+        return self.session.transport.getLastError();
+    }
+
     fn loadDefinition(
         allocator: std.mem.Allocator,
         io: std.Io,

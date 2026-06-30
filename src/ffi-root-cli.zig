@@ -214,6 +214,7 @@ export fn ls_cli_fetch_operation_sizes(
     operation_result_size: *usize,
     operation_failure_indicator_size: *usize,
     operation_error_size: *usize,
+    operation_last_error_size: *usize,
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
@@ -235,6 +236,7 @@ export fn ls_cli_fetch_operation_sizes(
 
         operation_result_size.* = 0;
         operation_error_size.* = err_name.len;
+        operation_last_error_size.* = ret.last_error.len;
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
@@ -259,6 +261,7 @@ export fn ls_cli_fetch_operation_sizes(
         operation_result_size.* = sizes.operation_result_size;
         operation_failure_indicator_size.* = sizes.operation_failure_indicator_size;
         operation_error_size.* = 0;
+        operation_last_error_size.* = 0;
     }
 
     return @intFromEnum(ffi_common.FfiResult.success);
@@ -274,6 +277,7 @@ export fn ls_cli_fetch_operation(
     operation_result: *[]u8,
     operation_result_failed_indicator: *[]u8,
     operation_error: *[]u8,
+    operation_last_error: *[]u8,
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
@@ -304,6 +308,7 @@ export fn ls_cli_fetch_operation(
         const err_name = @errorName(ret.err.?);
 
         @memcpy(operation_error.*, err_name);
+        @memcpy(operation_last_error.*, ret.last_error);
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
