@@ -222,6 +222,24 @@ pub const Transport = struct {
         self.allocator.destroy(self);
     }
 
+    /// Returns the last error value from the transports -- noop on test transport.
+    pub fn getLastError(self: *Transport) []const u8 {
+        switch (self.implementation) {
+            Kind.bin => |t| {
+                return t.last_error[0..t.last_error_len];
+            },
+            Kind.telnet => |t| {
+                return t.last_error[0..t.last_error_len];
+            },
+            Kind.ssh2 => |t| {
+                return t.last_error[0..t.last_error_len];
+            },
+            Kind.test_ => {
+                return "";
+            },
+        }
+    }
+
     /// Open the transport connection.
     pub fn open(
         self: *Transport,

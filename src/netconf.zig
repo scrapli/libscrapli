@@ -197,6 +197,9 @@ pub const Driver = struct {
     ),
     subscriptions_lock: std.Io.Mutex,
 
+    last_error: [512]u8 = @splat(0),
+    last_error_len: usize = 0,
+
     /// Initialize a netconf object.
     pub fn init(
         allocator: std.mem.Allocator,
@@ -291,7 +294,7 @@ pub const Driver = struct {
     pub fn deinit(self: *Driver) void {
         logging.traceWithSrc(self.log, @src(), "netconf.Driver object deinitializing", .{});
 
-        if (self.process_stop.load(std.builtin.AtomicOrder.acquire) == ProcessThreadState.run) {
+        if (self.process_stop.load(std.lang.AtomicOrder.acquire) == ProcessThreadState.run) {
             // same as session, for ignoring errors on close and just gracefully freeing things
             // zlint-disable suppressed-errors
             const ret = self.close(self.allocator, .{ .force = true }) catch null;
@@ -342,6 +345,32 @@ pub const Driver = struct {
         self.options.deinit();
 
         self.allocator.destroy(self);
+    }
+
+    fn setLastError(
+        self: *Driver,
+        s: []const u8,
+    ) void {
+        const len = @min(s.len, self.last_error.len);
+
+        @memcpy(self.last_error[0..len], s[0..len]);
+        self.last_error_len = len;
+    }
+
+    /// Returns the last error for the driver, the session, or the transport. Slice only valid
+    /// as long as the error does not change and the driver/session/transport are not deinit'd.
+    pub fn getLastError(
+        self: *Driver,
+    ) []const u8 {
+        if (self.last_error_len > 0) {
+            return self.last_error[0..self.last_error_len];
+        }
+
+        if (self.session.last_error_len > 0) {
+            return self.session.last_error[0..self.session.last_error_len];
+        }
+
+        return self.session.transport.getLastError();
     }
 
     fn newResult(
@@ -410,11 +439,16 @@ pub const Driver = struct {
                     "<hello ",
                 );
                 if (cap_start_index == null) {
+                    const last_error = "netconf.Driver open: could not find start of " ++
+                        "server capabilities";
+
+                    self.setLastError(last_error);
+
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Driver,
                         @src(),
                         self.log,
-                        "netconf.Driver open: could not find start of server capabilities",
+                        last_error,
                         .{},
                     );
                 }
@@ -427,11 +461,16 @@ pub const Driver = struct {
                     "/hello>",
                 );
                 if (cap_end_index == null) {
+                    const last_error = "netconf.Driver open: could not find end of server " ++
+                        "capabilities";
+
+                    self.setLastError(last_error);
+
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Driver,
                         @src(),
                         self.log,
-                        "netconf.Driver open: could not find end of server capabilities",
+                        last_error,
                         .{},
                     );
                 }
@@ -448,8 +487,7 @@ pub const Driver = struct {
                     start_timestamp,
                 );
 
-                res.result = try std.fmt.allocPrint(
-                    allocator,
+                res.result = try allocator.print(
                     "{s}\n{s}",
                     .{
                         res.result,
@@ -475,7 +513,7 @@ pub const Driver = struct {
 
         self.process_stop.store(
             ProcessThreadState.run,
-            std.builtin.AtomicOrder.unordered,
+            std.lang.AtomicOrder.unordered,
         );
 
         self.process_thread = std.Thread.spawn(
@@ -483,11 +521,15 @@ pub const Driver = struct {
             Driver.processLoop,
             .{self},
         ) catch |err| {
+            const last_error = "netconf.Driver open: failed spawning message processing thread";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 err,
                 @src(),
                 self.log,
-                "netconf.Driver open: failed spawning message processing thread",
+                last_error,
                 .{},
             );
         };
@@ -498,7 +540,7 @@ pub const Driver = struct {
     fn closeJoinProcessThread(self: *Driver) !void {
         self.process_stop.store(
             ProcessThreadState.stop,
-            std.builtin.AtomicOrder.unordered,
+            std.lang.AtomicOrder.unordered,
         );
 
         if (self.process_thread) |t| {
@@ -739,11 +781,15 @@ pub const Driver = struct {
         self.log.debug("netconf.Driver hasCapability: name '{s}'", .{name});
 
         if (self.server_capabilities == null) {
+            const last_error = "netconf.Driver hasCapability: requested but capabilities unset";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 self.log,
-                "netconf.Driver hasCapability: requested but capabilities unset",
+                last_error,
                 .{},
             );
         }
@@ -797,11 +843,15 @@ pub const Driver = struct {
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
+            const last_error = "netconf.Driver determineVersion: capabilities negotiation failed";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 self.log,
-                "netconf.Driver determineVersion: capabilities negotiation failed",
+                last_error,
                 .{},
             );
         }
@@ -828,11 +878,15 @@ pub const Driver = struct {
             },
         }
 
+        const last_error = "netconf.Driver determineVersion: preferred capability unavailable";
+
+        self.setLastError(last_error);
+
         return errors.wrapCriticalError(
             errors.ScrapliError.Driver,
             @src(),
             self.log,
-            "netconf.Driver determineVersion: preferred capability unavailable",
+            last_error,
             .{},
         );
     }
@@ -902,8 +956,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        const caps = try std.fmt.allocPrint(
-            self.allocator,
+        const caps = try self.allocator.print(
             "{s}{s}",
             .{
                 output.written(),
@@ -931,7 +984,7 @@ pub const Driver = struct {
             .version_1_1 => delimiter_version_1_1,
         };
 
-        while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
+        while (self.process_stop.load(std.lang.AtomicOrder.acquire) != ProcessThreadState.stop) {
             const n = self.session.read(buf) catch |err| {
                 switch (err) {
                     errors.ScrapliError.EOF => {
@@ -1309,12 +1362,16 @@ pub const Driver = struct {
             );
 
             if (chunk_size == 0) {
+                const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
+                    "parsing netconf message, found chunk size of zero";
+
+                self.setLastError(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
                     @src(),
                     self.log,
-                    "netconf.Driver processFoundMessageVersion1_1: failed parsing netconf " ++
-                        "message, found chunk size of zero",
+                    last_error,
                     .{},
                 );
             }
@@ -1327,12 +1384,16 @@ pub const Driver = struct {
             if (iter_idx + chunk_size >= buf.len) {
                 // just being defensive here, this should *not* happen in normal circumstances but
                 // ya know... shit happens
+                const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
+                    "parsing netconf message, next index to check out of range";
+
+                self.setLastError(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
                     @src(),
                     self.log,
-                    "netconf.Driver processFoundMessageVersion1_1: failed parsing netconf " ++
-                        "message, next index to check out of range",
+                    last_error,
                     .{},
                 );
             }
@@ -1395,11 +1456,15 @@ pub const Driver = struct {
         cancel: ?*bool,
     ) !void {
         if (cancel != null and cancel.?.*) {
+            const last_error = "netconf.Driver processCancelAndTimeout: operation cancelled";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Cancelled,
                 @src(),
                 self.log,
-                "netconf.Driver processCancelAndTimeout: operation cancelled",
+                last_error,
                 .{},
             );
         }
@@ -1411,6 +1476,10 @@ pub const Driver = struct {
 
             if (ns_since_start > self.session.options.operation_timeout_ns) {
                 const ns_exceeded_by = ns_since_start - self.session.options.operation_timeout_ns;
+
+                self.setLastError(
+                    "netconf.Driver processCancelAndTimeout: operation timeout exceeded",
+                );
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1548,14 +1617,12 @@ pub const Driver = struct {
         elem_conent: []const u8,
     ) ![]const u8 {
         if (self.negotiated_version == .version_1_0) {
-            return std.fmt.allocPrint(
-                allocator,
+            return allocator.print(
                 "{s}\n{s}",
                 .{ elem_conent, delimiter_version_1_0 },
             );
         } else {
-            return std.fmt.allocPrint(
-                allocator,
+            return allocator.print(
                 "#{d}\n{s}\n{s}",
                 .{ elem_conent.len, elem_conent, delimiter_version_1_1 },
             );
@@ -1593,7 +1660,7 @@ pub const Driver = struct {
 
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1668,7 +1735,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1735,7 +1802,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1806,7 +1873,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1855,7 +1922,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1903,7 +1970,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1951,7 +2018,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1999,7 +2066,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2067,7 +2134,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2109,14 +2176,12 @@ pub const Driver = struct {
 
                     try res.record(
                         [2][]const u8{
-                            try std.fmt.allocPrint(
-                                allocator,
+                            try allocator.print(
                                 \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
                             ,
                                 .{self.message_id - 1},
                             ),
-                            try std.fmt.allocPrint(
-                                allocator,
+                            try allocator.print(
                                 \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
                             ,
                                 .{self.message_id - 1},
@@ -2150,7 +2215,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2162,7 +2227,7 @@ pub const Driver = struct {
 
         // see also getMessageId, same situation
         var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &session_id_buf,
             "{}",
             .{options.session_id},
@@ -2209,7 +2274,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2256,7 +2321,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2301,7 +2366,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2354,7 +2419,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2404,7 +2469,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2468,7 +2533,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2484,7 +2549,7 @@ pub const Driver = struct {
         // like the message id and such, but for datastore, longest (currently) is 12, so 20
         // just for consistency and overhead
         var datastore_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &datastore_buf,
             "ds:{s}",
             .{@tagName(options.datastore)},
@@ -2522,7 +2587,7 @@ pub const Driver = struct {
         if (options.max_depth) |max_depth| {
             try writer.elementStart("max-depth");
             var session_id_buf: [20]u8 = undefined;
-            try writer.text(try std.fmt.bufPrint(
+            try writer.text(try std.mem.print(
                 &session_id_buf,
                 "{}",
                 .{max_depth},
@@ -2580,7 +2645,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2595,7 +2660,7 @@ pub const Driver = struct {
         // like the message id and such, but for datastore, longest (currently) is 12, so 20
         // just for consistency and overhead
         var datastore_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &datastore_buf,
             "ds:{s}",
             .{@tagName(options.datastore)},
@@ -2650,7 +2715,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2827,13 +2892,19 @@ pub const Driver = struct {
                     o,
                 );
             },
-            else => return errors.wrapCriticalError(
-                errors.ScrapliError.Driver,
-                @src(),
-                self.log,
-                "netconf.Driver dispatchRpc: unsupported operation type",
-                .{},
-            ),
+            else => {
+                const last_error = "netconf.Driver dispatchRpc: unsupported operation type";
+
+                self.setLastError(last_error);
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    last_error,
+                    .{},
+                );
+            },
         }
 
         var res = try self.newResult(
@@ -2902,12 +2973,11 @@ pub const Driver = struct {
                 return errors.ScrapliError.EOF;
             }
 
-            std.Io.Clock.Duration.sleep(
+            self.io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(self.options.message_poll_interval_ns),
+                    .nanoseconds = self.options.message_poll_interval_ns,
                 },
-                self.io,
+                .awake,
             ) catch |err| {
                 self.log.warn(
                     "netconf.Driver sendRpc: sleep error '{}', ignoring",

@@ -18,7 +18,7 @@ pub const LinearFifoBufferType = union(enum) {
 };
 
 pub fn LinearFifo(
-    comptime T: type,
+    T: type,
     comptime buffer_type: LinearFifoBufferType,
 ) type {
     const autoalign = false;

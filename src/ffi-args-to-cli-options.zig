@@ -2,52 +2,30 @@ const std = @import("std");
 
 const operation = @import("cli-operation.zig");
 
-fn getInputHandling(input_handling: [*c]const u8) operation.InputHandling {
-    const _input_handling = std.mem.span(input_handling);
-
-    if (std.mem.eql(
-        u8,
-        @tagName(operation.InputHandling.exact),
-        _input_handling,
-    )) {
-        return operation.InputHandling.exact;
-    } else if (std.mem.eql(
-        u8,
-        @tagName(operation.InputHandling.fuzzy),
-        _input_handling,
-    )) {
-        return operation.InputHandling.fuzzy;
-    } else if (std.mem.eql(
-        u8,
-        @tagName(operation.InputHandling.ignore),
-        _input_handling,
-    )) {
-        return operation.InputHandling.ignore;
-    } else {
-        return operation.InputHandling.fuzzy;
-    }
-}
-
 /// Return SendInputOptions from ffi provided arguments.
 pub fn sendInputOptionsFromArgs(
+    allocator: std.mem.Allocator,
     cancel: *bool,
     input: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
-) operation.SendInputOptions {
+) !operation.SendInputOptions {
     var options = operation.SendInputOptions{
         .cancel = cancel,
-        .input = std.mem.span(input),
-        .input_handling = getInputHandling(input_handling),
+        .input = try allocator.dupe(u8, std.mem.span(input)),
         .retain_input = retain_input,
         .retain_trailing_prompt = retain_trailing_prompt,
     };
 
-    const _requested_mode = std.mem.span(requested_mode);
-    if (_requested_mode.len > 0) {
-        options.requested_mode = _requested_mode;
+    if (input_handling) |inh| {
+        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+    }
+
+    const spanned_requested_mode = std.mem.span(requested_mode);
+    if (spanned_requested_mode.len > 0) {
+        options.requested_mode = try allocator.dupe(u8, spanned_requested_mode);
     }
 
     return options;
@@ -55,27 +33,31 @@ pub fn sendInputOptionsFromArgs(
 
 /// Return SendInputsOptions from ffi provided arguments.
 pub fn sendInputsOptionsFromArgs(
+    allocator: std.mem.Allocator,
     cancel: *bool,
     inputs: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
     stop_on_indicated_failure: bool,
-) operation.SendInputsOptions {
+) !operation.SendInputsOptions {
     var options = operation.SendInputsOptions{
         .cancel = cancel,
         .inputs = &[_][]const u8{},
-        ._ffi_inputs = std.mem.span(inputs),
-        .input_handling = getInputHandling(input_handling),
+        ._ffi_inputs = try allocator.dupe(u8, std.mem.span(inputs)),
         .retain_input = retain_input,
         .retain_trailing_prompt = retain_trailing_prompt,
         .stop_on_indicated_failure = stop_on_indicated_failure,
     };
 
-    const _requested_mode = std.mem.span(requested_mode);
-    if (_requested_mode.len > 0) {
-        options.requested_mode = _requested_mode;
+    if (input_handling) |inh| {
+        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+    }
+
+    const spanned_requested_mode = std.mem.span(requested_mode);
+    if (spanned_requested_mode.len > 0) {
+        options.requested_mode = try allocator.dupe(u8, spanned_requested_mode);
     }
 
     return options;
@@ -83,6 +65,7 @@ pub fn sendInputsOptionsFromArgs(
 
 /// Return SendPromptedInputOptions from ffi provided arguments.
 pub fn sendPromptedInputOptionsFromArgs(
+    allocator: std.mem.Allocator,
     cancel: *bool,
     input: [*c]const u8,
     prompt_exact: [*c]const u8,
@@ -91,24 +74,27 @@ pub fn sendPromptedInputOptionsFromArgs(
     hidden_response: bool,
     abort_input: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: ?*u8,
     retain_trailing_prompt: bool,
-) operation.SendPromptedInputOptions {
+) !operation.SendPromptedInputOptions {
     var options = operation.SendPromptedInputOptions{
         .cancel = cancel,
-        .input = std.mem.span(input),
-        .prompt_exact = std.mem.span(prompt_exact),
-        .prompt_pattern = std.mem.span(prompt_pattern),
-        .response = std.mem.span(response),
-        .input_handling = getInputHandling(input_handling),
+        .input = try allocator.dupe(u8, std.mem.span(input)),
+        .prompt_exact = try allocator.dupe(u8, std.mem.span(prompt_exact)),
+        .prompt_pattern = try allocator.dupe(u8, std.mem.span(prompt_pattern)),
+        .response = try allocator.dupe(u8, std.mem.span(response)),
         .hidden_response = hidden_response,
         .retain_trailing_prompt = retain_trailing_prompt,
-        .abort_input = std.mem.span(abort_input),
+        .abort_input = try allocator.dupe(u8, std.mem.span(abort_input)),
     };
 
-    const _requested_mode = std.mem.span(requested_mode);
-    if (_requested_mode.len > 0) {
-        options.requested_mode = _requested_mode;
+    if (input_handling) |inh| {
+        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+    }
+
+    const spanned_requested_mode = std.mem.span(requested_mode);
+    if (spanned_requested_mode.len > 0) {
+        options.requested_mode = try allocator.dupe(u8, spanned_requested_mode);
     }
 
     return options;

@@ -128,10 +128,12 @@ pub const Transport = struct {
     waiter: transport_waiter.Waiter,
     closing: bool = false,
 
-    f: ?std.Io.File = null,
     fd: ?std.posix.fd_t = null,
 
     open_args: std.ArrayList(strings.MaybeHeapString),
+
+    last_error: [512]u8 = @splat(0),
+    last_error_len: usize = 0,
 
     /// Initializes the transport.
     pub fn init(
@@ -169,6 +171,16 @@ pub const Transport = struct {
         self.waiter.deinit();
 
         self.allocator.destroy(self);
+    }
+
+    fn setLastError(
+        self: *Transport,
+        s: []const u8,
+    ) void {
+        const len = @min(s.len, self.last_error.len);
+
+        @memcpy(self.last_error[0..len], s[0..len]);
+        self.last_error_len = len;
     }
 
     fn buildArgs(
@@ -226,8 +238,7 @@ pub const Transport = struct {
             self.allocator,
             strings.MaybeHeapString{
                 .allocator = self.allocator,
-                .string = try std.fmt.allocPrint(
-                    self.allocator,
+                .string = try self.allocator.print(
                     "{d}",
                     .{port},
                 ),
@@ -247,8 +258,7 @@ pub const Transport = struct {
                 self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
-                    .string = try std.fmt.allocPrint(
-                        self.allocator,
+                    .string = try self.allocator.print(
                         "ConnectTimeout={d}",
                         .{operation_timeout_ns / std.time.ns_per_s},
                     ),
@@ -267,8 +277,7 @@ pub const Transport = struct {
                 self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
-                    .string = try std.fmt.allocPrint(
-                        self.allocator,
+                    .string = try self.allocator.print(
                         "ServerAliveInterval={d}",
                         .{operation_timeout_ns / std.time.ns_per_s},
                     ),
@@ -386,8 +395,7 @@ pub const Transport = struct {
                 self.allocator,
                 strings.MaybeHeapString{
                     .allocator = self.allocator,
-                    .string = try std.fmt.allocPrint(
-                        self.allocator,
+                    .string = try self.allocator.print(
                         "UserKnownHostsFile={s}",
                         .{known_hosts_path},
                     ),
@@ -459,37 +467,35 @@ pub const Transport = struct {
 
         self.log.debug("bin.Transport open: using args '{s}'", .{joined_open_args});
 
-        self.f = openPty(
+        self.fd = openPty(
             self.allocator,
-            self.io,
             open_args,
             self.options.term_width,
             self.options.term_height,
             self.options.netconf,
         ) catch |err| {
+            const last_error = "bin.Transport open: failed inizializing master_fd";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 err,
                 @src(),
                 self.log,
-                "bin.Transport open: failed inizializing master_fd",
+                last_error,
                 .{},
             );
         };
-
-        if (self.f) |f| {
-            self.fd = f.handle;
-        }
     }
 
     /// Closes the transport.
     pub fn close(self: *Transport) void {
         self.log.info("bin.Transport close requested", .{});
 
-        if (self.f) |f| {
-            f.close(self.io);
+        if (self.fd) |fd| {
+            _ = std.posix.system.close(fd);
         }
 
-        self.f = null;
         self.fd = null;
     }
 
@@ -498,11 +504,15 @@ pub const Transport = struct {
         self.log.debug("bin.Transport write requested", .{});
 
         if (self.fd == null) {
+            const last_error = "bin.Transport write: write attempted, but transport not opened";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "bin.Transport write: write attempted, but transport not opened",
+                last_error,
                 .{},
             );
         }
@@ -516,19 +526,29 @@ pub const Transport = struct {
             );
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
-                std.posix.E.AGAIN => return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "bin.Transport write: eagain on write, short write",
-                    .{},
-                ),
+                std.posix.E.AGAIN => {
+                    const last_error = "bin.Transport write: eagain on write, short write";
+
+                    self.setLastError(last_error);
+
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Transport,
+                        @src(),
+                        self.log,
+                        last_error,
+                        .{},
+                    );
+                },
                 else => |err| {
+                    const last_error = "bin.Transport write: writing to fd failed";
+
+                    self.setLastError(last_error);
+
                     return errors.wrapCriticalError(
                         std.posix.unexpectedErrno(err),
                         @src(),
                         self.log,
-                        "bin.Transport write: writing to fd failed",
+                        last_error,
                         .{},
                     );
                 },
@@ -541,11 +561,15 @@ pub const Transport = struct {
         self.log.trace("bin.Transport read requested", .{});
 
         if (self.fd == null) {
+            const last_error = "bin.Transport read: read attempted, but transport not opened";
+
+            self.setLastError(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "bin.Transport read: read attempted, but transport not opened",
+                last_error,
                 .{},
             );
         }
@@ -579,61 +603,72 @@ pub const Transport = struct {
 
 fn openPty(
     allocator: std.mem.Allocator,
-    io: std.Io,
     open_args: [][]const u8,
     term_width: u16,
     term_height: u16,
     netconf: bool,
-) !std.Io.File {
-    const master_fd = try std.Io.Dir.openFileAbsolute(
-        io,
+) !c_int {
+    const master_handle = std.posix.system.open(
         "/dev/ptmx",
         .{
-            .mode = .read_write,
-            .allow_ctty = false,
+            .ACCMODE = .RDWR,
+            .NOCTTY = true,
         },
     );
+    if (master_handle == -1) {
+        return error.PtyError;
+    }
 
-    if (c.grantpt(master_fd.handle) < 0) return error.PtyError;
-    if (c.unlockpt(master_fd.handle) < 0) return error.PtyError;
+    if (c.grantpt(master_handle) < 0) {
+        return error.PtyError;
+    }
+    if (c.unlockpt(master_handle) < 0) {
+        return error.PtyError;
+    }
 
-    const s_name = c.ptsname(master_fd.handle);
+    const s_name = c.ptsname(master_handle);
 
-    const slave_fd = try std.Io.Dir.openFileAbsolute(
-        io,
+    const slave_handle = std.posix.system.open(
         std.mem.span(s_name),
         .{
-            .mode = .read_write,
-            .allow_ctty = true,
+            .ACCMODE = .RDWR,
         },
     );
+    if (slave_handle == -1) {
+        return error.PtyError;
+    }
 
     // ensure the pty is non blocking
-    try file.setNonBlocking(master_fd.handle);
+    try file.setNonBlocking(master_handle);
+
+    const args = allocator.alloc([*c]u8, open_args.len + 1) catch {
+        c._exit(1);
+    };
+
+    for (open_args, 0..) |arg, i| {
+        args[i] = allocator.dupeSentinel(u8, arg, 0) catch {
+            c._exit(1);
+        };
+    }
+
+    args[open_args.len] = null;
 
     const pid = c.fork();
 
     if (pid < 0) {
-        return error.PtyError;
-    } else if (pid == 0) {
-        const args = allocator.alloc([*c]u8, open_args.len + 1) catch {
-            c._exit(1);
-        };
-        defer allocator.free(args);
-
         for (open_args, 0..) |arg, i| {
-            args[i] = allocator.dupeSentinel(u8, arg, 0) catch {
-                c._exit(1);
-            };
+            allocator.free(args[i][0 .. arg.len + 1]);
         }
 
-        args[open_args.len] = null;
+        allocator.free(args);
 
+        return error.PtyError;
+    } else if (pid == 0) {
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
         // to see what happened
         openPtyChild(
-            master_fd,
-            slave_fd,
+            master_handle,
+            slave_handle,
             @ptrCast(args.ptr),
             term_width,
             term_height,
@@ -645,24 +680,30 @@ fn openPty(
         unreachable;
     }
 
+    for (open_args, 0..) |arg, i| {
+        allocator.free(args[i][0 .. arg.len + 1]);
+    }
+
+    allocator.free(args);
+
     // parent process, close the slave and return the master (pty) to read/write to
-    _ = std.c.close(slave_fd.handle);
+    _ = std.c.close(slave_handle);
 
     // disable onlcr to make outputs nicer
-    try setonlcr(master_fd.handle);
+    try setonlcr(master_handle);
 
-    return master_fd;
+    return master_handle;
 }
 
 fn openPtyChild(
-    master_fd: std.Io.File,
-    slave_fd: std.Io.File,
+    master_handle: c_int,
+    slave_handle: c_int,
     args: [*c]const [*c]u8,
     term_width: u16,
     term_height: u16,
     netconf: bool,
 ) !void {
-    _ = std.c.close(master_fd.handle);
+    _ = std.c.close(master_handle);
 
     // calling setsid and ioctl to set ctty in zig os.linux functions does *not* work for...
     // reasons? but... the C bits work juuuuust fine
@@ -671,13 +712,13 @@ fn openPtyChild(
     }
 
     if (std.posix.system.ioctl(
-        slave_fd.handle,
+        slave_handle,
         c.TIOCSCTTY,
     ) != 0) {
         return error.PtyError;
     }
 
-    try setonlcr(slave_fd.handle);
+    try setonlcr(slave_handle);
 
     if (!netconf) {
         var ws = c.winsize{
@@ -688,7 +729,7 @@ fn openPtyChild(
         };
 
         const set_win_size_rc = std.posix.system.ioctl(
-            slave_fd.handle,
+            slave_handle,
             @bitCast(@as(u32, c.TIOCSWINSZ)),
             @intFromPtr(&ws),
         );
@@ -698,15 +739,15 @@ fn openPtyChild(
         }
     } else {
         // zlinter-disable-next-line no_swallow_error - handled in parent process
-        setnoecho(slave_fd.handle) catch {};
+        setnoecho(slave_handle) catch {};
     }
 
     // we'll know if things fail when we cant read anythinig from the child process
-    _ = c.dup2(slave_fd.handle, 0); // stdin
-    _ = c.dup2(slave_fd.handle, 1); // stdout
-    _ = c.dup2(slave_fd.handle, 2); // stderr
+    _ = c.dup2(slave_handle, 0); // stdin
+    _ = c.dup2(slave_handle, 1); // stdout
+    _ = c.dup2(slave_handle, 2); // stderr
 
-    _ = std.c.close(slave_fd.handle);
+    _ = std.c.close(slave_handle);
 
     const rc = c.execvp(args[0], args);
     if (rc != 0) {

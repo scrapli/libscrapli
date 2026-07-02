@@ -139,12 +139,11 @@ export fn ls_cli_open(
             break;
         }
 
-        std.Io.Clock.Duration.sleep(
+        d.io.sleep(
             .{
-                .clock = .awake,
-                .raw = .fromNanoseconds(ffi_driver.operation_thread_ready_sleep),
+                .nanoseconds = ffi_driver.operation_thread_ready_sleep,
             },
-            d.io,
+            .awake,
         ) catch |err| {
             d.getLogger().warn(
                 "ffirootcli ls_cli_open: sleep error '{}', ignoring",
@@ -215,6 +214,7 @@ export fn ls_cli_fetch_operation_sizes(
     operation_result_size: *usize,
     operation_failure_indicator_size: *usize,
     operation_error_size: *usize,
+    operation_last_error_size: *usize,
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
@@ -236,6 +236,7 @@ export fn ls_cli_fetch_operation_sizes(
 
         operation_result_size.* = 0;
         operation_error_size.* = err_name.len;
+        operation_last_error_size.* = ret.last_error.len;
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
@@ -260,6 +261,7 @@ export fn ls_cli_fetch_operation_sizes(
         operation_result_size.* = sizes.operation_result_size;
         operation_failure_indicator_size.* = sizes.operation_failure_indicator_size;
         operation_error_size.* = 0;
+        operation_last_error_size.* = 0;
     }
 
     return @intFromEnum(ffi_common.FfiResult.success);
@@ -275,6 +277,7 @@ export fn ls_cli_fetch_operation(
     operation_result: *[]u8,
     operation_result_failed_indicator: *[]u8,
     operation_error: *[]u8,
+    operation_last_error: *[]u8,
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
@@ -305,6 +308,7 @@ export fn ls_cli_fetch_operation(
         const err_name = @errorName(ret.err.?);
 
         @memcpy(operation_error.*, err_name);
+        @memcpy(operation_last_error.*, ret.last_error);
     } else {
         const dret = switch (ret.result) {
             .cli => |r| r.?,
@@ -360,6 +364,11 @@ export fn ls_cli_enter_mode(
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
+    const spanned_requested_mode = std.mem.span(requested_mode);
+    const owned_requested_mode = d.allocator.dupe(u8, spanned_requested_mode) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
             .id = 0,
@@ -367,7 +376,7 @@ export fn ls_cli_enter_mode(
                 .cli = .{
                     .enter_mode = .{
                         .cancel = cancel,
-                        .requested_mode = std.mem.span(requested_mode),
+                        .requested_mode = owned_requested_mode,
                     },
                 },
             },
@@ -432,24 +441,27 @@ export fn ls_cli_send_input(
     cancel: *bool,
     input: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
 ) callconv(.c) u8 {
-    if (input == null or requested_mode == null or input_handling == null) {
+    if (input == null or requested_mode == null) {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.sendInputOptionsFromArgs(
+        d.allocator,
         cancel,
         input,
         requested_mode,
         input_handling,
         retain_input,
         retain_trailing_prompt,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
@@ -485,18 +497,19 @@ export fn ls_cli_send_inputs(
     // inputs delimited on the libscrapli delim... annoying but simple/dumb
     inputs: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
     stop_on_indicated_failure: bool,
 ) callconv(.c) u8 {
-    if (inputs == null or requested_mode == null or input_handling == null) {
+    if (inputs == null or requested_mode == null) {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.sendInputsOptionsFromArgs(
+        d.allocator,
         cancel,
         inputs,
         requested_mode,
@@ -504,7 +517,9 @@ export fn ls_cli_send_inputs(
         retain_input,
         retain_trailing_prompt,
         stop_on_indicated_failure,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
@@ -543,7 +558,7 @@ export fn ls_cli_send_prompted_input(
     response: [*c]const u8,
     abort_input: [*c]const u8,
     requested_mode: [*c]const u8,
-    input_handling: [*c]const u8,
+    input_handling: ?*u8,
     hidden_response: bool,
     retain_trailing_prompt: bool,
 ) callconv(.c) u8 {
@@ -552,8 +567,7 @@ export fn ls_cli_send_prompted_input(
         prompt_pattern == null or
         response == null or
         abort_input == null or
-        requested_mode == null or
-        input_handling == null)
+        requested_mode == null)
     {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
@@ -561,6 +575,7 @@ export fn ls_cli_send_prompted_input(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const options = ffi_args_to_options.sendPromptedInputOptionsFromArgs(
+        d.allocator,
         cancel,
         input,
         prompt_exact,
@@ -571,7 +586,9 @@ export fn ls_cli_send_prompted_input(
         requested_mode,
         input_handling,
         retain_trailing_prompt,
-    );
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     const _operation_id = d.queueOperation(
         ffi_operations.OperationOptions{
@@ -723,7 +740,7 @@ test "ffi: ls_cli_send_input null arguments" {
             &cancel,
             null,
             "mode",
-            "fuzzy",
+            null,
             false,
             false,
         ),
@@ -737,20 +754,6 @@ test "ffi: ls_cli_send_input null arguments" {
             &cancel,
             "input",
             null,
-            "fuzzy",
-            false,
-            false,
-        ),
-    );
-
-    try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
-        ls_cli_send_input(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            "input",
-            "mode",
             null,
             false,
             false,
@@ -770,7 +773,7 @@ test "ffi: ls_cli_send_inputs null arguments" {
             &cancel,
             null,
             "mode",
-            "fuzzy",
+            null,
             false,
             false,
             false,
@@ -785,21 +788,6 @@ test "ffi: ls_cli_send_inputs null arguments" {
             &cancel,
             "inputs",
             null,
-            "fuzzy",
-            false,
-            false,
-            false,
-        ),
-    );
-
-    try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
-        ls_cli_send_inputs(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            "inputs",
-            "mode",
             null,
             false,
             false,
@@ -824,7 +812,7 @@ test "ffi: ls_cli_send_prompted_input null arguments" {
             "response",
             "abort",
             "mode",
-            "fuzzy",
+            null,
             false,
             false,
         ),
@@ -842,7 +830,7 @@ test "ffi: ls_cli_send_prompted_input null arguments" {
             "response",
             "abort",
             "mode",
-            "fuzzy",
+            null,
             false,
             false,
         ),
@@ -910,6 +898,7 @@ test "ffi: ls_cli_fetch_operation_sizes incomplete operation" {
     var operation_result_size: usize = 0;
     var operation_failure_indicator_size: usize = 0;
     var operation_error_size: usize = 0;
+    var operation_last_error_size: usize = 0;
 
     const ret = ls_cli_fetch_operation_sizes(
         @ptrCast(d),
@@ -920,6 +909,7 @@ test "ffi: ls_cli_fetch_operation_sizes incomplete operation" {
         &operation_result_size,
         &operation_failure_indicator_size,
         &operation_error_size,
+        &operation_last_error_size,
     );
 
     try std.testing.expectEqual(@intFromEnum(ffi_common.FfiResult.operation), ret);

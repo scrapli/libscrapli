@@ -1266,7 +1266,7 @@ pub fn stripAsciiAndAnsiControlCharsInFile(
     var reader = in.reader(io, &r_buffer);
 
     var tmp_path_buf: [4096]u8 = undefined;
-    const tmp_path = try std.fmt.bufPrint(
+    const tmp_path = try std.mem.print(
         &tmp_path_buf,
         "{s}.{x}.tmp",
         .{

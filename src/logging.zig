@@ -205,7 +205,7 @@ pub const Logger = struct {
 /// Emit a trace log and include the source code file/line.
 pub fn traceWithSrc(
     log: Logger,
-    src: std.builtin.SourceLocation,
+    src: std.lang.SourceLocation,
     comptime format: []const u8,
     args: anytype,
 ) void {

@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const dependency_linkage = b.option(
-        std.builtin.LinkMode,
+        std.lang.LinkMode,
         "dependency-linkage",
         "static/dynamic linkage for libssh2/pcre2",
     ) orelse .static;
@@ -53,8 +53,8 @@ pub fn build(b: *std.Build) !void {
 fn buildScrapli(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    dependency_linkage: std.builtin.LinkMode,
+    optimize: std.lang.OptimizeMode,
+    dependency_linkage: std.lang.LinkMode,
     is_ffi: bool,
 ) !*std.Build.Module {
     const pcre2_dep = b.dependency(
@@ -86,8 +86,7 @@ fn buildScrapli(
 
     const root_source_file = if (is_ffi) "src/ffi-root.zig" else "src/root.zig";
 
-    const scrapli = b.addModule(
-        "scrapli",
+    const scrapli = b.createModule(
         .{
             .root_source_file = b.path(root_source_file),
             .target = target,
@@ -222,19 +221,21 @@ fn buildZlinter(
 
             builder.addPaths(
                 .{
-                    .exclude = &.{
+                    .exclude_dirs = &.{
                         b.path(".private/"),
-                        b.path("main.zig"),
                         b.path("lib/"),
                         b.path("examples/"),
+                    },
+                    .exclude_files = &.{
+                        b.path("main.zig"),
                         b.path("src/test-runner.zig"),
                         b.path("src/queue.zig"),
                     },
                 },
             );
 
-            inline for (@typeInfo(zlinter.BuiltinLintRule).@"enum".fields) |f| {
-                const rule: zlinter.BuiltinLintRule = @enumFromInt(f.value);
+            inline for (@typeInfo(zlinter.BuiltinLintRule).@"enum".field_values) |field_value| {
+                const rule: zlinter.BuiltinLintRule = @enumFromInt(field_value);
 
                 switch (rule) {
                     .function_naming => {
@@ -323,7 +324,7 @@ fn buildZlinter(
                     else => {
                         builder.addRule(
                             .{
-                                .builtin = @enumFromInt(f.value),
+                                .builtin = @enumFromInt(field_value),
                             },
                             .{},
                         );
@@ -398,8 +399,7 @@ fn buildTests(
     if (test_coverage) {
         const home = b.graph.environ_map.get("HOME") orelse "";
 
-        const exclude = std.fmt.allocPrint(
-            b.allocator,
+        const exclude = b.allocator.print(
             // exclude zig cache stuff
             "--exclude-path={s}/.zig/,{s}/.cache",
             .{ home, home },
@@ -414,7 +414,7 @@ fn buildTests(
                 "--include-pattern=src/",
                 // exclude "vendored" deps
                 "--exclude-pattern=lib/",
-                b.pathJoin(&.{ b.install_path, "cover" }),
+                b.pathJoin(&.{ b.fmt("{f}", .{b.root}), "cover" }),
             },
         );
 
@@ -479,7 +479,7 @@ fn buildTests(
 fn buildMain(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.OptimizeMode,
     scrapli: *std.Build.Module,
 ) !void {
     const main = b.step("main", "Build main.zig executable");
@@ -509,7 +509,7 @@ fn buildMain(
 fn buildExamples(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.OptimizeMode,
     scrapli: *std.Build.Module,
 ) !void {
     const example = b.step("examples", "Build example binaries");
@@ -553,8 +553,8 @@ fn buildExamples(
 fn buildFFI(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    dependency_linkage: std.builtin.LinkMode,
+    optimize: std.lang.OptimizeMode,
+    dependency_linkage: std.lang.LinkMode,
 ) !void {
     const ffi = b.step("ffi", "Build libscrapli ffi objects");
 
@@ -579,8 +579,8 @@ fn buildFFITarget(
     b: *std.Build,
     ffi: *std.Build.Step,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    dependency_linkage: std.builtin.LinkMode,
+    optimize: std.lang.OptimizeMode,
+    dependency_linkage: std.lang.LinkMode,
 ) !void {
     const libscrapli = b.addLibrary(
         .{
@@ -627,8 +627,7 @@ fn genFfiLibOutputDir(
     // zlinter-disable require_exhaustive_enum_switch
     switch (target.os.tag) {
         .macos => {
-            return std.fmt.allocPrint(
-                b.allocator,
+            return b.allocator.print(
                 "{s}-{s}",
                 .{
                     @tagName(target.cpu.arch),
@@ -637,8 +636,7 @@ fn genFfiLibOutputDir(
             );
         },
         else => {
-            return std.fmt.allocPrint(
-                b.allocator,
+            return b.allocator.print(
                 "{s}-{s}-{s}",
                 .{
                     @tagName(target.cpu.arch),
@@ -653,7 +651,7 @@ fn genFfiLibOutputDir(
 fn genFfiLibOutputName(
     b: *std.Build,
     lib: *std.Build.Step.Compile,
-    dependency_linkage: std.builtin.LinkMode,
+    dependency_linkage: std.lang.LinkMode,
 ) ![]const u8 {
     const base_name = switch (dependency_linkage) {
         .static => "libscrapli",
@@ -662,8 +660,7 @@ fn genFfiLibOutputName(
 
     switch (lib.rootModuleTarget().os.tag) {
         .macos => {
-            const versioned_name = try std.fmt.allocPrint(
-                b.allocator,
+            const versioned_name = try b.allocator.print(
                 "{s}.{d}.{d}.{d}",
                 .{
                     base_name,
@@ -675,8 +672,7 @@ fn genFfiLibOutputName(
             defer b.allocator.free(versioned_name);
 
             if (version.pre) |pre| {
-                return std.fmt.allocPrint(
-                    b.allocator,
+                return b.allocator.print(
                     "{s}-{s}.dylib",
                     .{
                         versioned_name,
@@ -685,8 +681,7 @@ fn genFfiLibOutputName(
                 );
             }
 
-            return std.fmt.allocPrint(
-                b.allocator,
+            return b.allocator.print(
                 "{s}.dylib",
                 .{
                     versioned_name,
@@ -694,8 +689,7 @@ fn genFfiLibOutputName(
             );
         },
         else => {
-            const versioned_name = try std.fmt.allocPrint(
-                b.allocator,
+            const versioned_name = try b.allocator.print(
                 "{s}.so.{d}.{d}.{d}",
                 .{
                     base_name,
@@ -708,8 +702,7 @@ fn genFfiLibOutputName(
             if (version.pre) |pre| {
                 defer b.allocator.free(versioned_name);
 
-                return std.fmt.allocPrint(
-                    b.allocator,
+                return b.allocator.print(
                     "{s}-{s}",
                     .{
                         versioned_name,

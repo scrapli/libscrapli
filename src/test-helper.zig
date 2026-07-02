@@ -14,6 +14,7 @@ const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
 const netconf_password_pattern = "<password>.*</password>";
 
 /// Args holds process args for testing.
+// zlinter-disable no_global_vars
 pub var args: ?std.process.Args = null;
 
 /// Simple bool flag parser for use with test flags.
@@ -164,8 +165,7 @@ pub fn testStrResult(
 ) !void {
     var display_name = test_name;
     if (case_name.len > 0) {
-        display_name = try std.fmt.allocPrint(
-            std.testing.allocator,
+        display_name = try std.testing.allocator.print(
             "{s} {s}",
             .{ test_name, case_name },
         );
@@ -200,8 +200,7 @@ pub fn testStrResultRoughly(
 ) !void {
     var display_name = test_name;
     if (case_name.len > 0) {
-        display_name = try std.fmt.allocPrint(
-            std.testing.allocator,
+        display_name = try std.testing.allocator.print(
             "{s} {s}",
             .{ test_name, case_name },
         );
@@ -576,7 +575,7 @@ fn printIndicatorLine(source: []const u8, indicator_index: usize) void {
 /// Conveinence func for initializing arraylists for tests
 pub fn inlineInitArrayList(
     allocator: std.mem.Allocator,
-    comptime T: type,
+    T: type,
     items: []const T,
 ) !std.ArrayList(T) {
     var al: std.ArrayList(T) = .empty;
@@ -628,7 +627,7 @@ pub fn goldenPath(
 
 /// closes the driver and deinits the result.
 pub fn closeDriver(
-    comptime Driver: type,
+    Driver: type,
     driver: *Driver,
     allocator: std.mem.Allocator,
 ) void {
@@ -714,9 +713,9 @@ fn testPath(
     case_name: ?[]const u8,
 ) ![]u8 {
     const filename = if (case_name) |case|
-        try std.fmt.allocPrint(allocator, "{s}-{s}.txt", .{ test_name, case })
+        try allocator.print("{s}-{s}.txt", .{ test_name, case })
     else
-        try std.fmt.allocPrint(allocator, "{s}.txt", .{test_name});
+        try allocator.print("{s}.txt", .{test_name});
     defer allocator.free(filename);
 
     return try std.Io.Dir.path.join(

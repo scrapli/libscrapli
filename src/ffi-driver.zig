@@ -6,6 +6,7 @@ const cli = @import("cli.zig");
 const errors = @import("errors.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const logging = @import("logging.zig");
+const mode = @import("cli-mode.zig");
 const netconf = @import("netconf.zig");
 const queue = @import("queue.zig");
 const result = @import("cli-result.zig");
@@ -13,6 +14,28 @@ const result_netconf = @import("netconf-result.zig");
 
 /// The static sleep duration for waiting for the ffi driver operation thread to be running.
 pub const operation_thread_ready_sleep: u64 = 2_500;
+
+fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
+    const Info = @typeInfo(@TypeOf(s)).@"struct";
+
+    inline for (0.., Info.field_types) |idx, field_type| {
+        if (field_type == []const u8) {
+            const value = @field(s, Info.field_names[idx]);
+
+            if (std.mem.eql(u8, value, mode.default_mode)) {
+                // noop
+            } else {
+                allocator.free(value);
+            }
+        } else if (field_type == ?[]const u8) {
+            const value = @field(s, Info.field_names[idx]);
+
+            if (value) |v| {
+                allocator.free(v);
+            }
+        }
+    }
+}
 
 /// An enum representing a "real" (non ffi) cli or netconf driver.
 pub const RealDriver = union(enum) {
@@ -25,6 +48,8 @@ pub const RealDriver = union(enum) {
 pub const FfiDriver = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
+
+    host: []const u8,
 
     real_driver: RealDriver,
 
@@ -68,10 +93,13 @@ pub const FfiDriver = struct {
         host: []const u8,
         config: cli.Config,
     ) !*FfiDriver {
+        const owned_host = try allocator.dupe(u8, host);
+        errdefer allocator.free(owned_host);
+
         const real_driver = try cli.Driver.init(
             allocator,
             io,
-            host,
+            owned_host,
             config,
         );
 
@@ -84,6 +112,7 @@ pub const FfiDriver = struct {
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .io = io,
+            .host = owned_host,
             .real_driver = .{
                 .cli = real_driver,
             },
@@ -134,6 +163,7 @@ pub const FfiDriver = struct {
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .io = io,
+            .host = try allocator.dupe(u8, host),
             .real_driver = .{
                 .netconf = real_driver,
             },
@@ -163,7 +193,7 @@ pub const FfiDriver = struct {
 
     /// Deinitialize the FfiDriver and its underlying "real" driver.
     pub fn deinit(self: *FfiDriver) void {
-        self.operation_stop.store(true, std.builtin.AtomicOrder.unordered);
+        self.operation_stop.store(true, std.lang.AtomicOrder.unordered);
 
         // signal to the operation thread to iterate, it should then catch the stored stop condition
         // zlinter-disable-next-line no_swallow_error - standard lock should "never" fail
@@ -193,6 +223,8 @@ pub const FfiDriver = struct {
 
         self.operation_queue.deinit();
         self.operation_results.deinit();
+
+        self.allocator.free(self.host);
 
         switch (self.real_driver) {
             .cli => |d| {
@@ -261,17 +293,16 @@ pub const FfiDriver = struct {
 
         while (true) {
             // this blocks us until the operation thread is ready and processing before we continue
-            const ready = self.operation_ready.load(std.builtin.AtomicOrder.acquire);
+            const ready = self.operation_ready.load(std.lang.AtomicOrder.acquire);
             if (ready) {
                 break;
             }
 
-            std.Io.Clock.Duration.sleep(
+            self.io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(operation_thread_ready_sleep),
+                    .nanoseconds = operation_thread_ready_sleep,
                 },
-                self.io,
+                .awake,
             ) catch |err| {
                 self.getLogger().warn(
                     "ffi-driver.FfiDriver open: sleep error '{}', ignoring",
@@ -300,10 +331,10 @@ pub const FfiDriver = struct {
     fn operationLoop(self: *FfiDriver) void {
         self.getLogger().info("ffi-driver.FfiDriver: operation thread started", .{});
 
-        self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
+        self.operation_ready.store(true, std.lang.AtomicOrder.unordered);
 
         while (true) {
-            const stop = self.operation_stop.load(std.builtin.AtomicOrder.acquire);
+            const stop = self.operation_stop.load(std.lang.AtomicOrder.acquire);
             if (stop) {
                 break;
             }
@@ -357,6 +388,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .enter_mode => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.enterMode(
                         self.allocator,
                         o,
@@ -375,6 +408,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .send_input => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.sendInput(
                         self.allocator,
                         o,
@@ -384,6 +419,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .send_inputs => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.sendInputs(
                         self.allocator,
                         o,
@@ -393,6 +430,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .send_prompted_input => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.sendPromptedInput(
                         self.allocator,
                         o,
@@ -425,6 +464,7 @@ pub const FfiDriver = struct {
                             .cli = null,
                         },
                         .err = ret_err,
+                        .last_error = rd.getLastError(),
                     },
                 ) catch {
                     @panic(
@@ -463,10 +503,10 @@ pub const FfiDriver = struct {
     fn operationLoopNetconf(self: *FfiDriver) void {
         self.getLogger().info("ffi-driver.FfiDriver: operation thread started", .{});
 
-        self.operation_ready.store(true, std.builtin.AtomicOrder.unordered);
+        self.operation_ready.store(true, std.lang.AtomicOrder.unordered);
 
         while (true) {
-            const stop = self.operation_stop.load(std.builtin.AtomicOrder.acquire);
+            const stop = self.operation_stop.load(std.lang.AtomicOrder.acquire);
             if (stop) {
                 break;
             }
@@ -520,6 +560,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .raw_rpc => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.rawRpc(
                         self.allocator,
                         o,
@@ -529,6 +571,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_config => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.getConfig(
                         self.allocator,
                         o,
@@ -538,6 +582,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .edit_config => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.editConfig(
                         self.allocator,
                         o,
@@ -583,6 +629,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.get(
                         self.allocator,
                         o,
@@ -646,6 +694,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_schema => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.getSchema(
                         self.allocator,
                         o,
@@ -655,6 +705,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_data => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.getData(
                         self.allocator,
                         o,
@@ -664,6 +716,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .edit_data => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.editData(
                         self.allocator,
                         o,
@@ -673,6 +727,8 @@ pub const FfiDriver = struct {
                     };
                 },
                 .action => |o| {
+                    defer freeOwnedStrings(self.allocator, o);
+
                     ret_ok = rd.action(
                         self.allocator,
                         o,
@@ -696,6 +752,7 @@ pub const FfiDriver = struct {
                             .netconf = null,
                         },
                         .err = ret_err,
+                        .last_error = rd.getLastError(),
                     },
                 ) catch {
                     @panic(
