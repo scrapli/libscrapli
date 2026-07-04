@@ -152,11 +152,9 @@ pub const FfiDriver = struct {
             config,
         );
 
-        const ffi_driver = allocator.create(FfiDriver) catch |err| {
-            real_driver.deinit();
+        errdefer real_driver.deinit();
 
-            return err;
-        };
+        const ffi_driver = try allocator.create(FfiDriver);
 
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
