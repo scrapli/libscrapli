@@ -709,7 +709,30 @@ pub const Session = struct {
                     return bufs.toOwnedSlices();
                 },
                 .username_prompted => {
-                    if (self.auth_options.username == null) {
+                    if (self.auth_options.username) |un| {
+                        auth_username_prompt_seen_count += 1;
+
+                        if (auth_username_prompt_seen_count > 2) {
+                            const last_error = "session.Session authenticate: username prompt " ++
+                                "seen multiple times, assuming authentication failed";
+
+                            self.setLastError(last_error);
+
+                            return errors.wrapCriticalError(
+                                errors.ScrapliError.Session,
+                                @src(),
+                                self.log,
+                                last_error,
+                                .{},
+                            );
+                        }
+
+                        try self.writeAndReturn(un, true);
+
+                        cur_check_start_idx = bufs.processed.items.len;
+
+                        continue;
+                    } else {
                         const last_error = "session.Session authenticate: username prompt seen " ++
                             "but no username set";
 
@@ -723,32 +746,51 @@ pub const Session = struct {
                             .{},
                         );
                     }
-
-                    auth_username_prompt_seen_count += 1;
-
-                    if (auth_username_prompt_seen_count > 2) {
-                        const last_error = "session.Session authenticate: username prompt seen " ++
-                            "multiple times, assuming authentication failed";
-
-                        self.setLastError(last_error);
-
-                        return errors.wrapCriticalError(
-                            errors.ScrapliError.Session,
-                            @src(),
-                            self.log,
-                            last_error,
-                            .{},
-                        );
-                    }
-
-                    try self.writeAndReturn(self.auth_options.username.?, true);
-
-                    cur_check_start_idx = bufs.processed.items.len;
-
-                    continue;
                 },
                 .password_prompted => {
-                    if (self.auth_options.password == null) {
+                    if (self.auth_options.password) |pw| {
+                        auth_password_prompt_seen_count += 1;
+
+                        if (auth_password_prompt_seen_count > 2) {
+                            const last_error = "session.Session authenticate: password prompt  " ++
+                                "seen multiple times, assuming authentication failed";
+
+                            self.setLastError(last_error);
+
+                            return errors.wrapCriticalError(
+                                errors.ScrapliError.Session,
+                                @src(),
+                                self.log,
+                                last_error,
+                                .{},
+                            );
+                        }
+
+                        try self.writeAndReturn(
+                            self.auth_options.resolveAuthValue(
+                                pw,
+                            ) catch |err| {
+                                self.setLastError(
+                                    "session.Session authenticate: failed resolving auth " ++
+                                        "lookup value",
+                                );
+
+                                return errors.wrapCriticalError(
+                                    err,
+                                    @src(),
+                                    self.log,
+                                    "session.Session authenticate: failed resolving auth " ++
+                                        "lookup value '{s}'",
+                                    .{pw},
+                                );
+                            },
+                            true,
+                        );
+
+                        cur_check_start_idx = bufs.processed.items.len;
+
+                        continue;
+                    } else {
                         const last_error = "session.Session authenticate: password prompt seen " ++
                             "but no password set";
 
@@ -762,102 +804,63 @@ pub const Session = struct {
                             .{},
                         );
                     }
-
-                    auth_password_prompt_seen_count += 1;
-
-                    if (auth_password_prompt_seen_count > 2) {
-                        const last_error = "session.Session authenticate: password prompt seen " ++
-                            "multiple times, assuming authentication failed";
-
-                        self.setLastError(last_error);
-
-                        return errors.wrapCriticalError(
-                            errors.ScrapliError.Session,
-                            @src(),
-                            self.log,
-                            last_error,
-                            .{},
-                        );
-                    }
-
-                    try self.writeAndReturn(
-                        self.auth_options.resolveAuthValue(
-                            self.auth_options.password.?,
-                        ) catch |err| {
-                            self.setLastError(
-                                "session.Session authenticate: failed resolving auth lookup value",
-                            );
-
-                            return errors.wrapCriticalError(
-                                err,
-                                @src(),
-                                self.log,
-                                "session.Session authenticate: failed resolving auth " ++
-                                    "lookup value '{s}'",
-                                .{self.auth_options.password.?},
-                            );
-                        },
-                        true,
-                    );
-
-                    cur_check_start_idx = bufs.processed.items.len;
-
-                    continue;
                 },
                 .passphrase_prompted => {
-                    if (self.auth_options.private_key_passphrase == null) {
-                        const last_error = "session.Session authenticate: private key passphrase " ++
-                            "prompt seen but no passphrase set";
+                    if (self.auth_options.private_key_passphrase) |pk| {
+                        auth_passphrase_prompt_seen_count += 1;
 
-                        self.setLastError(last_error);
+                        if (auth_passphrase_prompt_seen_count > 2) {
+                            const last_error = "session.Session authenticate: private key " ++
+                                "passphrase prompt seen multiple times, assuming authentication " ++
+                                "failed";
 
-                        return errors.wrapCriticalError(
-                            errors.ScrapliError.Session,
-                            @src(),
-                            self.log,
-                            last_error,
-                            .{},
-                        );
-                    }
-
-                    auth_passphrase_prompt_seen_count += 1;
-
-                    if (auth_passphrase_prompt_seen_count > 2) {
-                        const last_error = "session.Session authenticate: private key " ++
-                            "passphrase prompt seen multiple times, assuming authentication failed";
-
-                        self.setLastError(last_error);
-
-                        return errors.wrapCriticalError(
-                            errors.ScrapliError.Session,
-                            @src(),
-                            self.log,
-                            last_error,
-                            .{},
-                        );
-                    }
-
-                    try self.writeAndReturn(
-                        self.auth_options.resolveAuthValue(
-                            self.auth_options.private_key_passphrase.?,
-                        ) catch |err| {
-                            self.setLastError(
-                                "session.Session authenticate: failed resolving auth lookup value",
-                            );
+                            self.setLastError(last_error);
 
                             return errors.wrapCriticalError(
-                                err,
+                                errors.ScrapliError.Session,
                                 @src(),
                                 self.log,
-                                "session.Session authenticate: failed resolving auth " ++
-                                    "lookup value '{s}'",
-                                .{self.auth_options.password.?},
+                                last_error,
+                                .{},
                             );
-                        },
-                        true,
-                    );
+                        }
 
-                    cur_check_start_idx = bufs.processed.items.len;
+                        try self.writeAndReturn(
+                            self.auth_options.resolveAuthValue(
+                                pk,
+                            ) catch |err| {
+                                self.setLastError(
+                                    "session.Session authenticate: failed resolving auth " ++
+                                        "lookup value",
+                                );
+
+                                return errors.wrapCriticalError(
+                                    err,
+                                    @src(),
+                                    self.log,
+                                    "session.Session authenticate: failed resolving auth " ++
+                                        "lookup value '{s}'",
+                                    .{pk},
+                                );
+                            },
+                            true,
+                        );
+
+                        cur_check_start_idx = bufs.processed.items.len;
+                    } else {
+                        const last_error = "session.Session authenticate: private key " ++
+                            "passphrase prompt seen but no passphrase set";
+
+                        self.setLastError(last_error);
+
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Session,
+                            @src(),
+                            self.log,
+                            last_error,
+                            .{},
+                        );
+                    }
                 },
                 ._continue => {},
             }
