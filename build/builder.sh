@@ -18,11 +18,6 @@ fi
 
 cd libscrapli
 
-# hack to get openssl to not break on first build? i dunno... whatever
-cd lib/openssl
-zig build
-cd ../..
-
 zig build "-Dtarget=${LIBSCRAPLI_TARGET}" -freference-trace --summary all -- --release
 
 cp zig-out/"${LIBSCRAPLI_TARGET}"/libscrapli.* /out/"${OUT_NAME}"
