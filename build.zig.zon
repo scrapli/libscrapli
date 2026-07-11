@@ -21,7 +21,7 @@
         },
         .zlinter = .{
             .url = "https://github.com/kurtwagner/zlinter/archive/61684bd.tar.gz",
-            .hash = "zlinter-0.0.1-OjQ08XGbDwBu8jqF5rVZ8NdiUW972y7dzFXffCanOvti",
+            .hash = "zlinter-0.0.1-OjQ08X8KFQCh0xE1R3xizhudjBKKJnAZMmu_6aVF279f",
         },
     },
     .paths = .{
