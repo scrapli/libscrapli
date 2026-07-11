@@ -129,24 +129,22 @@ pub const Result = struct {
         self: *Result,
         res: *Result,
     ) !void {
-        const owned_inputs = try res.inputs.toOwnedSlice(self.allocator);
-        defer self.allocator.free(owned_inputs);
-        const owned_results_raw = try res.results_raw.toOwnedSlice(self.allocator);
-        defer self.allocator.free(owned_results_raw);
-        const owned_results = try res.results.toOwnedSlice(self.allocator);
-        defer self.allocator.free(owned_results);
-
-        for (0.., owned_results_raw) |idx, _| {
+        for (0.., res.results_raw.items) |idx, _| {
             try self.splits_ns.append(self.allocator, res.splits_ns.items[idx]);
-            try self.inputs.append(self.allocator, owned_inputs[idx]);
-            try self.results_raw.append(self.allocator, owned_results_raw[idx]);
-            try self.results.append(self.allocator, owned_results[idx]);
+            try self.inputs.append(self.allocator, res.inputs.items[idx]);
+            try self.results_raw.append(self.allocator, res.results_raw.items[idx]);
+            try self.results.append(self.allocator, res.results.items[idx]);
 
             if (!self.result_failure_indicated and res.result_failure_indicated) {
                 self.result_failure_indicated = true;
                 self.result_failure_indicator = res.result_failure_indicator;
             }
         }
+
+        res.inputs.clearRetainingCapacity();
+        res.results_raw.clearRetainingCapacity();
+        res.results.clearRetainingCapacity();
+        res.splits_ns.clearRetainingCapacity();
 
         res.results_raw.deinit(self.allocator);
         res.results.deinit(self.allocator);
