@@ -3,7 +3,6 @@
 // https://gist.githubusercontent.com/karlseguin/ \
 // c6bea5b35e4e8d26af6f81c22cb5d76b/raw/cf9f21131e439f266e360477fa60b89431d67920/test_runner.zig
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 
 const scrapli = @import("scrapli");

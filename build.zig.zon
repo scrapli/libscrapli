@@ -20,7 +20,7 @@
             .hash = "zig_yaml-0.2.0-C1161hauAgBFlcbx-fkUitRmFXBeN1WjpiWU6S3dkyUR",
         },
         .zlinter = .{
-            .url = "https://github.com/kurtwagner/zlinter/archive/de0cc07.tar.gz",
+            .url = "https://github.com/kurtwagner/zlinter/archive/61684bd.tar.gz",
             .hash = "zlinter-0.0.1-OjQ08XGbDwBu8jqF5rVZ8NdiUW972y7dzFXffCanOvti",
         },
     },
