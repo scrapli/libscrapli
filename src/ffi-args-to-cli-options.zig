@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const mode = @import("cli-mode.zig");
 const operation = @import("cli-operation.zig");
 
 /// Return SendInputOptions from ffi provided arguments.
@@ -24,7 +25,13 @@ pub fn sendInputOptionsFromArgs(
     }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
-    if (spanned_requested_mode.len > 0) {
+    if (spanned_requested_mode.len > 0 and
+        !std.mem.eql(
+            u8,
+            spanned_requested_mode,
+            mode.default_mode,
+        ))
+    {
         options.requested_mode = try allocator.dupe(u8, spanned_requested_mode);
     }
 
@@ -56,7 +63,13 @@ pub fn sendInputsOptionsFromArgs(
     }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
-    if (spanned_requested_mode.len > 0) {
+    if (spanned_requested_mode.len > 0 and
+        !std.mem.eql(
+            u8,
+            spanned_requested_mode,
+            mode.default_mode,
+        ))
+    {
         options.requested_mode = try allocator.dupe(u8, spanned_requested_mode);
     }
 
@@ -93,7 +106,13 @@ pub fn sendPromptedInputOptionsFromArgs(
     }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
-    if (spanned_requested_mode.len > 0) {
+    if (spanned_requested_mode.len > 0 and
+        !std.mem.eql(
+            u8,
+            spanned_requested_mode,
+            mode.default_mode,
+        ))
+    {
         options.requested_mode = try allocator.dupe(u8, spanned_requested_mode);
     }
 
