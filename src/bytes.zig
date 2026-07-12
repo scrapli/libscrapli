@@ -156,20 +156,6 @@ test "charIn" {
     }
 }
 
-/// Conveinence function to trim newline chars from the given buf. Returns a new, trimmed, copy
-/// that the user owns memory for.
-pub fn trimNewlineWhitespace(
-    allocator: std.mem.Allocator,
-    buf: []const u8,
-) ![]const u8 {
-    const trimmed_buf = std.mem.trim(u8, buf, "\t\n\r");
-    const owned_trimmed_buf = try allocator.alloc(u8, trimmed_buf.len);
-
-    @memcpy(owned_trimmed_buf, trimmed_buf);
-
-    return owned_trimmed_buf;
-}
-
 /// Return a view into the given buf that is depth sized at most, preferring of course the tail of
 /// the buf.
 pub fn getBufSearchView(
