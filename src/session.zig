@@ -618,10 +618,7 @@ pub const Session = struct {
                         // hitting eof in auth/open means we likely got a connection refused or
                         // something similar. we gotta slurp up the buffer to read it and check so
                         // we can *hopefully* return a decent error message to the user
-                        const error_message = try auth.openMessageHandler(
-                            allocator,
-                            bufs.processed.items,
-                        );
+                        const error_message = try auth.openMessageHandler(bufs.processed.items);
 
                         self.setLastError("session.Session authenticate: open failed");
 
@@ -679,10 +676,7 @@ pub const Session = struct {
                 self.options.operation_max_search_depth,
             );
 
-            const error_message = try auth.openMessageHandler(
-                allocator,
-                bufs.processed.items,
-            );
+            const error_message = try auth.openMessageHandler(bufs.processed.items);
 
             if (error_message) |msg| {
                 self.setLastError("session.Session authenticate: open failed");

@@ -319,19 +319,11 @@ const open_error_message_substrings = [_][3][]const u8{
 };
 
 /// Checks the buf to see if any known error messages show up in the contents.
-pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !?[]const u8 {
-    const copied_buf = try allocator.alloc(u8, buf.len);
-    defer allocator.free(copied_buf);
-
-    @memcpy(copied_buf, buf);
-
-    bytes.toLower(copied_buf);
-
+pub fn openMessageHandler(buf: []const u8) !?[]const u8 {
     for (open_error_message_substrings) |error_substring| {
-        if (std.mem.find(u8, copied_buf, error_substring[0]) != null) {
-            if (error_substring[2].len > 0 and std.mem.find(
-                u8,
-                copied_buf,
+        if (std.ascii.findIgnoreCase(buf, error_substring[0]) != null) {
+            if (error_substring[2].len > 0 and std.ascii.findIgnoreCase(
+                buf,
                 error_substring[2],
             ) != null) {
                 // ignore substring in buf, continuing
@@ -443,7 +435,7 @@ test "openMessageHandler" {
     };
 
     for (cases) |case| {
-        const actual = try openMessageHandler(std.testing.allocator, case.haystack);
+        const actual = try openMessageHandler(case.haystack);
 
         if (case.expected == null) {
             try std.testing.expect(actual == null);
