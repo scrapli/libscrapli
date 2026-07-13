@@ -122,12 +122,12 @@ pub const Transport = struct {
         maybe_control_char: u8,
     ) !bool {
         if (control_buf.items.len == 0) {
-            if (maybe_control_char != control_char_iac) {
+            if (maybe_control_char == control_char_iac) {
+                try control_buf.append(self.allocator, maybe_control_char);
+            } else {
                 try self.initial_buf.append(self.allocator, maybe_control_char);
 
                 return true;
-            } else {
-                try control_buf.append(self.allocator, maybe_control_char);
             }
         } else if (control_buf.items.len == 1) {
             if (bytes.charIn(&control_chars_actionable, maybe_control_char)) {
@@ -418,12 +418,22 @@ pub const Transport = struct {
             );
         };
 
+        if (n == 0) {
+            return n;
+        }
+
+        if (buf[0] == control_char_iac) {
+            // at this point we decided we are done so... yolo?
+            return self.read(buf);
+        }
+
         return n;
     }
 
     /// Unblocks any in progress reads and sets the prepare close flag, this prevents us from
     /// making a final read the fd that we are about to nuke.
     pub fn prepareClose(self: *Transport) !void {
+        self.closing = true;
         try self.waiter.unblock();
     }
 };
