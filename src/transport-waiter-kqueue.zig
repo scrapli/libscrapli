@@ -6,14 +6,11 @@ const unblock_ident = 1;
 
 /// Is the kqueue (darwin) waiter for the transports.
 pub const KqueueWaiter = struct {
-    allocator: std.mem.Allocator,
     kq: std.posix.fd_t,
     fd: ?std.posix.fd_t = null,
 
     /// Initializes the kqueue waiter.
-    pub fn init(allocator: std.mem.Allocator) !*KqueueWaiter {
-        const w = try allocator.create(KqueueWaiter);
-
+    pub fn init() !KqueueWaiter {
         const kq = try std.Io.Kqueue.createFileDescriptor();
 
         const user_event = std.posix.Kevent{
@@ -37,18 +34,14 @@ pub const KqueueWaiter = struct {
             return errors.ScrapliError.Transport;
         }
 
-        w.* = KqueueWaiter{
-            .allocator = allocator,
+        return KqueueWaiter{
             .kq = kq,
         };
-
-        return w;
     }
 
     /// Deinitializes the kqueue waiter.
-    pub fn deinit(self: *KqueueWaiter) void {
+    pub fn deinit(self: KqueueWaiter) void {
         _ = std.c.close(self.kq);
-        self.allocator.destroy(self);
     }
 
     fn registerFd(self: *KqueueWaiter, fd: std.posix.fd_t) !void {

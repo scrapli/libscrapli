@@ -2,15 +2,12 @@ const std = @import("std");
 
 /// Is the epoll (linux) waiter for the transports.
 pub const EpollWaiter = struct {
-    allocator: std.mem.Allocator,
     ep: std.posix.fd_t,
     ev: std.posix.fd_t,
     fd: ?std.posix.fd_t = null,
 
     /// Initializes the epoll waiter.
-    pub fn init(allocator: std.mem.Allocator) !*EpollWaiter {
-        const w = try allocator.create(EpollWaiter);
-
+    pub fn init() !EpollWaiter {
         const epoll_fd = std.posix.system.epoll_create1(0);
         const event_fd = std.posix.system.eventfd(0, 0);
 
@@ -26,21 +23,16 @@ pub const EpollWaiter = struct {
             &event,
         );
 
-        w.* = EpollWaiter{
-            .allocator = allocator,
+        return EpollWaiter{
             .ep = @intCast(epoll_fd),
             .ev = event_fd,
         };
-
-        return w;
     }
 
     /// Deinitializes the epoll waiter.
-    pub fn deinit(self: *EpollWaiter) void {
+    pub fn deinit(self: EpollWaiter) void {
         _ = std.posix.system.close(self.ep);
         _ = std.posix.system.close(self.ev);
-
-        self.allocator.destroy(self);
     }
 
     /// Waits until the given fd has something to read, or if the fd is unblocked.
