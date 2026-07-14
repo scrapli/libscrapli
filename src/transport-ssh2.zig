@@ -511,8 +511,8 @@ pub const Transport = struct {
     options: *Options,
     waiter: transport_waiter.Waiter,
 
-    auth_callback_data: *AuthCallbackData,
-    proxy_jump_auth_callback_data: *AuthCallbackData,
+    auth_callback_data: AuthCallbackData = .{},
+    proxy_jump_auth_callback_data: AuthCallbackData = .{},
 
     session_lock: std.Io.Mutex,
 
@@ -552,23 +552,12 @@ pub const Transport = struct {
             );
         }
 
-        const a = try allocator.create(AuthCallbackData);
-        errdefer allocator.destroy(a);
-
-        const pa = try allocator.create(AuthCallbackData);
-        errdefer allocator.destroy(pa);
-
-        a.* = AuthCallbackData{};
-        pa.* = AuthCallbackData{};
-
         return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
             .options = options,
             .waiter = try transport_waiter.Waiter.init(),
-            .auth_callback_data = a,
-            .proxy_jump_auth_callback_data = pa,
             .session_lock = std.Io.Mutex.init,
         };
     }
@@ -588,9 +577,6 @@ pub const Transport = struct {
         if (self.initial_session) |sess| {
             libssh2FreeSession(self.io, sess, self.log);
         }
-
-        self.allocator.destroy(self.auth_callback_data);
-        self.allocator.destroy(self.proxy_jump_auth_callback_data);
 
         if (self.proxy_wrapper) |pw| {
             pw.deinit();
@@ -744,7 +730,7 @@ pub const Transport = struct {
             null,
             null,
             null,
-            self.auth_callback_data,
+            &self.auth_callback_data,
         );
         if (self.initial_session == null) {
             const last_error = "ssh2.Transport initSession: failed creating libssh2 session";
@@ -1710,7 +1696,7 @@ pub const Transport = struct {
             null,
             null,
             null,
-            self.proxy_jump_auth_callback_data,
+            &self.proxy_jump_auth_callback_data,
         );
         if (self.proxy_session == null) {
             const last_error = "ssh2.Transport openProxyChannel: failed creating libssh2 session";
