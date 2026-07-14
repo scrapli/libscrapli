@@ -190,7 +190,7 @@ pub const Session = struct {
     options: *Options,
     auth_options: *auth.Options,
 
-    transport: *transport.Transport,
+    transport: transport.Transport,
 
     read_thread: ?std.Thread,
     read_stop: std.atomic.Value(ReadThreadState),
@@ -231,7 +231,7 @@ pub const Session = struct {
     ) !*Session {
         logging.traceWithSrc(log, @src(), "session.Session init requested", .{});
 
-        const t = try transport.Transport.init(
+        var t = try transport.Transport.init(
             allocator,
             io,
             log,

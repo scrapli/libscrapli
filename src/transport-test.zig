@@ -42,7 +42,6 @@ pub const Options = struct {
 
 /// The "test" transport -- basically read from a file instead of a socket/ssh session.
 pub const Transport = struct {
-    allocator: std.mem.Allocator,
     io: std.Io,
 
     options: *Options,
@@ -51,25 +50,19 @@ pub const Transport = struct {
 
     /// Initialize the transport object.
     pub fn init(
-        allocator: std.mem.Allocator,
         io: std.Io,
         options: *Options,
-    ) !*Transport {
-        const t = try allocator.create(Transport);
-
-        t.* = Transport{
-            .allocator = allocator,
+    ) !Transport {
+        return Transport{
             .io = io,
             .options = options,
             .fd = null,
         };
-
-        return t;
     }
 
     /// Deinitialize the transport object.
     pub fn deinit(self: *Transport) void {
-        self.allocator.destroy(self);
+        _ = self;
     }
 
     /// Open the transport object.

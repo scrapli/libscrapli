@@ -78,13 +78,10 @@ pub const Transport = struct {
         io: std.Io,
         log: logging.Logger,
         options: *Options,
-    ) !*Transport {
+    ) !Transport {
         logging.traceWithSrc(log, @src(), "telnet.Transport initializing", .{});
 
-        const t = try allocator.create(Transport);
-        errdefer allocator.destroy(t);
-
-        t.* = Transport{
+        return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
@@ -92,8 +89,6 @@ pub const Transport = struct {
             .waiter = try transport_waiter.Waiter.init(),
             .initial_buf = .empty,
         };
-
-        return t;
     }
 
     /// Deinitialize the transport object.
@@ -102,8 +97,6 @@ pub const Transport = struct {
 
         self.initial_buf.deinit(self.allocator);
         self.waiter.deinit();
-
-        self.allocator.destroy(self);
     }
 
     fn setLastError(
@@ -440,7 +433,7 @@ pub const Transport = struct {
 
 test "transportInit" {
     const o = try Options.init(std.testing.allocator, .{});
-    const t = try Transport.init(
+    var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{

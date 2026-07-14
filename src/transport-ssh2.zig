@@ -538,7 +538,7 @@ pub const Transport = struct {
         io: std.Io,
         log: logging.Logger,
         options: *Options,
-    ) !*Transport {
+    ) !Transport {
         logging.traceWithSrc(log, @src(), "ssh2.Transport initializing", .{});
 
         const rc = libssh2InitializeOnce();
@@ -552,9 +552,6 @@ pub const Transport = struct {
             );
         }
 
-        const t = try allocator.create(Transport);
-        errdefer allocator.destroy(t);
-
         const a = try allocator.create(AuthCallbackData);
         errdefer allocator.destroy(a);
 
@@ -564,7 +561,7 @@ pub const Transport = struct {
         a.* = AuthCallbackData{};
         pa.* = AuthCallbackData{};
 
-        t.* = Transport{
+        return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
@@ -574,8 +571,6 @@ pub const Transport = struct {
             .proxy_jump_auth_callback_data = pa,
             .session_lock = std.Io.Mutex.init,
         };
-
-        return t;
     }
 
     /// Deinitializes the transport.
@@ -602,8 +597,6 @@ pub const Transport = struct {
         }
 
         self.waiter.deinit();
-
-        self.allocator.destroy(self);
     }
 
     fn setLastError(
@@ -2268,7 +2261,7 @@ fn kbdInteractiveCallback(
 
 test "transportInit" {
     const o = try Options.init(std.testing.allocator, .{});
-    const t = try Transport.init(
+    var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{

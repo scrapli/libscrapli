@@ -141,13 +141,10 @@ pub const Transport = struct {
         io: std.Io,
         log: logging.Logger,
         options: *Options,
-    ) !*Transport {
+    ) !Transport {
         logging.traceWithSrc(log, @src(), "bin.Transport initializing", .{});
 
-        const t = try allocator.create(Transport);
-        errdefer allocator.destroy(t);
-
-        t.* = Transport{
+        return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
@@ -155,8 +152,6 @@ pub const Transport = struct {
             .waiter = try transport_waiter.Waiter.init(),
             .open_args = .empty,
         };
-
-        return t;
     }
 
     /// Deinitializes the transport.
@@ -169,8 +164,6 @@ pub const Transport = struct {
 
         self.open_args.deinit(self.allocator);
         self.waiter.deinit();
-
-        self.allocator.destroy(self);
     }
 
     fn setLastError(
@@ -775,7 +768,7 @@ fn setnoecho(fd: std.posix.fd_t) !void {
 
 test "transportInit" {
     const o = try Options.init(std.testing.allocator, .{});
-    const t = try Transport.init(
+    var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{

@@ -30,10 +30,10 @@ pub const Kind = enum {
 
 /// Is a tagged union holding all the possible transportation kinds.
 pub const Implementation = union(Kind) {
-    bin: *transport_bin.Transport,
-    telnet: *transport_telnet.Transport,
-    ssh2: *transport_ssh2.Transport,
-    test_: *transport_test.Transport,
+    bin: transport_bin.Transport,
+    telnet: transport_telnet.Transport,
+    ssh2: transport_ssh2.Transport,
+    test_: transport_test.Transport,
 };
 
 /// Holds option inputs for the transport.
@@ -128,7 +128,6 @@ pub const Options = union(Kind) {
 
 /// Transport is a wrapper around any of the supported libscrapli transport structs.
 pub const Transport = struct {
-    allocator: std.mem.Allocator,
     log: logging.Logger,
     implementation: Implementation,
 
@@ -138,13 +137,10 @@ pub const Transport = struct {
         io: std.Io,
         log: logging.Logger,
         options: *Options,
-    ) !*Transport {
-        const t = try allocator.create(Transport);
-
+    ) !Transport {
         switch (options.*) {
             .bin => {
-                t.* = Transport{
-                    .allocator = allocator,
+                return Transport{
                     .log = log,
                     .implementation = Implementation{
                         .bin = try transport_bin.Transport.init(
@@ -157,8 +153,7 @@ pub const Transport = struct {
                 };
             },
             .telnet => {
-                t.* = Transport{
-                    .allocator = allocator,
+                return Transport{
                     .log = log,
                     .implementation = Implementation{
                         .telnet = try transport_telnet.Transport.init(
@@ -171,8 +166,7 @@ pub const Transport = struct {
                 };
             },
             .ssh2 => {
-                t.* = Transport{
-                    .allocator = allocator,
+                return Transport{
                     .log = log,
                     .implementation = Implementation{
                         .ssh2 = try transport_ssh2.Transport.init(
@@ -185,12 +179,10 @@ pub const Transport = struct {
                 };
             },
             .test_ => {
-                t.* = Transport{
-                    .allocator = allocator,
+                return Transport{
                     .log = log,
                     .implementation = Implementation{
                         .test_ = try transport_test.Transport.init(
-                            allocator,
                             io,
                             options.test_,
                         ),
@@ -198,42 +190,24 @@ pub const Transport = struct {
                 };
             },
         }
-
-        return t;
     }
 
     /// Deinitialize the transport.
     pub fn deinit(self: *Transport) void {
         switch (self.implementation) {
-            Kind.bin => |t| {
-                t.deinit();
-            },
-            Kind.telnet => |t| {
-                t.deinit();
-            },
-            Kind.ssh2 => |t| {
-                t.deinit();
-            },
-            Kind.test_ => |t| {
-                t.deinit();
-            },
+            Kind.bin => self.implementation.bin.deinit(),
+            Kind.telnet => self.implementation.telnet.deinit(),
+            Kind.ssh2 => self.implementation.ssh2.deinit(),
+            Kind.test_ => self.implementation.test_.deinit(),
         }
-
-        self.allocator.destroy(self);
     }
 
     /// Returns the last error value from the transports -- noop on test transport.
     pub fn getLastError(self: *Transport) []const u8 {
         switch (self.implementation) {
-            Kind.bin => |t| {
-                return t.last_error[0..t.last_error_len];
-            },
-            Kind.telnet => |t| {
-                return t.last_error[0..t.last_error_len];
-            },
-            Kind.ssh2 => |t| {
-                return t.last_error[0..t.last_error_len];
-            },
+            Kind.bin => return self.implementation.bin.last_error[0..self.implementation.bin.last_error_len],
+            Kind.telnet => return self.implementation.telnet.last_error[0..self.implementation.telnet.last_error_len],
+            Kind.ssh2 => return self.implementation.ssh2.last_error[0..self.implementation.ssh2.last_error_len],
             Kind.test_ => {
                 return "";
             },
@@ -251,17 +225,17 @@ pub const Transport = struct {
         auth_options: *auth.Options,
     ) !void {
         switch (self.implementation) {
-            Kind.bin => |t| {
+            Kind.bin => {
                 // bin transport doesnt need the timer, since we just pass the timeout value to
                 // to the cli args and let openssh do it, then the rest of the timing out bits
                 // happen in in session auth
-                try t.open(operation_timeout_ns, host, port, auth_options);
+                try self.implementation.bin.open(operation_timeout_ns, host, port, auth_options);
             },
-            Kind.telnet => |t| {
-                try t.open(start_time, cancel, operation_timeout_ns, host, port);
+            Kind.telnet => {
+                try self.implementation.telnet.open(start_time, cancel, operation_timeout_ns, host, port);
             },
-            Kind.ssh2 => |t| {
-                try t.open(
+            Kind.ssh2 => {
+                try self.implementation.ssh2.open(
                     start_time,
                     cancel,
                     operation_timeout_ns,
@@ -270,8 +244,8 @@ pub const Transport = struct {
                     auth_options,
                 );
             },
-            Kind.test_ => |t| {
-                try t.open(cancel);
+            Kind.test_ => {
+                try self.implementation.test_.open(cancel);
             },
         }
     }
@@ -295,14 +269,14 @@ pub const Transport = struct {
     /// session to free up the session read loop.
     pub fn prepareClose(self: *Transport) !void {
         switch (self.implementation) {
-            Kind.bin => |t| {
-                try t.prepareClose();
+            Kind.bin => {
+                try self.implementation.bin.prepareClose();
             },
-            Kind.telnet => |t| {
-                try t.prepareClose();
+            Kind.telnet => {
+                try self.implementation.telnet.prepareClose();
             },
-            Kind.ssh2 => |t| {
-                try t.prepareClose();
+            Kind.ssh2 => {
+                try self.implementation.ssh2.prepareClose();
             },
             Kind.test_ => {},
         }
@@ -313,17 +287,17 @@ pub const Transport = struct {
     /// during deinit so its always nicely tidied up.
     pub fn close(self: *Transport) void {
         switch (self.implementation) {
-            Kind.bin => |t| {
-                t.close();
+            Kind.bin => {
+                self.implementation.bin.close();
             },
-            Kind.telnet => |t| {
-                t.close();
+            Kind.telnet => {
+                self.implementation.telnet.close();
             },
-            Kind.ssh2 => |t| {
-                t.close();
+            Kind.ssh2 => {
+                self.implementation.ssh2.close();
             },
-            Kind.test_ => |t| {
-                t.close();
+            Kind.test_ => {
+                self.implementation.test_.close();
             },
         }
     }
@@ -331,17 +305,17 @@ pub const Transport = struct {
     /// Write to the transport.
     pub fn write(self: *Transport, buf: []const u8) !void {
         switch (self.implementation) {
-            Kind.bin => |t| {
-                try t.write(buf);
+            Kind.bin => {
+                try self.implementation.bin.write(buf);
             },
-            Kind.telnet => |t| {
-                try t.write(buf);
+            Kind.telnet => {
+                try self.implementation.telnet.write(buf);
             },
-            Kind.ssh2 => |t| {
-                try t.write(buf);
+            Kind.ssh2 => {
+                try self.implementation.ssh2.write(buf);
             },
-            Kind.test_ => |t| {
-                try t.write(buf);
+            Kind.test_ => {
+                try self.implementation.test_.write(buf);
             },
         }
     }
@@ -351,17 +325,17 @@ pub const Transport = struct {
         var n: usize = 0;
 
         switch (self.implementation) {
-            Kind.bin => |t| {
-                n = try t.read(buf);
+            Kind.bin => {
+                n = try self.implementation.bin.read(buf);
             },
-            Kind.telnet => |t| {
-                n = try t.read(buf);
+            Kind.telnet => {
+                n = try self.implementation.telnet.read(buf);
             },
-            Kind.ssh2 => |t| {
-                n = try t.read(buf);
+            Kind.ssh2 => {
+                n = try self.implementation.ssh2.read(buf);
             },
-            Kind.test_ => |t| {
-                n = try t.read(buf);
+            Kind.test_ => {
+                n = try self.implementation.test_.read(buf);
             },
         }
 
@@ -377,7 +351,7 @@ test "transportInit" {
         },
     );
 
-    const t = try Transport.init(
+    var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
