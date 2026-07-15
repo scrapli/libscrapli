@@ -160,9 +160,9 @@ export fn ls_session_read(
     buf: *[]u8,
     read_n: *usize,
 ) callconv(.c) u8 {
-    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const s = switch (d.real_driver) {
+    var s = switch (d.real_driver) {
         .cli => |rd| rd.session,
         .netconf => |rd| rd.session,
     };
@@ -198,7 +198,7 @@ export fn ls_session_write(
 
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const s = switch (d.real_driver) {
+    var s = switch (d.real_driver) {
         .cli => |rd| rd.session,
         .netconf => |rd| rd.session,
     };
@@ -230,7 +230,7 @@ export fn ls_session_write_and_return(
 
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const s = switch (d.real_driver) {
+    var s = switch (d.real_driver) {
         .cli => |rd| rd.session,
         .netconf => |rd| rd.session,
     };
@@ -256,7 +256,7 @@ export fn ls_session_write_return(
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const s = switch (d.real_driver) {
+    var s = switch (d.real_driver) {
         .cli => |rd| rd.session,
         .netconf => |rd| rd.session,
     };

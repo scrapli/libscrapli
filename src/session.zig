@@ -228,7 +228,7 @@ pub const Session = struct {
         options: *Options,
         auth_options: *auth.Options,
         transport_options: *transport.Options,
-    ) !*Session {
+    ) !Session {
         logging.traceWithSrc(log, @src(), "session.Session init requested", .{});
 
         var t = try transport.Transport.init(
@@ -239,9 +239,7 @@ pub const Session = struct {
         );
         errdefer t.deinit();
 
-        const s = try allocator.create(Session);
-
-        s.* = Session{
+        var s = Session{
             .allocator = allocator,
             .io = io,
             .log = log,
@@ -258,11 +256,13 @@ pub const Session = struct {
             .read_thread_errored = std.atomic.Value(bool).init(false),
             .read_into_buf = try allocator.alloc(u8, options.read_size),
             .read_loop_buf = try allocator.alloc(u8, options.read_size),
-            .recorder = try Recorder.init(io, options.record_destination, &s.recorder_buf),
+            .recorder = undefined,
             .prompt_pattern = prompt_pattern,
             .last_consumed_prompt = .empty,
         };
         errdefer s.deinit();
+
+        s.recorder = try Recorder.init(io, options.record_destination, &s.recorder_buf);
 
         s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern);
         if (s.compiled_username_pattern == null) {
@@ -356,8 +356,6 @@ pub const Session = struct {
 
         self.transport.deinit();
         self.read_queue.deinit();
-
-        self.allocator.destroy(self);
     }
 
     fn setLastError(
@@ -1400,7 +1398,7 @@ test "sessionInit" {
     const a_o = try auth.Options.init(std.testing.allocator, .{});
     const t_o = try transport.Options.init(std.testing.allocator, .{ .bin = .{} });
 
-    const s = try Session.init(
+    var s = try Session.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{

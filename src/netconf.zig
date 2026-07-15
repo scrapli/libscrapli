@@ -166,7 +166,7 @@ pub const Driver = struct {
 
     options: *Options,
 
-    session: *session.Session,
+    session: session.Session,
 
     server_capabilities: ?std.ArrayList(Capability),
     negotiated_version: operation.Version,
@@ -242,7 +242,7 @@ pub const Driver = struct {
             opts.port = default_netconf_port;
         }
 
-        const s = try session.Session.init(
+        var s = try session.Session.init(
             allocator,
             io,
             log,
@@ -251,6 +251,7 @@ pub const Driver = struct {
             opts.auth,
             opts.transport,
         );
+        errdefer s.deinit();
 
         const d = try allocator.create(Driver);
 

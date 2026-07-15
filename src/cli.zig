@@ -97,7 +97,7 @@ pub const Driver = struct {
     host: []const u8,
     port: u16,
     options: *Options,
-    session: *session.Session,
+    session: session.Session,
     current_mode: []const u8 = mode.unknown_mode,
 
     last_error: [512]u8 = @splat(0),
@@ -123,6 +123,17 @@ pub const Driver = struct {
 
         const definition = try Driver.loadDefinition(allocator, io, config.definition);
 
+        var s = try session.Session.init(
+            allocator,
+            io,
+            log,
+            definition.prompt_pattern,
+            opts.session,
+            opts.auth,
+            opts.transport,
+        );
+        errdefer s.deinit();
+
         const d = try allocator.create(Driver);
 
         d.* = Driver{
@@ -133,15 +144,7 @@ pub const Driver = struct {
             .host = host,
             .port = 0,
             .options = opts,
-            .session = try session.Session.init(
-                allocator,
-                io,
-                log,
-                definition.prompt_pattern,
-                opts.session,
-                opts.auth,
-                opts.transport,
-            ),
+            .session = s,
         };
 
         if (opts.port == null) {
