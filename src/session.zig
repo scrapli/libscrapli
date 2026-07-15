@@ -102,20 +102,8 @@ const Recorder = struct {
     }
 };
 
-/// Holds option inputs for the session.
-pub const OptionsInputs = struct {
-    read_size: u64 = 4_096,
-    read_min_delay_ns: u64 = 5_000,
-    read_max_delay_ns: u64 = 15_000_000,
-    return_char: []const u8 = default_return_char,
-    operation_timeout_ns: u64 = 10_000_000_000,
-    operation_max_search_depth: u64 = 512,
-    record_destination: ?RecordDestination = null,
-};
-
 /// Holds session options.
 pub const Options = struct {
-    allocator: std.mem.Allocator,
     read_size: u64 = 4_096,
     read_min_delay_ns: u64 = 5_000,
     read_max_delay_ns: u64 = 15_000_000,
@@ -124,32 +112,22 @@ pub const Options = struct {
     operation_max_search_depth: u64 = 512,
     record_destination: ?RecordDestination = null,
 
-    /// Initializes the session options. Heap allocating fields we need to live as long as the
-    /// session object so we always have those available.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-            .read_size = opts.read_size,
-            .read_min_delay_ns = opts.read_min_delay_ns,
-            .read_max_delay_ns = opts.read_max_delay_ns,
-            .return_char = opts.return_char,
-            .operation_timeout_ns = opts.operation_timeout_ns,
-            .operation_max_search_depth = opts.operation_max_search_depth,
-            .record_destination = opts.record_destination,
-        };
+    fn init(
+        allocator: std.mem.Allocator,
+        opts: Options,
+    ) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
         if (&o.return_char[0] != &default_return_char[0]) {
-            o.return_char = try o.allocator.dupe(u8, o.return_char);
+            o.return_char = try allocator.dupe(u8, o.return_char);
         }
 
         if (o.record_destination) |rd| {
             switch (rd) {
                 .f => {
                     o.record_destination = RecordDestination{
-                        .f = try o.allocator.dupe(u8, rd.f),
+                        .f = try allocator.dupe(u8, rd.f),
                     };
                 },
                 else => {},
@@ -159,22 +137,19 @@ pub const Options = struct {
         return o;
     }
 
-    /// Deinitializes the session options.
-    pub fn deinit(self: *Options) void {
+    fn deinit(self: *Options, allocator: std.mem.Allocator) void {
         if (&self.return_char[0] != &default_return_char[0]) {
-            self.allocator.free(self.return_char);
+            allocator.free(self.return_char);
         }
 
         if (self.record_destination) |rd| {
             switch (rd) {
                 .f => {
-                    self.allocator.free(rd.f);
+                    allocator.free(rd.f);
                 },
                 else => {},
             }
         }
-
-        self.allocator.destroy(self);
     }
 };
 
@@ -187,13 +162,15 @@ pub const Session = struct {
     io: std.Io,
 
     log: logging.Logger,
-    options: *Options,
-    auth_options: *auth.Options,
+    options: Options,
+    auth_options: auth.Options,
 
     transport: transport.Transport,
 
     read_thread: ?std.Thread,
-    read_stop: std.atomic.Value(ReadThreadState),
+    read_stop: std.atomic.Value(ReadThreadState) = std.atomic.Value(ReadThreadState).init(
+        ReadThreadState.uninitialized,
+    ),
     read_lock: std.Io.Mutex,
     read_queue: queue.LinearFifo(
         u8,
@@ -225,9 +202,9 @@ pub const Session = struct {
         io: std.Io,
         log: logging.Logger,
         prompt_pattern: []const u8,
-        options: *Options,
-        auth_options: *auth.Options,
-        transport_options: *transport.Options,
+        options: Options,
+        auth_options: auth.Options,
+        transport_options: transport.Options,
     ) !Session {
         logging.traceWithSrc(log, @src(), "session.Session init requested", .{});
 
@@ -1394,9 +1371,7 @@ pub const Session = struct {
 };
 
 test "sessionInit" {
-    const o = try Options.init(std.testing.allocator, .{});
-    const a_o = try auth.Options.init(std.testing.allocator, .{});
-    const t_o = try transport.Options.init(std.testing.allocator, .{ .bin = .{} });
+    var o = try Options.init(std.testing.allocator, .{});
 
     var s = try Session.init(
         std.testing.allocator,
@@ -1406,12 +1381,12 @@ test "sessionInit" {
         },
         ">",
         o,
-        a_o,
-        t_o,
+        .{},
+        .{
+            .bin = .{},
+        },
     );
 
     s.deinit();
-    o.deinit();
-    a_o.deinit();
-    t_o.deinit();
+    o.deinit(std.testing.allocator);
 }

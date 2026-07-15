@@ -592,15 +592,18 @@ pub const Transport = struct {
             );
         }
 
-        var o = try options.init(allocator);
+        var o = try Options.init(options, allocator);
         errdefer o.deinit(allocator);
+
+        var w = try transport_waiter.Waiter.init();
+        errdefer w.deinit();
 
         return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
             .options = o,
-            .waiter = try transport_waiter.Waiter.init(),
+            .waiter = w,
             .session_lock = std.Io.Mutex.init,
         };
     }
@@ -648,7 +651,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         self.log.info("ssh2.Transport open requested", .{});
 
@@ -1026,7 +1029,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         self.log.debug("ssh2.Transport authenticate requested", .{});
 
@@ -1192,7 +1195,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const private_key_path_c = try self.allocator.dupeSentinel(
             u8,
@@ -1311,7 +1314,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const private_key_passphrase_c = try self.allocator.dupeSentinel(
             u8,
@@ -1424,7 +1427,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
@@ -1500,7 +1503,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         // note: calling the converted c func instead of zig style due to typing issue similar
         // to -> https://github.com/ziglang/zig/issues/18824
@@ -1654,7 +1657,7 @@ pub const Transport = struct {
         start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const proxy_jump_options = self.options.proxy_jump_options.?;
 
@@ -1822,7 +1825,7 @@ pub const Transport = struct {
                 .lookups = auth_options.lookups,
             },
         );
-        defer pa.deinit();
+        defer pa.deinit(self.allocator);
 
         if (pa.username != null and pa.password != null) {
             const resolved_password = try auth_options.resolveAuthValue(pa.password.?);

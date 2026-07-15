@@ -56,11 +56,14 @@ pub const Transport = struct {
     ) !Transport {
         logging.traceWithSrc(log, @src(), "telnet.Transport initializing", .{});
 
+        var w = try transport_waiter.Waiter.init();
+        errdefer w.deinit();
+
         return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
-            .waiter = try transport_waiter.Waiter.init(),
+            .waiter = w,
             .initial_buf = .empty,
         };
     }

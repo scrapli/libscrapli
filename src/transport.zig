@@ -140,7 +140,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         switch (self.implementation) {
             Kind.bin => {

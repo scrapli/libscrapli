@@ -15,8 +15,21 @@ const transport = @import("transport.zig");
 
 /// The default/standard ssh port.
 const default_ssh_port: u16 = 22;
-// THe default/standard telnet port.
+/// The default/standard telnet port.
 const default_telnet_port: u16 = 23;
+
+/// The default definition string.
+const default_definition_string =
+    \\---
+    \\prompt_pattern: '^.*[>#$]\s?+$'
+    \\default_mode: 'cli'
+    \\modes:
+    \\  - name: 'cli'
+    \\    prompt_pattern: '^.*[>#$]\s?+$'
+    \\on_close_instructions:
+    \\  - write:
+    \\      input: 'exit'
+;
 
 /// An enum representing possible sources for a (cli) definition.
 pub const DefinitionSource = union(enum) {
@@ -25,57 +38,21 @@ pub const DefinitionSource = union(enum) {
     definition: *platform.Options,
 };
 
-/// A config object holding info for a cli driver.
-pub const Config = struct {
-    logger: ?logging.Logger = null,
-    definition: DefinitionSource,
-    port: ?u16 = null,
-    auth: auth.OptionsInputs = .{},
-    session: session.OptionsInputs = .{},
-    transport: transport.OptionsInputs = .{
-        .bin = .{},
-    },
-};
-
 /// Options for the cli driver, driven from a config struct.
 pub const Options = struct {
-    allocator: std.mem.Allocator,
-    logger: ?logging.Logger,
-    port: ?u16,
-    auth: *auth.Options,
-    session: *session.Options,
-    transport: *transport.Options,
+    definition: DefinitionSource = .{
+        .string = default_definition_string,
+    },
+    logger: ?logging.Logger = null,
+    port: ?u16 = null,
+    auth: auth.Options = .{},
+    session: session.Options = .{},
+    transport: transport.Options = .{
+        .bin = .{},
+    },
 
-    /// Initializes the cli options.
-    pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-            .logger = config.logger,
-            .port = config.port,
-            .auth = try auth.Options.init(allocator, config.auth),
-            .session = try session.Options.init(allocator, config.session),
-            .transport = try transport.Options.init(
-                allocator,
-                config.transport,
-            ),
-        };
-
-        return o;
-    }
-
-    /// Deinitializes the cli options.
-    pub fn deinit(self: *Options) void {
-        self.auth.deinit();
-        self.session.deinit();
-        self.transport.deinit();
-        self.allocator.destroy(self);
-    }
-
-    fn validate(self: *Options, log: logging.Logger) !void {
-        switch (self.transport.*) {
+    fn validate(self: Options, log: logging.Logger) !void {
+        switch (self.transport) {
             .bin => {
                 if (self.auth.private_key_content != null) {
                     // its only a warning, for future things we may want to actually return errors
@@ -95,8 +72,8 @@ pub const Driver = struct {
     log: logging.Logger,
     definition: *platform.Definition,
     host: []const u8,
-    port: u16,
-    options: *Options,
+    port: u16 = 22,
+    options: Options,
     session: session.Session,
     current_mode: []const u8 = mode.unknown_mode,
 
@@ -108,29 +85,27 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         host: []const u8,
-        config: Config,
+        options: Options,
     ) !*Driver {
-        const opts = try Options.init(allocator, config);
-        errdefer opts.deinit();
-
-        const log = opts.logger orelse logging.Logger{
+        const log = options.logger orelse logging.Logger{
             .allocator = allocator,
         };
 
         logging.traceWithSrc(log, @src(), "cli.Driver initializing", .{});
 
-        try opts.validate(log);
+        try options.validate(log);
 
-        const definition = try Driver.loadDefinition(allocator, io, config.definition);
+        const definition = try Driver.loadDefinition(allocator, io, options.definition);
+        errdefer definition.deinit();
 
         var s = try session.Session.init(
             allocator,
             io,
             log,
             definition.prompt_pattern,
-            opts.session,
-            opts.auth,
-            opts.transport,
+            options.session,
+            options.auth,
+            options.transport,
         );
         errdefer s.deinit();
 
@@ -142,13 +117,14 @@ pub const Driver = struct {
             .log = log,
             .definition = definition,
             .host = host,
-            .port = 0,
-            .options = opts,
+            .options = options,
             .session = s,
         };
 
-        if (opts.port == null) {
-            switch (opts.transport.*) {
+        if (options.port) |p| {
+            d.port = p;
+        } else {
+            switch (options.transport) {
                 transport.Kind.telnet => {
                     d.port = default_telnet_port;
                 },
@@ -156,8 +132,6 @@ pub const Driver = struct {
                     d.port = default_ssh_port;
                 },
             }
-        } else {
-            d.port = opts.port.?;
         }
 
         return d;
@@ -169,7 +143,6 @@ pub const Driver = struct {
 
         self.session.deinit();
         self.definition.deinit();
-        self.options.deinit();
         self.allocator.destroy(self);
     }
 

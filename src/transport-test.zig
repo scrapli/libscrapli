@@ -5,7 +5,6 @@ const file = @import("file.zig");
 
 /// Holds test transport options.
 pub const Options = struct {
-    allocator: std.mem.Allocator,
     f: ?[]const u8 = null,
 
     fn init(opts: Options, allocator: std.mem.Allocator) !Options {
@@ -41,10 +40,13 @@ pub const Transport = struct {
         io: std.Io,
         options: Options,
     ) !Transport {
+        var o = try Options.init(options, allocator);
+        errdefer o.deinit(allocator);
+
         return Transport{
             .allocator = allocator,
             .io = io,
-            .options = try options.init(allocator),
+            .options = o,
             .fd = null,
         };
     }

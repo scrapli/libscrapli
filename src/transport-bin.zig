@@ -108,12 +108,18 @@ pub const Transport = struct {
     ) !Transport {
         logging.traceWithSrc(log, @src(), "bin.Transport initializing", .{});
 
+        var o = try Options.init(options, allocator);
+        errdefer o.deinit(allocator);
+
+        var w = try transport_waiter.Waiter.init();
+        errdefer w.deinit();
+
         return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = try Options.init(options, allocator),
-            .waiter = try transport_waiter.Waiter.init(),
+            .options = o,
+            .waiter = w,
             .open_args = .empty,
         };
     }
@@ -145,7 +151,7 @@ pub const Transport = struct {
         self: *Transport,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
         operation_timeout_ns: u64,
     ) !void {
         if (self.options.override_open_args) |override_open_args| {
@@ -406,7 +412,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         self.log.info("bin.Transport open requested", .{});
         self.log.debug("bin.Transport open: host '{s}', port '{d}'", .{ host, port });
