@@ -26,31 +26,9 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
-/// Holds option inputs for the telnet transport.
-// zlinter-disable-next-line declaration_naming
-pub const OptionsInputs = struct {};
-
-/// Holds telnet transport options.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-
-    /// Initialize the transport options.
-    pub fn init(allocator: std.mem.Allocator, _: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-        };
-
-        return o;
-    }
-
-    /// Deinitialize the transport options.
-    pub fn deinit(self: *Options) void {
-        self.allocator.destroy(self);
-    }
-};
+/// Holds telnet transport options. Clearly a placeholder as there are acutally no current telnet
+/// options available.
+pub const Options = struct {};
 
 /// Transport is the telnet transport implementation.
 pub const Transport = struct {
@@ -58,8 +36,6 @@ pub const Transport = struct {
     io: std.Io,
 
     log: logging.Logger,
-
-    options: *Options,
 
     waiter: transport_waiter.Waiter,
     closing: bool = false,
@@ -77,7 +53,6 @@ pub const Transport = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
     ) !Transport {
         logging.traceWithSrc(log, @src(), "telnet.Transport initializing", .{});
 
@@ -85,7 +60,6 @@ pub const Transport = struct {
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
             .waiter = try transport_waiter.Waiter.init(),
             .initial_buf = .empty,
         };
@@ -432,16 +406,13 @@ pub const Transport = struct {
 };
 
 test "transportInit" {
-    const o = try Options.init(std.testing.allocator, .{});
     var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
     );
 
     t.deinit();
-    o.deinit();
 }

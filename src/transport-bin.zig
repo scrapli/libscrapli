@@ -15,105 +15,69 @@ const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
 
-/// Holds option inputs for the bin transport.
-pub const OptionsInputs = struct {
+/// Holds bin transport options.
+pub const Options = struct {
     bin: []const u8 = default_ssh_bin,
-
     // extra means append to "standard" args, override overides everything except for the bin,
     // if you want to override the bin you can do that, just set .bin field. both of these options
     // should be space delimited values like you would pass on the cli -- i.e.
     // "-o ProxyCommand='foo' -P 1234" etc.
     extra_open_args: ?[]const u8 = null,
     override_open_args: ?[]const u8 = null,
-
     ssh_config_path: ?[]const u8 = null,
     known_hosts_path: ?[]const u8 = null,
-
     enable_strict_key: bool = false,
-
     term_height: u16 = default_term_height,
     term_width: u16 = default_term_width,
-
     netconf: bool = false,
-};
 
-/// Holds bin transport options.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-    bin: []const u8,
-    extra_open_args: ?[]const u8,
-    override_open_args: ?[]const u8,
-    ssh_config_path: ?[]const u8,
-    known_hosts_path: ?[]const u8,
-    enable_strict_key: bool,
-    term_height: u16,
-    term_width: u16,
-    netconf: bool,
-
-    /// Initializes the bin options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-            .bin = opts.bin,
-            .extra_open_args = opts.extra_open_args,
-            .override_open_args = opts.override_open_args,
-            .ssh_config_path = opts.ssh_config_path,
-            .known_hosts_path = opts.known_hosts_path,
-            .enable_strict_key = opts.enable_strict_key,
-            .term_height = opts.term_height,
-            .term_width = opts.term_width,
-            .netconf = opts.netconf,
-        };
+    fn init(opts: Options, allocator: std.mem.Allocator) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
         if (&o.bin[0] != &default_ssh_bin[0]) {
-            o.bin = try o.allocator.dupe(u8, o.bin);
+            o.bin = try allocator.dupe(u8, o.bin);
         }
 
         if (o.extra_open_args) |extra_open_args| {
-            o.extra_open_args = try o.allocator.dupe(u8, extra_open_args);
+            o.extra_open_args = try allocator.dupe(u8, extra_open_args);
         }
 
         if (o.override_open_args) |override_open_args| {
-            o.override_open_args = try o.allocator.dupe(u8, override_open_args);
+            o.override_open_args = try allocator.dupe(u8, override_open_args);
         }
 
         if (o.ssh_config_path) |ssh_config_path| {
-            o.ssh_config_path = try o.allocator.dupe(u8, ssh_config_path);
+            o.ssh_config_path = try allocator.dupe(u8, ssh_config_path);
         }
 
         if (o.known_hosts_path) |known_hosts_path| {
-            o.known_hosts_path = try o.allocator.dupe(u8, known_hosts_path);
+            o.known_hosts_path = try allocator.dupe(u8, known_hosts_path);
         }
 
         return o;
     }
 
-    /// Deinitializes the bin options.
-    pub fn deinit(self: *Options) void {
+    fn deinit(self: Options, allocator: std.mem.Allocator) void {
         if (&self.bin[0] != &default_ssh_bin[0]) {
-            self.allocator.free(self.bin);
+            allocator.free(self.bin);
         }
 
         if (self.extra_open_args) |extra_open_args| {
-            self.allocator.free(extra_open_args);
+            allocator.free(extra_open_args);
         }
 
         if (self.override_open_args) |override_open_args| {
-            self.allocator.free(override_open_args);
+            allocator.free(override_open_args);
         }
 
         if (self.ssh_config_path) |ssh_config_path| {
-            self.allocator.free(ssh_config_path);
+            allocator.free(ssh_config_path);
         }
 
         if (self.known_hosts_path) |known_hosts_path| {
-            self.allocator.free(known_hosts_path);
+            allocator.free(known_hosts_path);
         }
-
-        self.allocator.destroy(self);
     }
 };
 
@@ -124,7 +88,7 @@ pub const Transport = struct {
 
     log: logging.Logger,
 
-    options: *Options,
+    options: Options,
     waiter: transport_waiter.Waiter,
     closing: bool = false,
 
@@ -140,7 +104,7 @@ pub const Transport = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
+        options: Options,
     ) !Transport {
         logging.traceWithSrc(log, @src(), "bin.Transport initializing", .{});
 
@@ -148,7 +112,7 @@ pub const Transport = struct {
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
+            .options = try Options.init(options, allocator),
             .waiter = try transport_waiter.Waiter.init(),
             .open_args = .empty,
         };
@@ -163,6 +127,7 @@ pub const Transport = struct {
         }
 
         self.open_args.deinit(self.allocator);
+        self.options.deinit(self.allocator);
         self.waiter.deinit();
     }
 
@@ -767,16 +732,14 @@ fn setnoecho(fd: std.posix.fd_t) !void {
 }
 
 test "transportInit" {
-    const o = try Options.init(std.testing.allocator, .{});
     var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
+        .{},
     );
 
     t.deinit();
-    o.deinit();
 }

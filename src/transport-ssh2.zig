@@ -461,43 +461,83 @@ pub const ProxyJumpOptions = struct {
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
     libssh2_trace: bool = false,
-};
 
-/// Holds option inputs for the ssh2 transport.
-pub const OptionsInputs = struct {
-    known_hosts_path: ?[]const u8 = null,
-    libssh2_trace: bool = false,
-    netconf: bool = false,
-    proxy_jump_options: ?ProxyJumpOptions = null,
-};
+    fn init(opts: ProxyJumpOptions, allocator: std.mem.Allocator) !ProxyJumpOptions {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-/// Holds ssh2 transport options.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-    known_hosts_path: ?[]const u8,
-    libssh2_trace: bool,
-    netconf: bool,
-    proxy_jump_options: ?ProxyJumpOptions,
+        o.host = try allocator.dupe(u8, o.host);
 
-    /// Initializes the ssh2 options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
+        if (o.username) |username| {
+            o.username = try allocator.dupe(u8, username);
+        }
 
-        o.* = Options{
-            .allocator = allocator,
-            .known_hosts_path = opts.known_hosts_path,
-            .libssh2_trace = opts.libssh2_trace,
-            .netconf = opts.netconf,
-            .proxy_jump_options = opts.proxy_jump_options,
-        };
+        if (o.password) |password| {
+            o.password = try allocator.dupe(u8, password);
+        }
+
+        if (o.private_key_path) |private_key_path| {
+            o.private_key_path = try allocator.dupe(u8, private_key_path);
+        }
+
+        if (o.private_key_passphrase) |private_key_passphrase| {
+            o.private_key_passphrase = try allocator.dupe(u8, private_key_passphrase);
+        }
 
         return o;
     }
 
-    /// Deinitializes the ssh2 options.
-    pub fn deinit(self: *Options) void {
-        self.allocator.destroy(self);
+    fn deinit(self: ProxyJumpOptions, allocator: std.mem.Allocator) void {
+        allocator.free(self.host);
+
+        if (self.username) |username| {
+            allocator.free(username);
+        }
+
+        if (self.password) |password| {
+            allocator.free(password);
+        }
+
+        if (self.private_key_path) |private_key_path| {
+            allocator.free(private_key_path);
+        }
+
+        if (self.private_key_passphrase) |private_key_passphrase| {
+            allocator.free(private_key_passphrase);
+        }
+    }
+};
+
+/// Holds ssh2 transport options.
+pub const Options = struct {
+    known_hosts_path: ?[]const u8 = null,
+    libssh2_trace: bool = false,
+    netconf: bool = false,
+    proxy_jump_options: ?ProxyJumpOptions = null,
+
+    fn init(opts: Options, allocator: std.mem.Allocator) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
+
+        if (o.known_hosts_path) |known_hosts_path| {
+            o.known_hosts_path = try allocator.dupe(u8, known_hosts_path);
+        }
+
+        if (o.proxy_jump_options) |pjo| {
+            o.proxy_jump_options = try pjo.init(allocator);
+        }
+
+        return o;
+    }
+
+    fn deinit(self: Options, allocator: std.mem.Allocator) void {
+        if (self.known_hosts_path) |known_hosts_path| {
+            allocator.free(known_hosts_path);
+        }
+
+        if (self.proxy_jump_options) |o| {
+            o.deinit(allocator);
+        }
     }
 };
 
@@ -508,7 +548,7 @@ pub const Transport = struct {
 
     log: logging.Logger,
 
-    options: *Options,
+    options: Options,
     waiter: transport_waiter.Waiter,
 
     auth_callback_data: AuthCallbackData = .{},
@@ -537,7 +577,7 @@ pub const Transport = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
+        options: Options,
     ) !Transport {
         logging.traceWithSrc(log, @src(), "ssh2.Transport initializing", .{});
 
@@ -552,11 +592,14 @@ pub const Transport = struct {
             );
         }
 
+        var o = try options.init(allocator);
+        errdefer o.deinit(allocator);
+
         return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
+            .options = o,
             .waiter = try transport_waiter.Waiter.init(),
             .session_lock = std.Io.Mutex.init,
         };
@@ -581,6 +624,8 @@ pub const Transport = struct {
         if (self.proxy_wrapper) |pw| {
             pw.deinit();
         }
+
+        self.options.deinit(self.allocator);
 
         self.waiter.deinit();
     }
@@ -2246,16 +2291,14 @@ fn kbdInteractiveCallback(
 }
 
 test "transportInit" {
-    const o = try Options.init(std.testing.allocator, .{});
     var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
+        .{},
     );
 
     t.deinit();
-    o.deinit();
 }
