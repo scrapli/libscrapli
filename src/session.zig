@@ -412,10 +412,6 @@ pub const Session = struct {
     pub fn close(self: *Session) !void {
         self.log.info("session.Session close requested", .{});
 
-        if (self.read_stop.load(std.lang.AtomicOrder.acquire) == ReadThreadState.stop) {
-            return;
-        }
-
         self.read_stop.store(ReadThreadState.stop, std.lang.AtomicOrder.unordered);
 
         // need to unblock the transport waiter after signaling the read thread to stop, this will
