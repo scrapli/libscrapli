@@ -73,7 +73,6 @@ pub const Driver = struct {
     definition: *platform.Definition,
     host: []const u8,
     port: u16 = default_ssh_port,
-    options: Options,
     session: session.Session,
     current_mode: []const u8 = mode.unknown_mode,
 
@@ -117,7 +116,6 @@ pub const Driver = struct {
             .log = log,
             .definition = definition,
             .host = host,
-            .options = options,
             .session = s,
         };
 
@@ -496,7 +494,7 @@ pub const Driver = struct {
                     .send_prompted_input => {
                         var response: []const u8 = "";
 
-                        if (self.options.auth.resolveAuthValue(
+                        if (self.session.auth_options.resolveAuthValue(
                             op.send_prompted_input.send_prompted_input.response,
                         )) |resolved_response| {
                             response = resolved_response;
