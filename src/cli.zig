@@ -72,7 +72,7 @@ pub const Driver = struct {
     log: logging.Logger,
     definition: *platform.Definition,
     host: []const u8,
-    port: u16 = 22,
+    port: u16 = default_ssh_port,
     options: Options,
     session: session.Session,
     current_mode: []const u8 = mode.unknown_mode,

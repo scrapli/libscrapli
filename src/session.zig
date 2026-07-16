@@ -137,7 +137,7 @@ pub const Options = struct {
         return o;
     }
 
-    fn deinit(self: *Options, allocator: std.mem.Allocator) void {
+    fn deinit(self: Options, allocator: std.mem.Allocator) void {
         if (&self.return_char[0] != &default_return_char[0]) {
             allocator.free(self.return_char);
         }
@@ -167,7 +167,7 @@ pub const Session = struct {
 
     transport: transport.Transport,
 
-    read_thread: ?std.Thread,
+    read_thread: ?std.Thread = null,
     read_stop: std.atomic.Value(ReadThreadState) = std.atomic.Value(ReadThreadState).init(
         ReadThreadState.uninitialized,
     ),
@@ -176,13 +176,16 @@ pub const Session = struct {
         u8,
         .dynamic,
     ),
-    read_thread_errored: std.atomic.Value(bool),
+    read_thread_errored: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     read_thread_error: ?anyerror = null,
     read_into_buf: ?[]u8 = null,
     read_loop_buf: ?[]u8 = null,
 
     recorder_buf: [1024]u8 = @splat(0),
-    recorder: Recorder,
+    recorder: Recorder = .{
+        .rd = null,
+        .recorder = null,
+    },
 
     compiled_username_pattern: ?*re.pcre2CompiledPattern = null,
     compiled_password_pattern: ?*re.pcre2CompiledPattern = null,
@@ -191,7 +194,7 @@ pub const Session = struct {
     prompt_pattern: []const u8,
     compiled_prompt_pattern: ?*re.pcre2CompiledPattern = null,
 
-    last_consumed_prompt: std.ArrayList(u8),
+    last_consumed_prompt: std.ArrayList(u8) = .empty,
 
     last_error: [512]u8 = @splat(0),
     last_error_len: usize = 0,
@@ -208,6 +211,9 @@ pub const Session = struct {
     ) !Session {
         logging.traceWithSrc(log, @src(), "session.Session init requested", .{});
 
+        var o = try Options.init(allocator, options);
+        errdefer o.deinit(allocator);
+
         var t = try transport.Transport.init(
             allocator,
             io,
@@ -220,26 +226,21 @@ pub const Session = struct {
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
+            .options = o,
             .auth_options = auth_options,
             .transport = t,
-            .read_thread = null,
-            .read_stop = std.atomic.Value(ReadThreadState).init(ReadThreadState.uninitialized),
             .read_lock = std.Io.Mutex.init,
             .read_queue = queue.LinearFifo(
                 u8,
                 .dynamic,
             ).init(allocator),
-            .read_thread_errored = std.atomic.Value(bool).init(false),
-            .read_into_buf = try allocator.alloc(u8, options.read_size),
-            .read_loop_buf = try allocator.alloc(u8, options.read_size),
-            .recorder = undefined,
+            .read_into_buf = try allocator.alloc(u8, o.read_size),
+            .read_loop_buf = try allocator.alloc(u8, o.read_size),
             .prompt_pattern = prompt_pattern,
-            .last_consumed_prompt = .empty,
         };
         errdefer s.deinit();
 
-        s.recorder = try Recorder.init(io, options.record_destination, &s.recorder_buf);
+        s.recorder = try Recorder.init(io, o.record_destination, &s.recorder_buf);
 
         s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern);
         if (s.compiled_username_pattern == null) {
