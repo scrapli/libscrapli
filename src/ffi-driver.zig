@@ -91,7 +91,7 @@ pub const FfiDriver = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         host: []const u8,
-        config: cli.Config,
+        options: cli.Options,
     ) !*FfiDriver {
         const owned_host = try allocator.dupe(u8, host);
         errdefer allocator.free(owned_host);
@@ -100,7 +100,7 @@ pub const FfiDriver = struct {
             allocator,
             io,
             owned_host,
-            config,
+            options,
         );
 
         errdefer real_driver.deinit();
@@ -143,13 +143,13 @@ pub const FfiDriver = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         host: []const u8,
-        config: netconf.Config,
+        options: netconf.Options,
     ) !*FfiDriver {
         const real_driver = try netconf.Driver.init(
             allocator,
             io,
             host,
-            config,
+            options,
         );
 
         errdefer real_driver.deinit();

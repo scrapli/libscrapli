@@ -437,13 +437,18 @@ pub const Session = struct {
 
         const buf = self.read_loop_buf.?;
 
-        while (self.read_stop.load(std.lang.AtomicOrder.acquire) != ReadThreadState.stop) {
+        while (self.read_stop.load(std.lang.AtomicOrder.acquire) == ReadThreadState.run) {
             const n = self.transport.read(buf) catch |err| {
                 self.read_thread_error = err;
                 self.read_thread_errored.store(true, std.lang.AtomicOrder.release);
 
                 return;
             };
+
+            if (self.read_stop.load(std.lang.AtomicOrder.acquire) != ReadThreadState.run) {
+                // read was interrupted
+                return;
+            }
 
             if (n == 0) {
                 continue;
@@ -543,15 +548,15 @@ pub const Session = struct {
 
         const buf = self.read_into_buf orelse return errors.ScrapliError.Session;
 
-        // need to unblock the transport waiter after signaling the read thread to stop, this will
-        // stop the waiter (which happens in transport.read), then the readloop can nicely exit;
-        // we only need to do this here in addition to close because we
-        // zlinter-disable-next-line no_swallow_error - best effort
-        errdefer self.transport.prepareClose() catch {};
-
-        // in the case of auth, if we error out, we almost certainly need to stop the read loop
-        // as the transport is probably gone from under our feet anyway.
-        errdefer self.read_stop.store(ReadThreadState.stop, std.lang.AtomicOrder.unordered);
+        errdefer {
+            // need to unblock the transport waiter after signaling the read thread to stop, this
+            // will stop the waiter (which happens in transport.read), then the readloop can nicely
+            // exit; users should always be defering/calling deinit anyway but... this feels like
+            // a nice extra layer of sanity
+            self.read_stop.store(ReadThreadState.stop, std.lang.AtomicOrder.unordered);
+            // zlinter-disable-next-line no_swallow_error - best effort
+            self.transport.prepareClose() catch {};
+        }
 
         while (true) {
             if (cancel != null and cancel.?.*) {

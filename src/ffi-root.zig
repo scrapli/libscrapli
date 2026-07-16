@@ -95,7 +95,7 @@ export fn ls_cli_alloc(
         allocator,
         ffi_common.io,
         std.mem.span(host),
-        o.cliConfig(allocator),
+        o.cliOptions(allocator),
     ) catch {
         return null;
     };
@@ -129,7 +129,7 @@ export fn ls_netconf_alloc(
         allocator,
         ffi_common.io,
         std.mem.span(host),
-        o.*.netconfConfig(allocator),
+        o.*.netconfOptions(allocator),
     ) catch {
         return null;
     };

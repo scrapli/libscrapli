@@ -40,17 +40,17 @@ test {
     _ = transport_ssh2;
     _ = transport_telnet;
 
-    // _ = @import("ffi-root.zig");
-    // _ = @import("ffi-root-cli.zig");
-    // _ = @import("ffi-root-netconf.zig");
+    _ = @import("ffi-root.zig");
+    _ = @import("ffi-root-cli.zig");
+    _ = @import("ffi-root-netconf.zig");
 
     comptime {
         _ = @import("tests/integration/driver-tests.zig");
         _ = @import("tests/integration/driver-netconf-tests.zig");
     }
 
-    // comptime {
-    //     _ = @import("tests/functional/driver-tests.zig");
-    //     _ = @import("tests/functional/driver-netconf-tests.zig");
-    // }
+    comptime {
+        _ = @import("tests/functional/driver-tests.zig");
+        _ = @import("tests/functional/driver-netconf-tests.zig");
+    }
 }
