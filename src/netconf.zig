@@ -218,6 +218,8 @@ pub const Driver = struct {
         );
         errdefer s.deinit();
 
+        s.options.operation_max_search_depth = default_initial_operation_max_search_depth;
+
         const d = try allocator.create(Driver);
 
         d.* = Driver{
