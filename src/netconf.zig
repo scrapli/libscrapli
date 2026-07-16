@@ -92,8 +92,6 @@ pub const Options = struct {
         var o = opts;
         errdefer o.deinit(allocator);
 
-        o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
-
         if (&o.error_tag[0] != &operation.default_rpc_error_tag[0]) {
             o.error_tag = try allocator.dupe(u8, o.error_tag);
         }
