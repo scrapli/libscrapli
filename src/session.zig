@@ -240,8 +240,6 @@ pub const Session = struct {
         };
         errdefer s.deinit();
 
-        s.recorder = try Recorder.init(io, o.record_destination, &s.recorder_buf);
-
         s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern);
         if (s.compiled_username_pattern == null) {
             return errors.wrapCriticalError(
@@ -373,6 +371,12 @@ pub const Session = struct {
         cancel: ?*bool,
     ) ![2][]const u8 {
         self.log.info("session.Session open requested", .{});
+
+        self.recorder = try Recorder.init(
+            self.io,
+            self.options.record_destination,
+            &self.recorder_buf,
+        );
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
