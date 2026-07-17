@@ -414,9 +414,13 @@ pub const Session = struct {
 
         self.read_stop.store(ReadThreadState.stop, std.lang.AtomicOrder.unordered);
 
+        var prepare_close_err: ?anyerror = null;
+
         // need to unblock the transport waiter after signaling the read thread to stop, this will
         // stop the waiter (which happens in transport.read), then the readloop can nicely exit
-        try self.transport.prepareClose();
+        self.transport.prepareClose() catch |err| {
+            prepare_close_err = err;
+        };
 
         if (self.read_thread) |t| {
             t.join();
@@ -426,6 +430,10 @@ pub const Session = struct {
         try self.recorder.close(self.io);
 
         self.transport.close();
+
+        if (prepare_close_err) |err| {
+            return err;
+        }
     }
 
     fn readLoop(self: *Session) !void {
