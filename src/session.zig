@@ -346,6 +346,23 @@ pub const Session = struct {
         self.last_error_len = len;
     }
 
+    fn setLastErrorFmt(
+        self: *Session,
+        comptime fmt: []const u8,
+        args: anytype,
+        defaultMsg: []const u8,
+    ) void {
+        const message = std.fmt.bufPrint(self.last_error[0..], fmt, args) catch |err| switch (err) {
+            error.NoSpaceLeft => {
+                self.setLastError(defaultMsg);
+
+                return;
+            },
+        };
+
+        self.last_error_len = message.len;
+    }
+
     /// Opens the session object, starting the background read thread, and ensuring the underlying
     /// transport is opened, authenticated, and ready to accept reads/writes.
     pub fn open(
@@ -605,9 +622,13 @@ pub const Session = struct {
                         // we can *hopefully* return a decent error message to the user
                         const error_message = try auth.openMessageHandler(bufs.processed.items);
 
-                        self.setLastError("session.Session authenticate: open failed");
-
                         if (error_message) |msg| {
+                            self.setLastErrorFmt(
+                                "session.Session authenticate: open failed, error: '{s}'",
+                                .{msg},
+                                "session.Session authenticate: open failed, EOF",
+                            );
+
                             return errors.wrapCriticalError(
                                 errors.ScrapliError.Transport,
                                 @src(),
@@ -616,6 +637,8 @@ pub const Session = struct {
                                 .{msg},
                             );
                         }
+
+                        self.setLastError("session.Session authenticate: open failed");
 
                         return errors.wrapCriticalError(
                             errors.ScrapliError.Transport,
@@ -664,7 +687,11 @@ pub const Session = struct {
             const error_message = try auth.openMessageHandler(bufs.processed.items);
 
             if (error_message) |msg| {
-                self.setLastError("session.Session authenticate: open failed");
+                self.setLastErrorFmt(
+                    "session.Session authenticate: open failed, error: '{s}'",
+                    .{msg},
+                    "session.Session authenticate: error in stdout",
+                );
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Session,
