@@ -225,9 +225,15 @@ export fn ls_netconf_fetch_operation_sizes(
         operation_result_raw_size.* = dret.result_raw.len;
         operation_result_size.* = dret.result.len;
 
+        operation_error_size.* = 0;
+        operation_last_error_size.* = 0;
+
         if (dret.result_failure_indicated) {
             operation_rpc_warnings_size.* = dret.getWarningsLen();
             operation_rpc_errors_size.* = dret.getErrorsLen();
+        } else {
+            operation_rpc_warnings_size.* = 0;
+            operation_rpc_errors_size.* = 0;
         }
     }
 
