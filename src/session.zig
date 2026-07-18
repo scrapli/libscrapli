@@ -119,7 +119,7 @@ pub const Options = struct {
         var o = opts;
         errdefer o.deinit(allocator);
 
-        if (&o.return_char[0] != &default_return_char[0]) {
+        if (o.return_char.ptr != default_return_char.ptr) {
             o.return_char = try allocator.dupe(u8, o.return_char);
         }
 
@@ -138,7 +138,7 @@ pub const Options = struct {
     }
 
     fn deinit(self: Options, allocator: std.mem.Allocator) void {
-        if (&self.return_char[0] != &default_return_char[0]) {
+        if (self.return_char.ptr != default_return_char.ptr) {
             allocator.free(self.return_char);
         }
 
