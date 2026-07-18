@@ -511,6 +511,7 @@ pub const Driver = struct {
 
         if (self.process_thread) |t| {
             t.join();
+            self.process_thread = null;
         }
 
         try self.session.close();
