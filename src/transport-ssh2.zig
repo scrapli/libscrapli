@@ -520,7 +520,7 @@ pub const Options = struct {
     netconf: bool = false,
     proxy_jump_options: ?ProxyJumpOptions = null,
 
-    fn init(opts: Options, allocator: std.mem.Allocator) !Options {
+    fn init(allocator: std.mem.Allocator, opts: Options) !Options {
         var o = opts;
         errdefer o.deinit(allocator);
 
@@ -597,7 +597,7 @@ pub const Transport = struct {
             );
         }
 
-        var o = try Options.init(options, allocator);
+        var o = try Options.init(allocator, options);
         errdefer o.deinit(allocator);
 
         var w = try transport_waiter.Waiter.init();

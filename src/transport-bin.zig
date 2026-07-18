@@ -31,7 +31,7 @@ pub const Options = struct {
     term_width: u16 = default_term_width,
     netconf: bool = false,
 
-    fn init(opts: Options, allocator: std.mem.Allocator) !Options {
+    fn init(allocator: std.mem.Allocator, opts: Options) !Options {
         var o = opts;
         errdefer o.deinit(allocator);
 
@@ -108,7 +108,7 @@ pub const Transport = struct {
     ) !Transport {
         logging.traceWithSrc(log, @src(), "bin.Transport initializing", .{});
 
-        var o = try Options.init(options, allocator);
+        var o = try Options.init(allocator, options);
         errdefer o.deinit(allocator);
 
         var w = try transport_waiter.Waiter.init();

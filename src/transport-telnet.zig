@@ -8,6 +8,7 @@ const transport_socket = @import("transport-socket.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 const control_char_iac: u8 = 255;
+const default_eagain_delay_ns: u64 = 100_000;
 const control_char_do: u8 = 253;
 const control_char_dont: u8 = 254;
 const control_char_will: u8 = 251;
@@ -307,17 +308,16 @@ pub const Transport = struct {
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
                 std.posix.E.AGAIN => {
-                    const last_error = "telnet.Transport write: eagain on write, short write";
-
-                    self.setLastError(last_error);
-
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Transport,
-                        @src(),
-                        self.log,
-                        last_error,
-                        .{},
-                    );
+                    // the socket is deliberately nonblocking, so eagain just means the kernel
+                    // buffer is full (i.e. a payload bigger than the buffer) -- back off briefly
+                    // and keep writing rather than failing a healthy session
+                    // zlinter-disable-next-line no_swallow_error - best effort backoff
+                    self.io.sleep(
+                        .{
+                            .nanoseconds = default_eagain_delay_ns,
+                        },
+                        .awake,
+                    ) catch {};
                 },
                 else => |err| {
                     const last_error = "telnet.Transport write: writing to stream failed";

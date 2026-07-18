@@ -7,7 +7,7 @@ const file = @import("file.zig");
 pub const Options = struct {
     f: ?[]const u8 = null,
 
-    fn init(opts: Options, allocator: std.mem.Allocator) !Options {
+    fn init(allocator: std.mem.Allocator, opts: Options) !Options {
         var o = opts;
         errdefer o.deinit(allocator);
 
@@ -40,7 +40,7 @@ pub const Transport = struct {
         io: std.Io,
         options: Options,
     ) !Transport {
-        var o = try Options.init(options, allocator);
+        var o = try Options.init(allocator, options);
         errdefer o.deinit(allocator);
 
         return Transport{
