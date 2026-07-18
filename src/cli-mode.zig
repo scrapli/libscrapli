@@ -254,12 +254,23 @@ pub fn determineMode(
     while (modes_iterator.next()) |mode_def| {
         if (mode_def.value_ptr.*.prompt_exact) |prompt_exact| {
             if (std.mem.eql(u8, current_prompt, prompt_exact)) {
+                var is_excluded = false;
+
                 if (mode_def.value_ptr.*.prompt_excludes) |prompt_excludes| {
                     for (prompt_excludes) |exclusion| {
-                        if (std.mem.find(u8, current_prompt, exclusion) != 0) {
-                            continue;
+                        if (std.mem.find(
+                            u8,
+                            current_prompt,
+                            exclusion,
+                        ) != null) {
+                            is_excluded = true;
+                            break;
                         }
                     }
+                }
+
+                if (is_excluded) {
+                    continue;
                 }
 
                 return mode_def.key_ptr.*;
