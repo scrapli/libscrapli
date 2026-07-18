@@ -45,10 +45,10 @@ pub const AccessibleMode = struct {
 /// this means things like "privileged exec" or "config t" etc..
 pub const Mode = struct {
     allocator: std.mem.Allocator,
-    prompt_exact: ?[]const u8,
-    prompt_pattern: ?[]const u8,
-    compiled_prompt_pattern: ?*re.pcre2CompiledPattern,
-    prompt_excludes: ?[]const []const u8,
+    prompt_exact: ?[]const u8 = null,
+    prompt_pattern: ?[]const u8 = null,
+    compiled_prompt_pattern: ?*re.pcre2CompiledPattern = null,
+    prompt_excludes: ?[]const []const u8 = null,
     accessible_modes: std.StringHashMap([]Operation),
 
     /// Initialize the mode object, compiles patterns and dupes user inputs for lifetime reasons.
@@ -57,12 +57,16 @@ pub const Mode = struct {
 
         m.* = Mode{
             .allocator = allocator,
-            .prompt_exact = options.prompt_exact,
-            .prompt_pattern = options.prompt_pattern,
-            .compiled_prompt_pattern = null,
-            .prompt_excludes = null,
             .accessible_modes = std.StringHashMap([]Operation).init(allocator),
         };
+
+        if (options.prompt_exact) |pe| {
+            m.prompt_exact = try allocator.dupe(u8, pe);
+        }
+
+        if (options.prompt_pattern) |pp| {
+            m.prompt_pattern = try allocator.dupe(u8, pp);
+        }
 
         if (m.prompt_pattern) |pattern| {
             const compiled = re.pcre2Compile(pattern);
@@ -152,6 +156,14 @@ pub const Mode = struct {
 
     /// Deinit the mode object.
     pub fn deinit(self: *Mode) void {
+        if (self.prompt_exact) |prompt_exact| {
+            self.allocator.free(prompt_exact);
+        }
+
+        if (self.prompt_pattern) |prompt_pattern| {
+            self.allocator.free(prompt_pattern);
+        }
+
         if (self.compiled_prompt_pattern) |pattern| {
             re.pcre2Free(pattern);
         }

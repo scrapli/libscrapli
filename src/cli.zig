@@ -962,12 +962,14 @@ pub const Driver = struct {
         self.definition.deinit();
         self.definition = new_definition;
 
+        self.current_mode = mode.unknown_mode;
+        self.session.prompt_pattern = new_definition.prompt_pattern;
+
         if (pattern_changed) {
             if (self.session.compiled_prompt_pattern) |p| {
                 re.pcre2Free(p);
             }
 
-            self.session.prompt_pattern = new_definition.prompt_pattern;
             self.session.compiled_prompt_pattern = new_compiled_pattern;
         }
     }
