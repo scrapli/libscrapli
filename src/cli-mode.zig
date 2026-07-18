@@ -59,6 +59,7 @@ pub const Mode = struct {
             .allocator = allocator,
             .accessible_modes = std.StringHashMap([]Operation).init(allocator),
         };
+        errdefer m.deinit();
 
         if (options.prompt_exact) |pe| {
             m.prompt_exact = try allocator.dupe(u8, pe);
@@ -79,13 +80,20 @@ pub const Mode = struct {
         }
 
         if (options.prompt_excludes) |prompt_excludes| {
-            var _prompt_excludes = try allocator.alloc([]u8, prompt_excludes.len);
+            const owned_excludes = try allocator.alloc([]u8, prompt_excludes.len);
+            errdefer allocator.free(owned_excludes);
+
+            var duped: usize = 0;
+            errdefer for (owned_excludes[0..duped]) |exclusion| {
+                allocator.free(exclusion);
+            };
 
             for (0.., prompt_excludes) |idx, exclusion| {
-                _prompt_excludes[idx] = try allocator.dupe(u8, exclusion);
+                owned_excludes[idx] = try allocator.dupe(u8, exclusion);
+                duped = idx + 1;
             }
 
-            m.prompt_excludes = _prompt_excludes;
+            m.prompt_excludes = owned_excludes;
         }
 
         if (options.accessible_modes) |accessible_modes| {
@@ -94,64 +102,108 @@ pub const Mode = struct {
                     Operation,
                     am.instructions.len,
                 );
+                errdefer allocator.free(instructions);
+
+                var built: usize = 0;
+                errdefer for (instructions[0..built]) |built_instr| {
+                    Mode.freeInstruction(allocator, built_instr);
+                };
 
                 for (0.., am.instructions) |idx, instr| {
-                    switch (instr) {
-                        .send_input => {
-                            instructions[idx] = Operation{
-                                .send_input = .{
-                                    .send_input = .{
-                                        .input = try allocator.dupe(
-                                            u8,
-                                            instr.send_input.send_input.input,
-                                        ),
-                                    },
-                                },
-                            };
-                        },
-                        .send_prompted_input => {
-                            var o = Operation{
-                                .send_prompted_input = .{
-                                    .send_prompted_input = .{
-                                        .input = try allocator.dupe(
-                                            u8,
-                                            instr.send_prompted_input.send_prompted_input.input,
-                                        ),
-                                        .response = try allocator.dupe(
-                                            u8,
-                                            instr.send_prompted_input.send_prompted_input.response,
-                                        ),
-                                    },
-                                },
-                            };
-
-                            if (instr.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
-                                o.send_prompted_input.send_prompted_input.prompt_exact = try allocator.dupe(
-                                    u8,
-                                    prompt,
-                                );
-                            }
-
-                            if (instr.send_prompted_input.send_prompted_input.prompt_pattern) |prompt_pattern| {
-                                o.send_prompted_input.send_prompted_input.prompt_pattern = try allocator.dupe(
-                                    u8,
-                                    prompt_pattern,
-                                );
-                            }
-
-                            instructions[idx] = o;
-                        },
-                    }
+                    instructions[idx] = try Mode.dupeInstruction(allocator, instr);
+                    built = idx + 1;
                 }
 
-                try m.accessible_modes.put(
-                    try allocator.dupe(u8, am.name),
-                    instructions,
-                );
+                const owned_name = try allocator.dupe(u8, am.name);
+                errdefer allocator.free(owned_name);
+
+                try m.accessible_modes.put(owned_name, instructions);
             }
         }
 
         return m;
+    }
+
+    fn dupeInstruction(
+        allocator: std.mem.Allocator,
+        instr: Operation,
+    ) !Operation {
+        switch (instr) {
+            .send_input => {
+                return Operation{
+                    .send_input = .{
+                        .send_input = .{
+                            .input = try allocator.dupe(
+                                u8,
+                                instr.send_input.send_input.input,
+                            ),
+                        },
+                    },
+                };
+            },
+            .send_prompted_input => {
+                const src = instr.send_prompted_input.send_prompted_input;
+
+                const input = try allocator.dupe(u8, src.input);
+                errdefer allocator.free(input);
+
+                const response = try allocator.dupe(u8, src.response);
+                errdefer allocator.free(response);
+
+                var o = Operation{
+                    .send_prompted_input = .{
+                        .send_prompted_input = .{
+                            .input = input,
+                            .response = response,
+                        },
+                    },
+                };
+
+                if (src.prompt_exact) |prompt| {
+                    o.send_prompted_input.send_prompted_input.prompt_exact = try allocator.dupe(
+                        u8,
+                        prompt,
+                    );
+                }
+
+                errdefer if (o.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
+                    allocator.free(prompt);
+                };
+
+                if (src.prompt_pattern) |prompt_pattern| {
+                    o.send_prompted_input.send_prompted_input.prompt_pattern = try allocator.dupe(
+                        u8,
+                        prompt_pattern,
+                    );
+                }
+
+                return o;
+            },
+        }
+    }
+
+    fn freeInstruction(
+        allocator: std.mem.Allocator,
+        instr: Operation,
+    ) void {
+        switch (instr) {
+            .send_input => |op| {
+                allocator.free(op.send_input.input);
+            },
+            .send_prompted_input => |op| {
+                allocator.free(op.send_prompted_input.input);
+
+                if (op.send_prompted_input.prompt_exact) |prompt| {
+                    allocator.free(prompt);
+                }
+
+                if (op.send_prompted_input.prompt_pattern) |prompt_pattern| {
+                    allocator.free(prompt_pattern);
+                }
+
+                allocator.free(op.send_prompted_input.response);
+            },
+        }
     }
 
     /// Deinit the mode object.
@@ -180,25 +232,9 @@ pub const Mode = struct {
 
         while (accessible_mode_iter.next()) |m| {
             for (m.value_ptr.*) |instr| {
-                switch (instr) {
-                    .send_input => |op| {
-                        self.allocator.free(op.send_input.input);
-                    },
-                    .send_prompted_input => |op| {
-                        self.allocator.free(op.send_prompted_input.input);
-
-                        if (op.send_prompted_input.prompt_exact) |prompt| {
-                            self.allocator.free(prompt);
-                        }
-
-                        if (op.send_prompted_input.prompt_pattern) |prompt_pattern| {
-                            self.allocator.free(prompt_pattern);
-                        }
-
-                        self.allocator.free(op.send_prompted_input.response);
-                    },
-                }
+                Mode.freeInstruction(self.allocator, instr);
             }
+
             self.allocator.free(m.value_ptr.*);
             self.allocator.free(m.key_ptr.*);
         }

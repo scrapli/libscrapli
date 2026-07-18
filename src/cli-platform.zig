@@ -59,6 +59,7 @@ pub const BoundOnXCallback = struct {
         instructions: []BoundOnXCallbackInstruction,
     ) !*BoundOnXCallback {
         const cb = try allocator.create(BoundOnXCallback);
+        errdefer allocator.destroy(cb);
 
         cb.* = BoundOnXCallback{
             .allocator = allocator,
@@ -68,110 +69,137 @@ pub const BoundOnXCallback = struct {
                 instructions.len,
             ),
         };
+        errdefer allocator.free(cb.instructions);
+
+        var built: usize = 0;
+        errdefer for (cb.instructions[0..built]) |built_instr| {
+            BoundOnXCallback.freeInstruction(allocator, built_instr);
+        };
 
         for (0.., instructions) |idx, instr| {
-            switch (instr) {
-                .write => {
-                    cb.instructions[idx] = BoundOnXCallbackInstruction{
-                        .write = .{
-                            .write = .{
-                                .input = try allocator.dupe(
-                                    u8,
-                                    instr.write.write.input,
-                                ),
-                            },
-                        },
-                    };
-                },
-                .enter_mode => {
-                    cb.instructions[idx] = BoundOnXCallbackInstruction{
-                        .enter_mode = .{
-                            .enter_mode = .{
-                                .requested_mode = try allocator.dupe(
-                                    u8,
-                                    instr.enter_mode.enter_mode.requested_mode,
-                                ),
-                            },
-                        },
-                    };
-                },
-                .send_input => {
-                    cb.instructions[idx] = BoundOnXCallbackInstruction{
-                        .send_input = .{
-                            .send_input = .{
-                                .input = try allocator.dupe(
-                                    u8,
-                                    instr.send_input.send_input.input,
-                                ),
-                            },
-                        },
-                    };
-                },
-                .send_prompted_input => {
-                    var o = BoundOnXCallbackInstruction{
-                        .send_prompted_input = .{
-                            .send_prompted_input = .{
-                                .input = try allocator.dupe(
-                                    u8,
-                                    instr.send_prompted_input.send_prompted_input.input,
-                                ),
-                                .response = try allocator.dupe(
-                                    u8,
-                                    instr.send_prompted_input.send_prompted_input.response,
-                                ),
-                            },
-                        },
-                    };
-
-                    if (instr.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
-                        o.send_prompted_input.send_prompted_input.prompt_exact = try allocator.dupe(
-                            u8,
-                            prompt,
-                        );
-                    }
-
-                    if (instr.send_prompted_input.send_prompted_input.prompt_pattern) |prompt_pattern| {
-                        o.send_prompted_input.send_prompted_input.prompt_pattern = try allocator.dupe(
-                            u8,
-                            prompt_pattern,
-                        );
-                    }
-
-                    cb.instructions[idx] = o;
-                },
-            }
+            cb.instructions[idx] = try BoundOnXCallback.dupeInstruction(allocator, instr);
+            built = idx + 1;
         }
 
         return cb;
     }
 
+    fn dupeInstruction(
+        allocator: std.mem.Allocator,
+        instr: BoundOnXCallbackInstruction,
+    ) !BoundOnXCallbackInstruction {
+        switch (instr) {
+            .write => {
+                return BoundOnXCallbackInstruction{
+                    .write = .{
+                        .write = .{
+                            .input = try allocator.dupe(
+                                u8,
+                                instr.write.write.input,
+                            ),
+                        },
+                    },
+                };
+            },
+            .enter_mode => {
+                return BoundOnXCallbackInstruction{
+                    .enter_mode = .{
+                        .enter_mode = .{
+                            .requested_mode = try allocator.dupe(
+                                u8,
+                                instr.enter_mode.enter_mode.requested_mode,
+                            ),
+                        },
+                    },
+                };
+            },
+            .send_input => {
+                return BoundOnXCallbackInstruction{
+                    .send_input = .{
+                        .send_input = .{
+                            .input = try allocator.dupe(
+                                u8,
+                                instr.send_input.send_input.input,
+                            ),
+                        },
+                    },
+                };
+            },
+            .send_prompted_input => {
+                const src = instr.send_prompted_input.send_prompted_input;
+
+                const input = try allocator.dupe(u8, src.input);
+                errdefer allocator.free(input);
+
+                const response = try allocator.dupe(u8, src.response);
+                errdefer allocator.free(response);
+
+                var o = BoundOnXCallbackInstruction{
+                    .send_prompted_input = .{
+                        .send_prompted_input = .{
+                            .input = input,
+                            .response = response,
+                        },
+                    },
+                };
+
+                if (src.prompt_exact) |prompt| {
+                    o.send_prompted_input.send_prompted_input.prompt_exact = try allocator.dupe(
+                        u8,
+                        prompt,
+                    );
+                }
+
+                errdefer if (o.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
+                    allocator.free(prompt);
+                };
+
+                if (src.prompt_pattern) |prompt_pattern| {
+                    o.send_prompted_input.send_prompted_input.prompt_pattern = try allocator.dupe(
+                        u8,
+                        prompt_pattern,
+                    );
+                }
+
+                return o;
+            },
+        }
+    }
+
+    fn freeInstruction(
+        allocator: std.mem.Allocator,
+        instr: BoundOnXCallbackInstruction,
+    ) void {
+        switch (instr) {
+            .write => {
+                allocator.free(instr.write.write.input);
+            },
+            .enter_mode => {
+                allocator.free(instr.enter_mode.enter_mode.requested_mode);
+            },
+            .send_input => {
+                allocator.free(instr.send_input.send_input.input);
+            },
+            .send_prompted_input => {
+                allocator.free(instr.send_prompted_input.send_prompted_input.input);
+
+                if (instr.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
+                    allocator.free(prompt);
+                }
+
+                if (instr.send_prompted_input.send_prompted_input.prompt_pattern) |prompt_pattern| {
+                    allocator.free(prompt_pattern);
+                }
+
+                allocator.free(instr.send_prompted_input.send_prompted_input.response);
+            },
+        }
+    }
+
     /// Deinitialize the bound "on x" (open/close) callback.
     pub fn deinit(self: *BoundOnXCallback) void {
         for (self.instructions) |instr| {
-            switch (instr) {
-                .write => {
-                    self.allocator.free(instr.write.write.input);
-                },
-                .enter_mode => {
-                    self.allocator.free(instr.enter_mode.enter_mode.requested_mode);
-                },
-                .send_input => {
-                    self.allocator.free(instr.send_input.send_input.input);
-                },
-                .send_prompted_input => {
-                    self.allocator.free(instr.send_prompted_input.send_prompted_input.input);
-
-                    if (instr.send_prompted_input.send_prompted_input.prompt_exact) |prompt| {
-                        self.allocator.free(prompt);
-                    }
-
-                    if (instr.send_prompted_input.send_prompted_input.prompt_pattern) |prompt_pattern| {
-                        self.allocator.free(prompt_pattern);
-                    }
-
-                    self.allocator.free(instr.send_prompted_input.send_prompted_input.response);
-                },
-            }
+            BoundOnXCallback.freeInstruction(self.allocator, instr);
         }
 
         self.allocator.free(self.instructions);
@@ -276,12 +304,36 @@ pub const Definition = struct {
     genie_platform: ?[]const u8,
 
     /// Initialize the cli definition object.
+    /// Initialize the cli definition object. Ownership note: the bound on open/close
+    /// callbacks in options transfer to the Definition only on *success* -- on failure this
+    /// function does not touch them (the caller cleans them up), because deinit would free
+    /// them and the caller's own errdefers would then double free.
     pub fn init(allocator: std.mem.Allocator, options: Options) !*Definition {
         const d = try allocator.create(Definition);
+        errdefer allocator.destroy(d);
+
+        const prompt_pattern = try allocator.dupe(u8, options.prompt_pattern);
+        errdefer allocator.free(prompt_pattern);
+
+        const ntc_templates_platform: ?[]const u8 = if (options.ntc_templates_platform) |s|
+            try allocator.dupe(u8, s)
+        else
+            null;
+        errdefer if (ntc_templates_platform) |s| {
+            allocator.free(s);
+        };
+
+        const genie_platform: ?[]const u8 = if (options.genie_platform) |s|
+            try allocator.dupe(u8, s)
+        else
+            null;
+        errdefer if (genie_platform) |s| {
+            allocator.free(s);
+        };
 
         d.* = Definition{
             .allocator = allocator,
-            .prompt_pattern = try allocator.dupe(u8, options.prompt_pattern),
+            .prompt_pattern = prompt_pattern,
             .default_mode = options.default_mode,
             .modes = std.StringHashMap(*mode.Mode).init(allocator),
             .failure_indicators = .empty,
@@ -291,32 +343,55 @@ pub const Definition = struct {
             .bound_on_close_callback = options.bound_on_close_callback,
             .force_in_session_auth = options.force_in_session_auth,
             .bypass_in_session_auth = options.bypass_in_session_auth,
-            .ntc_templates_platform = if (options.ntc_templates_platform) |s|
-                try allocator.dupe(u8, s)
-            else
-                null,
-            .genie_platform = if (options.genie_platform) |s|
-                try allocator.dupe(u8, s)
-            else
-                null,
+            .ntc_templates_platform = ntc_templates_platform,
+            .genie_platform = genie_platform,
         };
 
         if (d.default_mode.ptr != mode.default_mode.ptr) {
             d.default_mode = try d.allocator.dupe(u8, d.default_mode);
         }
 
+        errdefer if (d.default_mode.ptr != mode.default_mode.ptr) {
+            allocator.free(d.default_mode);
+        };
+
+        errdefer {
+            var modes_iter = d.modes.iterator();
+
+            while (modes_iter.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                entry.value_ptr.*.deinit();
+            }
+
+            d.modes.deinit();
+        }
+
         if (options.modes) |modes| {
             for (modes) |m| {
-                try d.modes.put(
-                    try allocator.dupe(u8, m.name),
-                    try mode.Mode.init(allocator, m),
-                );
+                const owned_name = try allocator.dupe(u8, m.name);
+                errdefer allocator.free(owned_name);
+
+                const mode_obj = try mode.Mode.init(allocator, m);
+                errdefer mode_obj.deinit();
+
+                try d.modes.put(owned_name, mode_obj);
             }
+        }
+
+        errdefer {
+            for (d.failure_indicators.items) |fi| {
+                allocator.free(fi);
+            }
+
+            d.failure_indicators.deinit(allocator);
         }
 
         if (options.failure_indicators) |failure_indicators| {
             for (failure_indicators) |fi| {
-                try d.failure_indicators.append(allocator, try allocator.dupe(u8, fi));
+                const owned_fi = try allocator.dupe(u8, fi);
+                errdefer allocator.free(owned_fi);
+
+                try d.failure_indicators.append(allocator, owned_fi);
             }
         }
 
@@ -423,6 +498,10 @@ pub const YamlDefinition = struct {
         );
 
         var on_open_callback: ?*BoundOnXCallback = null;
+        errdefer if (on_open_callback) |ocb| {
+            ocb.deinit();
+        };
+
         if (parsed_definition.on_open_instructions) |instr| {
             on_open_callback = try BoundOnXCallback.init(
                 allocator,
@@ -432,6 +511,10 @@ pub const YamlDefinition = struct {
         }
 
         var on_close_callback: ?*BoundOnXCallback = null;
+        errdefer if (on_close_callback) |ccb| {
+            ccb.deinit();
+        };
+
         if (parsed_definition.on_close_instructions) |instr| {
             on_close_callback = try BoundOnXCallback.init(
                 allocator,
