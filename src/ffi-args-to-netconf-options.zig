@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const ffi_operations = @import("ffi-operations.zig");
 const operation = @import("netconf-operation.zig");
 
 /// Builds RawRpcOptions from given ffi inputs.
@@ -14,6 +15,8 @@ pub fn rawRpcOptionsFromArgs(
         .cancel = cancel,
         .payload = try allocator.dupe(u8, std.mem.span(payload)),
     };
+
+    errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     const spanned_extra_namespaces = std.mem.span(extra_namespaces);
     if (spanned_extra_namespaces.len > 0) {
@@ -42,6 +45,9 @@ pub fn getConfigOptionsFromArgs(
     var options = operation.GetConfigOptions{
         .cancel = cancel,
     };
+
+    // if a later dupe fails, free whatever the options already own
+    errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (source) |src| {
         options.source = @as(operation.DatastoreType, @enumFromInt(src.*));
@@ -174,6 +180,8 @@ pub fn getOptionsFromArgs(
         .cancel = cancel,
     };
 
+    errdefer ffi_operations.freeOwnedStrings(allocator, options);
+
     if (filter_type) |flt| {
         options.filter_type = @as(operation.FilterType, @enumFromInt(flt.*));
     }
@@ -244,9 +252,15 @@ pub fn getSchemaOptionsFromArgs(
 ) !operation.GetSchemaOptions {
     var options = operation.GetSchemaOptions{
         .cancel = cancel,
-        .identifier = try allocator.dupe(u8, std.mem.span(identifier)),
-        .version = try allocator.dupe(u8, std.mem.span(version)),
+        .identifier = "",
     };
+
+    // string fields are duped one at a time below; if any dupe fails this frees whatever the
+    // options owns up to that point
+    errdefer ffi_operations.freeOwnedStrings(allocator, options);
+
+    options.identifier = try allocator.dupe(u8, std.mem.span(identifier));
+    options.version = try allocator.dupe(u8, std.mem.span(version));
 
     if (format) |fmt| {
         options.format = @as(operation.SchemaFormat, @enumFromInt(fmt.*));
@@ -273,6 +287,8 @@ pub fn getDataOptionsFromArgs(
     var options = operation.GetDataOptions{
         .cancel = cancel,
     };
+
+    errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (datastore) |str| {
         options.datastore = @as(operation.DatastoreType, @enumFromInt(str.*));

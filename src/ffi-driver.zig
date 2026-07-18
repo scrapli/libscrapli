@@ -6,7 +6,6 @@ const cli = @import("cli.zig");
 const errors = @import("errors.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const logging = @import("logging.zig");
-const mode = @import("cli-mode.zig");
 const netconf = @import("netconf.zig");
 const queue = @import("queue.zig");
 const result = @import("cli-result.zig");
@@ -14,44 +13,6 @@ const result_netconf = @import("netconf-result.zig");
 
 /// The static sleep duration for waiting for the ffi driver operation thread to be running.
 pub const operation_thread_ready_sleep: u64 = 2_500;
-
-fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
-    const Info = @typeInfo(@TypeOf(s)).@"struct";
-
-    inline for (0.., Info.field_types) |idx, field_type| {
-        if (field_type == []const u8) {
-            const value = @field(s, Info.field_names[idx]);
-
-            if (value.ptr == mode.default_mode.ptr) {
-                // borrowed default, nothing to free
-            } else {
-                allocator.free(value);
-            }
-        } else if (field_type == ?[]const u8) {
-            const value = @field(s, Info.field_names[idx]);
-
-            if (value) |v| {
-                allocator.free(v);
-            }
-        }
-    }
-}
-
-/// Frees every owned string on an operation's options, whichever driver/op kind it is --
-/// fancy inline else to not duplicate a zillion arms
-fn freeOperationOwnedStrings(
-    allocator: std.mem.Allocator,
-    op: ffi_operations.OperationOptions,
-) void {
-    switch (op.operation) {
-        .cli => |cli_op| switch (cli_op) {
-            inline else => |o| freeOwnedStrings(allocator, o),
-        },
-        .netconf => |netconf_op| switch (netconf_op) {
-            inline else => |o| freeOwnedStrings(allocator, o),
-        },
-    }
-}
 
 /// An enum representing a "real" (non ffi) cli or netconf driver.
 pub const RealDriver = union(enum) {
@@ -227,7 +188,7 @@ pub const FfiDriver = struct {
 
         // drain any any ops in the queue
         while (self.operation_queue.readItem()) |op| {
-            freeOperationOwnedStrings(self.allocator, op);
+            ffi_operations.freeOperationOwnedStrings(self.allocator, op);
         }
 
         self.operation_queue.deinit();
@@ -371,7 +332,7 @@ pub const FfiDriver = struct {
             }
 
             // free any owned strings when the op is done
-            defer freeOperationOwnedStrings(self.allocator, op.?);
+            defer ffi_operations.freeOperationOwnedStrings(self.allocator, op.?);
 
             var ret_ok: ?*result.Result = null;
             var ret_err: ?anyerror = null;
@@ -538,7 +499,7 @@ pub const FfiDriver = struct {
             }
 
             // free any owned strings when the op is done
-            defer freeOperationOwnedStrings(self.allocator, op.?);
+            defer ffi_operations.freeOperationOwnedStrings(self.allocator, op.?);
 
             var ret_ok: ?*result_netconf.Result = null;
             var ret_err: ?anyerror = null;
@@ -795,32 +756,25 @@ pub const FfiDriver = struct {
         const operation_id = self.operation_id_counter;
         mut_options.id = operation_id;
 
-        switch (options.operation) {
-            .cli => {
-                try self.operation_results.put(
-                    operation_id,
-                    ffi_operations.OperationResult{
-                        .done = false,
-                        .result = .{ .cli = null },
-                        .err = null,
-                    },
-                );
+        errdefer ffi_operations.freeOperationOwnedStrings(self.allocator, mut_options);
 
-                try self.operation_queue.writeItem(mut_options);
-            },
-            .netconf => {
-                try self.operation_results.put(
-                    operation_id,
-                    ffi_operations.OperationResult{
-                        .done = false,
-                        .result = .{ .netconf = null },
-                        .err = null,
-                    },
-                );
+        const pending_result: ffi_operations.Result = switch (options.operation) {
+            .cli => .{ .cli = null },
+            .netconf => .{ .netconf = null },
+        };
 
-                try self.operation_queue.writeItem(mut_options);
+        try self.operation_results.put(
+            operation_id,
+            ffi_operations.OperationResult{
+                .done = false,
+                .result = pending_result,
+                .err = null,
             },
-        }
+        );
+
+        errdefer _ = self.operation_results.remove(operation_id);
+
+        try self.operation_queue.writeItem(mut_options);
 
         self.operation_lock.unlock(self.io);
 

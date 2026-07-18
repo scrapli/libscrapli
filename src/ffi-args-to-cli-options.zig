@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const ffi_operations = @import("ffi-operations.zig");
 const mode = @import("cli-mode.zig");
 const operation = @import("cli-operation.zig");
 
@@ -19,6 +20,8 @@ pub fn sendInputOptionsFromArgs(
         .retain_input = retain_input,
         .retain_trailing_prompt = retain_trailing_prompt,
     };
+
+    errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (input_handling) |inh| {
         options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
@@ -58,6 +61,8 @@ pub fn sendInputsOptionsFromArgs(
         .stop_on_indicated_failure = stop_on_indicated_failure,
     };
 
+    errdefer ffi_operations.freeOwnedStrings(allocator, options);
+
     if (input_handling) |inh| {
         options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
     }
@@ -92,14 +97,21 @@ pub fn sendPromptedInputOptionsFromArgs(
 ) !operation.SendPromptedInputOptions {
     var options = operation.SendPromptedInputOptions{
         .cancel = cancel,
-        .input = try allocator.dupe(u8, std.mem.span(input)),
-        .prompt_exact = try allocator.dupe(u8, std.mem.span(prompt_exact)),
-        .prompt_pattern = try allocator.dupe(u8, std.mem.span(prompt_pattern)),
-        .response = try allocator.dupe(u8, std.mem.span(response)),
+        .input = "",
+        .response = "",
         .hidden_response = hidden_response,
         .retain_trailing_prompt = retain_trailing_prompt,
-        .abort_input = try allocator.dupe(u8, std.mem.span(abort_input)),
     };
+
+    // string fields are duped one at a time below; if any dupe fails this frees whatever the
+    // options owns up to that point
+    errdefer ffi_operations.freeOwnedStrings(allocator, options);
+
+    options.input = try allocator.dupe(u8, std.mem.span(input));
+    options.prompt_exact = try allocator.dupe(u8, std.mem.span(prompt_exact));
+    options.prompt_pattern = try allocator.dupe(u8, std.mem.span(prompt_pattern));
+    options.response = try allocator.dupe(u8, std.mem.span(response));
+    options.abort_input = try allocator.dupe(u8, std.mem.span(abort_input));
 
     if (input_handling) |inh| {
         options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
