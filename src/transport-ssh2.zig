@@ -2033,12 +2033,23 @@ pub const Transport = struct {
     fn writeStandard(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeStandard requested", .{});
 
-        while (true) {
+        var written: usize = 0;
+
+        // possible (but unlikely w/out massive input) to write partially, so this loop and
+        // tracking n handles that; same for proxied flavor
+        while (written < buf.len) {
+            const remaining = buf[written..];
+
             try self.session_lock.lock(self.io);
-            const n = ssh2.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
+            const n = ssh2.libssh2_channel_write_ex(
+                self.initial_channel.?,
+                0,
+                remaining.ptr,
+                remaining.len,
+            );
             self.session_lock.unlock(self.io);
 
-            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN or n == 0) {
                 try self.io.sleep(
                     .{
                         .nanoseconds = default_eagain_delay_ns,
@@ -2061,38 +2072,35 @@ pub const Transport = struct {
                 );
             }
 
-            if (n != buf.len) {
-                self.setLastError("ssh2.Transport writeStandard wrong unexpected num bytes");
-
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "ssh2.Transport writeStandard: wrote {d} bytes, expected to write {d}",
-                    .{ n, buf.len },
-                );
-            }
-
-            return;
+            written += @intCast(n);
         }
     }
 
     fn writeProxied(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeProxied requested", .{});
 
-        while (true) {
+        var written: usize = 0;
+
+        while (written < buf.len) {
+            const remaining = buf[written..];
+
             try self.session_lock.lock(self.io);
-            const n = ssh2.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
+            const n = ssh2.libssh2_channel_write_ex(
+                self.proxy_channel.?,
+                0,
+                remaining.ptr,
+                remaining.len,
+            );
             self.session_lock.unlock(self.io);
 
-            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN or n == 0) {
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
+
                 continue;
             }
 
@@ -2108,19 +2116,7 @@ pub const Transport = struct {
                 );
             }
 
-            if (n != buf.len) {
-                self.setLastError("ssh2.Transport writeStandard wrong unexpected num bytes");
-
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "ssh2.Transport writeProxied: wrote {d} bytes, expected to write {d}",
-                    .{ n, buf.len },
-                );
-            }
-
-            break;
+            written += @intCast(n);
         }
 
         if (self.proxy_wrapper) |pw| {
