@@ -13,19 +13,34 @@ const transport_waiter = @import("transport-waiter.zig");
 const default_eagain_delay_ns: u64 = 100_000;
 
 // zlinter-disable no_global_vars
-var ssh2_initialized = false;
+// https://cookbook.ziglang.cc/07-04-run-once/ <- std.once was deprecated so roll our own
+var libssh2_init_state: std.atomic.Value(u8) = std.atomic.Value(u8).init(0);
+var libssh2_init_rc: c_int = 0;
 
 fn libssh2InitializeOnce() c_int {
-    if (!ssh2_initialized) {
-        const rc = ssh2.libssh2_init(0);
-        if (rc != 0) {
-            return rc;
-        }
+    const state = libssh2_init_state.load(std.lang.AtomicOrder.acquire);
 
-        ssh2_initialized = true;
+    if (state == 2) {
+        return libssh2_init_rc;
     }
 
-    return 0;
+    if (state == 0 and libssh2_init_state.cmpxchgStrong(
+        0,
+        1,
+        std.lang.AtomicOrder.acq_rel,
+        std.lang.AtomicOrder.acquire,
+    ) == null) {
+        libssh2_init_rc = ssh2.libssh2_init(0);
+        libssh2_init_state.store(2, std.lang.AtomicOrder.release);
+
+        return libssh2_init_rc;
+    }
+
+    while (libssh2_init_state.load(std.lang.AtomicOrder.acquire) != 2) {
+        std.atomic.spinLoopHint();
+    }
+
+    return libssh2_init_rc;
 }
 
 fn libssh2ChannelOpenSession(session: ?*ssh2.LIBSSH2_SESSION) ?*ssh2.LIBSSH2_CHANNEL {
