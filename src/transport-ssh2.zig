@@ -2211,57 +2211,59 @@ pub const Transport = struct {
     fn readProxied(self: *Transport, buf: []u8) !usize {
         self.log.debug("ssh2.Transport readProxied requested", .{});
 
-        try self.session_lock.lock(self.io);
+        while (true) {
+            try self.session_lock.lock(self.io);
 
-        if (ssh2.libssh2_channel_eof(self.proxy_channel.?) == 1) {
-            self.session_lock.unlock(self.io);
-            return errors.ScrapliError.EOF;
-        }
-
-        const n = ssh2.libssh2_channel_read_ex(
-            self.proxy_channel.?,
-            @as(c_int, 0),
-            &buf[0],
-            @intCast(buf.len),
-        );
-
-        self.session_lock.unlock(self.io);
-
-        // need to make sure we are flushing things the *other* way too -- as in back to the server
-        // because if we dont do this our acks and such wont get there
-        self.proxy_wrapper.?.pipeToChannel() catch |err| {
-            switch (err) {
-                error.WouldBlock => {},
-                else => return err,
+            if (ssh2.libssh2_channel_eof(self.proxy_channel.?) == 1) {
+                self.session_lock.unlock(self.io);
+                return errors.ScrapliError.EOF;
             }
-        };
 
-        if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            self.proxy_wrapper.?.channelToPipe() catch |err| {
+            const n = ssh2.libssh2_channel_read_ex(
+                self.proxy_channel.?,
+                @as(c_int, 0),
+                &buf[0],
+                @intCast(buf.len),
+            );
+
+            self.session_lock.unlock(self.io);
+
+            // need to make sure we are flushing things the *other* way too -- as in back to
+            // the server because if we dont do this our acks and such wont get there
+            self.proxy_wrapper.?.pipeToChannel() catch |err| {
                 switch (err) {
-                    error.WouldBlock => {
-                        try self.waiter.wait(self.socket.?);
-
-                        return 0;
-                    },
+                    error.WouldBlock => {},
                     else => return err,
                 }
             };
 
-            return self.readProxied(buf);
-        } else if (n < 0) {
-            self.setLastError("ssh2.Transport readProxied: transport read failed");
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+                self.proxy_wrapper.?.channelToPipe() catch |err| {
+                    switch (err) {
+                        error.WouldBlock => {
+                            try self.waiter.wait(self.socket.?);
 
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport readProxied: transport read failed, rc {d}",
-                .{n},
-            );
+                            return 0;
+                        },
+                        else => return err,
+                    }
+                };
+
+                continue;
+            } else if (n < 0) {
+                self.setLastError("ssh2.Transport readProxied: transport read failed");
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport readProxied: transport read failed, rc {d}",
+                    .{n},
+                );
+            }
+
+            return @intCast(n);
         }
-
-        return @intCast(n);
     }
 
     /// Reads content from the transport session -- dispatches to the appropriate write method based
