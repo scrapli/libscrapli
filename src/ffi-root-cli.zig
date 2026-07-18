@@ -11,6 +11,26 @@ const ffi_operations = @import("ffi-operations.zig");
 /// For forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer.
 pub const noop = true;
 
+/// Get the "real" cli driver or log an error. The error case should basically not ever happen
+/// unless somebody is doing silly stuff w/ the ffi.
+fn getRealCliDriver(d: *ffi_driver.FfiDriver) ?*cli.Driver {
+    switch (d.real_driver) {
+        .cli => |rd| return rd,
+        .netconf => {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: attempting to access non cli driver as cli",
+                .{},
+            ) catch {};
+
+            return null;
+        },
+    }
+}
+
 /// writes the ntc template platform from the driver's definition into the character slice at
 /// `ntc_template_platform` -- this slice should be pre populated w/ sufficient size (lets say
 /// 256?). while unused in zig, ntc templates platform is useful in python land.
@@ -20,22 +40,19 @@ export fn ls_cli_get_ntc_templates_platform(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    switch (d.real_driver) {
-        .cli => |rd| {
-            if (rd.definition.ntc_templates_platform == null) {
-                return @intFromEnum(ffi_common.FfiResult.success);
-            }
+    const rd = getRealCliDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
 
-            for (0.., rd.definition.ntc_templates_platform.?) |idx, char| {
-                ntc_template_platform.*[idx] = char;
-            }
-
-            return @intFromEnum(ffi_common.FfiResult.success);
-        },
-        else => {
-            return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-        },
+    if (rd.definition.ntc_templates_platform == null) {
+        return @intFromEnum(ffi_common.FfiResult.success);
     }
+
+    for (0.., rd.definition.ntc_templates_platform.?) |idx, char| {
+        ntc_template_platform.*[idx] = char;
+    }
+
+    return @intFromEnum(ffi_common.FfiResult.success);
 }
 
 /// writes the genie platform from the driver's definition into the character slice at
@@ -47,22 +64,19 @@ export fn ls_cli_get_genie_platform(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    switch (d.real_driver) {
-        .cli => |rd| {
-            if (rd.definition.genie_platform == null) {
-                return @intFromEnum(ffi_common.FfiResult.success);
-            }
+    const rd = getRealCliDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
 
-            for (0.., rd.definition.genie_platform.?) |idx, char| {
-                genie_platform.*[idx] = char;
-            }
-
-            return @intFromEnum(ffi_common.FfiResult.success);
-        },
-        else => {
-            return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-        },
+    if (rd.definition.genie_platform == null) {
+        return @intFromEnum(ffi_common.FfiResult.success);
     }
+
+    for (0.., rd.definition.genie_platform.?) |idx, char| {
+        genie_platform.*[idx] = char;
+    }
+
+    return @intFromEnum(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_open(
@@ -85,45 +99,33 @@ export fn ls_cli_open(
         return ffi_common.toFfiResult(err);
     };
 
-    switch (d.real_driver) {
-        .cli => {
-            operation_id.* = d.queueOperation(
-                ffi_operations.OperationOptions{
-                    .id = 0,
-                    .operation = .{
-                        .cli = .{
-                            .open = .{
-                                .cancel = cancel,
-                            },
-                        },
+    _ = getRealCliDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
+
+    operation_id.* = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .open = .{
+                        .cancel = cancel,
                     },
                 },
-            ) catch |err| {
-                // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-                errors.wrapCriticalError(
-                    errors.ScrapliError.Operation,
-                    @src(),
-                    d.getLogger(),
-                    "ffi: error during queue open {any}",
-                    .{err},
-                ) catch {};
-
-                return ffi_common.toFfiResult(err);
-            };
+            },
         },
-        .netconf => {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: attempting to open non cli driver",
-                .{},
-            ) catch {};
+    ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue open {any}",
+            .{err},
+        ) catch {};
 
-            return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-        },
-    }
+        return ffi_common.toFfiResult(err);
+    };
 
     while (true) {
         // weve already waited for the operation loop to start in the queue operation function,
@@ -162,45 +164,33 @@ export fn ls_cli_close(
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    switch (d.real_driver) {
-        .cli => {
-            operation_id.* = d.queueOperation(
-                ffi_operations.OperationOptions{
-                    .id = 0,
-                    .operation = .{
-                        .cli = .{
-                            .close = .{
-                                .cancel = cancel,
-                            },
-                        },
+    _ = getRealCliDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
+
+    operation_id.* = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .close = .{
+                        .cancel = cancel,
                     },
                 },
-            ) catch |err| {
-                // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-                errors.wrapCriticalError(
-                    errors.ScrapliError.Operation,
-                    @src(),
-                    d.getLogger(),
-                    "ffi: error during queue close {any}",
-                    .{err},
-                ) catch {};
-
-                return ffi_common.toFfiResult(err);
-            };
+            },
         },
-        .netconf => {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: attempting to close non cli driver",
-                .{},
-            ) catch {};
+    ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue close {any}",
+            .{err},
+        ) catch {};
 
-            return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-        },
-    }
+        return ffi_common.toFfiResult(err);
+    };
 
     return @intFromEnum(ffi_common.FfiResult.success);
 }
@@ -695,22 +685,23 @@ export fn ls_cli_replace_definition(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    switch (d.real_driver) {
-        .cli => |rd| {
-            rd.replaceDefinition(
-                .{
-                    .string = std.mem.span(definition_string),
-                },
-            ) catch |err| {
-                return ffi_common.toFfiResult(err);
-            };
-
-            return @intFromEnum(ffi_common.FfiResult.success);
-        },
-        else => {
-            return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-        },
+    if (definition_string == null) {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
+
+    const rd = getRealCliDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
+
+    rd.replaceDefinition(
+        .{
+            .string = std.mem.span(definition_string),
+        },
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    return @intFromEnum(ffi_common.FfiResult.success);
 }
 
 test "ffi: ls_cli_enter_mode null requested_mode" {

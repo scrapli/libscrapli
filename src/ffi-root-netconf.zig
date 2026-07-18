@@ -7,10 +7,31 @@ const ffi_args_to_options = @import("ffi-args-to-netconf-options.zig");
 const ffi_common = @import("ffi-common.zig");
 const ffi_driver = @import("ffi-driver.zig");
 const ffi_operations = @import("ffi-operations.zig");
+const netconf = @import("netconf.zig");
 const result = @import("netconf-result.zig");
 
 /// For forcing inclusion in the ffi-root.zig entrypoint we use for the ffi layer
 pub const noop = true;
+
+/// Get the "real" netconf driver or log an error. The error case should basically not ever happen
+/// unless somebody is doing silly stuff w/ the ffi.
+fn getRealNetconfDriver(d: *ffi_driver.FfiDriver) ?*netconf.Driver {
+    switch (d.real_driver) {
+        .netconf => |rd| return rd,
+        .cli => {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: attempting to access non netconf driver as netconf",
+                .{},
+            ) catch {};
+
+            return null;
+        },
+    }
+}
 
 export fn ls_netconf_open(
     d_ptr: *ffi_common.LsDriver,
@@ -32,45 +53,33 @@ export fn ls_netconf_open(
         return ffi_common.toFfiResult(err);
     };
 
-    switch (d.real_driver) {
-        .cli => {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: attempting to open non netconf driver",
-                .{},
-            ) catch {};
+    _ = getRealNetconfDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
 
-            return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-        },
-        .netconf => {
-            operation_id.* = d.queueOperation(
-                ffi_operations.OperationOptions{
-                    .id = 0,
-                    .operation = .{
-                        .netconf = .{
-                            .open = .{
-                                .cancel = cancel,
-                            },
-                        },
+    operation_id.* = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .open = .{
+                        .cancel = cancel,
                     },
                 },
-            ) catch |err| {
-                // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-                errors.wrapCriticalError(
-                    errors.ScrapliError.Operation,
-                    @src(),
-                    d.getLogger(),
-                    "ffi: error during queue open {any}",
-                    .{err},
-                ) catch {};
-
-                return ffi_common.toFfiResult(err);
-            };
+            },
         },
-    }
+    ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue open {any}",
+            .{err},
+        ) catch {};
+
+        return ffi_common.toFfiResult(err);
+    };
 
     while (true) {
         // weve already waited for the operation loop to start in the queue operation function,
@@ -110,46 +119,34 @@ export fn ls_netconf_close(
 ) callconv(.c) u8 {
     var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    switch (d.real_driver) {
-        .cli => {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: attempting to close non netconf driver",
-                .{},
-            ) catch {};
+    _ = getRealNetconfDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
 
-            return @intFromEnum(ffi_common.FfiResult.invalid_argument);
-        },
-        .netconf => {
-            operation_id.* = d.queueOperation(
-                ffi_operations.OperationOptions{
-                    .id = 0,
-                    .operation = .{
-                        .netconf = .{
-                            .close = .{
-                                .cancel = cancel,
-                                .force = force,
-                            },
-                        },
+    operation_id.* = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .netconf = .{
+                    .close = .{
+                        .cancel = cancel,
+                        .force = force,
                     },
                 },
-            ) catch |err| {
-                // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-                errors.wrapCriticalError(
-                    errors.ScrapliError.Operation,
-                    @src(),
-                    d.getLogger(),
-                    "ffi: error during queue close {any}",
-                    .{err},
-                ) catch {};
-
-                return ffi_common.toFfiResult(err);
-            };
+            },
         },
-    }
+    ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue close {any}",
+            .{err},
+        ) catch {};
+
+        return ffi_common.toFfiResult(err);
+    };
 
     return @intFromEnum(ffi_common.FfiResult.success);
 }
@@ -344,7 +341,11 @@ export fn ls_netconf_get_session_id(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    if (d.real_driver.netconf.session_id) |s| {
+    const rd = getRealNetconfDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
+
+    if (rd.session_id) |s| {
         session_id.* = s;
 
         return @intFromEnum(ffi_common.FfiResult.success);
@@ -359,13 +360,17 @@ export fn ls_netconf_next_notification_message_size(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    d.real_driver.netconf.notifications_lock.lock(d.io) catch |err| {
+    const rd = getRealNetconfDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
+
+    rd.notifications_lock.lock(d.io) catch |err| {
         return ffi_common.toFfiResult(err);
     };
-    defer d.real_driver.netconf.notifications_lock.unlock(d.io);
+    defer rd.notifications_lock.unlock(d.io);
 
-    if (d.real_driver.netconf.notifications.items.len > 0) {
-        size.* = d.real_driver.netconf.notifications.items[0].len;
+    if (rd.notifications.items.len > 0) {
+        size.* = rd.notifications.items[0].len;
     }
 
     return @intFromEnum(ffi_common.FfiResult.success);
@@ -377,22 +382,26 @@ export fn ls_netconf_next_notification_message(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    d.real_driver.netconf.notifications_lock.lock(d.io) catch |err| {
+    const rd = getRealNetconfDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
+
+    rd.notifications_lock.lock(d.io) catch |err| {
         return ffi_common.toFfiResult(err);
     };
-    defer d.real_driver.netconf.notifications_lock.unlock(d.io);
+    defer rd.notifications_lock.unlock(d.io);
 
-    if (d.real_driver.netconf.notifications.items.len == 0) {
+    if (rd.notifications.items.len == 0) {
         // an error because they shoulda peeked at sizes first
         // to know there was something to read
         return @intFromEnum(ffi_common.FfiResult.operation);
     }
 
-    const notif = d.real_driver.netconf.notifications.orderedRemove(0);
+    const notif = rd.notifications.orderedRemove(0);
 
     @memcpy(notification.*, notif);
 
-    d.real_driver.netconf.allocator.free(notif);
+    rd.allocator.free(notif);
 
     return @intFromEnum(ffi_common.FfiResult.success);
 }
@@ -404,12 +413,16 @@ export fn ls_netconf_next_subscription_message_size(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    d.real_driver.netconf.subscriptions_lock.lock(d.io) catch |err| {
+    const rd = getRealNetconfDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
+
+    rd.subscriptions_lock.lock(d.io) catch |err| {
         return ffi_common.toFfiResult(err);
     };
-    defer d.real_driver.netconf.subscriptions_lock.unlock(d.io);
+    defer rd.subscriptions_lock.unlock(d.io);
 
-    if (d.real_driver.netconf.subscriptions.getPtr(subscription_id)) |sub| {
+    if (rd.subscriptions.getPtr(subscription_id)) |sub| {
         if (sub.items.len == 0) {
             return @intFromEnum(ffi_common.FfiResult.success);
         }
@@ -427,12 +440,16 @@ export fn ls_netconf_next_subscription_message(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    d.real_driver.netconf.subscriptions_lock.lock(d.io) catch |err| {
+    const rd = getRealNetconfDriver(d) orelse {
+        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+    };
+
+    rd.subscriptions_lock.lock(d.io) catch |err| {
         return ffi_common.toFfiResult(err);
     };
-    defer d.real_driver.netconf.subscriptions_lock.unlock(d.io);
+    defer rd.subscriptions_lock.unlock(d.io);
 
-    const subs = d.real_driver.netconf.subscriptions.getPtr(subscription_id);
+    const subs = rd.subscriptions.getPtr(subscription_id);
 
     if (subs == null or subs.?.items.len == 0) {
         // an error because they shoulda peeked at sizes first
@@ -444,7 +461,7 @@ export fn ls_netconf_next_subscription_message(
 
     @memcpy(subscription.*, sub);
 
-    d.real_driver.netconf.allocator.free(sub);
+    rd.allocator.free(sub);
 
     return @intFromEnum(ffi_common.FfiResult.success);
 }
