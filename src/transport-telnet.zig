@@ -39,7 +39,7 @@ pub const Transport = struct {
     log: logging.Logger,
 
     waiter: transport_waiter.Waiter,
-    closing: bool = false,
+    closing: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
     stream: ?std.Io.net.Stream = null,
     socket: ?std.posix.socket_t = null,
@@ -382,7 +382,7 @@ pub const Transport = struct {
         while (true) {
             try self.waiter.wait(self.socket.?);
 
-            if (self.closing) {
+            if (self.closing.load(std.lang.AtomicOrder.acquire)) {
                 return 0;
             }
 
@@ -418,7 +418,7 @@ pub const Transport = struct {
     /// Unblocks any in progress reads and sets the prepare close flag, this prevents us from
     /// making a final read the fd that we are about to nuke.
     pub fn prepareClose(self: *Transport) !void {
-        self.closing = true;
+        self.closing.store(true, std.lang.AtomicOrder.release);
         try self.waiter.unblock();
     }
 };

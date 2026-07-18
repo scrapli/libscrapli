@@ -96,7 +96,7 @@ pub const Transport = struct {
 
     options: Options,
     waiter: transport_waiter.Waiter,
-    closing: bool = false,
+    closing: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
     fd: ?std.posix.fd_t = null,
     pid: ?std.c.pid_t = null,
@@ -581,7 +581,7 @@ pub const Transport = struct {
 
         try self.waiter.wait(self.fd.?);
 
-        if (self.closing) {
+        if (self.closing.load(std.lang.AtomicOrder.acquire)) {
             return 0;
         }
 
@@ -601,8 +601,8 @@ pub const Transport = struct {
     /// Unblocks any in progress reads and sets the prepare close flag, this prevents us from
     /// making a final read the fd that we are about to nuke.
     pub fn prepareClose(self: *Transport) !void {
+        self.closing.store(true, std.lang.AtomicOrder.release);
         try self.waiter.unblock();
-        self.closing = true;
     }
 };
 
