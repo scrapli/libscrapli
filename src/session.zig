@@ -194,8 +194,8 @@ pub const Session = struct {
     ),
     read_thread_errored: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     read_thread_error: ?anyerror = null,
-    read_into_buf: ?[]u8 = null,
-    read_loop_buf: ?[]u8 = null,
+    read_into_buf: []u8,
+    read_loop_buf: []u8,
 
     recorder_buf: [1024]u8 = @splat(0),
     recorder: Recorder = .{
@@ -254,12 +254,15 @@ pub const Session = struct {
                 u8,
                 .dynamic,
             ).init(allocator),
-            .read_into_buf = try allocator.alloc(u8, o.read_size),
-            .read_loop_buf = try allocator.alloc(u8, o.read_size),
+            .read_into_buf = &[_]u8{},
+            .read_loop_buf = &[_]u8{},
             .prompt_pattern = prompt_pattern,
             .scratch = bytes.ProcessedBuf.init(allocator),
         };
         errdefer s.deinit();
+
+        s.read_into_buf = try allocator.alloc(u8, o.read_size);
+        s.read_loop_buf = try allocator.alloc(u8, o.read_size);
 
         try s.scratch.reserve(s.options.scratch_initial_size);
 
@@ -329,13 +332,8 @@ pub const Session = struct {
 
         self.last_consumed_prompt.deinit(self.allocator);
 
-        if (self.read_into_buf) |b| {
-            self.allocator.free(b);
-        }
-
-        if (self.read_loop_buf) |b| {
-            self.allocator.free(b);
-        }
+        self.allocator.free(self.read_into_buf);
+        self.allocator.free(self.read_loop_buf);
 
         if (self.compiled_username_pattern != null) {
             re.pcre2Free(self.compiled_username_pattern.?);
@@ -490,7 +488,7 @@ pub const Session = struct {
     fn readLoop(self: *Session) !void {
         self.log.info("session.Session read thread started", .{});
 
-        const buf = self.read_loop_buf.?;
+        const buf = self.read_loop_buf;
 
         while (self.read_stop.load(std.lang.AtomicOrder.acquire) == ReadThreadState.run) {
             const n = self.transport.read(buf) catch |err| {
@@ -601,7 +599,7 @@ pub const Session = struct {
         var auth_password_prompt_seen_count: u8 = 0;
         var auth_passphrase_prompt_seen_count: u8 = 0;
 
-        const buf = self.read_into_buf orelse return errors.ScrapliError.Session;
+        const buf = self.read_into_buf;
 
         errdefer {
             // need to unblock the transport waiter after signaling the read thread to stop, this
@@ -949,7 +947,7 @@ pub const Session = struct {
         // increase the found start/end positions by this value too!
         const op_processed_buf_starting_len = bufs.processed.items.len;
 
-        const buf = self.read_into_buf orelse return errors.ScrapliError.Session;
+        const buf = self.read_into_buf;
 
         while (true) {
             if (cancel != null and cancel.?.*) {
