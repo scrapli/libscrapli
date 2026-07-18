@@ -14,106 +14,76 @@ extern fn setsid() callconv(.c) i32;
 const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
+const default_eagain_delay_ns: u64 = 100_000;
 
-/// Holds option inputs for the bin transport.
-pub const OptionsInputs = struct {
+const PtyHandle = struct {
+    fd: c_int,
+    pid: std.c.pid_t,
+};
+
+/// Holds bin transport options.
+pub const Options = struct {
     bin: []const u8 = default_ssh_bin,
-
     // extra means append to "standard" args, override overides everything except for the bin,
     // if you want to override the bin you can do that, just set .bin field. both of these options
     // should be space delimited values like you would pass on the cli -- i.e.
     // "-o ProxyCommand='foo' -P 1234" etc.
     extra_open_args: ?[]const u8 = null,
     override_open_args: ?[]const u8 = null,
-
     ssh_config_path: ?[]const u8 = null,
     known_hosts_path: ?[]const u8 = null,
-
     enable_strict_key: bool = false,
-
     term_height: u16 = default_term_height,
     term_width: u16 = default_term_width,
-
     netconf: bool = false,
-};
 
-/// Holds bin transport options.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-    bin: []const u8,
-    extra_open_args: ?[]const u8,
-    override_open_args: ?[]const u8,
-    ssh_config_path: ?[]const u8,
-    known_hosts_path: ?[]const u8,
-    enable_strict_key: bool,
-    term_height: u16,
-    term_width: u16,
-    netconf: bool,
+    fn init(allocator: std.mem.Allocator, opts: Options) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-    /// Initializes the bin options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-            .bin = opts.bin,
-            .extra_open_args = opts.extra_open_args,
-            .override_open_args = opts.override_open_args,
-            .ssh_config_path = opts.ssh_config_path,
-            .known_hosts_path = opts.known_hosts_path,
-            .enable_strict_key = opts.enable_strict_key,
-            .term_height = opts.term_height,
-            .term_width = opts.term_width,
-            .netconf = opts.netconf,
-        };
-
-        if (&o.bin[0] != &default_ssh_bin[0]) {
-            o.bin = try o.allocator.dupe(u8, o.bin);
+        if (o.bin.ptr != default_ssh_bin.ptr) {
+            o.bin = try allocator.dupe(u8, o.bin);
         }
 
         if (o.extra_open_args) |extra_open_args| {
-            o.extra_open_args = try o.allocator.dupe(u8, extra_open_args);
+            o.extra_open_args = try allocator.dupe(u8, extra_open_args);
         }
 
         if (o.override_open_args) |override_open_args| {
-            o.override_open_args = try o.allocator.dupe(u8, override_open_args);
+            o.override_open_args = try allocator.dupe(u8, override_open_args);
         }
 
         if (o.ssh_config_path) |ssh_config_path| {
-            o.ssh_config_path = try o.allocator.dupe(u8, ssh_config_path);
+            o.ssh_config_path = try allocator.dupe(u8, ssh_config_path);
         }
 
         if (o.known_hosts_path) |known_hosts_path| {
-            o.known_hosts_path = try o.allocator.dupe(u8, known_hosts_path);
+            o.known_hosts_path = try allocator.dupe(u8, known_hosts_path);
         }
 
         return o;
     }
 
-    /// Deinitializes the bin options.
-    pub fn deinit(self: *Options) void {
-        if (&self.bin[0] != &default_ssh_bin[0]) {
-            self.allocator.free(self.bin);
+    fn deinit(self: Options, allocator: std.mem.Allocator) void {
+        if (self.bin.ptr != default_ssh_bin.ptr) {
+            allocator.free(self.bin);
         }
 
         if (self.extra_open_args) |extra_open_args| {
-            self.allocator.free(extra_open_args);
+            allocator.free(extra_open_args);
         }
 
         if (self.override_open_args) |override_open_args| {
-            self.allocator.free(override_open_args);
+            allocator.free(override_open_args);
         }
 
         if (self.ssh_config_path) |ssh_config_path| {
-            self.allocator.free(ssh_config_path);
+            allocator.free(ssh_config_path);
         }
 
         if (self.known_hosts_path) |known_hosts_path| {
-            self.allocator.free(known_hosts_path);
+            allocator.free(known_hosts_path);
         }
-
-        self.allocator.destroy(self);
     }
 };
 
@@ -124,11 +94,12 @@ pub const Transport = struct {
 
     log: logging.Logger,
 
-    options: *Options,
+    options: Options,
     waiter: transport_waiter.Waiter,
     closing: bool = false,
 
     fd: ?std.posix.fd_t = null,
+    pid: ?std.c.pid_t = null,
 
     open_args: std.ArrayList(strings.MaybeHeapString),
 
@@ -140,16 +111,22 @@ pub const Transport = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
+        options: Options,
     ) !Transport {
         logging.traceWithSrc(log, @src(), "bin.Transport initializing", .{});
+
+        var o = try Options.init(allocator, options);
+        errdefer o.deinit(allocator);
+
+        var w = try transport_waiter.Waiter.init();
+        errdefer w.deinit();
 
         return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
-            .waiter = try transport_waiter.Waiter.init(),
+            .options = o,
+            .waiter = w,
             .open_args = .empty,
         };
     }
@@ -163,6 +140,7 @@ pub const Transport = struct {
         }
 
         self.open_args.deinit(self.allocator);
+        self.options.deinit(self.allocator);
         self.waiter.deinit();
     }
 
@@ -180,7 +158,7 @@ pub const Transport = struct {
         self: *Transport,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
         operation_timeout_ns: u64,
     ) !void {
         if (self.options.override_open_args) |override_open_args| {
@@ -441,7 +419,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         self.log.info("bin.Transport open requested", .{});
         self.log.debug("bin.Transport open: host '{s}', port '{d}'", .{ host, port });
@@ -460,7 +438,7 @@ pub const Transport = struct {
 
         self.log.debug("bin.Transport open: using args '{s}'", .{joined_open_args});
 
-        self.fd = openPty(
+        const pty = openPty(
             self.allocator,
             open_args,
             self.options.term_width,
@@ -479,6 +457,9 @@ pub const Transport = struct {
                 .{},
             );
         };
+
+        self.fd = pty.fd;
+        self.pid = pty.pid;
     }
 
     /// Closes the transport.
@@ -490,6 +471,42 @@ pub const Transport = struct {
         }
 
         self.fd = null;
+
+        if (self.pid) |pid| {
+            // kill the child too
+            _ = std.c.kill(pid, std.posix.SIG.TERM);
+
+            var status: c_int = 0;
+            var attempts: usize = 0;
+
+            var reaped = false;
+
+            while (attempts < 50) : (attempts += 1) {
+                if (std.c.waitpid(pid, &status, std.posix.W.NOHANG) != 0) {
+                    // > 0 means we reaped it, < 0 means error (e.g. echild because something
+                    // else already reaped it) -- either way there is nothing left to wait on
+                    reaped = true;
+
+                    break;
+                }
+
+                // zlinter-disable-next-line no_swallow_error - best effort backoff
+                self.io.sleep(
+                    .{
+                        .nanoseconds = 10 * std.time.ns_per_ms,
+                    },
+                    .awake,
+                ) catch {};
+            }
+
+            if (!reaped) {
+                // still running after ~500ms of being asked nicely
+                _ = std.c.kill(pid, std.posix.SIG.KILL);
+                _ = std.c.waitpid(pid, &status, 0);
+            }
+
+            self.pid = null;
+        }
     }
 
     /// Writes content to the transport session.
@@ -520,17 +537,12 @@ pub const Transport = struct {
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
                 std.posix.E.AGAIN => {
-                    const last_error = "bin.Transport write: eagain on write, short write";
-
-                    self.setLastError(last_error);
-
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Transport,
-                        @src(),
-                        self.log,
-                        last_error,
-                        .{},
-                    );
+                    self.io.sleep(
+                        .{
+                            .nanoseconds = default_eagain_delay_ns,
+                        },
+                        .awake,
+                    ) catch {};
                 },
                 else => |err| {
                     const last_error = "bin.Transport write: writing to fd failed";
@@ -600,7 +612,7 @@ fn openPty(
     term_width: u16,
     term_height: u16,
     netconf: bool,
-) !c_int {
+) !PtyHandle {
     const master_handle = std.posix.system.open(
         "/dev/ptmx",
         .{
@@ -611,6 +623,8 @@ fn openPty(
     if (master_handle == -1) {
         return error.PtyError;
     }
+
+    errdefer _ = std.c.close(master_handle);
 
     if (c.grantpt(master_handle) < 0) {
         return error.PtyError;
@@ -631,30 +645,42 @@ fn openPty(
         return error.PtyError;
     }
 
+    defer _ = std.c.close(slave_handle);
+
     // ensure the pty is non blocking
     try file.setNonBlocking(master_handle);
 
-    const args = allocator.alloc([*c]u8, open_args.len + 1) catch {
-        c._exit(1);
-    };
+    const args = try allocator.alloc([*c]u8, open_args.len + 1);
 
-    for (open_args, 0..) |arg, i| {
-        args[i] = allocator.dupeSentinel(u8, arg, 0) catch {
-            c._exit(1);
-        };
+    {
+        errdefer allocator.free(args);
+
+        var duped: usize = 0;
+        errdefer {
+            for (open_args[0..duped], 0..) |arg, i| {
+                allocator.free(args[i][0 .. arg.len + 1]);
+            }
+        }
+
+        for (open_args, 0..) |arg, i| {
+            args[i] = try allocator.dupeSentinel(u8, arg, 0);
+            duped = i + 1;
+        }
+
+        args[open_args.len] = null;
     }
 
-    args[open_args.len] = null;
-
-    const pid = c.fork();
-
-    if (pid < 0) {
+    defer {
         for (open_args, 0..) |arg, i| {
             allocator.free(args[i][0 .. arg.len + 1]);
         }
 
         allocator.free(args);
+    }
 
+    const pid = c.fork();
+
+    if (pid < 0) {
         return error.PtyError;
     } else if (pid == 0) {
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
@@ -673,19 +699,13 @@ fn openPty(
         unreachable;
     }
 
-    for (open_args, 0..) |arg, i| {
-        allocator.free(args[i][0 .. arg.len + 1]);
-    }
-
-    allocator.free(args);
-
-    // parent process, close the slave and return the master (pty) to read/write to
-    _ = std.c.close(slave_handle);
-
     // disable onlcr to make outputs nicer
     try setonlcr(master_handle);
 
-    return master_handle;
+    return PtyHandle{
+        .fd = master_handle,
+        .pid = pid,
+    };
 }
 
 fn openPtyChild(
@@ -767,16 +787,39 @@ fn setnoecho(fd: std.posix.fd_t) !void {
 }
 
 test "transportInit" {
-    const o = try Options.init(std.testing.allocator, .{});
     var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
+        .{},
     );
 
     t.deinit();
-    o.deinit();
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}
+
+fn transportInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    var t = try Transport.init(
+        allocator,
+        std.testing.io,
+        logging.Logger{
+            .allocator = allocator,
+        },
+        .{},
+    );
+
+    t.deinit();
+}
+
+test "transportInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        transportInitForAllocFailures,
+        .{},
+    );
 }

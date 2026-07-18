@@ -71,77 +71,45 @@ const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 // zlinter-enable require_doc_comment
 
-/// Config holds a configuration that is the input to netconf Options struct.
-pub const Config = struct {
+/// Options holds available options for the netconf driver.
+pub const Options = struct {
     logger: ?logging.Logger = null,
-    port: ?u16 = null,
-    auth: auth.OptionsInputs = .{},
-    session: session.OptionsInputs = .{},
-    transport: transport.OptionsInputs = .{
+    port: u16 = default_netconf_port,
+    auth: auth.Options = .{},
+    session: session.Options = .{},
+    transport: transport.Options = .{
         .bin = .{},
     },
-    error_tag: ?[]const u8 = null,
+    error_tag: []const u8 = operation.default_rpc_error_tag,
     preferred_version: ?operation.Version = null,
     capabilities_callback: ?ClientCapabilitiesCallback = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
-};
 
-/// Options holds available options for the netconf driver.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-    logger: ?logging.Logger,
-    port: ?u16,
-    auth: *auth.Options,
-    session: *session.Options,
-    transport: *transport.Options,
-    error_tag: []const u8 = operation.default_rpc_error_tag,
-    preferred_version: ?operation.Version = null,
-    capabilities_callback: ?ClientCapabilitiesCallback,
-    message_poll_interval_ns: u64 = default_message_poll_interval_ns,
+    fn init(
+        allocator: std.mem.Allocator,
+        opts: Options,
+    ) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-    /// Initializes the netconf options.
-    pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-            .logger = config.logger,
-            .port = config.port,
-            .auth = try auth.Options.init(allocator, config.auth),
-            .session = try session.Options.init(allocator, config.session),
-            .transport = try transport.Options.init(
-                allocator,
-                config.transport,
-            ),
-            .preferred_version = config.preferred_version,
-            .capabilities_callback = config.capabilities_callback,
-            .message_poll_interval_ns = config.message_poll_interval_ns,
-        };
-
-        o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
-
-        if (&o.error_tag[0] != &operation.default_rpc_error_tag[0]) {
-            o.error_tag = try o.allocator.dupe(u8, o.error_tag);
+        if (o.error_tag.ptr != operation.default_rpc_error_tag.ptr) {
+            o.error_tag = try allocator.dupe(u8, o.error_tag);
         }
 
         return o;
     }
 
     /// Deinitializes the netconf options.
-    pub fn deinit(self: *Options) void {
-        if (&self.error_tag[0] != &operation.default_rpc_error_tag[0]) {
-            self.allocator.free(self.error_tag);
+    pub fn deinit(
+        self: Options,
+        allocator: std.mem.Allocator,
+    ) void {
+        if (self.error_tag.ptr != operation.default_rpc_error_tag.ptr) {
+            allocator.free(self.error_tag);
         }
-
-        self.auth.deinit();
-        self.session.deinit();
-        self.transport.deinit();
-
-        self.allocator.destroy(self);
     }
 
-    fn validate(self: *Options, log: logging.Logger) !void {
+    fn validate(self: Options, log: logging.Logger) !void {
         switch (self.transport.*) {
             .bin => {
                 if (self.auth.private_key_content != null) {
@@ -164,7 +132,7 @@ pub const Driver = struct {
 
     host: []const u8,
 
-    options: *Options,
+    options: Options,
 
     session: session.Session,
 
@@ -205,24 +173,23 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         host: []const u8,
-        config: Config,
+        options: Options,
     ) !*Driver {
-        const opts = try Options.init(allocator, config);
-
-        const log = opts.logger orelse logging.Logger{
+        const log = options.logger orelse logging.Logger{
             .allocator = allocator,
         };
 
         logging.traceWithSrc(log, @src(), "netconf.Driver object initializing", .{});
 
-        try opts.validate(log);
+        var o = try Options.init(allocator, options);
+        errdefer o.deinit(allocator);
 
-        switch (opts.transport.*) {
+        switch (o.transport) {
             .bin => {
-                opts.transport.bin.netconf = true;
+                o.transport.bin.netconf = true;
             },
             .ssh2 => {
-                opts.transport.ssh2.netconf = true;
+                o.transport.ssh2.netconf = true;
             },
             .test_ => {
                 // nothing to do for test transport, but its "allowed" so dont return an error
@@ -238,20 +205,18 @@ pub const Driver = struct {
             },
         }
 
-        if (opts.port == null) {
-            opts.port = default_netconf_port;
-        }
-
         var s = try session.Session.init(
             allocator,
             io,
             log,
             delimiter_version_1_0,
-            opts.session,
-            opts.auth,
-            opts.transport,
+            o.session,
+            o.auth,
+            o.transport,
         );
         errdefer s.deinit();
+
+        s.options.operation_max_search_depth = default_initial_operation_max_search_depth;
 
         const d = try allocator.create(Driver);
 
@@ -260,7 +225,7 @@ pub const Driver = struct {
             .io = io,
             .log = log,
             .host = host,
-            .options = opts,
+            .options = o,
             .session = s,
             .server_capabilities = .empty,
             .negotiated_version = .version_1_0,
@@ -343,7 +308,7 @@ pub const Driver = struct {
 
         self.subscriptions.deinit();
 
-        self.options.deinit();
+        self.options.deinit(self.allocator);
 
         self.allocator.destroy(self);
     }
@@ -389,7 +354,7 @@ pub const Driver = struct {
             allocator,
             self.io,
             self.host,
-            self.options.port.?,
+            self.options.port,
             self.negotiated_version,
             self.options.error_tag,
             input,
@@ -418,7 +383,7 @@ pub const Driver = struct {
             try self.session.open(
                 allocator,
                 self.host,
-                self.options.port.?,
+                self.options.port,
                 options.cancel,
             ),
         );
@@ -546,6 +511,7 @@ pub const Driver = struct {
 
         if (self.process_thread) |t| {
             t.join();
+            self.process_thread = null;
         }
 
         try self.session.close();
@@ -624,9 +590,11 @@ pub const Driver = struct {
             }
 
             if (!found_cap_start) {
+                // search only the bytes this read actually produced -- the rest of the buffer is
+                // undefined on the first read and stale bytes from prior reads after that
                 const cap_start_index = std.mem.find(
                     u8,
-                    read_cap_buf,
+                    read_cap_buf[0..n],
                     "<hello ",
                 );
                 if (cap_start_index != null) {
@@ -640,7 +608,7 @@ pub const Driver = struct {
 
             const cap_end_index = std.mem.find(
                 u8,
-                read_cap_buf,
+                read_cap_buf[0..n],
                 delimiter_version_1_0,
             );
             if (cap_end_index != null) {
@@ -1259,30 +1227,32 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
-        var delimiter_count = std.mem.count(u8, buf, delimiter_version_1_0);
-
         var message_start_idx: usize = 0;
 
-        while (delimiter_count > 0) {
-            const maybe_delimiter_index = std.mem.find(
-                u8,
-                buf,
-                delimiter_version_1_0,
-            );
+        while (std.mem.find(
+            u8,
+            buf[message_start_idx..],
+            delimiter_version_1_0,
+        )) |relative_delimiter_index| {
+            const delimiter_index = message_start_idx + relative_delimiter_index;
+            const delimiter_end_index = delimiter_index + delimiter_version_1_0.len;
 
-            const delimiter_index = maybe_delimiter_index.?;
             const message_view = buf[message_start_idx..delimiter_index];
 
-            const owned_raw = try self.allocator.alloc(u8, buf.len);
-            @memcpy(owned_raw, buf);
+            const owned_raw = try self.allocator.dupe(
+                u8,
+                buf[message_start_idx..delimiter_end_index],
+            );
 
-            const owned_parsed = try self.allocator.alloc(u8, message_view.len);
-            @memcpy(owned_parsed, message_view);
+            const owned_parsed = self.allocator.dupe(u8, message_view) catch |err| {
+                self.allocator.free(owned_raw);
+
+                return err;
+            };
 
             try self.storeMessageOrSubscription(owned_raw, owned_parsed);
 
-            delimiter_count -= 1;
-            message_start_idx = delimiter_index + delimiter_version_1_0.len + 1;
+            message_start_idx = @min(delimiter_end_index + 1, buf.len);
         }
     }
 
@@ -1428,8 +1398,8 @@ pub const Driver = struct {
         self: *Driver,
         id: u64,
     ) ![][]const u8 {
-        self.subscriptions_lock.lock();
-        defer self.subscriptions_lock.unlock();
+        try self.subscriptions_lock.lock(self.io);
+        defer self.subscriptions_lock.unlock(self.io);
 
         if (!self.subscriptions.contains(id)) {
             return &[_][]const u8{};
@@ -1437,7 +1407,7 @@ pub const Driver = struct {
 
         // we know key is present since we already checked
         var ret = self.subscriptions.fetchRemove(id);
-        return ret.?.value.toOwnedSlice();
+        return ret.?.value.toOwnedSlice(self.allocator);
     }
 
     /// Fetch any stored notification messages. Caller owns returned memory -- w/ the allocator the
@@ -1445,10 +1415,10 @@ pub const Driver = struct {
     pub fn getNotificationMessages(
         self: *Driver,
     ) ![][]const u8 {
-        self.notifications_lock.lock();
-        defer self.notifications_lock.unlock();
+        try self.notifications_lock.lock(self.io);
+        defer self.notifications_lock.unlock(self.io);
 
-        return self.notifications.toOwnedSlice();
+        return self.notifications.toOwnedSlice(self.allocator);
     }
 
     fn processCancelAndTimeout(
@@ -3251,14 +3221,14 @@ test "buildRawRpcElement" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.RawRpcOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3272,7 +3242,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3287,7 +3257,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.0-with-extra-namespaces",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3304,7 +3274,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.1-with-extra-namespaces",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3322,7 +3292,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.0-with-prefix-and-extra-namespaces",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3340,7 +3310,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.1-with-prefix-and-extra-namespaces",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3363,7 +3333,7 @@ test "buildRawRpcElement" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3391,14 +3361,14 @@ test "buildGetConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.GetConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
@@ -3408,7 +3378,7 @@ test "buildGetConfigElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#175
@@ -3419,7 +3389,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
@@ -3432,7 +3402,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
@@ -3446,7 +3416,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.0-with-defaults",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
@@ -3460,7 +3430,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.1-with-defaults",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
@@ -3475,7 +3445,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.0-xpath",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "/interfaces/interface[name='Management0']/state",
                 .filter_type = operation.FilterType.xpath,
@@ -3488,7 +3458,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.1-xpath",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "/interfaces/interface[name='Management0']/state",
                 .filter_type = operation.FilterType.xpath,
@@ -3506,7 +3476,7 @@ test "buildGetConfigElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3534,14 +3504,14 @@ test "builEditConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.EditConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3555,7 +3525,7 @@ test "builEditConfigElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3570,7 +3540,7 @@ test "builEditConfigElem" {
         .{
             .name = "1.1-with-defaults-operation",
             .version = .version_1_1,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3586,7 +3556,7 @@ test "builEditConfigElem" {
         .{
             .name = "1.1-with-test-option",
             .version = .version_1_1,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3602,7 +3572,7 @@ test "builEditConfigElem" {
         .{
             .name = "1.1-with-error-option",
             .version = .version_1_1,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3622,7 +3592,7 @@ test "builEditConfigElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3650,14 +3620,14 @@ test "builCopyConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.CopyConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><copy-config><source><running></running></source><target><startup></startup></target></copy-config></rpc>
@@ -3667,7 +3637,7 @@ test "builCopyConfigElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#213
@@ -3682,7 +3652,7 @@ test "builCopyConfigElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3710,14 +3680,14 @@ test "builDeleteConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.DeleteConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-config><target><running></running></target></delete-config></rpc>
@@ -3727,7 +3697,7 @@ test "builDeleteConfigElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#181
@@ -3742,7 +3712,7 @@ test "builDeleteConfigElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3770,14 +3740,14 @@ test "buildLockElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.LockUnlockOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><lock><target><running></running></target></lock></rpc>
@@ -3787,7 +3757,7 @@ test "buildLockElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#163
@@ -3802,7 +3772,7 @@ test "buildLockElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3830,14 +3800,14 @@ test "buildUnlockElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.LockUnlockOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><unlock><target><running></running></target></unlock></rpc>
@@ -3847,7 +3817,7 @@ test "buildUnlockElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#167
@@ -3862,7 +3832,7 @@ test "buildUnlockElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3890,14 +3860,14 @@ test "buildGetElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.GetOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get></get></rpc>
@@ -3907,7 +3877,7 @@ test "buildGetElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#125
@@ -3922,7 +3892,7 @@ test "buildGetElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3950,14 +3920,14 @@ test "buildCloseSessionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.CloseSessionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><close-session></close-session></rpc>
@@ -3967,7 +3937,7 @@ test "buildCloseSessionElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#145
@@ -3982,7 +3952,7 @@ test "buildCloseSessionElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4010,14 +3980,14 @@ test "buildKillSessionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.KillSessionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -4030,7 +4000,7 @@ test "buildKillSessionElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -4048,7 +4018,7 @@ test "buildKillSessionElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4076,14 +4046,14 @@ test "buildCommitElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.CommitOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><commit></commit></rpc>
@@ -4093,7 +4063,7 @@ test "buildCommitElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#131
@@ -4108,7 +4078,7 @@ test "buildCommitElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4136,14 +4106,14 @@ test "buildDiscardElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.DiscardOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><discard-changes></discard-changes></rpc>
@@ -4153,7 +4123,7 @@ test "buildDiscardElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#149
@@ -4168,7 +4138,7 @@ test "buildDiscardElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4196,14 +4166,14 @@ test "buildCancelCommitElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.CancelCommitOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><cancel-commit></cancel-commit></rpc>
@@ -4213,7 +4183,7 @@ test "buildCancelCommitElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#145
@@ -4224,7 +4194,7 @@ test "buildCancelCommitElem" {
         .{
             .name = "persist-id",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .persist_id = "1234",
             },
@@ -4241,7 +4211,7 @@ test "buildCancelCommitElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4269,14 +4239,14 @@ test "buildValidateElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.ValidateOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><source><running></running></source></validate></rpc>
@@ -4286,7 +4256,7 @@ test "buildValidateElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#234
@@ -4301,7 +4271,7 @@ test "buildValidateElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4329,14 +4299,14 @@ test "buildGetSchemaElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.GetSchemaOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .identifier = "foo",
             },
@@ -4348,7 +4318,7 @@ test "buildGetSchemaElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .identifier = "foo",
             },
@@ -4365,7 +4335,7 @@ test "buildGetSchemaElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4393,14 +4363,14 @@ test "buildGetDataElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.GetDataOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></rpc>
@@ -4410,7 +4380,7 @@ test "buildGetDataElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#328
@@ -4425,7 +4395,7 @@ test "buildGetDataElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4453,14 +4423,14 @@ test "builEditDataElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.EditDataOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .edit_content = "foo",
             },
@@ -4472,7 +4442,7 @@ test "builEditDataElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .edit_content = "foo",
             },
@@ -4485,7 +4455,7 @@ test "builEditDataElem" {
         .{
             .name = "default-operation",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .edit_content = "foo",
                 .default_operation = operation.DefaultOperation.merge,
@@ -4503,7 +4473,7 @@ test "builEditDataElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4531,14 +4501,14 @@ test "builActionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.ActionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .action = "foo",
             },
@@ -4550,7 +4520,7 @@ test "builActionElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .action = "foo",
             },
@@ -4567,7 +4537,7 @@ test "builActionElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4628,4 +4598,27 @@ test "processLoopBufContainsCompleteDelim" {
 
         try std.testing.expectEqual(case.expected, actual);
     }
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Driver);
+}
+
+fn driverInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    const d = try Driver.init(
+        allocator,
+        std.testing.io,
+        "localhost",
+        .{},
+    );
+
+    d.deinit();
+}
+
+test "driverInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        driverInitForAllocFailures,
+        .{},
+    );
 }

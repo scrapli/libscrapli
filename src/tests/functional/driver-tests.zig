@@ -27,7 +27,7 @@ fn getDriver(
 
     var platform_definition_path: []const u8 = "";
 
-    var config = cli.Config{
+    var options = cli.Options{
         .definition = .{
             .file = "",
         },
@@ -35,7 +35,7 @@ fn getDriver(
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
         platform_definition_path = nokia_srlinux_platform_path_from_project_root;
-        config.auth.lookups = .init(
+        options.auth.lookups = .init(
             &.{
                 .{ .key = "login", .value = "NokiaSrl1!" },
             },
@@ -43,14 +43,14 @@ fn getDriver(
 
         if (os == .macos) {
             host = "localhost";
-            config.port = 21022;
+            options.port = 21022;
         } else {
             host = "172.20.20.16";
-            config.port = 22;
+            options.port = 22;
         }
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
         platform_definition_path = arista_eos_platform_path_from_project_root;
-        config.auth.lookups = .init(
+        options.auth.lookups = .init(
             &.{
                 .{ .key = "login", .value = "admin" },
                 .{ .key = "enable", .value = "libscrapli" },
@@ -59,43 +59,43 @@ fn getDriver(
 
         if (os == .macos) {
             host = "localhost";
-            config.port = 22022;
+            options.port = 22022;
         } else {
             host = "172.20.20.17";
-            config.port = 22;
+            options.port = 22;
         }
     } else {
         return error.UnknownPlatform;
     }
 
-    config.definition.file = platform_definition_path;
+    options.definition.file = platform_definition_path;
 
     if (username == null) {
-        config.auth.username = "admin";
+        options.auth.username = "admin";
     } else {
-        config.auth.username = username.?;
+        options.auth.username = username.?;
     }
 
     if (key != null) {
-        config.auth.private_key_path = key;
-        config.auth.private_key_passphrase = passphrase;
+        options.auth.private_key_path = key;
+        options.auth.private_key_passphrase = passphrase;
     } else {
-        config.auth.password = "__lookup::login";
+        options.auth.password = "__lookup::login";
     }
 
     switch (transport_kind) {
         .bin,
         => {},
         .ssh2 => {
-            config.transport = transport.OptionsInputs{
+            options.transport = .{
                 .ssh2 = .{},
             };
         },
         .telnet => {
-            config.transport = transport.OptionsInputs{
+            options.transport = .{
                 .telnet = .{},
             };
-            config.port = config.port.? - 1;
+            options.port = options.port.? - 1;
         },
         else => {
             unreachable;
@@ -106,7 +106,7 @@ fn getDriver(
         std.testing.allocator,
         std.testing.io,
         host,
-        config,
+        options,
     );
 }
 

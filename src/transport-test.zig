@@ -3,66 +3,57 @@ const std = @import("std");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 
-/// Holds option inputs for the test transport.
-pub const OptionsInputs = struct {
-    f: ?[]const u8 = null,
-};
-
 /// Holds test transport options.
 pub const Options = struct {
-    allocator: std.mem.Allocator,
-    f: ?[]const u8,
+    f: ?[]const u8 = null,
 
-    /// Initialize the transport options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
+    fn init(allocator: std.mem.Allocator, opts: Options) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-        o.* = Options{
-            .allocator = allocator,
-            .f = opts.f,
-        };
-
-        if (o.f != null) {
-            o.f = try o.allocator.dupe(u8, o.f.?);
+        if (opts.f) |f| {
+            o.f = try allocator.dupe(u8, f);
         }
 
         return o;
     }
 
-    /// Deinitialize the transport options.
-    pub fn deinit(self: *Options) void {
-        if (self.f != null) {
-            self.allocator.free(self.f.?);
+    fn deinit(self: Options, allocator: std.mem.Allocator) void {
+        if (self.f) |f| {
+            allocator.free(f);
         }
-
-        self.allocator.destroy(self);
     }
 };
 
 /// The "test" transport -- basically read from a file instead of a socket/ssh session.
 pub const Transport = struct {
+    allocator: std.mem.Allocator,
     io: std.Io,
 
-    options: *Options,
+    options: Options,
 
     fd: ?std.posix.fd_t = null,
 
     /// Initialize the transport object.
     pub fn init(
+        allocator: std.mem.Allocator,
         io: std.Io,
-        options: *Options,
+        options: Options,
     ) !Transport {
+        var o = try Options.init(allocator, options);
+        errdefer o.deinit(allocator);
+
         return Transport{
+            .allocator = allocator,
             .io = io,
-            .options = options,
+            .options = o,
             .fd = null,
         };
     }
 
     /// Deinitialize the transport object.
     pub fn deinit(self: *Transport) void {
-        _ = self;
+        self.options.deinit(self.allocator);
     }
 
     /// Open the transport object.
@@ -120,3 +111,7 @@ pub const Transport = struct {
         return n;
     }
 };
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}

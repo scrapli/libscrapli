@@ -36,94 +36,12 @@ pub const Implementation = union(Kind) {
     test_: transport_test.Transport,
 };
 
-/// Holds option inputs for the transport.
-pub const OptionsInputs = union(Kind) {
-    bin: transport_bin.OptionsInputs,
-    telnet: transport_telnet.OptionsInputs,
-    ssh2: transport_ssh2.OptionsInputs,
-    test_: transport_test.OptionsInputs,
-};
-
 /// Holds transport options.
 pub const Options = union(Kind) {
-    bin: *transport_bin.Options,
-    telnet: *transport_telnet.Options,
-    ssh2: *transport_ssh2.Options,
-    test_: *transport_test.Options,
-
-    /// Initialize the transport options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        switch (opts) {
-            .bin => |impl_option_inputs| {
-                o.* = Options{
-                    .bin = try transport_bin.Options.init(
-                        allocator,
-                        impl_option_inputs,
-                    ),
-                };
-            },
-            .ssh2 => |impl_option_inputs| {
-                o.* = Options{
-                    .ssh2 = try transport_ssh2.Options.init(
-                        allocator,
-                        impl_option_inputs,
-                    ),
-                };
-            },
-            .telnet => |impl_option_inputs| {
-                o.* = Options{
-                    .telnet = try transport_telnet.Options.init(
-                        allocator,
-                        impl_option_inputs,
-                    ),
-                };
-            },
-            .test_ => |impl_option_inputs| {
-                o.* = Options{
-                    .test_ = try transport_test.Options.init(
-                        allocator,
-                        impl_option_inputs,
-                    ),
-                };
-            },
-        }
-
-        return o;
-    }
-
-    /// Deinitialize the transport options.
-    pub fn deinit(self: *Options) void {
-        switch (self.*) {
-            .bin => |o| {
-                // clunky since the tagged union doesnt have the allocator... but works
-                var _o = o;
-                var _a = _o.allocator;
-                _o.deinit();
-                _a.destroy(self);
-            },
-            .ssh2 => |o| {
-                var _o = o;
-                var _a = _o.allocator;
-                _o.deinit();
-                _a.destroy(self);
-            },
-            .telnet => |o| {
-                var _o = o;
-                var _a = _o.allocator;
-                _o.deinit();
-                _a.destroy(self);
-            },
-            .test_ => |o| {
-                var _o = o;
-                var _a = _o.allocator;
-                _o.deinit();
-                _a.destroy(self);
-            },
-        }
-    }
+    bin: transport_bin.Options,
+    telnet: transport_telnet.Options,
+    ssh2: transport_ssh2.Options,
+    test_: transport_test.Options,
 };
 
 /// Transport is a wrapper around any of the supported libscrapli transport structs.
@@ -136,10 +54,10 @@ pub const Transport = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
+        options: Options,
     ) !Transport {
-        switch (options.*) {
-            .bin => {
+        switch (options) {
+            .bin => |o| {
                 return Transport{
                     .log = log,
                     .implementation = Implementation{
@@ -147,7 +65,7 @@ pub const Transport = struct {
                             allocator,
                             io,
                             log,
-                            options.bin,
+                            o,
                         ),
                     },
                 };
@@ -160,12 +78,11 @@ pub const Transport = struct {
                             allocator,
                             io,
                             log,
-                            options.telnet,
                         ),
                     },
                 };
             },
-            .ssh2 => {
+            .ssh2 => |o| {
                 return Transport{
                     .log = log,
                     .implementation = Implementation{
@@ -173,18 +90,19 @@ pub const Transport = struct {
                             allocator,
                             io,
                             log,
-                            options.ssh2,
+                            o,
                         ),
                     },
                 };
             },
-            .test_ => {
+            .test_ => |o| {
                 return Transport{
                     .log = log,
                     .implementation = Implementation{
                         .test_ = try transport_test.Transport.init(
+                            allocator,
                             io,
-                            options.test_,
+                            o,
                         ),
                     },
                 };
@@ -222,7 +140,7 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         switch (self.implementation) {
             Kind.bin => {
@@ -344,22 +262,43 @@ pub const Transport = struct {
 };
 
 test "transportInit" {
-    const o = try Options.init(
-        std.testing.allocator,
-        .{
-            .bin = .{},
-        },
-    );
-
     var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
+        .{
+            .bin = .{},
+        },
     );
 
     t.deinit();
-    o.deinit();
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}
+
+fn transportInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    var t = try Transport.init(
+        allocator,
+        std.testing.io,
+        logging.Logger{
+            .allocator = allocator,
+        },
+        .{
+            .bin = .{},
+        },
+    );
+
+    t.deinit();
+}
+
+test "transportInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        transportInitForAllocFailures,
+        .{},
+    );
 }

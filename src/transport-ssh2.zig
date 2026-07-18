@@ -266,7 +266,7 @@ const ProxyWrapper = struct {
     io: std.Io,
     log: logging.Logger,
     channel: ?*ssh2.LIBSSH2_CHANNEL = null,
-    remote_fd: c_int = 0,
+    remote_fd: c_int = -1,
     stop_flag: std.atomic.Value(bool),
     pipe_to_channel_thread: ?std.Thread = null,
     channel_to_pipe_thread: ?std.Thread = null,
@@ -291,7 +291,12 @@ const ProxyWrapper = struct {
 
     /// Deinitializes the ssh2 transport proxy wrapper.
     pub fn deinit(self: *ProxyWrapper) void {
-        _ = std.c.close(self.remote_fd);
+        self.stop();
+
+        if (self.remote_fd >= 0) {
+            _ = std.c.close(self.remote_fd);
+        }
+
         self.allocator.destroy(self);
     }
 
@@ -461,43 +466,83 @@ pub const ProxyJumpOptions = struct {
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
     libssh2_trace: bool = false,
-};
 
-/// Holds option inputs for the ssh2 transport.
-pub const OptionsInputs = struct {
-    known_hosts_path: ?[]const u8 = null,
-    libssh2_trace: bool = false,
-    netconf: bool = false,
-    proxy_jump_options: ?ProxyJumpOptions = null,
-};
+    fn init(opts: ProxyJumpOptions, allocator: std.mem.Allocator) !ProxyJumpOptions {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-/// Holds ssh2 transport options.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-    known_hosts_path: ?[]const u8,
-    libssh2_trace: bool,
-    netconf: bool,
-    proxy_jump_options: ?ProxyJumpOptions,
+        o.host = try allocator.dupe(u8, o.host);
 
-    /// Initializes the ssh2 options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
+        if (o.username) |username| {
+            o.username = try allocator.dupe(u8, username);
+        }
 
-        o.* = Options{
-            .allocator = allocator,
-            .known_hosts_path = opts.known_hosts_path,
-            .libssh2_trace = opts.libssh2_trace,
-            .netconf = opts.netconf,
-            .proxy_jump_options = opts.proxy_jump_options,
-        };
+        if (o.password) |password| {
+            o.password = try allocator.dupe(u8, password);
+        }
+
+        if (o.private_key_path) |private_key_path| {
+            o.private_key_path = try allocator.dupe(u8, private_key_path);
+        }
+
+        if (o.private_key_passphrase) |private_key_passphrase| {
+            o.private_key_passphrase = try allocator.dupe(u8, private_key_passphrase);
+        }
 
         return o;
     }
 
-    /// Deinitializes the ssh2 options.
-    pub fn deinit(self: *Options) void {
-        self.allocator.destroy(self);
+    fn deinit(self: ProxyJumpOptions, allocator: std.mem.Allocator) void {
+        allocator.free(self.host);
+
+        if (self.username) |username| {
+            allocator.free(username);
+        }
+
+        if (self.password) |password| {
+            allocator.free(password);
+        }
+
+        if (self.private_key_path) |private_key_path| {
+            allocator.free(private_key_path);
+        }
+
+        if (self.private_key_passphrase) |private_key_passphrase| {
+            allocator.free(private_key_passphrase);
+        }
+    }
+};
+
+/// Holds ssh2 transport options.
+pub const Options = struct {
+    known_hosts_path: ?[]const u8 = null,
+    libssh2_trace: bool = false,
+    netconf: bool = false,
+    proxy_jump_options: ?ProxyJumpOptions = null,
+
+    fn init(allocator: std.mem.Allocator, opts: Options) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
+
+        if (o.known_hosts_path) |known_hosts_path| {
+            o.known_hosts_path = try allocator.dupe(u8, known_hosts_path);
+        }
+
+        if (o.proxy_jump_options) |pjo| {
+            o.proxy_jump_options = try pjo.init(allocator);
+        }
+
+        return o;
+    }
+
+    fn deinit(self: Options, allocator: std.mem.Allocator) void {
+        if (self.known_hosts_path) |known_hosts_path| {
+            allocator.free(known_hosts_path);
+        }
+
+        if (self.proxy_jump_options) |o| {
+            o.deinit(allocator);
+        }
     }
 };
 
@@ -508,7 +553,7 @@ pub const Transport = struct {
 
     log: logging.Logger,
 
-    options: *Options,
+    options: Options,
     waiter: transport_waiter.Waiter,
 
     auth_callback_data: AuthCallbackData = .{},
@@ -537,7 +582,7 @@ pub const Transport = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
+        options: Options,
     ) !Transport {
         logging.traceWithSrc(log, @src(), "ssh2.Transport initializing", .{});
 
@@ -552,12 +597,18 @@ pub const Transport = struct {
             );
         }
 
+        var o = try Options.init(allocator, options);
+        errdefer o.deinit(allocator);
+
+        var w = try transport_waiter.Waiter.init();
+        errdefer w.deinit();
+
         return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
-            .waiter = try transport_waiter.Waiter.init(),
+            .options = o,
+            .waiter = w,
             .session_lock = std.Io.Mutex.init,
         };
     }
@@ -582,6 +633,8 @@ pub const Transport = struct {
             pw.deinit();
         }
 
+        self.options.deinit(self.allocator);
+
         self.waiter.deinit();
     }
 
@@ -603,9 +656,11 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         self.log.info("ssh2.Transport open requested", .{});
+
+        errdefer if (self.proxy_wrapper) |pw| pw.stop();
 
         try self.initSocket(host, port);
         try self.initSession(start_time, cancel, operation_timeout_ns);
@@ -981,7 +1036,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         self.log.debug("ssh2.Transport authenticate requested", .{});
 
@@ -1147,7 +1202,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const private_key_path_c = try self.allocator.dupeSentinel(
             u8,
@@ -1266,7 +1321,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const private_key_passphrase_c = try self.allocator.dupeSentinel(
             u8,
@@ -1379,7 +1434,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
@@ -1455,7 +1510,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         // note: calling the converted c func instead of zig style due to typing issue similar
         // to -> https://github.com/ziglang/zig/issues/18824
@@ -1609,7 +1664,7 @@ pub const Transport = struct {
         start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const proxy_jump_options = self.options.proxy_jump_options.?;
 
@@ -1777,7 +1832,7 @@ pub const Transport = struct {
                 .lookups = auth_options.lookups,
             },
         );
-        defer pa.deinit();
+        defer pa.deinit(self.allocator);
 
         if (pa.username != null and pa.password != null) {
             const resolved_password = try auth_options.resolveAuthValue(pa.password.?);
@@ -1978,12 +2033,23 @@ pub const Transport = struct {
     fn writeStandard(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeStandard requested", .{});
 
-        while (true) {
+        var written: usize = 0;
+
+        // possible (but unlikely w/out massive input) to write partially, so this loop and
+        // tracking n handles that; same for proxied flavor
+        while (written < buf.len) {
+            const remaining = buf[written..];
+
             try self.session_lock.lock(self.io);
-            const n = ssh2.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
+            const n = ssh2.libssh2_channel_write_ex(
+                self.initial_channel.?,
+                0,
+                remaining.ptr,
+                remaining.len,
+            );
             self.session_lock.unlock(self.io);
 
-            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN or n == 0) {
                 try self.io.sleep(
                     .{
                         .nanoseconds = default_eagain_delay_ns,
@@ -2006,38 +2072,35 @@ pub const Transport = struct {
                 );
             }
 
-            if (n != buf.len) {
-                self.setLastError("ssh2.Transport writeStandard wrong unexpected num bytes");
-
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "ssh2.Transport writeStandard: wrote {d} bytes, expected to write {d}",
-                    .{ n, buf.len },
-                );
-            }
-
-            return;
+            written += @intCast(n);
         }
     }
 
     fn writeProxied(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeProxied requested", .{});
 
-        while (true) {
+        var written: usize = 0;
+
+        while (written < buf.len) {
+            const remaining = buf[written..];
+
             try self.session_lock.lock(self.io);
-            const n = ssh2.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
+            const n = ssh2.libssh2_channel_write_ex(
+                self.proxy_channel.?,
+                0,
+                remaining.ptr,
+                remaining.len,
+            );
             self.session_lock.unlock(self.io);
 
-            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN or n == 0) {
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
+
                 continue;
             }
 
@@ -2053,19 +2116,7 @@ pub const Transport = struct {
                 );
             }
 
-            if (n != buf.len) {
-                self.setLastError("ssh2.Transport writeStandard wrong unexpected num bytes");
-
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "ssh2.Transport writeProxied: wrote {d} bytes, expected to write {d}",
-                    .{ n, buf.len },
-                );
-            }
-
-            break;
+            written += @intCast(n);
         }
 
         if (self.proxy_wrapper) |pw| {
@@ -2246,16 +2297,39 @@ fn kbdInteractiveCallback(
 }
 
 test "transportInit" {
-    const o = try Options.init(std.testing.allocator, .{});
     var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
+        .{},
     );
 
     t.deinit();
-    o.deinit();
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}
+
+fn transportInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    var t = try Transport.init(
+        allocator,
+        std.testing.io,
+        logging.Logger{
+            .allocator = allocator,
+        },
+        .{},
+    );
+
+    t.deinit();
+}
+
+test "transportInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        transportInitForAllocFailures,
+        .{},
+    );
 }

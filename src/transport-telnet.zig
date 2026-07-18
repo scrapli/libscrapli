@@ -8,6 +8,7 @@ const transport_socket = @import("transport-socket.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 const control_char_iac: u8 = 255;
+const default_eagain_delay_ns: u64 = 100_000;
 const control_char_do: u8 = 253;
 const control_char_dont: u8 = 254;
 const control_char_will: u8 = 251;
@@ -26,31 +27,9 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
-/// Holds option inputs for the telnet transport.
-// zlinter-disable-next-line declaration_naming
-pub const OptionsInputs = struct {};
-
-/// Holds telnet transport options.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-
-    /// Initialize the transport options.
-    pub fn init(allocator: std.mem.Allocator, _: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-        };
-
-        return o;
-    }
-
-    /// Deinitialize the transport options.
-    pub fn deinit(self: *Options) void {
-        self.allocator.destroy(self);
-    }
-};
+/// Holds telnet transport options. Clearly a placeholder as there are acutally no current telnet
+/// options available.
+pub const Options = struct {};
 
 /// Transport is the telnet transport implementation.
 pub const Transport = struct {
@@ -58,8 +37,6 @@ pub const Transport = struct {
     io: std.Io,
 
     log: logging.Logger,
-
-    options: *Options,
 
     waiter: transport_waiter.Waiter,
     closing: bool = false,
@@ -77,16 +54,17 @@ pub const Transport = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
     ) !Transport {
         logging.traceWithSrc(log, @src(), "telnet.Transport initializing", .{});
+
+        var w = try transport_waiter.Waiter.init();
+        errdefer w.deinit();
 
         return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
-            .waiter = try transport_waiter.Waiter.init(),
+            .waiter = w,
             .initial_buf = .empty,
         };
     }
@@ -330,17 +308,16 @@ pub const Transport = struct {
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
                 std.posix.E.AGAIN => {
-                    const last_error = "telnet.Transport write: eagain on write, short write";
-
-                    self.setLastError(last_error);
-
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Transport,
-                        @src(),
-                        self.log,
-                        last_error,
-                        .{},
-                    );
+                    // the socket is deliberately nonblocking, so eagain just means the kernel
+                    // buffer is full (i.e. a payload bigger than the buffer) -- back off briefly
+                    // and keep writing rather than failing a healthy session
+                    // zlinter-disable-next-line no_swallow_error - best effort backoff
+                    self.io.sleep(
+                        .{
+                            .nanoseconds = default_eagain_delay_ns,
+                        },
+                        .awake,
+                    ) catch {};
                 },
                 else => |err| {
                     const last_error = "telnet.Transport write: writing to stream failed";
@@ -391,36 +368,40 @@ pub const Transport = struct {
             return n;
         }
 
-        try self.waiter.wait(self.socket.?);
+        while (true) {
+            try self.waiter.wait(self.socket.?);
 
-        if (self.closing) {
-            return 0;
-        }
+            if (self.closing) {
+                return 0;
+            }
 
-        const n = std.posix.read(self.socket.?, buf) catch |err| {
-            const last_error = "telnet.Transport read: failed reading from stream";
+            const n = std.posix.read(self.socket.?, buf) catch |err| {
+                const last_error = "telnet.Transport read: failed reading from stream";
 
-            self.setLastError(last_error);
+                self.setLastError(last_error);
 
-            return errors.wrapWarnError(
-                err,
-                @src(),
-                self.log,
-                last_error,
-                .{},
-            );
-        };
+                return errors.wrapWarnError(
+                    err,
+                    @src(),
+                    self.log,
+                    last_error,
+                    .{},
+                );
+            };
 
-        if (n == 0) {
+            if (n == 0) {
+                return n;
+            }
+
+            if (buf[0] == control_char_iac) {
+                // a telnet negotiation byte leaked into a normal read; drop this chunk and wait
+                // for the next one rather than recursing, which could overflow the stack if the
+                // peer streams IAC bytes
+                continue;
+            }
+
             return n;
         }
-
-        if (buf[0] == control_char_iac) {
-            // at this point we decided we are done so... yolo?
-            return self.read(buf);
-        }
-
-        return n;
     }
 
     /// Unblocks any in progress reads and sets the prepare close flag, this prevents us from
@@ -432,16 +413,37 @@ pub const Transport = struct {
 };
 
 test "transportInit" {
-    const o = try Options.init(std.testing.allocator, .{});
     var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
     );
 
     t.deinit();
-    o.deinit();
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}
+
+fn transportInitForAllocFailures(allocator: std.mem.Allocator) anyerror!void {
+    var t = try Transport.init(
+        allocator,
+        std.testing.io,
+        logging.Logger{
+            .allocator = allocator,
+        },
+    );
+
+    t.deinit();
+}
+
+test "transportInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        transportInitForAllocFailures,
+        .{},
+    );
 }

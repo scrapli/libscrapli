@@ -637,8 +637,8 @@ export fn ls_netconf_copy_config(
 
     const options = ffi_args_to_options.copyConfigOptionsFromArgs(
         cancel,
-        source,
         target,
+        source,
     );
 
     const _operation_id = d.queueOperation(
