@@ -485,18 +485,20 @@ pub const Session = struct {
         }
     }
 
-    fn readLoop(self: *Session) !void {
+    fn readLoop(self: *Session) void {
+        self.readLoopInner() catch |err| {
+            self.read_thread_error = err;
+            self.read_thread_errored.store(true, std.lang.AtomicOrder.release);
+        };
+    }
+
+    fn readLoopInner(self: *Session) !void {
         self.log.info("session.Session read thread started", .{});
 
         const buf = self.read_loop_buf;
 
         while (self.read_stop.load(std.lang.AtomicOrder.acquire) == ReadThreadState.run) {
-            const n = self.transport.read(buf) catch |err| {
-                self.read_thread_error = err;
-                self.read_thread_errored.store(true, std.lang.AtomicOrder.release);
-
-                return;
-            };
+            const n = try self.transport.read(buf);
 
             if (self.read_stop.load(std.lang.AtomicOrder.acquire) != ReadThreadState.run) {
                 // read was interrupted
@@ -530,6 +532,8 @@ pub const Session = struct {
 
     /// Reads from the internal queue into the given buffer.
     pub fn read(self: *Session, buf: []u8) !usize {
+        // the readableLength peek below is outside of the lock, it cant be concurrently accessed
+        // rn, but... in the future if something changes it potentially could so just heads up
         if (self.read_thread_errored.load(std.lang.AtomicOrder.acquire) and
             self.read_queue.readableLength() == 0)
         {

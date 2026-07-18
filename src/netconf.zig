@@ -939,6 +939,22 @@ pub const Driver = struct {
 
     fn processLoop(
         self: *Driver,
+    ) void {
+        // publish the exited flag however the inner loop ends (clean stop, eof, or error) --
+        // the inner fn's own defers (including the eof drain) run before this does, preserving
+        // the "dont signal exited until remaining messages are processed" ordering
+        defer self.process_thread_exited.store(true, std.lang.AtomicOrder.release);
+
+        self.processLoopInner() catch |err| {
+            self.log.critical(
+                "netconf.Driver processLoop: message processing thread exiting on error {}",
+                .{err},
+            );
+        };
+    }
+
+    fn processLoopInner(
+        self: *Driver,
     ) !void {
         self.log.info("netconf.Driver mssage processing thread started", .{});
 
@@ -962,18 +978,11 @@ pub const Driver = struct {
                         const owned_buf = try message_buf.toOwnedSlice(self.allocator);
                         defer self.allocator.free(owned_buf);
 
-                        defer {
-                            self.log.debug(
-                                "netconf.Driver processLoop: message processing thread " ++
-                                    " stopping, session read queue drained and read thread stopped",
-                                .{},
-                            );
-
-                            // dont set this to true till we processed any remaining messages
-                            // otherwise we may bail out of dispatch rpc without seeing a close
-                            // session response
-                            self.process_thread_exited.store(true, std.lang.AtomicOrder.release);
-                        }
+                        defer self.log.debug(
+                            "netconf.Driver processLoop: message processing thread " ++
+                                " stopping, session read queue drained and read thread stopped",
+                            .{},
+                        );
 
                         switch (self.negotiated_version) {
                             // we'll just squash any errors we get from processing as we maybe
@@ -991,8 +1000,6 @@ pub const Driver = struct {
                         return;
                     },
                     else => {
-                        self.process_thread_exited.store(true, std.lang.AtomicOrder.release);
-
                         return err;
                     },
                 }
@@ -1162,6 +1169,9 @@ pub const Driver = struct {
         raw_buf: []const u8,
         processed_buf: []const u8,
     ) !void {
+        errdefer self.allocator.free(raw_buf);
+        errdefer self.allocator.free(processed_buf);
+
         const id_info = try Driver.processFoundMessageIds(processed_buf);
 
         if (!id_info.found) {
@@ -1184,9 +1194,6 @@ pub const Driver = struct {
                 .{id_info.found_id},
             );
 
-            // we ignore raw buf of subscriptions/notifications
-            self.allocator.free(raw_buf);
-
             try self.subscriptions_lock.lock(self.io);
             defer self.subscriptions_lock.unlock(self.io);
 
@@ -1196,18 +1203,24 @@ pub const Driver = struct {
             }
 
             try ret.value_ptr.*.append(self.allocator, processed_buf);
+
+            // we ignore raw buf of subscriptions/notifications; freed only now, after the last
+            // fallible operation, so the errdefer above cannot double free it
+            self.allocator.free(raw_buf);
         } else if (id_info.is_notification_message) {
             self.log.debug(
                 "netconf.Driver storeMessageOrSubscription: storing notification message",
                 .{},
             );
 
-            self.allocator.free(raw_buf);
-
             try self.notifications_lock.lock(self.io);
             defer self.notifications_lock.unlock(self.io);
 
             try self.notifications.append(self.allocator, processed_buf);
+
+            // raw ignored for notifications; freed only now, after the last fallible operation,
+            // so the errdefer above cannot double free it
+            self.allocator.free(raw_buf);
         } else {
             self.log.debug(
                 "netconf.Driver storeMessageOrSubscription: storing message, id {d}",
