@@ -583,6 +583,8 @@ fn openPty(
         return error.PtyError;
     }
 
+    errdefer _ = std.c.close(master_handle);
+
     if (c.grantpt(master_handle) < 0) {
         return error.PtyError;
     }
@@ -602,26 +604,42 @@ fn openPty(
         return error.PtyError;
     }
 
+    defer _ = std.c.close(slave_handle);
+
     // ensure the pty is non blocking
     try file.setNonBlocking(master_handle);
 
     const args = try allocator.alloc([*c]u8, open_args.len + 1);
 
-    for (open_args, 0..) |arg, i| {
-        args[i] = try allocator.dupeSentinel(u8, arg, 0);
+    {
+        errdefer allocator.free(args);
+
+        var duped: usize = 0;
+        errdefer {
+            for (open_args[0..duped], 0..) |arg, i| {
+                allocator.free(args[i][0 .. arg.len + 1]);
+            }
+        }
+
+        for (open_args, 0..) |arg, i| {
+            args[i] = try allocator.dupeSentinel(u8, arg, 0);
+            duped = i + 1;
+        }
+
+        args[open_args.len] = null;
     }
 
-    args[open_args.len] = null;
-
-    const pid = c.fork();
-
-    if (pid < 0) {
+    defer {
         for (open_args, 0..) |arg, i| {
             allocator.free(args[i][0 .. arg.len + 1]);
         }
 
         allocator.free(args);
+    }
 
+    const pid = c.fork();
+
+    if (pid < 0) {
         return error.PtyError;
     } else if (pid == 0) {
         // if things fail it will be a little annoying but we'll just have to read the stdout/stderr
@@ -639,15 +657,6 @@ fn openPty(
 
         unreachable;
     }
-
-    for (open_args, 0..) |arg, i| {
-        allocator.free(args[i][0 .. arg.len + 1]);
-    }
-
-    allocator.free(args);
-
-    // parent process, close the slave and return the master (pty) to read/write to
-    _ = std.c.close(slave_handle);
 
     // disable onlcr to make outputs nicer
     try setonlcr(master_handle);
