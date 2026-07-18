@@ -282,6 +282,7 @@ const ProxyWrapper = struct {
     log: logging.Logger,
     channel: ?*ssh2.LIBSSH2_CHANNEL = null,
     remote_fd: c_int = -1,
+    local_fd: c_int = -1,
     stop_flag: std.atomic.Value(bool),
     pipe_to_channel_thread: ?std.Thread = null,
     channel_to_pipe_thread: ?std.Thread = null,
@@ -310,6 +311,10 @@ const ProxyWrapper = struct {
 
         if (self.remote_fd >= 0) {
             _ = std.c.close(self.remote_fd);
+        }
+
+        if (self.local_fd >= 0) {
+            _ = std.c.close(self.local_fd);
         }
 
         self.allocator.destroy(self);
@@ -1806,6 +1811,9 @@ pub const Transport = struct {
 
         const local_fd = fds[0];
         const remote_fd = fds[1];
+
+        self.proxy_wrapper.?.local_fd = local_fd;
+        self.proxy_wrapper.?.remote_fd = remote_fd;
 
         // set both sides of pipe/pair to nonblock for our normal behavior and so that we can start
         // the proxy loop for initial session establishment while still being able to not be stuck
