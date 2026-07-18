@@ -266,7 +266,7 @@ const ProxyWrapper = struct {
     io: std.Io,
     log: logging.Logger,
     channel: ?*ssh2.LIBSSH2_CHANNEL = null,
-    remote_fd: c_int = 0,
+    remote_fd: c_int = -1,
     stop_flag: std.atomic.Value(bool),
     pipe_to_channel_thread: ?std.Thread = null,
     channel_to_pipe_thread: ?std.Thread = null,
@@ -291,7 +291,12 @@ const ProxyWrapper = struct {
 
     /// Deinitializes the ssh2 transport proxy wrapper.
     pub fn deinit(self: *ProxyWrapper) void {
-        _ = std.c.close(self.remote_fd);
+        self.stop();
+
+        if (self.remote_fd >= 0) {
+            _ = std.c.close(self.remote_fd);
+        }
+
         self.allocator.destroy(self);
     }
 
@@ -654,6 +659,8 @@ pub const Transport = struct {
         auth_options: auth.Options,
     ) !void {
         self.log.info("ssh2.Transport open requested", .{});
+
+        errdefer if (self.proxy_wrapper) |pw| pw.stop();
 
         try self.initSocket(host, port);
         try self.initSession(start_time, cancel, operation_timeout_ns);
