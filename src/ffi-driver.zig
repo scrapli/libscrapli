@@ -37,6 +37,22 @@ fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
     }
 }
 
+/// Frees every owned string on an operation's options, whichever driver/op kind it is --
+/// fancy inline else to not duplicate a zillion arms
+fn freeOperationOwnedStrings(
+    allocator: std.mem.Allocator,
+    op: ffi_operations.OperationOptions,
+) void {
+    switch (op.operation) {
+        .cli => |cli_op| switch (cli_op) {
+            inline else => |o| freeOwnedStrings(allocator, o),
+        },
+        .netconf => |netconf_op| switch (netconf_op) {
+            inline else => |o| freeOwnedStrings(allocator, o),
+        },
+    }
+}
+
 /// An enum representing a "real" (non ffi) cli or netconf driver.
 pub const RealDriver = union(enum) {
     cli: *cli.Driver,
@@ -145,10 +161,13 @@ pub const FfiDriver = struct {
         host: []const u8,
         options: netconf.Options,
     ) !*FfiDriver {
+        const owned_host = try allocator.dupe(u8, host);
+        errdefer allocator.free(owned_host);
+
         const real_driver = try netconf.Driver.init(
             allocator,
             io,
-            host,
+            owned_host,
             options,
         );
 
@@ -159,7 +178,7 @@ pub const FfiDriver = struct {
         ffi_driver.* = FfiDriver{
             .allocator = allocator,
             .io = io,
-            .host = try allocator.dupe(u8, host),
+            .host = owned_host,
             .real_driver = .{
                 .netconf = real_driver,
             },
@@ -217,10 +236,13 @@ pub const FfiDriver = struct {
             }
         }
 
+        // drain any any ops in the queue
+        while (self.operation_queue.readItem()) |op| {
+            freeOperationOwnedStrings(self.allocator, op);
+        }
+
         self.operation_queue.deinit();
         self.operation_results.deinit();
-
-        self.allocator.free(self.host);
 
         switch (self.real_driver) {
             .cli => |d| {
@@ -230,6 +252,9 @@ pub const FfiDriver = struct {
                 d.deinit();
             },
         }
+
+        // the real drivers borrow the host buffer we own, so it must outlive their deinit
+        self.allocator.free(self.host);
 
         if (self.poll_fds[0] >= 0) {
             _ = std.c.close(self.poll_fds[0]);
@@ -356,6 +381,9 @@ pub const FfiDriver = struct {
                 continue;
             }
 
+            // free any owned strings when the op is done
+            defer freeOperationOwnedStrings(self.allocator, op.?);
+
             var ret_ok: ?*result.Result = null;
             var ret_err: ?anyerror = null;
 
@@ -384,8 +412,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .enter_mode => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.enterMode(
                         self.allocator,
                         o,
@@ -404,8 +430,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .send_input => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.sendInput(
                         self.allocator,
                         o,
@@ -415,8 +439,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .send_inputs => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.sendInputs(
                         self.allocator,
                         o,
@@ -426,8 +448,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .send_prompted_input => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.sendPromptedInput(
                         self.allocator,
                         o,
@@ -528,6 +548,9 @@ pub const FfiDriver = struct {
                 continue;
             }
 
+            // free any owned strings when the op is done
+            defer freeOperationOwnedStrings(self.allocator, op.?);
+
             var ret_ok: ?*result_netconf.Result = null;
             var ret_err: ?anyerror = null;
 
@@ -556,8 +579,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .raw_rpc => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.rawRpc(
                         self.allocator,
                         o,
@@ -567,8 +588,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_config => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.getConfig(
                         self.allocator,
                         o,
@@ -578,8 +597,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .edit_config => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.editConfig(
                         self.allocator,
                         o,
@@ -625,8 +642,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.get(
                         self.allocator,
                         o,
@@ -690,8 +705,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_schema => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.getSchema(
                         self.allocator,
                         o,
@@ -701,8 +714,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .get_data => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.getData(
                         self.allocator,
                         o,
@@ -712,8 +723,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .edit_data => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.editData(
                         self.allocator,
                         o,
@@ -723,8 +732,6 @@ pub const FfiDriver = struct {
                     };
                 },
                 .action => |o| {
-                    defer freeOwnedStrings(self.allocator, o);
-
                     ret_ok = rd.action(
                         self.allocator,
                         o,
