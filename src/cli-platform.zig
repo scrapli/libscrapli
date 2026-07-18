@@ -301,7 +301,7 @@ pub const Definition = struct {
                 null,
         };
 
-        if (&d.default_mode[0] != &mode.default_mode[0]) {
+        if (d.default_mode.ptr != mode.default_mode.ptr) {
             d.default_mode = try d.allocator.dupe(u8, d.default_mode);
         }
 
@@ -327,7 +327,7 @@ pub const Definition = struct {
     pub fn deinit(self: *Definition) void {
         self.allocator.free(self.prompt_pattern);
 
-        if (&self.default_mode[0] != &mode.default_mode[0]) {
+        if (self.default_mode.ptr != mode.default_mode.ptr) {
             self.allocator.free(self.default_mode);
         }
 

@@ -35,7 +35,7 @@ pub const Options = struct {
         var o = opts;
         errdefer o.deinit(allocator);
 
-        if (&o.bin[0] != &default_ssh_bin[0]) {
+        if (o.bin.ptr != default_ssh_bin.ptr) {
             o.bin = try allocator.dupe(u8, o.bin);
         }
 
@@ -59,7 +59,7 @@ pub const Options = struct {
     }
 
     fn deinit(self: Options, allocator: std.mem.Allocator) void {
-        if (&self.bin[0] != &default_ssh_bin[0]) {
+        if (self.bin.ptr != default_ssh_bin.ptr) {
             allocator.free(self.bin);
         }
 

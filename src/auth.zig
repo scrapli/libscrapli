@@ -133,15 +133,15 @@ pub const Options = struct {
 
         o.lookups = try opts.lookups.cloneOwned(allocator);
 
-        if (&o.username_pattern[0] != &default_username_pattern[0]) {
+        if (o.username_pattern.ptr != default_username_pattern.ptr) {
             o.username_pattern = try allocator.dupe(u8, o.username_pattern);
         }
 
-        if (&o.password_pattern[0] != &default_password_pattern[0]) {
+        if (o.password_pattern.ptr != default_password_pattern.ptr) {
             o.password_pattern = try allocator.dupe(u8, o.password_pattern);
         }
 
-        if (&o.private_key_passphrase_pattern[0] != &default_passphrase_pattern[0]) {
+        if (o.private_key_passphrase_pattern.ptr != default_passphrase_pattern.ptr) {
             o.private_key_passphrase_pattern = try allocator.dupe(u8, o.private_key_passphrase_pattern);
         }
 
@@ -173,15 +173,15 @@ pub const Options = struct {
         var lookups = self.lookups;
         lookups.deinitOwned(allocator);
 
-        if (&self.username_pattern[0] != &default_username_pattern[0]) {
+        if (self.username_pattern.ptr != default_username_pattern.ptr) {
             allocator.free(self.username_pattern);
         }
 
-        if (&self.password_pattern[0] != &default_password_pattern[0]) {
+        if (self.password_pattern.ptr != default_password_pattern.ptr) {
             allocator.free(self.password_pattern);
         }
 
-        if (&self.private_key_passphrase_pattern[0] != &default_passphrase_pattern[0]) {
+        if (self.private_key_passphrase_pattern.ptr != default_passphrase_pattern.ptr) {
             allocator.free(self.private_key_passphrase_pattern);
         }
     }

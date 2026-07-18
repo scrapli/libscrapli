@@ -92,7 +92,7 @@ pub const Options = struct {
         var o = opts;
         errdefer o.deinit(allocator);
 
-        if (&o.error_tag[0] != &operation.default_rpc_error_tag[0]) {
+        if (o.error_tag.ptr != operation.default_rpc_error_tag.ptr) {
             o.error_tag = try allocator.dupe(u8, o.error_tag);
         }
 
@@ -104,7 +104,7 @@ pub const Options = struct {
         self: Options,
         allocator: std.mem.Allocator,
     ) void {
-        if (&self.error_tag[0] != &operation.default_rpc_error_tag[0]) {
+        if (self.error_tag.ptr != operation.default_rpc_error_tag.ptr) {
             allocator.free(self.error_tag);
         }
     }
