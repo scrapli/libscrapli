@@ -767,20 +767,24 @@ pub const Driver = struct {
 
     fn innerReadWithCallbacks(
         self: *Driver,
-        timer: *std.time.Timer,
+        allocator: std.mem.Allocator,
+        start_timestamp: std.Io.Timestamp,
         cancel: ?*bool,
         callbacks: []const operation.ReadCallback,
         bufs: *bytes.ProcessedBuf,
         buf_pos: usize,
         triggered_callbacks: *std.ArrayList([]const u8),
     ) !void {
+        var t = start_timestamp;
+
         while (true) {
             _ = try self.session.readTimeout(
-                timer,
+                t,
                 cancel,
                 bytes_check.nonZeroBuf,
                 .{},
                 bufs,
+                self.session.options.operation_max_search_depth,
             );
 
             for (callbacks) |callback| {
@@ -804,15 +808,15 @@ pub const Driver = struct {
                     triggered_callbacks,
                 ) catch |err| {
                     self.setLastError(
-                        "cli.Driver readWithCallbacks failed compiling contains pattern",
+                        "cli.Driver readWithCallbacks failed determining if callback should execute",
                     );
 
                     return errors.wrapCriticalError(
                         err,
                         @src(),
                         self.log,
-                        "cli.Driver readWithCallbacks: failed compling contains pattern '{s}'",
-                        .{callback.options.contains_pattern},
+                        "cli.Driver readWithCallbacks failed determining if callback should execute",
+                        .{},
                     );
                 };
 
@@ -846,13 +850,14 @@ pub const Driver = struct {
                 }
 
                 if (callback.options.reset_timer) {
-                    timer.reset();
+                    t = std.Io.Timestamp.now(self.io, .awake);
                 }
 
-                try triggered_callbacks.append(callback.options.name);
+                try triggered_callbacks.append(allocator, callback.options.name);
 
                 return self.innerReadWithCallbacks(
-                    timer,
+                    allocator,
+                    t,
                     cancel,
                     callbacks,
                     bufs,
@@ -874,7 +879,7 @@ pub const Driver = struct {
         self.log.info("cli.Driver readWithCallbacks requested", .{});
         self.log.debug(
             "cli.Driver readWithCallbacks: initial_input '{s}'",
-            .{options.initial_input},
+            .{options.initial_input orelse "n/a"},
         );
 
         var res = try self.newResult(
@@ -883,7 +888,7 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        var t = try std.time.Timer.start();
+        const start_time = std.Io.Timestamp.now(self.io, .awake);
 
         if (options.initial_input) |initial_input| {
             try self.session.writeAndReturn(initial_input, false);
@@ -896,7 +901,8 @@ pub const Driver = struct {
         defer triggered_callbacks.deinit(allocator);
 
         try self.innerReadWithCallbacks(
-            &t,
+            allocator,
+            start_time,
             options.cancel,
             options.callbacks,
             &bufs,
