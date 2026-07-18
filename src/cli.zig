@@ -1118,3 +1118,22 @@ test "readCallbackShouldExecute" {
 test "refAllDecls" {
     std.testing.refAllDecls(Driver);
 }
+
+fn driverInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    const d = try Driver.init(
+        allocator,
+        std.testing.io,
+        "localhost",
+        .{},
+    );
+
+    d.deinit();
+}
+
+test "driverInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        driverInitForAllocFailures,
+        .{},
+    );
+}

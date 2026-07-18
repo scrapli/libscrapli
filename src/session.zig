@@ -1472,3 +1472,31 @@ test "sessionInit" {
 test "refAllDecls" {
     std.testing.refAllDecls(Session);
 }
+
+fn sessionInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    var s = try Session.init(
+        allocator,
+        std.testing.io,
+        logging.Logger{
+            .allocator = allocator,
+        },
+        ">",
+        .{},
+        .{},
+        .{
+            .bin = .{},
+        },
+    );
+
+    s.deinit();
+}
+
+test "sessionInitAllocationFailures" {
+    // fail each allocation in the init path once, proving the errdefer/deinit unwind neither
+    // leaks nor touches uninitialized state under real allocation failure
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        sessionInitForAllocFailures,
+        .{},
+    );
+}

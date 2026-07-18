@@ -279,3 +279,26 @@ test "transportInit" {
 test "refAllDecls" {
     std.testing.refAllDecls(Transport);
 }
+
+fn transportInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    var t = try Transport.init(
+        allocator,
+        std.testing.io,
+        logging.Logger{
+            .allocator = allocator,
+        },
+        .{
+            .bin = .{},
+        },
+    );
+
+    t.deinit();
+}
+
+test "transportInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        transportInitForAllocFailures,
+        .{},
+    );
+}
