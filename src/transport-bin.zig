@@ -14,6 +14,12 @@ extern fn setsid() callconv(.c) i32;
 const default_ssh_bin: []const u8 = "/usr/bin/ssh";
 const default_term_height: u16 = 255;
 const default_term_width: u16 = 80;
+const default_eagain_delay_ns: u64 = 100_000;
+
+const PtyHandle = struct {
+    fd: c_int,
+    pid: std.c.pid_t,
+};
 
 /// Holds bin transport options.
 pub const Options = struct {
@@ -93,6 +99,7 @@ pub const Transport = struct {
     closing: bool = false,
 
     fd: ?std.posix.fd_t = null,
+    pid: ?std.c.pid_t = null,
 
     open_args: std.ArrayList(strings.MaybeHeapString),
 
@@ -431,7 +438,7 @@ pub const Transport = struct {
 
         self.log.debug("bin.Transport open: using args '{s}'", .{joined_open_args});
 
-        self.fd = openPty(
+        const pty = openPty(
             self.allocator,
             open_args,
             self.options.term_width,
@@ -450,6 +457,9 @@ pub const Transport = struct {
                 .{},
             );
         };
+
+        self.fd = pty.fd;
+        self.pid = pty.pid;
     }
 
     /// Closes the transport.
@@ -461,6 +471,42 @@ pub const Transport = struct {
         }
 
         self.fd = null;
+
+        if (self.pid) |pid| {
+            // kill the child too
+            _ = std.c.kill(pid, std.posix.SIG.TERM);
+
+            var status: c_int = 0;
+            var attempts: usize = 0;
+
+            var reaped = false;
+
+            while (attempts < 50) : (attempts += 1) {
+                if (std.c.waitpid(pid, &status, std.posix.W.NOHANG) != 0) {
+                    // > 0 means we reaped it, < 0 means error (e.g. echild because something
+                    // else already reaped it) -- either way there is nothing left to wait on
+                    reaped = true;
+
+                    break;
+                }
+
+                // zlinter-disable-next-line no_swallow_error - best effort backoff
+                self.io.sleep(
+                    .{
+                        .nanoseconds = 10 * std.time.ns_per_ms,
+                    },
+                    .awake,
+                ) catch {};
+            }
+
+            if (!reaped) {
+                // still running after ~500ms of being asked nicely
+                _ = std.c.kill(pid, std.posix.SIG.KILL);
+                _ = std.c.waitpid(pid, &status, 0);
+            }
+
+            self.pid = null;
+        }
     }
 
     /// Writes content to the transport session.
@@ -491,17 +537,12 @@ pub const Transport = struct {
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
                 std.posix.E.AGAIN => {
-                    const last_error = "bin.Transport write: eagain on write, short write";
-
-                    self.setLastError(last_error);
-
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Transport,
-                        @src(),
-                        self.log,
-                        last_error,
-                        .{},
-                    );
+                    self.io.sleep(
+                        .{
+                            .nanoseconds = default_eagain_delay_ns,
+                        },
+                        .awake,
+                    ) catch {};
                 },
                 else => |err| {
                     const last_error = "bin.Transport write: writing to fd failed";
@@ -571,7 +612,7 @@ fn openPty(
     term_width: u16,
     term_height: u16,
     netconf: bool,
-) !c_int {
+) !PtyHandle {
     const master_handle = std.posix.system.open(
         "/dev/ptmx",
         .{
@@ -661,7 +702,10 @@ fn openPty(
     // disable onlcr to make outputs nicer
     try setonlcr(master_handle);
 
-    return master_handle;
+    return PtyHandle{
+        .fd = master_handle,
+        .pid = pid,
+    };
 }
 
 fn openPtyChild(
