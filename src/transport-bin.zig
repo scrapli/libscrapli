@@ -605,14 +605,10 @@ fn openPty(
     // ensure the pty is non blocking
     try file.setNonBlocking(master_handle);
 
-    const args = allocator.alloc([*c]u8, open_args.len + 1) catch {
-        c._exit(1);
-    };
+    const args = try allocator.alloc([*c]u8, open_args.len + 1);
 
     for (open_args, 0..) |arg, i| {
-        args[i] = allocator.dupeSentinel(u8, arg, 0) catch {
-            c._exit(1);
-        };
+        args[i] = try allocator.dupeSentinel(u8, arg, 0);
     }
 
     args[open_args.len] = null;
