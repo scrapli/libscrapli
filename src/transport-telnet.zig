@@ -192,9 +192,20 @@ pub const Transport = struct {
 
             var control_char_buf: [1]u8 = undefined;
 
-            try self.waiter.wait(self.socket.?);
+            const n = std.posix.read(self.socket.?, &control_char_buf) catch |err| switch (err) {
+                error.WouldBlock => {
+                    // zlinter-disable-next-line no_swallow_error - best effort backoff
+                    self.io.sleep(
+                        .{
+                            .nanoseconds = default_eagain_delay_ns,
+                        },
+                        .awake,
+                    ) catch {};
 
-            const n = try std.posix.read(self.socket.?, &control_char_buf);
+                    continue;
+                },
+                else => return err,
+            };
             if (n == 0) {
                 const last_error = "telnet.Transport handleControlChars: peer closed connection " ++
                     "during telnet negotiation";
