@@ -372,6 +372,12 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("session.Session open requested", .{});
 
+        if (self.read_thread != null) {
+            self.log.critical("session.Session open requested but session already opened", .{});
+
+            return errors.ScrapliError.Session;
+        }
+
         self.recorder = try Recorder.init(
             self.io,
             self.options.record_destination,
@@ -882,6 +888,10 @@ pub const Session = struct {
         max_val: u64,
     ) u64 {
         var new_val: u64 = cur_val;
+
+        if (new_val == 0) {
+            new_val = 1;
+        }
 
         new_val *= 2;
         if (new_val > max_val) {
