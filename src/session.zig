@@ -1470,3 +1470,7 @@ test "sessionInit" {
     s.deinit();
     o.deinit(std.testing.allocator);
 }
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Session);
+}

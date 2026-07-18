@@ -590,9 +590,11 @@ pub const Driver = struct {
             }
 
             if (!found_cap_start) {
+                // search only the bytes this read actually produced -- the rest of the buffer is
+                // undefined on the first read and stale bytes from prior reads after that
                 const cap_start_index = std.mem.find(
                     u8,
-                    read_cap_buf,
+                    read_cap_buf[0..n],
                     "<hello ",
                 );
                 if (cap_start_index != null) {
@@ -606,7 +608,7 @@ pub const Driver = struct {
 
             const cap_end_index = std.mem.find(
                 u8,
-                read_cap_buf,
+                read_cap_buf[0..n],
                 delimiter_version_1_0,
             );
             if (cap_end_index != null) {
@@ -1225,30 +1227,32 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
-        var delimiter_count = std.mem.count(u8, buf, delimiter_version_1_0);
-
         var message_start_idx: usize = 0;
 
-        while (delimiter_count > 0) {
-            const maybe_delimiter_index = std.mem.find(
-                u8,
-                buf,
-                delimiter_version_1_0,
-            );
+        while (std.mem.find(
+            u8,
+            buf[message_start_idx..],
+            delimiter_version_1_0,
+        )) |relative_delimiter_index| {
+            const delimiter_index = message_start_idx + relative_delimiter_index;
+            const delimiter_end_index = delimiter_index + delimiter_version_1_0.len;
 
-            const delimiter_index = maybe_delimiter_index.?;
             const message_view = buf[message_start_idx..delimiter_index];
 
-            const owned_raw = try self.allocator.alloc(u8, buf.len);
-            @memcpy(owned_raw, buf);
+            const owned_raw = try self.allocator.dupe(
+                u8,
+                buf[message_start_idx..delimiter_end_index],
+            );
 
-            const owned_parsed = try self.allocator.alloc(u8, message_view.len);
-            @memcpy(owned_parsed, message_view);
+            const owned_parsed = self.allocator.dupe(u8, message_view) catch |err| {
+                self.allocator.free(owned_raw);
+
+                return err;
+            };
 
             try self.storeMessageOrSubscription(owned_raw, owned_parsed);
 
-            delimiter_count -= 1;
-            message_start_idx = delimiter_index + delimiter_version_1_0.len + 1;
+            message_start_idx = @min(delimiter_end_index + 1, buf.len);
         }
     }
 
@@ -1394,8 +1398,8 @@ pub const Driver = struct {
         self: *Driver,
         id: u64,
     ) ![][]const u8 {
-        self.subscriptions_lock.lock();
-        defer self.subscriptions_lock.unlock();
+        try self.subscriptions_lock.lock(self.io);
+        defer self.subscriptions_lock.unlock(self.io);
 
         if (!self.subscriptions.contains(id)) {
             return &[_][]const u8{};
@@ -1403,7 +1407,7 @@ pub const Driver = struct {
 
         // we know key is present since we already checked
         var ret = self.subscriptions.fetchRemove(id);
-        return ret.?.value.toOwnedSlice();
+        return ret.?.value.toOwnedSlice(self.allocator);
     }
 
     /// Fetch any stored notification messages. Caller owns returned memory -- w/ the allocator the
@@ -1411,10 +1415,10 @@ pub const Driver = struct {
     pub fn getNotificationMessages(
         self: *Driver,
     ) ![][]const u8 {
-        self.notifications_lock.lock();
-        defer self.notifications_lock.unlock();
+        try self.notifications_lock.lock(self.io);
+        defer self.notifications_lock.unlock(self.io);
 
-        return self.notifications.toOwnedSlice();
+        return self.notifications.toOwnedSlice(self.allocator);
     }
 
     fn processCancelAndTimeout(
@@ -4594,4 +4598,8 @@ test "processLoopBufContainsCompleteDelim" {
 
         try std.testing.expectEqual(case.expected, actual);
     }
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Driver);
 }

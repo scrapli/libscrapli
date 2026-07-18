@@ -111,3 +111,7 @@ pub const Transport = struct {
         return n;
     }
 };
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}

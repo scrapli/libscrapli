@@ -1108,3 +1108,7 @@ test "readCallbackShouldExecute" {
         try std.testing.expectEqual(case.expected, actual);
     }
 }
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Driver);
+}

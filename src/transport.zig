@@ -275,3 +275,7 @@ test "transportInit" {
 
     t.deinit();
 }
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}

@@ -56,3 +56,7 @@ pub const Waiter: type = switch (builtin.target.os.tag) {
     },
     else => @compileError("unsupported platform"),
 };
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Waiter);
+}
