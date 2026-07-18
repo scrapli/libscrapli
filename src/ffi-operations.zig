@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const netconf_operation = @import("netconf-operation.zig");
 const operation = @import("cli-operation.zig");
 const result = @import("cli-result.zig");
@@ -15,6 +17,23 @@ pub const OperationResult = struct {
     result: Result,
     err: ?anyerror,
     last_error: []const u8 = "",
+
+    pub fn deinit(self: OperationResult, allocator: std.mem.Allocator) void {
+        allocator.free(self.last_error);
+
+        switch (self.result) {
+            .cli => |cli_result| {
+                if (cli_result) |r| {
+                    r.deinit();
+                }
+            },
+            .netconf => |netconf_result| {
+                if (netconf_result) |r| {
+                    r.deinit();
+                }
+            },
+        }
+    }
 };
 
 /// OperationOptions is a struct holding tagged unions which in turn hold available options for all

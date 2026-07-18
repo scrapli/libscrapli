@@ -222,18 +222,7 @@ pub const FfiDriver = struct {
 
         var operation_results_iter = self.operation_results.iterator();
         while (operation_results_iter.next()) |entry| {
-            switch (entry.value_ptr.*.result) {
-                .cli => |r| {
-                    if (r) |result_ptr| {
-                        result_ptr.deinit();
-                    }
-                },
-                .netconf => |r| {
-                    if (r) |result_ptr| {
-                        result_ptr.deinit();
-                    }
-                },
-            }
+            entry.value_ptr.*.deinit(self.allocator);
         }
 
         // drain any any ops in the queue
@@ -480,7 +469,7 @@ pub const FfiDriver = struct {
                             .cli = null,
                         },
                         .err = ret_err,
-                        .last_error = rd.getLastError(),
+                        .last_error = self.allocator.dupe(u8, rd.getLastError()) catch "",
                     },
                 ) catch {
                     @panic(
@@ -755,7 +744,7 @@ pub const FfiDriver = struct {
                             .netconf = null,
                         },
                         .err = ret_err,
-                        .last_error = rd.getLastError(),
+                        .last_error = self.allocator.dupe(u8, rd.getLastError()) catch "",
                     },
                 ) catch {
                     @panic(

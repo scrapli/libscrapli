@@ -268,18 +268,10 @@ export fn ls_netconf_fetch_operation(
         return ffi_common.toFfiResult(err);
     };
 
-    defer {
-        const dret = switch (ret.result) {
-            .netconf => |r| r,
-            else => @panic("attempting to access non netconf result from netconf type"),
-        };
-        if (dret != null) {
-            dret.?.deinit();
-        }
-    }
+    defer ret.deinit(d.allocator);
 
-    if (ret.err != null) {
-        const err_name = @errorName(ret.err.?);
+    if (ret.err) |ret_err| {
+        const err_name = @errorName(ret_err);
 
         @memcpy(operation_error.*.ptr, err_name);
         @memcpy(operation_last_error.*, ret.last_error);

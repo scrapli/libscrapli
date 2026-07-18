@@ -294,18 +294,10 @@ export fn ls_cli_fetch_operation(
         return ffi_common.toFfiResult(err);
     };
 
-    defer {
-        const dret = switch (ret.result) {
-            .cli => |r| r,
-            else => @panic("ffi: attempting to access non cli result from cli type"),
-        };
-        if (dret != null) {
-            dret.?.deinit();
-        }
-    }
+    defer ret.deinit(d.allocator);
 
-    if (ret.err != null) {
-        const err_name = @errorName(ret.err.?);
+    if (ret.err) |ret_err| {
+        const err_name = @errorName(ret_err);
 
         @memcpy(operation_error.*, err_name);
         @memcpy(operation_last_error.*, ret.last_error);
