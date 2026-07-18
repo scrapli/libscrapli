@@ -113,26 +113,19 @@ pub const Transport = struct {
     /// Deinitialize the transport.
     pub fn deinit(self: *Transport) void {
         switch (self.implementation) {
-            Kind.bin => self.implementation.bin.deinit(),
-            Kind.telnet => self.implementation.telnet.deinit(),
-            Kind.ssh2 => self.implementation.ssh2.deinit(),
-            Kind.test_ => self.implementation.test_.deinit(),
+            // *by pointer! same for all the inline elses
+            inline else => |*t| t.deinit(),
         }
     }
 
-    /// Returns the last error value from the transports -- noop on test transport.
+    /// Returns the last error value from the transport.
     pub fn getLastError(self: *Transport) []const u8 {
         switch (self.implementation) {
-            Kind.bin => return self.implementation.bin.last_error[0..self.implementation.bin.last_error_len],
-            Kind.telnet => return self.implementation.telnet.last_error[0..self.implementation.telnet.last_error_len],
-            Kind.ssh2 => return self.implementation.ssh2.last_error[0..self.implementation.ssh2.last_error_len],
-            Kind.test_ => {
-                return "";
-            },
+            inline else => |*t| return t.getLastError(),
         }
     }
 
-    /// Open the transport connection.
+    /// Open the transport connection. not inlined due to obvious differences for the transports.
     pub fn open(
         self: *Transport,
         start_time: std.Io.Timestamp,
@@ -187,16 +180,7 @@ pub const Transport = struct {
     /// session to free up the session read loop.
     pub fn prepareClose(self: *Transport) !void {
         switch (self.implementation) {
-            Kind.bin => {
-                try self.implementation.bin.prepareClose();
-            },
-            Kind.telnet => {
-                try self.implementation.telnet.prepareClose();
-            },
-            Kind.ssh2 => {
-                try self.implementation.ssh2.prepareClose();
-            },
-            Kind.test_ => {},
+            inline else => |*t| try t.prepareClose(),
         }
     }
 
@@ -205,59 +189,22 @@ pub const Transport = struct {
     /// during deinit so its always nicely tidied up.
     pub fn close(self: *Transport) void {
         switch (self.implementation) {
-            Kind.bin => {
-                self.implementation.bin.close();
-            },
-            Kind.telnet => {
-                self.implementation.telnet.close();
-            },
-            Kind.ssh2 => {
-                self.implementation.ssh2.close();
-            },
-            Kind.test_ => {
-                self.implementation.test_.close();
-            },
+            inline else => |*t| t.close(),
         }
     }
 
     /// Write to the transport.
     pub fn write(self: *Transport, buf: []const u8) !void {
         switch (self.implementation) {
-            Kind.bin => {
-                try self.implementation.bin.write(buf);
-            },
-            Kind.telnet => {
-                try self.implementation.telnet.write(buf);
-            },
-            Kind.ssh2 => {
-                try self.implementation.ssh2.write(buf);
-            },
-            Kind.test_ => {
-                try self.implementation.test_.write(buf);
-            },
+            inline else => |*t| try t.write(buf),
         }
     }
 
     /// Read from the transport.
     pub fn read(self: *Transport, buf: []u8) !usize {
-        var n: usize = 0;
-
         switch (self.implementation) {
-            Kind.bin => {
-                n = try self.implementation.bin.read(buf);
-            },
-            Kind.telnet => {
-                n = try self.implementation.telnet.read(buf);
-            },
-            Kind.ssh2 => {
-                n = try self.implementation.ssh2.read(buf);
-            },
-            Kind.test_ => {
-                n = try self.implementation.test_.read(buf);
-            },
+            inline else => |*t| return t.read(buf),
         }
-
-        return n;
     }
 };
 

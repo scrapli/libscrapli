@@ -85,6 +85,17 @@ pub const Transport = struct {
     }
 
     /// Close the transport object.
+    pub fn getLastError(self: *Transport) []const u8 {
+        _ = self;
+
+        return "";
+    }
+
+    /// Noop ofc, just for consistency.
+    pub fn prepareClose(self: *Transport) !void {
+        _ = self;
+    }
+
     pub fn close(self: *Transport) void {
         if (self.fd) |fd| {
             _ = std.c.close(fd);

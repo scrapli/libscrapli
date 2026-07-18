@@ -668,6 +668,11 @@ pub const Transport = struct {
         self.last_error_len = len;
     }
 
+    /// Returns the last error message recorded by this transport (empty if none).
+    pub fn getLastError(self: *Transport) []const u8 {
+        return self.last_error[0..self.last_error_len];
+    }
+
     /// Opens the transport object.
     pub fn open(
         self: *Transport,
