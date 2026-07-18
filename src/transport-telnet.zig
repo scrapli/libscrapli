@@ -368,36 +368,40 @@ pub const Transport = struct {
             return n;
         }
 
-        try self.waiter.wait(self.socket.?);
+        while (true) {
+            try self.waiter.wait(self.socket.?);
 
-        if (self.closing) {
-            return 0;
-        }
+            if (self.closing) {
+                return 0;
+            }
 
-        const n = std.posix.read(self.socket.?, buf) catch |err| {
-            const last_error = "telnet.Transport read: failed reading from stream";
+            const n = std.posix.read(self.socket.?, buf) catch |err| {
+                const last_error = "telnet.Transport read: failed reading from stream";
 
-            self.setLastError(last_error);
+                self.setLastError(last_error);
 
-            return errors.wrapWarnError(
-                err,
-                @src(),
-                self.log,
-                last_error,
-                .{},
-            );
-        };
+                return errors.wrapWarnError(
+                    err,
+                    @src(),
+                    self.log,
+                    last_error,
+                    .{},
+                );
+            };
 
-        if (n == 0) {
+            if (n == 0) {
+                return n;
+            }
+
+            if (buf[0] == control_char_iac) {
+                // a telnet negotiation byte leaked into a normal read; drop this chunk and wait
+                // for the next one rather than recursing, which could overflow the stack if the
+                // peer streams IAC bytes
+                continue;
+            }
+
             return n;
         }
-
-        if (buf[0] == control_char_iac) {
-            // at this point we decided we are done so... yolo?
-            return self.read(buf);
-        }
-
-        return n;
     }
 
     /// Unblocks any in progress reads and sets the prepare close flag, this prevents us from
