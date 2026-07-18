@@ -453,13 +453,16 @@ pub const Driver = struct {
                     start_timestamp,
                 );
 
-                res.result = try allocator.print(
+                const combined_result = try allocator.print(
                     "{s}\n{s}",
                     .{
                         res.result,
                         cap_buf,
                     },
                 );
+
+                allocator.free(res.result);
+                res.result = combined_result;
             },
         }
 
