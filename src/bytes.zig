@@ -218,4 +218,52 @@ pub const ProcessedBuf = struct {
             try self.processed.toOwnedSlice(self.allocator),
         };
     }
+
+    /// Reserve space in both buffers -- intended so that we dont have to grow from 0 when the
+    /// session fires up basically.
+    pub fn reserve(self: *ProcessedBuf, n: u64) !void {
+        const cap: usize = @intCast(n);
+
+        try self.raw.ensureTotalCapacity(self.allocator, cap);
+        try self.processed.ensureTotalCapacity(self.allocator, cap);
+    }
+
+    /// Clear both the raw and processed bufs -- retain max lets us retain some space in the buffers
+    /// so the idea is basically to start the bufs w/ some capacity (reserve) then never shrink them
+    /// below the retained max. *But* importantly we have a *max* because if you do for example a
+    /// show tech that is huge, we probably dont want to have that amount of memory just always
+    /// allocated for us, so we can shrink back down to the max size.
+    pub fn reset(self: *ProcessedBuf, retain_max: u64) !void {
+        const cap: usize = @intCast(retain_max);
+
+        try resetBuf(&self.raw, self.allocator, cap);
+        try resetBuf(&self.processed, self.allocator, cap);
+    }
+
+    fn resetBuf(
+        list: *std.ArrayList(u8),
+        allocator: std.mem.Allocator,
+        retain_max: usize,
+    ) !void {
+        if (list.capacity > retain_max) {
+            list.clearAndFree(allocator);
+            try list.ensureTotalCapacity(allocator, retain_max);
+
+            return;
+        }
+
+        list.clearRetainingCapacity();
+    }
+
+    /// Return owned copies of the "raw" and "processed" buffers (caller owns the returned memory)
+    /// without consuming this ProcessedBuf, so the (almost certainly) Session can continue using
+    /// this object..
+    pub fn dupeOwnedSlices(self: *ProcessedBuf, allocator: std.mem.Allocator) ![2][]const u8 {
+        const raw_copy = try allocator.dupe(u8, self.raw.items);
+        errdefer allocator.free(raw_copy);
+
+        const processed_copy = try allocator.dupe(u8, self.processed.items);
+
+        return [2][]const u8{ raw_copy, processed_copy };
+    }
 };

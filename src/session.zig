@@ -13,6 +13,17 @@ const transport = @import("transport.zig");
 
 const default_return_char: []const u8 = "\n";
 
+// default initial reserve for the per-session scratch buffers (~8x the default read size);
+// in theory this should be large enough to hold lots of outputs from devices like show version
+// or even show run from a not super wildly huge device (a simple 8 port 3560 w/ some generic
+// config is ~7k chars, so... not going to hold a massive core router or stack config but its also
+// big enough to be a good baseline).
+const default_scratch_initial_size: u64 = 32_768;
+// max space to retain in the scratch -- we dont want this to be too high because this is like a
+// bare min floor our memory utilization will be at even if there is literally nothign happening,
+// so... twice the default size seems ok.
+const default_scratch_retain_max: u64 = 2 * default_scratch_initial_size;
+
 const ReadThreadState = enum(u8) {
     uninitialized,
     run,
@@ -111,6 +122,11 @@ pub const Options = struct {
     operation_timeout_ns: u64 = 10_000_000_000,
     operation_max_search_depth: u64 = 512,
     record_destination: ?RecordDestination = null,
+    scratch_initial_size: u64 = default_scratch_initial_size,
+    // scratch capacity is shrunk back to this many bytes when an operation leaves it larger,
+    // so a single huge operation does not pin memory for the life of the session. should
+    // generally be >= scratch_initial_size.
+    scratch_retain_max: u64 = default_scratch_retain_max,
 
     fn init(
         allocator: std.mem.Allocator,
@@ -199,6 +215,10 @@ pub const Session = struct {
     last_error: [512]u8 = @splat(0),
     last_error_len: usize = 0,
 
+    // reusable scratch buffers for building operation output; owned by the session and reset
+    // at the start of each op so we dont reallocate every time
+    scratch: bytes.ProcessedBuf,
+
     /// Initializes the session object.
     pub fn init(
         allocator: std.mem.Allocator,
@@ -237,8 +257,11 @@ pub const Session = struct {
             .read_into_buf = try allocator.alloc(u8, o.read_size),
             .read_loop_buf = try allocator.alloc(u8, o.read_size),
             .prompt_pattern = prompt_pattern,
+            .scratch = bytes.ProcessedBuf.init(allocator),
         };
         errdefer s.deinit();
+
+        try s.scratch.reserve(s.options.scratch_initial_size);
 
         s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern);
         if (s.compiled_username_pattern == null) {
@@ -332,6 +355,7 @@ pub const Session = struct {
 
         self.transport.deinit();
         self.read_queue.deinit();
+        self.scratch.deinit();
     }
 
     fn setLastError(
@@ -568,8 +592,8 @@ pub const Session = struct {
 
         var cur_read_delay_ns: u64 = self.options.read_min_delay_ns;
 
-        var bufs = bytes.ProcessedBuf.init(allocator);
-        defer bufs.deinit();
+        const bufs = &self.scratch;
+        try bufs.reset(self.options.scratch_retain_max);
 
         var cur_check_start_idx: usize = 0;
 
@@ -722,7 +746,7 @@ pub const Session = struct {
 
             switch (state) {
                 .complete => {
-                    return bufs.toOwnedSlices();
+                    return bufs.dupeOwnedSlices(allocator);
                 },
                 .username_prompted => {
                     if (self.auth_options.username) |un| {
@@ -1052,8 +1076,8 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("session.Session readAny requested", .{});
 
-        var bufs = bytes.ProcessedBuf.init(allocator);
-        defer bufs.deinit();
+        const bufs = &self.scratch;
+        try bufs.reset(self.options.scratch_retain_max);
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
@@ -1062,11 +1086,11 @@ pub const Session = struct {
             options.cancel,
             bytes_check.nonZeroBuf,
             .{},
-            &bufs,
+            bufs,
             self.options.operation_max_search_depth,
         );
 
-        return bufs.toOwnedSlices();
+        return bufs.dupeOwnedSlices(allocator);
     }
 
     /// Gets the current "prompt" from the device -- for Cli connections usually -- the prompt is
@@ -1080,8 +1104,8 @@ pub const Session = struct {
 
         try self.writeReturn();
 
-        var bufs = bytes.ProcessedBuf.init(allocator);
-        defer bufs.deinit();
+        const bufs = &self.scratch;
+        try bufs.reset(self.options.scratch_retain_max);
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
@@ -1092,7 +1116,7 @@ pub const Session = struct {
             .{
                 .pattern = self.compiled_prompt_pattern,
             },
-            &bufs,
+            bufs,
             self.options.operation_max_search_depth,
         );
 
@@ -1129,7 +1153,7 @@ pub const Session = struct {
             owned_found_prompt,
         );
 
-        return [2][]const u8{ try bufs.raw.toOwnedSlice(allocator), owned_found_prompt };
+        return [2][]const u8{ try allocator.dupe(u8, bufs.raw.items), owned_found_prompt };
     }
 
     fn innerSendInput(
@@ -1236,17 +1260,17 @@ pub const Session = struct {
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
-        var bufs = bytes.ProcessedBuf.init(allocator);
-        defer bufs.deinit();
+        const bufs = &self.scratch;
+        try bufs.reset(self.options.scratch_retain_max);
 
-        try self.prependLastConsumedPrompt(&bufs);
+        try self.prependLastConsumedPrompt(bufs);
 
         _ = try self.innerSendInput(
             start_time,
             options.cancel,
             options.input,
             options.input_handling,
-            &bufs,
+            bufs,
         );
 
         if (!options.retain_input) {
@@ -1264,7 +1288,7 @@ pub const Session = struct {
             options.cancel,
             bytes_check.patternInBuf,
             check_args,
-            &bufs,
+            bufs,
             self.options.operation_max_search_depth,
         );
 
@@ -1283,7 +1307,7 @@ pub const Session = struct {
             );
         }
 
-        return bufs.toOwnedSlices();
+        return bufs.dupeOwnedSlices(allocator);
     }
 
     /// Sends an input to the device -- an input that initiates some kind of "prompted" response by
@@ -1343,17 +1367,17 @@ pub const Session = struct {
             }
         }
 
-        var bufs = bytes.ProcessedBuf.init(allocator);
-        defer bufs.deinit();
+        const bufs = &self.scratch;
+        try bufs.reset(self.options.scratch_retain_max);
 
-        try self.prependLastConsumedPrompt(&bufs);
+        try self.prependLastConsumedPrompt(bufs);
 
         _ = try self.innerSendInput(
             start_time,
             options.cancel,
             options.input,
             options.input_handling,
-            &bufs,
+            bufs,
         );
 
         const response_check_f: bytes_check.CheckF =
@@ -1377,7 +1401,7 @@ pub const Session = struct {
             options.cancel,
             response_check_f,
             check_args,
-            &bufs,
+            bufs,
             self.options.operation_max_search_depth,
         );
 
@@ -1389,7 +1413,7 @@ pub const Session = struct {
                 options.cancel,
                 options.response,
                 options.input_handling,
-                &bufs,
+                bufs,
             );
         }
 
@@ -1398,7 +1422,7 @@ pub const Session = struct {
             options.cancel,
             bytes_check.patternInBuf,
             check_args,
-            &bufs,
+            bufs,
             self.options.operation_max_search_depth,
         );
 
@@ -1417,7 +1441,7 @@ pub const Session = struct {
             );
         }
 
-        return bufs.toOwnedSlices();
+        return bufs.dupeOwnedSlices(allocator);
     }
 };
 

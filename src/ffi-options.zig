@@ -57,6 +57,8 @@ pub const FFIOptions = extern struct {
         recordCallback: ?*const fn (
             buf: *const []u8,
         ) callconv(.c) void = null,
+        scratch_initial_size: ?*u64 = null,
+        scratch_retain_max: ?*u64 = null,
     },
 
     auth: extern struct {
@@ -222,6 +224,14 @@ pub const FFIOptions = extern struct {
             o.record_destination = .{
                 .cb = cb,
             };
+        }
+
+        if (self.session.scratch_initial_size) |d| {
+            o.scratch_initial_size = d.*;
+        }
+
+        if (self.session.scratch_retain_max) |d| {
+            o.scratch_retain_max = d.*;
         }
 
         return o;
@@ -542,6 +552,8 @@ const ffi_options_session_args_json_ish_placeholder =
     \\    "return_char": "{s}",
     \\    "operation_timeout_ns": {any},
     \\    "operation_max_search_depth": {any},
+    \\    "scratch_initial_size": {any},
+    \\    "scratch_retain_max": {any},
     \\    "record_destination": "{s}"
 ;
 
@@ -555,6 +567,8 @@ fn ffiOptionsSessionToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) !
             cStr(o.session.return_char, o.session.return_char_len),
             optU64(o.session.operation_timeout_ns),
             optU64(o.session.operation_max_search_depth),
+            optU64(o.session.scratch_initial_size),
+            optU64(o.session.scratch_retain_max),
             cStr(o.session.record_destination, o.session.record_destination_len),
         },
     );
