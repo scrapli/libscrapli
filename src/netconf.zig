@@ -142,7 +142,7 @@ pub const Driver = struct {
 
     process_thread: ?std.Thread,
     process_stop: std.atomic.Value(ProcessThreadState),
-    process_thread_exited: bool = false,
+    process_thread_exited: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
     message_id: u64,
 
@@ -972,7 +972,7 @@ pub const Driver = struct {
                             // dont set this to true till we processed any remaining messages
                             // otherwise we may bail out of dispatch rpc without seeing a close
                             // session response
-                            self.process_thread_exited = true;
+                            self.process_thread_exited.store(true, std.lang.AtomicOrder.release);
                         }
 
                         switch (self.negotiated_version) {
@@ -991,7 +991,7 @@ pub const Driver = struct {
                         return;
                     },
                     else => {
-                        self.process_thread_exited = true;
+                        self.process_thread_exited.store(true, std.lang.AtomicOrder.release);
 
                         return err;
                     },
@@ -2940,7 +2940,7 @@ pub const Driver = struct {
                 return v;
             }
 
-            if (self.process_thread_exited) {
+            if (self.process_thread_exited.load(std.lang.AtomicOrder.acquire)) {
                 return errors.ScrapliError.EOF;
             }
 
