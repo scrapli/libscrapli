@@ -1162,6 +1162,7 @@ pub const Session = struct {
         cancel: ?*bool,
         input: []const u8,
         input_handling: operation.InputHandling,
+        redact_input: bool,
         bufs: *bytes.ProcessedBuf,
     ) !bytes_check.MatchPositions {
         logging.traceWithSrc(
@@ -1171,7 +1172,7 @@ pub const Session = struct {
             .{
                 @tagName(input_handling),
                 input.len,
-                input,
+                if (redact_input) "<redacted>" else input,
             },
         );
 
@@ -1180,7 +1181,7 @@ pub const Session = struct {
             .actual = input,
         };
 
-        try self.write(input, false);
+        try self.write(input, redact_input);
 
         var match_indexes: bytes_check.MatchPositions = .{ .start = 0, .end = 0 };
 
@@ -1270,6 +1271,7 @@ pub const Session = struct {
             options.cancel,
             options.input,
             options.input_handling,
+            false,
             bufs,
         );
 
@@ -1323,7 +1325,10 @@ pub const Session = struct {
         self.log.info("session.Session sendPromptedInput requested", .{});
         self.log.debug(
             "session.Session sendPromptedInput: input '{s}', response '{s}'",
-            .{ options.input, options.response },
+            .{
+                options.input,
+                if (options.hidden_response) "<redacted>" else options.response,
+            },
         );
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
@@ -1355,17 +1360,15 @@ pub const Session = struct {
             }
         }
 
-        if (options.abort_input) |abort_input| {
-            errdefer {
-                self.writeAndReturn(abort_input, false) catch |err| {
-                    self.log.critical(
-                        "session.Session sendPromptedInput: failed sending abort sequence " ++
-                            "after error in prompted input, err: {}",
-                        .{err},
-                    );
-                };
-            }
-        }
+        errdefer if (options.abort_input) |abort_input| {
+            self.writeAndReturn(abort_input, false) catch |err| {
+                self.log.critical(
+                    "session.Session sendPromptedInput: failed sending abort sequence " ++
+                        "after error in prompted input, err: {}",
+                    .{err},
+                );
+            };
+        };
 
         const bufs = &self.scratch;
         try bufs.reset(self.options.scratch_retain_max);
@@ -1377,6 +1380,7 @@ pub const Session = struct {
             options.cancel,
             options.input,
             options.input_handling,
+            false,
             bufs,
         );
 
@@ -1406,13 +1410,14 @@ pub const Session = struct {
         );
 
         if (!options.hidden_response) {
-            try self.writeAndReturn(options.response, true);
+            try self.writeAndReturn(options.response, options.hidden_response);
         } else {
             _ = try self.innerSendInput(
                 start_time,
                 options.cancel,
                 options.response,
                 options.input_handling,
+                true,
                 bufs,
             );
         }
