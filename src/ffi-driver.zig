@@ -22,8 +22,8 @@ fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
         if (field_type == []const u8) {
             const value = @field(s, Info.field_names[idx]);
 
-            if (std.mem.eql(u8, value, mode.default_mode)) {
-                // noop
+            if (value.ptr == mode.default_mode.ptr) {
+                // borrowed default, nothing to free
             } else {
                 allocator.free(value);
             }
