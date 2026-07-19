@@ -112,6 +112,14 @@ jobs:
         # wait.sh should timeout but seems like it sometimes gets hung in actions sometimes
         timeout-minutes: 5
 
+      - name: dump lab diagnostics on failure
+        if: failure()
+        run: |
+          docker ps -a || true
+          echo "---- clab-launcher logs ----"
+          docker logs clab-launcher 2>&1 || true
+
+
       - name: run the functional tests
         run: |
           make test-functional-ci

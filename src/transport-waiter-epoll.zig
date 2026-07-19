@@ -88,7 +88,9 @@ pub const EpollWaiter = struct {
                 else => return errors.ScrapliError.Transport,
             }
 
-            for (out[0..rc]) |out_event| {
+            const ready_count: usize = @intCast(rc);
+
+            for (out[0..ready_count]) |out_event| {
                 if (out_event.data.fd == self.ev) {
                     var drain: u64 = 0;
                     _ = std.posix.system.read(
