@@ -216,6 +216,7 @@ pub const Session = struct {
 
     prompt_pattern: []const u8,
     compiled_prompt_pattern: ?*re.pcre2CompiledPattern = null,
+    prompt_excludes: ?[]const []const u8 = null,
 
     last_consumed_prompt: std.ArrayList(u8) = .empty,
 
@@ -231,6 +232,7 @@ pub const Session = struct {
         io: std.Io,
         log: logging.Logger,
         prompt_pattern: []const u8,
+        prompt_excludes: ?[]const []const u8,
         options: Options,
         auth_options: auth.Options,
         transport_options: transport.Options,
@@ -263,6 +265,7 @@ pub const Session = struct {
             .read_into_buf = &[_]u8{},
             .read_loop_buf = &[_]u8{},
             .prompt_pattern = prompt_pattern,
+            .prompt_excludes = prompt_excludes,
             .scratch = bytes.ProcessedBuf.init(allocator),
         };
         errdefer s.deinit();
@@ -1082,36 +1085,25 @@ pub const Session = struct {
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
-        _ = try self.readTimeout(
+        const match_indexes = try self.readTimeout(
             start_time,
             options.cancel,
             bytes_check.patternInBuf,
             .{
                 .pattern = self.compiled_prompt_pattern,
+                .excludes = self.prompt_excludes,
             },
             bufs,
             self.options.operation_max_search_depth,
         );
 
-        // pcre2Find returns a slice from the haystack, so we need to persist that in memory
-        // through that function call (cant just return pcre2Find)
-        const found_prompt = try re.pcre2Find(
-            self.compiled_prompt_pattern.?,
-            bufs.processed.items,
-        ) orelse {
-            self.last_error.set("session.Session getPrompt: no prompt found matching prompt pattern");
-
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Driver,
-                @src(),
-                self.log,
-                "session.Session getPrompt: no prompt found matching prompt pattern '{s}' in '{s}'",
-                .{
-                    self.prompt_pattern,
-                    bufs.processed.items,
-                },
-            );
-        };
+        // use the match positions readTimeout already found rather than re-searching -- a
+        // re-search could land on an earlier (i.e. prompt exclude filtered) match. defensively
+        // clamp the end since readTimeout positions are relative to the processed buf
+        const found_prompt = bufs.processed.items[match_indexes.start..@min(
+            match_indexes.end,
+            bufs.processed.items.len,
+        )];
 
         // the match is a view into the (reused) scratch buffer, and both consumers need their
         // own copy with their own allocator: the caller owns the returned prompt (operation
@@ -1258,6 +1250,7 @@ pub const Session = struct {
         const check_args = bytes_check.CheckArgs{
             .pattern = self.compiled_prompt_pattern,
             .actual = options.input,
+            .excludes = self.prompt_excludes,
         };
 
         var prompt_indexes = try self.readTimeout(
@@ -1363,6 +1356,7 @@ pub const Session = struct {
 
         var check_args = bytes_check.CheckArgs{
             .actual = options.prompt_exact,
+            .excludes = self.prompt_excludes,
         };
 
         if (compiled_pattern) |cp| {
@@ -1434,6 +1428,7 @@ test "sessionInit" {
             .allocator = std.testing.allocator,
         },
         ">",
+        null,
         o,
         .{},
         .{
@@ -1457,6 +1452,7 @@ fn sessionInitForAllocFailures(allocator: std.mem.Allocator) !void {
             .allocator = allocator,
         },
         ">",
+        null,
         .{},
         .{},
         .{

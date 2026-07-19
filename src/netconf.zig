@@ -213,6 +213,7 @@ pub const Driver = struct {
             io,
             log,
             delimiter_version_1_0,
+            null,
             o.session,
             o.auth,
             o.transport,

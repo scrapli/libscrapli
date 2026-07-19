@@ -106,6 +106,7 @@ pub const Driver = struct {
             io,
             log,
             definition.prompt_pattern,
+            definition.prompt_excludes,
             options.session,
             options.auth,
             options.transport,
@@ -960,6 +961,7 @@ pub const Driver = struct {
 
         self.current_mode = mode.unknown_mode;
         self.session.prompt_pattern = new_definition.prompt_pattern;
+        self.session.prompt_excludes = new_definition.prompt_excludes;
 
         if (pattern_changed) {
             if (self.session.compiled_prompt_pattern) |p| {
