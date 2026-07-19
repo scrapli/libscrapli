@@ -1144,15 +1144,19 @@ pub const Session = struct {
             );
         }
 
-        const owned_found_prompt = try allocator.alloc(u8, found_prompt.?.len);
-        @memcpy(owned_found_prompt, found_prompt.?);
+        // the match is a view into the (reused) scratch buffer, and both consumers need their
+        // own copy with their own allocator: the caller owns the returned prompt (operation
+        // allocator), and the session retains its own (session allocator) for prepending to
+        // the next operation's buf
+        const owned_found_prompt = try allocator.dupe(u8, found_prompt.?);
+        errdefer allocator.free(owned_found_prompt);
 
         // we want to ensure we are storing the last consumed prompt so that our send_input
         // buf is always "correct" when "retain_input" is true
-        try self.last_consumed_prompt.resize(self.allocator, 0);
+        self.last_consumed_prompt.clearRetainingCapacity();
         try self.last_consumed_prompt.appendSlice(
             self.allocator,
-            owned_found_prompt,
+            found_prompt.?,
         );
 
         return [2][]const u8{ try allocator.dupe(u8, bufs.raw.items), owned_found_prompt };
