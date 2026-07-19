@@ -185,6 +185,17 @@ pub fn pcre2FindIndex(
     regexp: *pcre2.pcre2_code_8,
     haystack: []const u8,
 ) ![2]usize {
+    return pcre2FindIndexAt(regexp, haystack, 0);
+}
+
+/// Like pcre2FindIndex but starts matching at the given offset into the haystack. Unlike simply
+/// slicing the haystack, pcre2 retains the real subject start, so anchors ('^' w/ multiline)
+/// behave correctly when resuming a search partway through a buffer.
+pub fn pcre2FindIndexAt(
+    regexp: *pcre2.pcre2_code_8,
+    haystack: []const u8,
+    offset: usize,
+) ![2]usize {
     const matches: ?*pcre2.pcre2_match_data_8 = pcre2.pcre2_match_data_create_from_pattern_8(
         regexp,
         null,
@@ -195,7 +206,7 @@ pub fn pcre2FindIndex(
         regexp,
         &haystack[0],
         haystack.len,
-        0,
+        offset,
         0,
         matches.?,
         null,
