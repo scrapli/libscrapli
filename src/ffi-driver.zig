@@ -323,16 +323,14 @@ pub const FfiDriver = struct {
                 };
             }
 
-            const op = self.operation_queue.readItem();
+            const maybe_op = self.operation_queue.readItem();
 
             self.operation_lock.unlock(self.io);
 
-            if (op == null) {
-                continue;
-            }
+            const op = maybe_op orelse continue;
 
             // free any owned strings when the op is done
-            defer ffi_operations.freeOperationOwnedStrings(self.allocator, op.?);
+            defer ffi_operations.freeOperationOwnedStrings(self.allocator, op);
 
             var ret_ok: ?*result.Result = null;
             var ret_err: ?anyerror = null;
@@ -342,78 +340,86 @@ pub const FfiDriver = struct {
                 else => unreachable,
             };
 
-            switch (op.?.operation.cli) {
+            switch (op.operation.cli) {
                 .open => |o| {
-                    ret_ok = rd.open(
+                    if (rd.open(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .close => |o| {
-                    ret_ok = rd.close(
+                    if (rd.close(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .enter_mode => |o| {
-                    ret_ok = rd.enterMode(
+                    if (rd.enterMode(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .get_prompt => |o| {
-                    ret_ok = rd.getPrompt(
+                    if (rd.getPrompt(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .send_input => |o| {
-                    ret_ok = rd.sendInput(
+                    if (rd.sendInput(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .send_inputs => |o| {
-                    ret_ok = rd.sendInputs(
+                    if (rd.sendInputs(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .send_prompted_input => |o| {
-                    ret_ok = rd.sendPromptedInput(
+                    if (rd.sendPromptedInput(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .read_any => |o| {
-                    ret_ok = rd.readAny(
+                    if (rd.readAny(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
             }
 
@@ -423,7 +429,7 @@ pub const FfiDriver = struct {
 
             if (ret_err != null) {
                 self.operation_results.put(
-                    op.?.id,
+                    op.id,
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
@@ -440,7 +446,7 @@ pub const FfiDriver = struct {
                 };
             } else {
                 self.operation_results.put(
-                    op.?.id,
+                    op.id,
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
@@ -490,16 +496,14 @@ pub const FfiDriver = struct {
                 };
             }
 
-            const op = self.operation_queue.readItem();
+            const maybe_op = self.operation_queue.readItem();
 
             self.operation_lock.unlock(self.io);
 
-            if (op == null) {
-                continue;
-            }
+            const op = maybe_op orelse continue;
 
             // free any owned strings when the op is done
-            defer ffi_operations.freeOperationOwnedStrings(self.allocator, op.?);
+            defer ffi_operations.freeOperationOwnedStrings(self.allocator, op);
 
             var ret_ok: ?*result_netconf.Result = null;
             var ret_err: ?anyerror = null;
@@ -509,186 +513,206 @@ pub const FfiDriver = struct {
                 else => unreachable,
             };
 
-            switch (op.?.operation.netconf) {
+            switch (op.operation.netconf) {
                 .open => |o| {
-                    ret_ok = rd.open(
+                    if (rd.open(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .close => |o| {
-                    ret_ok = rd.close(
+                    if (rd.close(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .raw_rpc => |o| {
-                    ret_ok = rd.rawRpc(
+                    if (rd.rawRpc(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .get_config => |o| {
-                    ret_ok = rd.getConfig(
+                    if (rd.getConfig(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .edit_config => |o| {
-                    ret_ok = rd.editConfig(
+                    if (rd.editConfig(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .copy_config => |o| {
-                    ret_ok = rd.copyConfig(
+                    if (rd.copyConfig(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .delete_config => |o| {
-                    ret_ok = rd.deleteConfig(
+                    if (rd.deleteConfig(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .lock => |o| {
-                    ret_ok = rd.lock(
+                    if (rd.lock(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .unlock => |o| {
-                    ret_ok = rd.unlock(
+                    if (rd.unlock(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .get => |o| {
-                    ret_ok = rd.get(
+                    if (rd.get(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .close_session => |o| {
-                    ret_ok = rd.closeSession(
+                    if (rd.closeSession(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .kill_session => |o| {
-                    ret_ok = rd.killSession(
+                    if (rd.killSession(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .commit => |o| {
-                    ret_ok = rd.commit(
+                    if (rd.commit(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .discard => |o| {
-                    ret_ok = rd.discard(
+                    if (rd.discard(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .cancel_commit => |o| {
-                    ret_ok = rd.cancelCommit(
+                    if (rd.cancelCommit(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .validate => |o| {
-                    ret_ok = rd.validate(
+                    if (rd.validate(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .get_schema => |o| {
-                    ret_ok = rd.getSchema(
+                    if (rd.getSchema(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .get_data => |o| {
-                    ret_ok = rd.getData(
+                    if (rd.getData(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .edit_data => |o| {
-                    ret_ok = rd.editData(
+                    if (rd.editData(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
                 .action => |o| {
-                    ret_ok = rd.action(
+                    if (rd.action(
                         self.allocator,
                         o,
-                    ) catch |err| blk: {
+                    )) |ret| {
+                        ret_ok = ret;
+                    } else |err| {
                         ret_err = err;
-                        break :blk null;
-                    };
+                    }
                 },
             }
 
@@ -698,7 +722,7 @@ pub const FfiDriver = struct {
 
             if (ret_err != null) {
                 self.operation_results.put(
-                    op.?.id,
+                    op.id,
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{
@@ -715,7 +739,7 @@ pub const FfiDriver = struct {
                 };
             } else {
                 self.operation_results.put(
-                    op.?.id,
+                    op.id,
                     ffi_operations.OperationResult{
                         .done = true,
                         .result = .{

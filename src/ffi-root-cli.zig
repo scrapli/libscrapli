@@ -84,7 +84,7 @@ export fn ls_cli_open(
     operation_id: *u32,
     cancel: *bool,
 ) callconv(.c) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     d.open() catch |err| {
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
@@ -162,7 +162,7 @@ export fn ls_cli_close(
     operation_id: *u32,
     cancel: *bool,
 ) callconv(.c) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     _ = getRealCliDriver(d) orelse {
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
@@ -206,7 +206,7 @@ export fn ls_cli_fetch_operation_sizes(
     operation_error_size: *usize,
     operation_last_error_size: *usize,
 ) callconv(.c) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const ret = d.dequeueOperation(operation_id, false) catch |err| {
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
@@ -269,7 +269,7 @@ export fn ls_cli_fetch_operation(
     operation_error: *[]u8,
     operation_last_error: *[]u8,
 ) callconv(.c) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const ret = d.dequeueOperation(operation_id, true) catch |err| {
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops

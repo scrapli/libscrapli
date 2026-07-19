@@ -50,15 +50,15 @@ pub fn getConfigOptionsFromArgs(
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (source) |src| {
-        options.source = @as(operation.DatastoreType, @enumFromInt(src.*));
+        options.source = @enumFromInt(src.*);
     }
 
     if (filter_type) |flt| {
-        options.filter_type = @as(operation.FilterType, @enumFromInt(flt.*));
+        options.filter_type = @enumFromInt(flt.*);
     }
 
     if (defaults_type) |dfl| {
-        options.defaults_type = @as(operation.DefaultsType, @enumFromInt(dfl.*));
+        options.defaults_type = @enumFromInt(dfl.*);
     }
 
     const spanned_filter = std.mem.span(filter);
@@ -95,19 +95,19 @@ pub fn editConfigOptionsFromArgs(
     };
 
     if (target) |tgt| {
-        options.target = @as(operation.DatastoreType, @enumFromInt(tgt.*));
+        options.target = @enumFromInt(tgt.*);
     }
 
     if (default_operation) |dfo| {
-        options.default_operation = @as(operation.DefaultOperation, @enumFromInt(dfo.*));
+        options.default_operation = @enumFromInt(dfo.*);
     }
 
     if (test_option) |tso| {
-        options.test_option = @as(operation.TestOption, @enumFromInt(tso.*));
+        options.test_option = @enumFromInt(tso.*);
     }
 
     if (error_option) |ero| {
-        options.error_option = @as(operation.ErrorOption, @enumFromInt(ero.*));
+        options.error_option = @enumFromInt(ero.*);
     }
 
     return options;
@@ -124,11 +124,11 @@ pub fn copyConfigOptionsFromArgs(
     };
 
     if (target) |tgt| {
-        options.target = @as(operation.DatastoreType, @enumFromInt(tgt.*));
+        options.target = @enumFromInt(tgt.*);
     }
 
     if (source) |src| {
-        options.source = @as(operation.DatastoreType, @enumFromInt(src.*));
+        options.source = @enumFromInt(src.*);
     }
 
     return options;
@@ -144,7 +144,7 @@ pub fn deleteConfigOptionsFromArgs(
     };
 
     if (target) |tgt| {
-        options.target = @as(operation.DatastoreType, @enumFromInt(tgt.*));
+        options.target = @enumFromInt(tgt.*);
     }
 
     return options;
@@ -160,7 +160,7 @@ pub fn lockUnlockOptionsFromArgs(
     };
 
     if (target) |tgt| {
-        options.target = @as(operation.DatastoreType, @enumFromInt(tgt.*));
+        options.target = @enumFromInt(tgt.*);
     }
 
     return options;
@@ -183,11 +183,11 @@ pub fn getOptionsFromArgs(
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (filter_type) |flt| {
-        options.filter_type = @as(operation.FilterType, @enumFromInt(flt.*));
+        options.filter_type = @enumFromInt(flt.*);
     }
 
     if (defaults_type) |dfl| {
-        options.defaults_type = @as(operation.DefaultsType, @enumFromInt(dfl.*));
+        options.defaults_type = @enumFromInt(dfl.*);
     }
 
     const spanned_filter = std.mem.span(filter);
@@ -218,7 +218,7 @@ pub fn validateOptionsFromArgs(
     };
 
     if (source) |src| {
-        options.source = @as(operation.DatastoreType, @enumFromInt(src.*));
+        options.source = @enumFromInt(src.*);
     }
 
     return options;
@@ -263,7 +263,7 @@ pub fn getSchemaOptionsFromArgs(
     options.version = try allocator.dupe(u8, std.mem.span(version));
 
     if (format) |fmt| {
-        options.format = @as(operation.SchemaFormat, @enumFromInt(fmt.*));
+        options.format = @enumFromInt(fmt.*);
     }
 
     return options;
@@ -291,15 +291,15 @@ pub fn getDataOptionsFromArgs(
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (datastore) |str| {
-        options.datastore = @as(operation.DatastoreType, @enumFromInt(str.*));
+        options.datastore = @enumFromInt(str.*);
     }
 
     if (filter_type) |flt| {
-        options.filter_type = @as(operation.FilterType, @enumFromInt(flt.*));
+        options.filter_type = @enumFromInt(flt.*);
     }
 
     if (defaults_type) |dfl| {
-        options.defaults_type = @as(operation.DefaultsType, @enumFromInt(dfl.*));
+        options.defaults_type = @enumFromInt(dfl.*);
     }
 
     if (config_filter) |cff| {
@@ -351,11 +351,11 @@ pub fn editDataOptionsFromArgs(
     };
 
     if (datastore) |dst| {
-        options.datastore = @as(operation.DatastoreType, @enumFromInt(dst.*));
+        options.datastore = @enumFromInt(dst.*);
     }
 
     if (default_operation) |dfo| {
-        options.default_operation = @as(operation.DefaultOperation, @enumFromInt(dfo.*));
+        options.default_operation = @enumFromInt(dfo.*);
     }
 
     return options;

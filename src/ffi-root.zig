@@ -161,7 +161,7 @@ export fn ls_session_read(
     buf: *[]u8,
     read_n: *usize,
 ) callconv(.c) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const s: *session.Session = switch (d.real_driver) {
         .cli => |rd| &rd.session,
@@ -197,7 +197,7 @@ export fn ls_session_write(
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const s: *session.Session = switch (d.real_driver) {
         .cli => |rd| &rd.session,
@@ -229,7 +229,7 @@ export fn ls_session_write_and_return(
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const s: *session.Session = switch (d.real_driver) {
         .cli => |rd| &rd.session,
@@ -255,7 +255,7 @@ export fn ls_session_write_and_return(
 export fn ls_session_write_return(
     d_ptr: *ffi_common.LsDriver,
 ) callconv(.c) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const s: *session.Session = switch (d.real_driver) {
         .cli => |rd| &rd.session,

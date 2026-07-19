@@ -24,7 +24,7 @@ pub fn sendInputOptionsFromArgs(
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (input_handling) |inh| {
-        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+        options.input_handling = @enumFromInt(inh.*);
     }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
@@ -64,7 +64,7 @@ pub fn sendInputsOptionsFromArgs(
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (input_handling) |inh| {
-        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+        options.input_handling = @enumFromInt(inh.*);
     }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
@@ -114,7 +114,7 @@ pub fn sendPromptedInputOptionsFromArgs(
     options.abort_input = try allocator.dupe(u8, std.mem.span(abort_input));
 
     if (input_handling) |inh| {
-        options.input_handling = @as(operation.InputHandling, @enumFromInt(inh.*));
+        options.input_handling = @enumFromInt(inh.*);
     }
 
     const spanned_requested_mode = std.mem.span(requested_mode);
