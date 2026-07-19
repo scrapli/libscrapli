@@ -436,8 +436,7 @@ pub const Driver = struct {
                 break;
             }
 
-            const step_mode = self.definition.modes.get(step);
-            if (step_mode == null) {
+            const step_mode = self.definition.modes.get(step) orelse {
                 self.last_error.set("cli.Driver enterMode mode not in definition");
 
                 return errors.wrapCriticalError(
@@ -447,12 +446,11 @@ pub const Driver = struct {
                     "cli.Driver enterMode: no mode '{s}' in definition",
                     .{step},
                 );
-            }
+            };
 
             const next_mode_name = steps.items[step_idx + 1];
 
-            const next_operation = step_mode.?.accessible_modes.get(next_mode_name);
-            if (next_operation == null) {
+            const next_operation = step_mode.accessible_modes.get(next_mode_name) orelse {
                 self.last_error.set("cli.Driver enterMode mode not accessible from current mode");
 
                 return errors.wrapCriticalError(
@@ -462,9 +460,9 @@ pub const Driver = struct {
                     "cli.Driver enterMode: mode '{s}' not accessible from current mode '{s}'",
                     .{ next_mode_name, self.current_mode },
                 );
-            }
+            };
 
-            for (next_operation.?) |op| {
+            for (next_operation) |op| {
                 switch (op) {
                     .send_input => {
                         try res.recordExtend(
@@ -939,9 +937,7 @@ pub const Driver = struct {
         var new_compiled_pattern = self.session.compiled_prompt_pattern;
 
         if (pattern_changed) {
-            new_compiled_pattern = re.pcre2Compile(new_definition.prompt_pattern);
-
-            if (new_compiled_pattern == null) {
+            new_compiled_pattern = re.pcre2Compile(new_definition.prompt_pattern) orelse {
                 self.last_error.set("cli.replaceDefinition failed compiling prompt pattern");
 
                 return errors.wrapCriticalError(
@@ -951,7 +947,7 @@ pub const Driver = struct {
                     "cli.replaceDefinition: failed compiling prompt pattern {s}",
                     .{new_definition.prompt_pattern},
                 );
-            }
+            };
         }
 
         self.definition.deinit();
@@ -1001,15 +997,14 @@ pub fn readCallbackShouldExecute(
             callback_contains_or_pattern_matches = true;
         }
     } else if (contains_pattern) |cp| {
-        const compiled_cp = re.pcre2Compile(cp);
-        if (compiled_cp == null) {
+        const compiled_cp = re.pcre2Compile(cp) orelse {
             return errors.ScrapliError.Operation;
-        }
+        };
 
-        defer re.pcre2Free(compiled_cp.?);
+        defer re.pcre2Free(compiled_cp);
 
         const match = try re.pcre2Find(
-            compiled_cp.?,
+            compiled_cp,
             buf,
         );
         if (match != null) {

@@ -392,8 +392,7 @@ pub const Driver = struct {
                     u8,
                     res.result,
                     "<hello ",
-                );
-                if (cap_start_index == null) {
+                ) orelse {
                     const last_error = "netconf.Driver open: could not find start of " ++
                         "server capabilities";
 
@@ -406,7 +405,7 @@ pub const Driver = struct {
                         last_error,
                         .{},
                     );
-                }
+                };
 
                 // session will have read up to (and consumed) the prompt (]]>]]> at this point),
                 // so we just need find the end of the server hello/capabilities.
@@ -414,8 +413,7 @@ pub const Driver = struct {
                     u8,
                     res.result,
                     "/hello>",
-                );
-                if (cap_end_index == null) {
+                ) orelse {
                     const last_error = "netconf.Driver open: could not find end of server " ++
                         "capabilities";
 
@@ -428,11 +426,11 @@ pub const Driver = struct {
                         last_error,
                         .{},
                     );
-                }
+                };
 
                 cap_buf = try allocator.dupe(
                     u8,
-                    res.result[cap_start_index.? .. cap_end_index.? + "/hello>".len],
+                    res.result[cap_start_index .. cap_end_index + "/hello>".len],
                 );
             },
             else => {
@@ -603,8 +601,8 @@ pub const Driver = struct {
                 read_cap_buf[0..n],
                 delimiter_version_1_0,
             );
-            if (cap_end_index != null) {
-                end_copy_index = cap_end_index.?;
+            if (cap_end_index) |idx| {
+                end_copy_index = idx;
             }
 
             try cap_buf.append(
@@ -741,7 +739,7 @@ pub const Driver = struct {
         self.log.info("netconf.Driver hasCapability requested", .{});
         self.log.debug("netconf.Driver hasCapability: name '{s}'", .{name});
 
-        if (self.server_capabilities == null) {
+        const server_capabilities = self.server_capabilities orelse {
             const last_error = "netconf.Driver hasCapability: requested but capabilities unset";
 
             self.last_error.set(last_error);
@@ -753,9 +751,7 @@ pub const Driver = struct {
                 last_error,
                 .{},
             );
-        }
-
-        const server_capabilities = self.server_capabilities.?;
+        };
 
         for (server_capabilities.items) |cap| {
             if (namespace) |ns| {
@@ -817,12 +813,12 @@ pub const Driver = struct {
             );
         }
 
-        if (self.options.preferred_version == null) {
+        const preferred_version = self.options.preferred_version orelse {
             // user doesnt care, use default
             return;
-        }
+        };
 
-        switch (self.options.preferred_version.?) {
+        switch (preferred_version) {
             .version_1_0 => {
                 if (has_version_1_0) {
                     self.negotiated_version = .version_1_0;
@@ -1128,10 +1124,10 @@ pub const Driver = struct {
         }
 
         var _start_index: usize = 0;
-        if (index_of_message_id != null) {
-            _start_index = index_of_message_id.? + message_id_attribute_prefix.len;
-        } else if (index_of_subscription_id != null) {
-            _start_index = index_of_subscription_id.? + subscription_id_attribute_prefix.len;
+        if (index_of_message_id) |idx| {
+            _start_index = idx + message_id_attribute_prefix.len;
+        } else if (index_of_subscription_id) |idx| {
+            _start_index = idx + subscription_id_attribute_prefix.len;
         }
 
         // max should be uint32, so 10 chars covers that
@@ -3023,13 +3019,9 @@ pub const Driver = struct {
         try self.messages_lock.lock(self.io);
         defer self.messages_lock.unlock(self.io);
 
-        const kv = self.messages.fetchRemove(message_id);
+        const kv = self.messages.fetchRemove(message_id) orelse return null;
 
-        if (kv == null) {
-            return null;
-        }
-
-        return kv.?.value;
+        return kv.value;
     }
 };
 
