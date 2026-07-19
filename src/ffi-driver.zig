@@ -864,7 +864,7 @@ pub const FfiDriver = struct {
         };
 
         if (r.result_failure_indicator >= 0) {
-            const failure_size = r.failed_indicators.?.items[@intCast(r.result_failure_indicator)].len;
+            const failure_size = r.failed_indicators.?[@intCast(r.result_failure_indicator)].len;
             sizes.operation_failure_indicator_size = failure_size;
         }
 
@@ -919,7 +919,7 @@ pub const FfiDriver = struct {
         if (r.result_failure_indicated) {
             @memcpy(
                 operation_result_failed_indicator.*,
-                r.failed_indicators.?.items[@intCast(r.result_failure_indicator)],
+                r.failed_indicators.?[@intCast(r.result_failure_indicator)],
             );
         }
 

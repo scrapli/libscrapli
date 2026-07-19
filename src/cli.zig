@@ -35,7 +35,7 @@ const default_definition_string =
 pub const DefinitionSource = union(enum) {
     string: []const u8,
     file: []const u8,
-    definition: *platform.Options,
+    definition: *platform.Definition,
 };
 
 /// Options for the cli driver, driven from a config struct.
@@ -70,7 +70,7 @@ pub const Driver = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
     log: logging.Logger,
-    definition: *platform.Definition,
+    definition: platform.Definition,
     host: []const u8,
     port: u16 = default_ssh_port,
     session: session.Session,
@@ -93,8 +93,8 @@ pub const Driver = struct {
 
         try options.validate(log);
 
-        const definition = try Driver.loadDefinition(allocator, io, options.definition);
-        errdefer definition.deinit();
+        var definition = try Driver.loadDefinition(allocator, io, options.definition);
+        errdefer definition.deinit(allocator);
 
         var s = try session.Session.init(
             allocator,
@@ -139,7 +139,7 @@ pub const Driver = struct {
         logging.traceWithSrc(self.log, @src(), "cli.Driver deinitializing", .{});
 
         self.session.deinit();
-        self.definition.deinit();
+        self.definition.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
@@ -163,7 +163,7 @@ pub const Driver = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         definition_source: DefinitionSource,
-    ) !*platform.Definition {
+    ) !platform.Definition {
         return switch (definition_source) {
             .string => |d| try platform.YamlDefinition.toDefinition(
                 allocator,
@@ -921,12 +921,12 @@ pub const Driver = struct {
     ) !void {
         self.log.info("cli.Driver replaceDefinition requested", .{});
 
-        const new_definition = try Driver.loadDefinition(
+        var new_definition = try Driver.loadDefinition(
             self.allocator,
             self.io,
             definition_source,
         );
-        errdefer new_definition.deinit();
+        errdefer new_definition.deinit(self.allocator);
 
         const pattern_changed = !std.mem.eql(
             u8,
@@ -950,7 +950,7 @@ pub const Driver = struct {
             };
         }
 
-        self.definition.deinit();
+        self.definition.deinit(self.allocator);
         self.definition = new_definition;
 
         self.current_mode = mode.unknown_mode;

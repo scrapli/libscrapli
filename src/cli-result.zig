@@ -19,7 +19,7 @@ pub const Result = struct {
 
     operation_kind: operation.Kind,
 
-    failed_indicators: ?std.ArrayList([]const u8),
+    failed_indicators: ?[]const []const u8,
 
     inputs: std.ArrayList([]const u8),
 
@@ -43,7 +43,7 @@ pub const Result = struct {
         host: []const u8,
         port: u16,
         operation_kind: operation.Kind,
-        failed_indicators: ?std.ArrayList([]const u8),
+        failed_indicators: ?[]const []const u8,
     ) !*Result {
         const res = try allocator.create(Result);
 
@@ -108,7 +108,7 @@ pub const Result = struct {
             return;
         }
 
-        for (0.., self.failed_indicators.?.items) |idx, failed_when| {
+        for (0.., self.failed_indicators.?) |idx, failed_when| {
             if (std.mem.find(
                 u8,
                 self.results.items[self.results.items.len - 1],

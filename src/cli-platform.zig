@@ -267,13 +267,18 @@ pub const BoundOnXCallback = struct {
     }
 };
 
-/// Options is the struct holding available options to pass to a Definition object.
-pub const Options = struct {
+/// Definition is a cli "definition" -- that is the information that helps libscrapli drive a cli
+/// connection to some device, it holds callbacks and information about available "modes" etc..
+pub const Definition = struct {
     prompt_pattern: []const u8,
+    prompt_excludes: ?[]const []const u8 = null,
     default_mode: []const u8,
-    modes: ?[]mode.Options,
-    failure_indicators: ?[][]const u8 = null,
+    modes: std.StringHashMapUnmanaged(*mode.Mode) = .empty,
+    failure_indicators: ?[]const []const u8 = null,
     on_open_callback: ?OnXCallback = null,
+    // nothing but yaml -> Definition should use bound callbacks, but if you did for some weird
+    // reason, Definition expects a heap allocated struct that we will call deinit for (which
+    // will destroy that memory)
     bound_on_open_callback: ?*BoundOnXCallback = null,
     on_close_callback: ?OnXCallback = null,
     bound_on_close_callback: ?*BoundOnXCallback = null,
@@ -281,145 +286,108 @@ pub const Options = struct {
     bypass_in_session_auth: bool = false,
     ntc_templates_platform: ?[]const u8 = null,
     genie_platform: ?[]const u8 = null,
-};
 
-/// Definition is a cli "definition" -- that is the information that helps libscrapli drive a cli
-/// connection to some device, it holds callbacks and information about available "modes" etc..
-pub const Definition = struct {
-    allocator: std.mem.Allocator,
-    prompt_pattern: []const u8,
-    default_mode: []const u8,
-    modes: std.StringHashMap(*mode.Mode),
-    failure_indicators: std.ArrayList([]const u8),
-    on_open_callback: ?OnXCallback,
-    // nothing but yaml -> Definition should use bound callbacks, but if you did for some weird
-    // reason, Definition expects a heap allocated struct that we will call deinit for (which
-    // will destroy that memory)
-    bound_on_open_callback: ?*BoundOnXCallback,
-    on_close_callback: ?OnXCallback,
-    bound_on_close_callback: ?*BoundOnXCallback,
-    force_in_session_auth: bool,
-    bypass_in_session_auth: bool,
-    ntc_templates_platform: ?[]const u8,
-    genie_platform: ?[]const u8,
-
-    /// Initialize the cli definition object.
     /// Initialize the cli definition object. Ownership note: the bound on open/close
-    /// callbacks in options transfer to the Definition only on *success* -- on failure this
-    /// function does not touch them (the caller cleans them up), because deinit would free
+    /// callbacks and modes in options transfer to the Definition only on *success* -- on failure
+    /// this function does not touch them (the caller cleans them up), because deinit would free
     /// them and the caller's own errdefers would then double free.
-    pub fn init(allocator: std.mem.Allocator, options: Options) !*Definition {
-        const d = try allocator.create(Definition);
-        errdefer allocator.destroy(d);
+    pub fn init(allocator: std.mem.Allocator, options: Definition) !Definition {
+        var d = options;
 
-        const prompt_pattern = try allocator.dupe(u8, options.prompt_pattern);
-        errdefer allocator.free(prompt_pattern);
+        // reset owned fields so a failure only ever frees memory this init duped;
+        // adopted fields (modes, bound callbacks) are attached at the *end*
+        d.prompt_pattern = "";
+        d.prompt_excludes = null;
+        d.modes = .empty;
+        d.failure_indicators = null;
+        d.bound_on_open_callback = null;
+        d.bound_on_close_callback = null;
+        d.ntc_templates_platform = null;
+        d.genie_platform = null;
 
-        const ntc_templates_platform: ?[]const u8 = if (options.ntc_templates_platform) |s|
-            try allocator.dupe(u8, s)
-        else
-            null;
-        errdefer if (ntc_templates_platform) |s| {
-            allocator.free(s);
-        };
-
-        const genie_platform: ?[]const u8 = if (options.genie_platform) |s|
-            try allocator.dupe(u8, s)
-        else
-            null;
-        errdefer if (genie_platform) |s| {
-            allocator.free(s);
-        };
-
-        d.* = Definition{
-            .allocator = allocator,
-            .prompt_pattern = prompt_pattern,
-            .default_mode = options.default_mode,
-            .modes = std.StringHashMap(*mode.Mode).init(allocator),
-            .failure_indicators = .empty,
-            .on_open_callback = options.on_open_callback,
-            .bound_on_open_callback = options.bound_on_open_callback,
-            .on_close_callback = options.on_close_callback,
-            .bound_on_close_callback = options.bound_on_close_callback,
-            .force_in_session_auth = options.force_in_session_auth,
-            .bypass_in_session_auth = options.bypass_in_session_auth,
-            .ntc_templates_platform = ntc_templates_platform,
-            .genie_platform = genie_platform,
-        };
-
-        if (d.default_mode.ptr != mode.default_mode.ptr) {
-            d.default_mode = try d.allocator.dupe(u8, d.default_mode);
+        if (options.default_mode.ptr != mode.default_mode.ptr) {
+            d.default_mode = mode.default_mode;
         }
 
-        errdefer if (d.default_mode.ptr != mode.default_mode.ptr) {
-            allocator.free(d.default_mode);
-        };
+        errdefer d.deinit(allocator);
 
-        errdefer {
-            var modes_iter = d.modes.iterator();
+        d.prompt_pattern = try allocator.dupe(u8, options.prompt_pattern);
 
-            while (modes_iter.next()) |entry| {
-                allocator.free(entry.key_ptr.*);
-                entry.value_ptr.*.deinit();
+        if (options.prompt_excludes) |prompt_excludes| {
+            const owned_prompt_excludes = try allocator.alloc([]const u8, prompt_excludes.len);
+
+            for (0.., prompt_excludes) |idx, prompt_exclude| {
+                const owned_prompt_exclude = try allocator.dupe(u8, prompt_exclude);
+
+                owned_prompt_excludes[idx] = owned_prompt_exclude;
             }
 
-            d.modes.deinit();
+            d.prompt_excludes = owned_prompt_excludes;
         }
 
-        if (options.modes) |modes| {
-            for (modes) |m| {
-                const owned_name = try allocator.dupe(u8, m.name);
-                errdefer allocator.free(owned_name);
-
-                const mode_obj = try mode.Mode.init(allocator, m);
-                errdefer mode_obj.deinit();
-
-                try d.modes.put(owned_name, mode_obj);
-            }
+        if (options.default_mode.ptr != mode.default_mode.ptr) {
+            d.default_mode = try allocator.dupe(u8, options.default_mode);
         }
 
-        errdefer {
-            for (d.failure_indicators.items) |fi| {
-                allocator.free(fi);
-            }
+        if (options.ntc_templates_platform) |ntc_templates_platform| {
+            d.ntc_templates_platform = try allocator.dupe(u8, ntc_templates_platform);
+        }
 
-            d.failure_indicators.deinit(allocator);
+        if (options.genie_platform) |genie_platform| {
+            d.genie_platform = try allocator.dupe(u8, genie_platform);
         }
 
         if (options.failure_indicators) |failure_indicators| {
-            for (failure_indicators) |fi| {
-                const owned_fi = try allocator.dupe(u8, fi);
-                errdefer allocator.free(owned_fi);
+            const owned_failure_indicators = try allocator.alloc([]const u8, failure_indicators.len);
 
-                try d.failure_indicators.append(allocator, owned_fi);
+            for (0.., failure_indicators) |idx, failure_indicator| {
+                const owned_failure_indicator = try allocator.dupe(u8, failure_indicator);
+
+                owned_failure_indicators[idx] = owned_failure_indicator;
             }
+
+            d.failure_indicators = owned_failure_indicators;
         }
+
+        d.modes = options.modes;
+        d.bound_on_open_callback = options.bound_on_open_callback;
+        d.bound_on_close_callback = options.bound_on_close_callback;
 
         return d;
     }
 
     /// Deinitialize the cli defintion object.
-    pub fn deinit(self: *Definition) void {
-        self.allocator.free(self.prompt_pattern);
+    pub fn deinit(self: *Definition, allocator: std.mem.Allocator) void {
+        allocator.free(self.prompt_pattern);
+
+        if (self.prompt_excludes) |prompt_excludes| {
+            for (prompt_excludes) |prompt_exclude| {
+                allocator.free(prompt_exclude);
+            }
+
+            allocator.free(prompt_excludes);
+        }
 
         if (self.default_mode.ptr != mode.default_mode.ptr) {
-            self.allocator.free(self.default_mode);
+            allocator.free(self.default_mode);
         }
 
         var mode_iter = self.modes.iterator();
 
         while (mode_iter.next()) |m| {
-            self.allocator.free(m.key_ptr.*);
+            allocator.free(m.key_ptr.*);
             m.value_ptr.*.deinit();
         }
 
-        self.modes.deinit();
+        self.modes.deinit(allocator);
 
-        for (self.failure_indicators.items) |fi| {
-            self.allocator.free(fi);
+        if (self.failure_indicators) |failure_indicators| {
+            for (failure_indicators) |failure_indicator| {
+                allocator.free(failure_indicator);
+            }
+
+            allocator.free(failure_indicators);
         }
-
-        self.failure_indicators.deinit(self.allocator);
 
         if (self.bound_on_open_callback) |cb| {
             cb.deinit();
@@ -430,14 +398,12 @@ pub const Definition = struct {
         }
 
         if (self.ntc_templates_platform) |s| {
-            self.allocator.free(s);
+            allocator.free(s);
         }
 
         if (self.genie_platform) |s| {
-            self.allocator.free(s);
+            allocator.free(s);
         }
-
-        self.allocator.destroy(self);
     }
 };
 
@@ -467,7 +433,7 @@ pub const YamlDefinition = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         source: YamlSource,
-    ) !*Definition {
+    ) !Definition {
         var definition_string = switch (source) {
             .string => strings.MaybeHeapString{
                 .allocator = null,
@@ -523,12 +489,35 @@ pub const YamlDefinition = struct {
             );
         }
 
+        var modes: std.StringHashMapUnmanaged(*mode.Mode) = .empty;
+
+        errdefer {
+            var modes_iter = modes.iterator();
+
+            while (modes_iter.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                entry.value_ptr.*.deinit();
+            }
+
+            modes.deinit(allocator);
+        }
+
+        for (parsed_definition.modes) |m| {
+            const owned_name = try allocator.dupe(u8, m.name);
+            errdefer allocator.free(owned_name);
+
+            const mode_obj = try mode.Mode.init(allocator, m);
+            errdefer mode_obj.deinit();
+
+            try modes.put(allocator, owned_name, mode_obj);
+        }
+
         return Definition.init(
             allocator,
             .{
                 .prompt_pattern = parsed_definition.prompt_pattern,
                 .default_mode = parsed_definition.default_mode,
-                .modes = parsed_definition.modes,
+                .modes = modes,
                 .failure_indicators = parsed_definition.failure_indicators,
                 .bound_on_open_callback = on_open_callback,
                 .bound_on_close_callback = on_close_callback,

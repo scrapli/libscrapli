@@ -246,7 +246,7 @@ pub const Mode = struct {
 
 /// Given a map of Mode objects, determine the mode based on the current prompt output.
 pub fn determineMode(
-    modes: std.StringHashMap(*Mode),
+    modes: std.StringHashMapUnmanaged(*Mode),
     current_prompt: []const u8,
 ) ![]const u8 {
     var modes_iterator = modes.iterator();
@@ -313,7 +313,7 @@ pub fn determineMode(
 test "determineMode" {
     const cases = [_]struct {
         name: []const u8,
-        modes: std.StringHashMap(*Mode),
+        modes: std.StringHashMapUnmanaged(*Mode),
         current_prompt: []const u8,
         expected: []const u8,
         expect_fail: bool,
@@ -455,7 +455,7 @@ test "determineMode" {
                 m.*.deinit();
             }
 
-            modes.deinit();
+            modes.deinit(std.testing.allocator);
         }
     }
 
@@ -480,7 +480,7 @@ test "determineMode" {
 /// Recursively find a path to a requestd mode from the current mode.
 pub fn getPathToMode(
     allocator: std.mem.Allocator,
-    modes: std.StringHashMap(*Mode),
+    modes: std.StringHashMapUnmanaged(*Mode),
     current_mode_name: []const u8,
     requested_mode_name: []const u8,
     visited: *std.StringHashMap(bool),
@@ -613,7 +613,7 @@ test "getPathToMode" {
 
     const cases = [_]struct {
         name: []const u8,
-        modes: std.StringHashMap(*Mode),
+        modes: std.StringHashMapUnmanaged(*Mode),
         current_mode_name: []const u8,
         requested_mode_name: []const u8,
         expected: []const []const u8,
@@ -806,7 +806,7 @@ test "getPathToMode" {
                 m.*.deinit();
             }
 
-            modes.deinit();
+            modes.deinit(std.testing.allocator);
         }
     }
 
