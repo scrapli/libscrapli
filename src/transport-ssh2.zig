@@ -685,7 +685,11 @@ pub const Transport = struct {
     ) !void {
         self.log.info("ssh2.Transport open requested", .{});
 
-        errdefer if (self.proxy_wrapper) |pw| pw.stop();
+        errdefer {
+            if (self.proxy_wrapper) |pw| {
+                pw.stop();
+            }
+        }
 
         try self.initSocket(host, port);
         try self.initSession(start_time, cancel, operation_timeout_ns);
@@ -1072,9 +1076,8 @@ pub const Transport = struct {
                 operation_timeout_ns,
                 session,
                 auth_options,
-            ) catch blk: {
+            ) catch {
                 // we can still try to auth with a password if the user provided it, so we continue
-                break :blk;
             };
 
             if (try self.isAuthenticated(
@@ -1092,9 +1095,8 @@ pub const Transport = struct {
                 operation_timeout_ns,
                 session,
                 auth_options,
-            ) catch blk: {
+            ) catch {
                 // we can still try to auth with a password if the user provided it, so we continue
-                break :blk;
             };
 
             if (try self.isAuthenticated(
@@ -1114,10 +1116,9 @@ pub const Transport = struct {
                 operation_timeout_ns,
                 session,
                 auth_options,
-            ) catch blk: {
+            ) catch {
                 // password auth failed but we can still try kbdinteractive, in the future we could
                 // /should check auth list before doing this but for now this is ok
-                break :blk;
             };
 
             if (try self.isAuthenticated(
@@ -1320,9 +1321,9 @@ pub const Transport = struct {
 
             if (errmsg != null and errlen > 0) {
                 const msg_slice = errmsg[0..@intCast(errlen)];
-                self.log.debug("libssh2 error: {} {s}\n", .{ err, msg_slice });
+                self.log.debug("libssh2 error: {} {s}", .{ err, msg_slice });
             } else {
-                self.log.debug("libssh2 error: {} (no message)\n", .{err});
+                self.log.debug("libssh2 error: {} (no message)", .{err});
             }
 
             self.setLastError(
@@ -1433,9 +1434,9 @@ pub const Transport = struct {
 
             if (errmsg != null and errlen > 0) {
                 const msg_slice = errmsg[0..@intCast(errlen)];
-                std.debug.print("libssh2 error: {} {s}\n", .{ err, msg_slice });
+                self.log.debug("libssh2 error: {} {s}", .{ err, msg_slice });
             } else {
-                std.debug.print("libssh2 error: {} (no message)\n", .{err});
+                self.log.debug("libssh2 error: {} (no message)", .{err});
             }
 
             self.setLastError(
