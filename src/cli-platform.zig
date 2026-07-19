@@ -427,6 +427,7 @@ pub const YamlSource = union(enum) {
 /// "normal" zig Definition object from the yaml source.
 pub const YamlDefinition = struct {
     prompt_pattern: []const u8,
+    prompt_excludes: ?[][]const u8,
     default_mode: []const u8,
     modes: []mode.Options,
     failure_indicators: ?[][]const u8,
@@ -525,6 +526,7 @@ pub const YamlDefinition = struct {
             allocator,
             .{
                 .prompt_pattern = parsed_definition.prompt_pattern,
+                .prompt_excludes = parsed_definition.prompt_excludes,
                 .default_mode = parsed_definition.default_mode,
                 .modes = modes,
                 .failure_indicators = parsed_definition.failure_indicators,
