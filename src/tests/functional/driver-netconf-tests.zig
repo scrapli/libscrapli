@@ -8,7 +8,7 @@ const transport = scrapli.transport;
 const helper = scrapli.test_helper;
 const yaml = @import("yaml");
 
-fn GetDriver(
+fn getDriver(
     transport_kind: transport.Kind,
     platform: []const u8,
     username: ?[]const u8,
@@ -18,63 +18,63 @@ fn GetDriver(
     // on darwin we'll be targetting localhost, on linux we'll target the ip exposed via clab/docker
     var host: []const u8 = "";
 
-    var config = netconf.Config{};
+    var options = netconf.Options{};
 
     if (std.mem.eql(u8, platform, "nokia-srlinux")) {
-        config.auth.lookups = .init(
+        options.auth.lookups = .init(
             &.{
                 .{ .key = "login", .value = "NokiaSrl1!" },
             },
         );
 
         if (username) |u| {
-            config.auth.username = u;
+            options.auth.username = u;
         } else {
-            config.auth.username = "admin";
+            options.auth.username = "admin";
         }
 
         if (os == .macos) {
             host = "localhost";
-            config.port = 21830;
+            options.port = 21830;
         } else {
             host = "172.20.20.16";
-            config.port = 830;
+            options.port = 830;
         }
     } else if (std.mem.eql(u8, platform, "arista-eos")) {
-        config.auth.lookups = .init(
+        options.auth.lookups = .init(
             &.{
                 .{ .key = "login", .value = "admin" },
             },
         );
 
         if (username) |u| {
-            config.auth.username = u;
+            options.auth.username = u;
         } else {
-            config.auth.username = "netconf-admin";
+            options.auth.username = "netconf-admin";
         }
 
         if (os == .macos) {
             host = "localhost";
-            config.port = 22830;
+            options.port = 22830;
         } else {
             host = "172.20.20.17";
-            config.port = 830;
+            options.port = 830;
         }
     } else {
         return error.UnknownPlatform;
     }
 
     if (key != null) {
-        config.auth.private_key_path = key;
-        config.auth.private_key_passphrase = passphrase;
+        options.auth.private_key_path = key;
+        options.auth.private_key_passphrase = passphrase;
     } else {
-        config.auth.password = "__lookup::login";
+        options.auth.password = "__lookup::login";
     }
 
     switch (transport_kind) {
         .bin => {},
         .ssh2 => {
-            config.transport = transport.OptionsInputs{
+            options.transport = .{
                 .ssh2 = .{},
             };
         },
@@ -87,7 +87,7 @@ fn GetDriver(
         std.testing.allocator,
         std.testing.io,
         host,
-        config,
+        options,
     );
 }
 
@@ -189,14 +189,13 @@ test "driver-netconf open" {
 
         // open has its own golden files since this will include in channel auth for some transports
         // but not others
-        const golden_filename = try std.fmt.allocPrint(
-            std.testing.allocator,
+        const golden_filename = try std.testing.allocator.print(
             "src/tests/functional/golden/netconf/{s}-{s}-capabilities.yaml",
             .{ test_name, case.platform },
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d = try GetDriver(
+        var d = try getDriver(
             case.transport_kind,
             case.platform,
             case.username,
@@ -298,14 +297,13 @@ test "driver-netconf get-config" {
             continue;
         }
 
-        const golden_filename = try std.fmt.allocPrint(
-            std.testing.allocator,
+        const golden_filename = try std.testing.allocator.print(
             "src/tests/functional/golden/netconf/{s}-{s}-{s}",
             .{ test_name, case.platform, case.transport_kind.toString() },
         );
         defer std.testing.allocator.free(golden_filename);
 
-        var d = try GetDriver(
+        var d = try getDriver(
             case.transport_kind,
             case.platform,
             null,

@@ -1,3 +1,6 @@
+const std = @import("std");
+
+const mode = @import("cli-mode.zig");
 const netconf_operation = @import("netconf-operation.zig");
 const operation = @import("cli-operation.zig");
 const result = @import("cli-result.zig");
@@ -14,6 +17,24 @@ pub const OperationResult = struct {
     done: bool,
     result: Result,
     err: ?anyerror,
+    last_error: []const u8 = "",
+
+    pub fn deinit(self: OperationResult, allocator: std.mem.Allocator) void {
+        allocator.free(self.last_error);
+
+        switch (self.result) {
+            .cli => |cli_result| {
+                if (cli_result) |r| {
+                    r.deinit();
+                }
+            },
+            .netconf => |netconf_result| {
+                if (netconf_result) |r| {
+                    r.deinit();
+                }
+            },
+        }
+    }
 };
 
 /// OperationOptions is a struct holding tagged unions which in turn hold available options for all
@@ -66,3 +87,44 @@ pub const CliOperationSizes = struct {
     operation_result_size: usize,
     operation_failure_indicator_size: usize,
 };
+
+/// Frees every owned string field ([]const u8 / non-null ?[]const u8) on the given options
+/// struct -- the ffi layer dupes every string into the options it owns so gotta clean at some
+/// point.
+pub fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
+    const Info = @typeInfo(@TypeOf(s)).@"struct";
+
+    inline for (0.., Info.field_types) |idx, field_type| {
+        if (field_type == []const u8) {
+            const value = @field(s, Info.field_names[idx]);
+
+            if (value.ptr == mode.default_mode.ptr) {
+                // borrowed default, nothing to free
+            } else {
+                allocator.free(value);
+            }
+        } else if (field_type == ?[]const u8) {
+            const value = @field(s, Info.field_names[idx]);
+
+            if (value) |v| {
+                allocator.free(v);
+            }
+        }
+    }
+}
+
+/// Frees every owned string on an operation's options, whichever driver/op kind it is --
+/// fancy inline else to not duplicate a zillion arms.
+pub fn freeOperationOwnedStrings(
+    allocator: std.mem.Allocator,
+    op: OperationOptions,
+) void {
+    switch (op.operation) {
+        .cli => |cli_op| switch (cli_op) {
+            inline else => |o| freeOwnedStrings(allocator, o),
+        },
+        .netconf => |netconf_op| switch (netconf_op) {
+            inline else => |o| freeOwnedStrings(allocator, o),
+        },
+    }
+}

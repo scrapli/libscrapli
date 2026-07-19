@@ -3,40 +3,25 @@ const std = @import("std");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 
-/// Holds option inputs for the test transport.
-pub const OptionsInputs = struct {
-    f: ?[]const u8 = null,
-};
-
 /// Holds test transport options.
 pub const Options = struct {
-    allocator: std.mem.Allocator,
-    f: ?[]const u8,
+    f: ?[]const u8 = null,
 
-    /// Initialize the transport options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
+    fn init(allocator: std.mem.Allocator, opts: Options) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-        o.* = Options{
-            .allocator = allocator,
-            .f = opts.f,
-        };
-
-        if (o.f != null) {
-            o.f = try o.allocator.dupe(u8, o.f.?);
+        if (opts.f) |f| {
+            o.f = try allocator.dupe(u8, f);
         }
 
         return o;
     }
 
-    /// Deinitialize the transport options.
-    pub fn deinit(self: *Options) void {
-        if (self.f != null) {
-            self.allocator.free(self.f.?);
+    fn deinit(self: Options, allocator: std.mem.Allocator) void {
+        if (self.f) |f| {
+            allocator.free(f);
         }
-
-        self.allocator.destroy(self);
     }
 };
 
@@ -45,7 +30,7 @@ pub const Transport = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
 
-    options: *Options,
+    options: Options,
 
     fd: ?std.posix.fd_t = null,
 
@@ -53,23 +38,22 @@ pub const Transport = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
-        options: *Options,
-    ) !*Transport {
-        const t = try allocator.create(Transport);
+        options: Options,
+    ) !Transport {
+        var o = try Options.init(allocator, options);
+        errdefer o.deinit(allocator);
 
-        t.* = Transport{
+        return Transport{
             .allocator = allocator,
             .io = io,
-            .options = options,
+            .options = o,
             .fd = null,
         };
-
-        return t;
     }
 
     /// Deinitialize the transport object.
     pub fn deinit(self: *Transport) void {
-        self.allocator.destroy(self);
+        self.options.deinit(self.allocator);
     }
 
     /// Open the transport object.
@@ -101,6 +85,17 @@ pub const Transport = struct {
     }
 
     /// Close the transport object.
+    pub fn getLastError(self: *Transport) []const u8 {
+        _ = self;
+
+        return "";
+    }
+
+    /// Noop ofc, just for consistency.
+    pub fn prepareClose(self: *Transport) !void {
+        _ = self;
+    }
+
     pub fn close(self: *Transport) void {
         if (self.fd) |fd| {
             _ = std.c.close(fd);
@@ -127,3 +122,7 @@ pub const Transport = struct {
         return n;
     }
 };
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}

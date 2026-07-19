@@ -1,7 +1,8 @@
 const std = @import("std");
-const pcre2 = @import("pcre2");
 
+const pcre2 = @import("pcre2");
 /// Alias for pcre2 compiled pattern to a more clear name.
+// zlinter-disable declaration_naming
 pub const pcre2CompiledPattern = pcre2.pcre2_code_8;
 
 /// Conveinence function to free a pcre2 compiled object.

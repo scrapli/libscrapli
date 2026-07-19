@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -82,7 +82,7 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -111,6 +111,14 @@ jobs:
           ./wait.sh
         # wait.sh should timeout but seems like it sometimes gets hung in actions sometimes
         timeout-minutes: 5
+
+      - name: dump lab diagnostics on failure
+        if: failure()
+        run: |
+          docker ps -a || true
+          echo "---- clab-launcher logs ----"
+          docker logs clab-launcher 2>&1 || true
+
 
       - name: run the functional tests
         run: |

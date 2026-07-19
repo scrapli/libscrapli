@@ -7,6 +7,7 @@ const ffi_driver = @import("ffi-driver.zig");
 const ffi_options = @import("ffi-options.zig");
 const ffi_root_cli = @import("ffi-root-cli.zig");
 const ffi_root_netconf = @import("ffi-root-netconf.zig");
+const session = @import("session.zig");
 
 // zlinter-disable require_doc_comment
 pub export const _ls_force_include_root_cli = &ffi_root_cli.noop;
@@ -38,10 +39,11 @@ export fn ls_assert_no_leaks() callconv(.c) bool {
         return true;
     }
 
-    switch (ffi_common.da.deinit()) {
-        .leak => return false,
-        .ok => return true,
+    if (ffi_common.da.deinit() > 0) {
+        return false;
     }
+
+    return true;
 }
 
 export fn ls_alloc_driver_options() callconv(.c) ?*ffi_common.LsOptions {
@@ -94,7 +96,7 @@ export fn ls_cli_alloc(
         allocator,
         ffi_common.io,
         std.mem.span(host),
-        o.cliConfig(allocator),
+        o.cliOptions(allocator),
     ) catch {
         return null;
     };
@@ -128,7 +130,7 @@ export fn ls_netconf_alloc(
         allocator,
         ffi_common.io,
         std.mem.span(host),
-        o.*.netconfConfig(allocator),
+        o.*.netconfOptions(allocator),
     ) catch {
         return null;
     };
@@ -161,9 +163,9 @@ export fn ls_session_read(
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const s = switch (d.real_driver) {
-        .cli => |rd| rd.session,
-        .netconf => |rd| rd.session,
+    const s: *session.Session = switch (d.real_driver) {
+        .cli => |rd| &rd.session,
+        .netconf => |rd| &rd.session,
     };
 
     const n = s.read(buf.*) catch |err| {
@@ -195,11 +197,11 @@ export fn ls_session_write(
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const s = switch (d.real_driver) {
-        .cli => |rd| rd.session,
-        .netconf => |rd| rd.session,
+    const s: *session.Session = switch (d.real_driver) {
+        .cli => |rd| &rd.session,
+        .netconf => |rd| &rd.session,
     };
 
     s.write(std.mem.span(buf), redacted) catch |err| {
@@ -227,11 +229,11 @@ export fn ls_session_write_and_return(
         return @intFromEnum(ffi_common.FfiResult.invalid_argument);
     }
 
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const s = switch (d.real_driver) {
-        .cli => |rd| rd.session,
-        .netconf => |rd| rd.session,
+    const s: *session.Session = switch (d.real_driver) {
+        .cli => |rd| &rd.session,
+        .netconf => |rd| &rd.session,
     };
 
     s.writeAndReturn(std.mem.span(buf), redacted) catch |err| {
@@ -253,11 +255,11 @@ export fn ls_session_write_and_return(
 export fn ls_session_write_return(
     d_ptr: *ffi_common.LsDriver,
 ) callconv(.c) u8 {
-    var d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
-    const s = switch (d.real_driver) {
-        .cli => |rd| rd.session,
-        .netconf => |rd| rd.session,
+    const s: *session.Session = switch (d.real_driver) {
+        .cli => |rd| &rd.session,
+        .netconf => |rd| &rd.session,
     };
 
     s.writeReturn() catch |err| {

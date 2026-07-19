@@ -32,7 +32,7 @@ pub const State = enum {
 /// LookupItems is a struct that holds up to 16 LookupKeyValues (explicitly sized to not deal w/
 /// allocations).
 pub const LookupItems = struct {
-    items: [16]LookupKeyValue = .{std.mem.zeroes(LookupKeyValue)} ** 16,
+    items: [16]LookupKeyValue = @splat(std.mem.zeroes(LookupKeyValue)),
     count: usize = 0,
 
     /// Init the lookup items object.
@@ -49,7 +49,7 @@ pub const LookupItems = struct {
 
     fn cloneOwned(self: *const LookupItems, allocator: std.mem.Allocator) !LookupItems {
         var out = LookupItems{
-            .items = .{std.mem.zeroes(LookupKeyValue)} ** 16,
+            .items = @splat(std.mem.zeroes(LookupKeyValue)),
             .count = self.count,
         };
 
@@ -80,20 +80,14 @@ pub const LookupKeyValue = struct {
     value: []const u8,
 };
 
-/// OptionsInputs holds the inputs to generate an (auth) Options struct.
-/// it would be worth investigating not doing this weird input then option struct -- the main reason
-/// for this is so that we can have easily passed, non-allocated, values here, then when we init the
-/// "real" struct we do our duping and stuff, this is just to make it easier for users to pass things
-/// and not think about what needs to be heap allocated vs not
-pub const OptionsInputs = struct {
+/// Options holds the options for authentication bits -- things like prompts to know when to send
+/// a username/password/passphrase, the inputs for those things, and more.
+pub const Options = struct {
     username: ?[]const u8 = null,
     password: ?[]const u8 = null,
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
     private_key_content: ?[]const u8 = null,
-    // for now(? forever?) lookups are limited to 16 times. adding a lookup callback in the future
-    // would be next step i think, but for now this should be more than ok and the fixed size and
-    // the count indicator makes this very easy to work with on the ffi bits.
     lookups: LookupItems = .{},
     // when true, regardless of the transport, do the in session auth bits -- that means we check
     // for user/password/passphrase and finally for expected prompt. normally this would be skipped
@@ -105,122 +99,97 @@ pub const OptionsInputs = struct {
     // would let you write some custom on open function to handle banners or whatever even when
     // using the telnet/bin transports.
     bypass_in_session_auth: bool = false,
-    username_pattern: ?[]const u8 = null,
-    password_pattern: ?[]const u8 = null,
-    private_key_passphrase_pattern: ?[]const u8 = null,
-};
-
-/// Options holds the options for authentication bits -- things like prompts to know when to send
-/// a username/password/passphrase, the inputs for those things, and more.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-    username: ?[]const u8,
-    password: ?[]const u8,
-    private_key_path: ?[]const u8,
-    private_key_passphrase: ?[]const u8,
-    private_key_content: ?[]const u8,
-    lookups: LookupItems,
-    force_in_session_auth: bool,
-    bypass_in_session_auth: bool,
     username_pattern: []const u8 = default_username_pattern,
     password_pattern: []const u8 = default_password_pattern,
     private_key_passphrase_pattern: []const u8 = default_passphrase_pattern,
 
     /// Initialize the auth options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer o.deinit();
+    pub fn init(
+        allocator: std.mem.Allocator,
+        opts: Options,
+    ) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-        o.* = Options{
-            .allocator = allocator,
-            .username = opts.username,
-            .password = opts.password,
-            .private_key_path = opts.private_key_path,
-            .private_key_passphrase = opts.private_key_passphrase,
-            .private_key_content = opts.private_key_content,
-            .lookups = try opts.lookups.cloneOwned(allocator),
-            .force_in_session_auth = opts.force_in_session_auth,
-            .bypass_in_session_auth = opts.bypass_in_session_auth,
-        };
-
-        if (o.username != null) {
-            o.username = try o.allocator.dupe(u8, o.username.?);
+        if (o.username) |username| {
+            o.username = try allocator.dupe(u8, username);
         }
 
-        if (o.password != null) {
-            o.password = try o.allocator.dupe(u8, o.password.?);
+        if (o.password) |password| {
+            o.password = try allocator.dupe(u8, password);
         }
 
-        if (o.private_key_path != null) {
-            o.private_key_path = try o.allocator.dupe(u8, o.private_key_path.?);
+        if (o.private_key_path) |private_key_path| {
+            o.private_key_path = try allocator.dupe(u8, private_key_path);
         }
 
-        if (o.private_key_passphrase != null) {
-            o.private_key_passphrase = try o.allocator.dupe(u8, o.private_key_passphrase.?);
+        if (o.private_key_passphrase) |private_key_passphrase| {
+            o.private_key_passphrase = try allocator.dupe(u8, private_key_passphrase);
         }
 
-        if (o.private_key_content != null) {
-            o.private_key_content = try o.allocator.dupe(u8, o.private_key_content.?);
+        if (o.private_key_content) |private_key_content| {
+            o.private_key_content = try allocator.dupe(u8, private_key_content);
         }
 
-        if (opts.username_pattern) |p| {
-            o.username_pattern = try o.allocator.dupe(u8, p);
+        o.lookups = try opts.lookups.cloneOwned(allocator);
+
+        if (o.username_pattern.ptr != default_username_pattern.ptr) {
+            o.username_pattern = try allocator.dupe(u8, o.username_pattern);
         }
 
-        if (opts.password_pattern) |p| {
-            o.password_pattern = try o.allocator.dupe(u8, p);
+        if (o.password_pattern.ptr != default_password_pattern.ptr) {
+            o.password_pattern = try allocator.dupe(u8, o.password_pattern);
         }
 
-        if (opts.private_key_passphrase_pattern) |p| {
-            o.private_key_passphrase_pattern = try o.allocator.dupe(u8, p);
+        if (o.private_key_passphrase_pattern.ptr != default_passphrase_pattern.ptr) {
+            o.private_key_passphrase_pattern = try allocator.dupe(u8, o.private_key_passphrase_pattern);
         }
 
         return o;
     }
 
     /// Deinitialize the auth options.
-    pub fn deinit(self: *Options) void {
-        if (self.username != null) {
-            self.allocator.free(self.username.?);
+    pub fn deinit(self: Options, allocator: std.mem.Allocator) void {
+        if (self.username) |username| {
+            allocator.free(username);
         }
 
-        if (self.password != null) {
-            self.allocator.free(self.password.?);
+        if (self.password) |password| {
+            allocator.free(password);
         }
 
-        if (self.private_key_path != null) {
-            self.allocator.free(self.private_key_path.?);
+        if (self.private_key_path) |private_key_path| {
+            allocator.free(private_key_path);
         }
 
-        if (self.private_key_passphrase != null) {
-            self.allocator.free(self.private_key_passphrase.?);
+        if (self.private_key_passphrase) |private_key_passphrase| {
+            allocator.free(private_key_passphrase);
         }
 
-        if (self.private_key_content != null) {
-            self.allocator.free(self.private_key_content.?);
+        if (self.private_key_content) |private_key_content| {
+            allocator.free(private_key_content);
         }
 
-        self.lookups.deinitOwned(self.allocator);
+        var lookups = self.lookups;
+        lookups.deinitOwned(allocator);
 
-        if (&self.username_pattern[0] != &default_username_pattern[0]) {
-            self.allocator.free(self.username_pattern);
+        if (self.username_pattern.ptr != default_username_pattern.ptr) {
+            allocator.free(self.username_pattern);
         }
 
-        if (&self.password_pattern[0] != &default_password_pattern[0]) {
-            self.allocator.free(self.password_pattern);
+        if (self.password_pattern.ptr != default_password_pattern.ptr) {
+            allocator.free(self.password_pattern);
         }
 
-        if (&self.private_key_passphrase_pattern[0] != &default_passphrase_pattern[0]) {
-            self.allocator.free(self.private_key_passphrase_pattern);
+        if (self.private_key_passphrase_pattern.ptr != default_passphrase_pattern.ptr) {
+            allocator.free(self.private_key_passphrase_pattern);
         }
-
-        self.allocator.destroy(self);
     }
 
     /// Resolve the given auth input -- checks if the string begins with the "lookup prefix" -- if
     /// not, simply return the value, otherwise check all the lookups to see if we can find the
     /// value.
-    pub fn resolveAuthValue(self: *Options, v: []const u8) ![]const u8 {
+    pub fn resolveAuthValue(self: Options, v: []const u8) ![]const u8 {
         if (!std.mem.startsWith(u8, v, lookup_prefix)) {
             return v;
         }
@@ -253,7 +222,7 @@ test "optionsInit" {
         .{},
     );
 
-    o.deinit();
+    o.deinit(std.testing.allocator);
 }
 
 /// Processes the "searchable buf" for in session auth by checking if any of the auth patterns
@@ -319,19 +288,11 @@ const open_error_message_substrings = [_][3][]const u8{
 };
 
 /// Checks the buf to see if any known error messages show up in the contents.
-pub fn openMessageHandler(allocator: std.mem.Allocator, buf: []const u8) !?[]const u8 {
-    const copied_buf = try allocator.alloc(u8, buf.len);
-    defer allocator.free(copied_buf);
-
-    @memcpy(copied_buf, buf);
-
-    bytes.toLower(copied_buf);
-
+pub fn openMessageHandler(buf: []const u8) !?[]const u8 {
     for (open_error_message_substrings) |error_substring| {
-        if (std.mem.find(u8, copied_buf, error_substring[0]) != null) {
-            if (error_substring[2].len > 0 and std.mem.find(
-                u8,
-                copied_buf,
+        if (std.ascii.findIgnoreCase(buf, error_substring[0]) != null) {
+            if (error_substring[2].len > 0 and std.ascii.findIgnoreCase(
+                buf,
                 error_substring[2],
             ) != null) {
                 // ignore substring in buf, continuing
@@ -443,7 +404,7 @@ test "openMessageHandler" {
     };
 
     for (cases) |case| {
-        const actual = try openMessageHandler(std.testing.allocator, case.haystack);
+        const actual = try openMessageHandler(case.haystack);
 
         if (case.expected == null) {
             try std.testing.expect(actual == null);

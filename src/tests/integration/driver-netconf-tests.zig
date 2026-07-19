@@ -54,7 +54,8 @@ fn makeReplayTestDriver(fixture_path: []const u8) !*netconf.Driver {
     // server hello. this is just an issue due to how the test transport reads the file
     // we have to set it *after* init since the NewDriver defaults the size (for now its not
     // configurable) to sane things that break the tests
-    d.options.session.operation_max_search_depth = 32;
+    // d.session.setOperationSearchDepth(32);
+    d.session.options.operation_max_search_depth = 32;
 
     return d;
 }

@@ -12,19 +12,35 @@ const transport_waiter = @import("transport-waiter.zig");
 
 const default_eagain_delay_ns: u64 = 100_000;
 
-var ssh2_initialized = false;
+// zlinter-disable no_global_vars
+// https://cookbook.ziglang.cc/07-04-run-once/ <- std.once was deprecated so roll our own
+var libssh2_init_state: std.atomic.Value(u8) = std.atomic.Value(u8).init(0);
+var libssh2_init_rc: c_int = 0;
 
 fn libssh2InitializeOnce() c_int {
-    if (!ssh2_initialized) {
-        const rc = ssh2.libssh2_init(0);
-        if (rc != 0) {
-            return rc;
-        }
+    const state = libssh2_init_state.load(std.lang.AtomicOrder.acquire);
 
-        ssh2_initialized = true;
+    if (state == 2) {
+        return libssh2_init_rc;
     }
 
-    return 0;
+    if (state == 0 and libssh2_init_state.cmpxchgStrong(
+        0,
+        1,
+        std.lang.AtomicOrder.acq_rel,
+        std.lang.AtomicOrder.acquire,
+    ) == null) {
+        libssh2_init_rc = ssh2.libssh2_init(0);
+        libssh2_init_state.store(2, std.lang.AtomicOrder.release);
+
+        return libssh2_init_rc;
+    }
+
+    while (libssh2_init_state.load(std.lang.AtomicOrder.acquire) != 2) {
+        std.atomic.spinLoopHint();
+    }
+
+    return libssh2_init_rc;
 }
 
 fn libssh2ChannelOpenSession(session: ?*ssh2.LIBSSH2_SESSION) ?*ssh2.LIBSSH2_CHANNEL {
@@ -122,12 +138,11 @@ fn libssh2DisconnectSession(
             }
 
             // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
-            std.Io.Clock.Duration.sleep(
+            io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    .nanoseconds = default_eagain_delay_ns,
                 },
-                io,
+                .awake,
             ) catch {};
 
             continue;
@@ -162,12 +177,11 @@ fn libssh2FreeSession(
             }
 
             // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
-            std.Io.Clock.Duration.sleep(
+            io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    .nanoseconds = default_eagain_delay_ns,
                 },
-                io,
+                .awake,
             ) catch {};
 
             continue;
@@ -202,12 +216,11 @@ fn libssh2CloseChannel(
             }
 
             // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
-            std.Io.Clock.Duration.sleep(
+            io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    .nanoseconds = default_eagain_delay_ns,
                 },
-                io,
+                .awake,
             ) catch {};
 
             continue;
@@ -242,12 +255,11 @@ fn libssh2FreeChannel(
             }
 
             // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
-            std.Io.Clock.Duration.sleep(
+            io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(default_eagain_delay_ns),
+                    .nanoseconds = default_eagain_delay_ns,
                 },
-                io,
+                .awake,
             ) catch {};
 
             continue;
@@ -269,7 +281,8 @@ const ProxyWrapper = struct {
     io: std.Io,
     log: logging.Logger,
     channel: ?*ssh2.LIBSSH2_CHANNEL = null,
-    remote_fd: c_int = 0,
+    remote_fd: c_int = -1,
+    local_fd: c_int = -1,
     stop_flag: std.atomic.Value(bool),
     pipe_to_channel_thread: ?std.Thread = null,
     channel_to_pipe_thread: ?std.Thread = null,
@@ -294,7 +307,16 @@ const ProxyWrapper = struct {
 
     /// Deinitializes the ssh2 transport proxy wrapper.
     pub fn deinit(self: *ProxyWrapper) void {
-        _ = std.c.close(self.remote_fd);
+        self.stop();
+
+        if (self.remote_fd >= 0) {
+            _ = std.c.close(self.remote_fd);
+        }
+
+        if (self.local_fd >= 0) {
+            _ = std.c.close(self.local_fd);
+        }
+
         self.allocator.destroy(self);
     }
 
@@ -308,7 +330,7 @@ const ProxyWrapper = struct {
         self.channel = channel;
         self.remote_fd = remote_fd;
 
-        self.stop_flag.store(false, std.builtin.AtomicOrder.unordered);
+        self.stop_flag.store(false, std.lang.AtomicOrder.unordered);
 
         self.pipe_to_channel_thread = try std.Thread.spawn(
             .{},
@@ -328,7 +350,7 @@ const ProxyWrapper = struct {
 
     /// Stops piping data between the parent session and the proxied one.
     pub fn stop(self: *ProxyWrapper) void {
-        self.stop_flag.store(true, std.builtin.AtomicOrder.unordered);
+        self.stop_flag.store(true, std.lang.AtomicOrder.unordered);
 
         if (self.pipe_to_channel_thread) |t| t.join();
         if (self.channel_to_pipe_thread) |t| t.join();
@@ -364,15 +386,14 @@ const ProxyWrapper = struct {
     }
 
     fn copyPipeToChannel(self: *ProxyWrapper) !void {
-        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+        while (!self.stop_flag.load(std.lang.AtomicOrder.unordered)) {
             _ = self.pipeToChannel() catch |err| switch (err) {
                 error.WouldBlock => {
-                    try std.Io.Clock.Duration.sleep(
+                    try self.io.sleep(
                         .{
-                            .clock = .awake,
-                            .raw = .fromNanoseconds(default_eagain_delay_ns),
+                            .nanoseconds = default_eagain_delay_ns,
                         },
-                        self.io,
+                        .awake,
                     );
 
                     continue;
@@ -436,16 +457,16 @@ const ProxyWrapper = struct {
     }
 
     fn copyChannelToPipe(self: *ProxyWrapper) !void {
-        while (!self.stop_flag.load(std.builtin.AtomicOrder.unordered)) {
+        while (!self.stop_flag.load(std.lang.AtomicOrder.unordered)) {
             self.channelToPipe() catch |err| switch (err) {
                 error.WouldBlock => {
-                    try std.Io.Clock.Duration.sleep(
+                    try self.io.sleep(
                         .{
-                            .clock = .awake,
-                            .raw = .fromNanoseconds(default_eagain_delay_ns),
+                            .nanoseconds = default_eagain_delay_ns,
                         },
-                        self.io,
+                        .awake,
                     );
+
                     continue;
                 },
                 errors.ScrapliError.EOF => return,
@@ -465,43 +486,83 @@ pub const ProxyJumpOptions = struct {
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
     libssh2_trace: bool = false,
-};
 
-/// Holds option inputs for the ssh2 transport.
-pub const OptionsInputs = struct {
-    known_hosts_path: ?[]const u8 = null,
-    libssh2_trace: bool = false,
-    netconf: bool = false,
-    proxy_jump_options: ?ProxyJumpOptions = null,
-};
+    fn init(opts: ProxyJumpOptions, allocator: std.mem.Allocator) !ProxyJumpOptions {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-/// Holds ssh2 transport options.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-    known_hosts_path: ?[]const u8,
-    libssh2_trace: bool,
-    netconf: bool,
-    proxy_jump_options: ?ProxyJumpOptions,
+        o.host = try allocator.dupe(u8, o.host);
 
-    /// Initializes the ssh2 options.
-    pub fn init(allocator: std.mem.Allocator, opts: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
+        if (o.username) |username| {
+            o.username = try allocator.dupe(u8, username);
+        }
 
-        o.* = Options{
-            .allocator = allocator,
-            .known_hosts_path = opts.known_hosts_path,
-            .libssh2_trace = opts.libssh2_trace,
-            .netconf = opts.netconf,
-            .proxy_jump_options = opts.proxy_jump_options,
-        };
+        if (o.password) |password| {
+            o.password = try allocator.dupe(u8, password);
+        }
+
+        if (o.private_key_path) |private_key_path| {
+            o.private_key_path = try allocator.dupe(u8, private_key_path);
+        }
+
+        if (o.private_key_passphrase) |private_key_passphrase| {
+            o.private_key_passphrase = try allocator.dupe(u8, private_key_passphrase);
+        }
 
         return o;
     }
 
-    /// Deinitializes the ssh2 options.
-    pub fn deinit(self: *Options) void {
-        self.allocator.destroy(self);
+    fn deinit(self: ProxyJumpOptions, allocator: std.mem.Allocator) void {
+        allocator.free(self.host);
+
+        if (self.username) |username| {
+            allocator.free(username);
+        }
+
+        if (self.password) |password| {
+            allocator.free(password);
+        }
+
+        if (self.private_key_path) |private_key_path| {
+            allocator.free(private_key_path);
+        }
+
+        if (self.private_key_passphrase) |private_key_passphrase| {
+            allocator.free(private_key_passphrase);
+        }
+    }
+};
+
+/// Holds ssh2 transport options.
+pub const Options = struct {
+    known_hosts_path: ?[]const u8 = null,
+    libssh2_trace: bool = false,
+    netconf: bool = false,
+    proxy_jump_options: ?ProxyJumpOptions = null,
+
+    fn init(allocator: std.mem.Allocator, opts: Options) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
+
+        if (o.known_hosts_path) |known_hosts_path| {
+            o.known_hosts_path = try allocator.dupe(u8, known_hosts_path);
+        }
+
+        if (o.proxy_jump_options) |pjo| {
+            o.proxy_jump_options = try pjo.init(allocator);
+        }
+
+        return o;
+    }
+
+    fn deinit(self: Options, allocator: std.mem.Allocator) void {
+        if (self.known_hosts_path) |known_hosts_path| {
+            allocator.free(known_hosts_path);
+        }
+
+        if (self.proxy_jump_options) |o| {
+            o.deinit(allocator);
+        }
     }
 };
 
@@ -512,11 +573,11 @@ pub const Transport = struct {
 
     log: logging.Logger,
 
-    options: *Options,
+    options: Options,
     waiter: transport_waiter.Waiter,
 
-    auth_callback_data: *AuthCallbackData,
-    proxy_jump_auth_callback_data: *AuthCallbackData,
+    auth_callback_data: AuthCallbackData = .{},
+    proxy_jump_auth_callback_data: AuthCallbackData = .{},
 
     session_lock: std.Io.Mutex,
 
@@ -533,13 +594,15 @@ pub const Transport = struct {
     proxy_channel: ?*ssh2.LIBSSH2_CHANNEL = null,
     proxy_wrapper: ?*ProxyWrapper = null,
 
+    last_error: errors.LastError = .{},
+
     /// Initializes the transport.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
-    ) !*Transport {
+        options: Options,
+    ) !Transport {
         logging.traceWithSrc(log, @src(), "ssh2.Transport initializing", .{});
 
         const rc = libssh2InitializeOnce();
@@ -553,30 +616,20 @@ pub const Transport = struct {
             );
         }
 
-        const t = try allocator.create(Transport);
-        errdefer allocator.destroy(t);
+        var o = try Options.init(allocator, options);
+        errdefer o.deinit(allocator);
 
-        const a = try allocator.create(AuthCallbackData);
-        errdefer allocator.destroy(a);
+        var w = try transport_waiter.Waiter.init();
+        errdefer w.deinit();
 
-        const pa = try allocator.create(AuthCallbackData);
-        errdefer allocator.destroy(pa);
-
-        a.* = AuthCallbackData{};
-        pa.* = AuthCallbackData{};
-
-        t.* = Transport{
+        return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
-            .waiter = try transport_waiter.Waiter.init(allocator),
-            .auth_callback_data = a,
-            .proxy_jump_auth_callback_data = pa,
+            .options = o,
+            .waiter = w,
             .session_lock = std.Io.Mutex.init,
         };
-
-        return t;
     }
 
     /// Deinitializes the transport.
@@ -595,16 +648,18 @@ pub const Transport = struct {
             libssh2FreeSession(self.io, sess, self.log);
         }
 
-        self.allocator.destroy(self.auth_callback_data);
-        self.allocator.destroy(self.proxy_jump_auth_callback_data);
-
         if (self.proxy_wrapper) |pw| {
             pw.deinit();
         }
 
-        self.waiter.deinit();
+        self.options.deinit(self.allocator);
 
-        self.allocator.destroy(self);
+        self.waiter.deinit();
+    }
+
+    /// Returns the last error message recorded by this transport (empty if none).
+    pub fn getLastError(self: *Transport) []const u8 {
+        return self.last_error.get();
     }
 
     /// Opens the transport object.
@@ -615,9 +670,15 @@ pub const Transport = struct {
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         self.log.info("ssh2.Transport open requested", .{});
+
+        errdefer {
+            if (self.proxy_wrapper) |pw| {
+                pw.stop();
+            }
+        }
 
         try self.initSocket(host, port);
         try self.initSession(start_time, cancel, operation_timeout_ns);
@@ -711,6 +772,10 @@ pub const Transport = struct {
         self.log.debug("ssh2.Transport initSocket requested", .{});
 
         self.stream = transport_socket.getStream(self.io, self.log, host, port) catch {
+            self.last_error.set(
+                "ssh2.Transport initSocket: failed initializing socket, unable to resolve host",
+            );
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
@@ -738,14 +803,18 @@ pub const Transport = struct {
             null,
             null,
             null,
-            self.auth_callback_data,
+            &self.auth_callback_data,
         );
         if (self.initial_session == null) {
+            const last_error = "ssh2.Transport initSession: failed creating libssh2 session";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport initSession: failed creating libssh2 session",
+                last_error,
                 .{},
             );
         }
@@ -769,11 +838,15 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport initSession: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport initSession: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
@@ -781,11 +854,15 @@ pub const Transport = struct {
             if (operation_timeout_ns != 0 and
                 start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns)
             {
+                const last_error = "ssh2.Transport initSession: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport initSession: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -798,22 +875,25 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
             }
 
+            const last_error = "ssh2.Transport initSession: failed session handshake";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport initSession: failed session handshake",
+                last_error,
                 .{},
             );
         }
@@ -842,11 +922,15 @@ pub const Transport = struct {
 
         const nh = ssh2.libssh2_knownhost_init(self.initial_session.?);
         if (nh == null) {
+            const last_error = "ssh2.Transport initKnownHost: failed libssh2 known hosts init";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport initKnownHost: failed libssh2 known hosts init",
+                last_error,
                 .{},
             );
         }
@@ -858,11 +942,15 @@ pub const Transport = struct {
             ssh2.LIBSSH2_KNOWNHOST_FILE_OPENSSH,
         );
         if (read_rc < 0) {
+            const last_error = "ssh2.Transport initKnownHost: failed to read known hosts file";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport initKnownHost: failed to read known hosts file",
+                last_error,
                 .{},
             );
         }
@@ -876,11 +964,15 @@ pub const Transport = struct {
             &key_type,
         );
         if (host_fingerprint == null) {
+            const last_error = "ssh2.Transport initKnownHost: failed to fingerprint target host";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport initKnownHost: failed to fingerprint target host",
+                last_error,
                 .{},
             );
         }
@@ -902,38 +994,54 @@ pub const Transport = struct {
                 return;
             },
             ssh2.LIBSSH2_KNOWNHOST_CHECK_MISMATCH => {
+                const last_error = "ssh2.Transport initKnownHost: known host check mismatch";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "ssh2.Transport initKnownHost: known host check mismatch",
+                    last_error,
                     .{},
                 );
             },
             ssh2.LIBSSH2_KNOWNHOST_CHECK_NOTFOUND => {
+                const last_error = "ssh2.Transport initKnownHost: known host check not found";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "ssh2.Transport initKnownHost: known host check not found",
+                    last_error,
                     .{},
                 );
             },
             ssh2.LIBSSH2_KNOWNHOST_CHECK_FAILURE => {
+                const last_error = "ssh2.Transport initKnownHost: known host check failure";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "ssh2.Transport initKnownHost: known host check failure",
+                    last_error,
                     .{},
                 );
             },
             else => {
+                const last_error = "ssh2.Transport initKnownHost: known host unknown error";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "ssh2.Transport initKnownHost: known host unknown error",
+                    last_error,
                     .{},
                 );
             },
@@ -946,7 +1054,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         self.log.debug("ssh2.Transport authenticate requested", .{});
 
@@ -957,9 +1065,8 @@ pub const Transport = struct {
                 operation_timeout_ns,
                 session,
                 auth_options,
-            ) catch blk: {
+            ) catch {
                 // we can still try to auth with a password if the user provided it, so we continue
-                break :blk;
             };
 
             if (try self.isAuthenticated(
@@ -977,9 +1084,8 @@ pub const Transport = struct {
                 operation_timeout_ns,
                 session,
                 auth_options,
-            ) catch blk: {
+            ) catch {
                 // we can still try to auth with a password if the user provided it, so we continue
-                break :blk;
             };
 
             if (try self.isAuthenticated(
@@ -999,10 +1105,9 @@ pub const Transport = struct {
                 operation_timeout_ns,
                 session,
                 auth_options,
-            ) catch blk: {
+            ) catch {
                 // password auth failed but we can still try kbdinteractive, in the future we could
                 // /should check auth list before doing this but for now this is ok
-                break :blk;
             };
 
             if (try self.isAuthenticated(
@@ -1032,11 +1137,15 @@ pub const Transport = struct {
             }
         }
 
+        const last_error = "ssh2.Transport authenticate: all authentication methods have failed";
+
+        self.last_error.set(last_error);
+
         return errors.wrapCriticalError(
             errors.ScrapliError.Transport,
             @src(),
             self.log,
-            "ssh2.Transport authenticate: all authentication methods have failed",
+            last_error,
             .{},
         );
     }
@@ -1050,21 +1159,34 @@ pub const Transport = struct {
     ) !bool {
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport isAuthenticated: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport isAuthenticated: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
+            {
+                const last_error = "ssh2.Transport isAuthenticated: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport isAuthenticated: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1075,12 +1197,11 @@ pub const Transport = struct {
             if (rc == 1) {
                 return true;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1096,7 +1217,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const private_key_path_c = try self.allocator.dupeSentinel(
             u8,
@@ -1116,21 +1237,34 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport handlePrivateKeyAuth: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport handlePrivateKeyAuth: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
+            {
+                const last_error = "ssh2.Transport handlePrivateKeyAuth: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport handlePrivateKeyAuth: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1153,12 +1287,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1177,10 +1310,14 @@ pub const Transport = struct {
 
             if (errmsg != null and errlen > 0) {
                 const msg_slice = errmsg[0..@intCast(errlen)];
-                self.log.debug("libssh2 error: {} {s}\n", .{ err, msg_slice });
+                self.log.debug("libssh2 error: {} {s}", .{ err, msg_slice });
             } else {
-                self.log.debug("libssh2 error: {} (no message)\n", .{err});
+                self.log.debug("libssh2 error: {} (no message)", .{err});
             }
+
+            self.last_error.set(
+                "ssh2.Transport handlePrivateKeyAuth: failed private key authentication",
+            );
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -1199,7 +1336,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const private_key_passphrase_c = try self.allocator.dupeSentinel(
             u8,
@@ -1214,21 +1351,35 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport handlePrivateKeyContentAuth: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport handlePrivateKeyContentAuth: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
+            {
+                const last_error = "ssh2.Transport handlePrivateKeyContentAuth: operation " ++
+                    "timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport handlePrivateKeyContentAuth: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1249,12 +1400,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1273,10 +1423,14 @@ pub const Transport = struct {
 
             if (errmsg != null and errlen > 0) {
                 const msg_slice = errmsg[0..@intCast(errlen)];
-                std.debug.print("libssh2 error: {} {s}\n", .{ err, msg_slice });
+                self.log.debug("libssh2 error: {} {s}", .{ err, msg_slice });
             } else {
-                std.debug.print("libssh2 error: {} (no message)\n", .{err});
+                self.log.debug("libssh2 error: {} (no message)", .{err});
             }
+
+            self.last_error.set(
+                "ssh2.Transport handlePrivateKeyContentAuth: failed private key authentication",
+            );
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -1295,27 +1449,40 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport handleKeyboardInteractiveAuth: " ++
+                    "operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport handleKeyboardInteractiveAuth: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
             if (operation_timeout_ns != 0 and
-                start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns)
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
             {
+                const last_error = "ssh2.Transport handleKeyboardInteractiveAuth: operation " ++
+                    "timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport handleKeyboardInteractiveAuth: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1332,12 +1499,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1359,7 +1525,7 @@ pub const Transport = struct {
         cancel: ?*bool,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         // note: calling the converted c func instead of zig style due to typing issue similar
         // to -> https://github.com/ziglang/zig/issues/18824
@@ -1370,21 +1536,34 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport handlePasswordAuth: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport handlePasswordAuth: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
+            {
+                const last_error = "ssh2.Transport handlePasswordAuth: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport handlePasswordAuth: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1401,12 +1580,11 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
@@ -1431,21 +1609,34 @@ pub const Transport = struct {
     ) !?*ssh2.LIBSSH2_CHANNEL {
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport openChannel: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport openChannel: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
+            {
+                const last_error = "ssh2.Transport openChannel: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport openChannel: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1459,22 +1650,25 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(session);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
             }
 
+            const last_error = "ssh2.Transport openChannel: failed opening session channel";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport openChannel: failed opening session channel",
+                last_error,
                 .{},
             );
         }
@@ -1485,7 +1679,7 @@ pub const Transport = struct {
         start_time: std.Io.Timestamp,
         cancel: ?*bool,
         operation_timeout_ns: u64,
-        auth_options: *auth.Options,
+        auth_options: auth.Options,
     ) !void {
         const proxy_jump_options = self.options.proxy_jump_options.?;
 
@@ -1498,21 +1692,34 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport openProxyChannel: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport openProxyChannel: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
+            {
+                const last_error = "ssh2.Transport openProxyChannel: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport openProxyChannel: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1530,22 +1737,26 @@ pub const Transport = struct {
             const rc = ssh2.libssh2_session_last_errno(self.initial_session.?);
 
             if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
             }
 
+            self.last_error.set(
+                "ssh2.Transport openProxyChannel: failed opening session " ++
+                    "(initial direct tcpip) channel",
+            );
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport openProxyChannel:  failed opening session " ++
+                "ssh2.Transport openProxyChannel: failed opening session " ++
                     "(initial direct tcpip) channel {d}",
                 .{rc},
             );
@@ -1555,14 +1766,18 @@ pub const Transport = struct {
             null,
             null,
             null,
-            self.proxy_jump_auth_callback_data,
+            &self.proxy_jump_auth_callback_data,
         );
         if (self.proxy_session == null) {
+            const last_error = "ssh2.Transport openProxyChannel: failed creating libssh2 session";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport openProxyChannel: failed creating libssh2 session",
+                last_error,
                 .{},
             );
         }
@@ -1592,6 +1807,9 @@ pub const Transport = struct {
         const local_fd = fds[0];
         const remote_fd = fds[1];
 
+        self.proxy_wrapper.?.local_fd = local_fd;
+        self.proxy_wrapper.?.remote_fd = remote_fd;
+
         // set both sides of pipe/pair to nonblock for our normal behavior and so that we can start
         // the proxy loop for initial session establishment while still being able to not be stuck
         // in a blocking read -- this way we can "stop" the proxy behavior (of reading forever) once
@@ -1607,11 +1825,15 @@ pub const Transport = struct {
 
         const handshake_rc = ssh2.libssh2_session_handshake(self.proxy_session, local_fd);
         if (handshake_rc != 0) {
+            const last_error = "ssh2.Transport openProxyChannel: failed libssh2 session handshake";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport openProxyChannel: failed libssh2 session handshake",
+                last_error,
                 .{},
             );
         }
@@ -1628,7 +1850,7 @@ pub const Transport = struct {
                 .lookups = auth_options.lookups,
             },
         );
-        defer pa.deinit();
+        defer pa.deinit(self.allocator);
 
         if (pa.username != null and pa.password != null) {
             const resolved_password = try auth_options.resolveAuthValue(pa.password.?);
@@ -1656,21 +1878,34 @@ pub const Transport = struct {
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport requestPty: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport requestPty: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
+            {
+                const last_error = "ssh2.Transport requestPty: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport requestPty: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1680,22 +1915,25 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
             }
 
+            const last_error = "ssh2.Transport requestPty: failed requesting pty";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport requestPty: failed requesting pty",
+                last_error,
                 .{},
             );
         }
@@ -1710,21 +1948,34 @@ pub const Transport = struct {
     ) !void {
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "ssh2.Transport requestShell: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "ssh2.Transport requestShell: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and
+                start_time.untilNow(
+                    self.io,
+                    .awake,
+                ).nanoseconds > operation_timeout_ns)
+            {
+                const last_error = "ssh2.Transport requestShell: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "ssh2.Transport requestShell: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
@@ -1737,22 +1988,25 @@ pub const Transport = struct {
             if (rc == 0) {
                 break;
             } else if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
 
                 continue;
             }
 
+            const last_error = "ssh2.Transport requestShell: failed requesting shell";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "ssh2.Transport requestShell: failed requesting shell",
+                last_error,
                 .{},
             );
         }
@@ -1797,23 +2051,36 @@ pub const Transport = struct {
     fn writeStandard(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeStandard requested", .{});
 
-        while (true) {
+        var written: usize = 0;
+
+        // possible (but unlikely w/out massive input) to write partially, so this loop and
+        // tracking n handles that; same for proxied flavor
+        while (written < buf.len) {
+            const remaining = buf[written..];
+
             try self.session_lock.lock(self.io);
-            const n = ssh2.libssh2_channel_write_ex(self.initial_channel.?, 0, buf.ptr, buf.len);
+            const n = ssh2.libssh2_channel_write_ex(
+                self.initial_channel.?,
+                0,
+                remaining.ptr,
+                remaining.len,
+            );
             self.session_lock.unlock(self.io);
 
-            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN or n == 0) {
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
+
                 continue;
             }
 
             if (n < 0) {
+                self.last_error.set("ssh2.Transport writeStandard: write failed");
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
@@ -1823,40 +2090,41 @@ pub const Transport = struct {
                 );
             }
 
-            if (n != buf.len) {
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "ssh2.Transport writeStandard: wrote {d} bytes, expected to write {d}",
-                    .{ n, buf.len },
-                );
-            }
-
-            return;
+            written += @intCast(n);
         }
     }
 
     fn writeProxied(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeProxied requested", .{});
 
-        while (true) {
+        var written: usize = 0;
+
+        while (written < buf.len) {
+            const remaining = buf[written..];
+
             try self.session_lock.lock(self.io);
-            const n = ssh2.libssh2_channel_write_ex(self.proxy_channel.?, 0, buf.ptr, buf.len);
+            const n = ssh2.libssh2_channel_write_ex(
+                self.proxy_channel.?,
+                0,
+                remaining.ptr,
+                remaining.len,
+            );
             self.session_lock.unlock(self.io);
 
-            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-                try std.Io.Clock.Duration.sleep(
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN or n == 0) {
+                try self.io.sleep(
                     .{
-                        .clock = .awake,
-                        .raw = .fromNanoseconds(default_eagain_delay_ns),
+                        .nanoseconds = default_eagain_delay_ns,
                     },
-                    self.io,
+                    .awake,
                 );
+
                 continue;
             }
 
             if (n < 0) {
+                self.last_error.set("ssh2.Transport writeProxied: write failed");
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
@@ -1866,17 +2134,7 @@ pub const Transport = struct {
                 );
             }
 
-            if (n != buf.len) {
-                return errors.wrapCriticalError(
-                    errors.ScrapliError.Transport,
-                    @src(),
-                    self.log,
-                    "ssh2.Transport writeProxied: wrote {d} bytes, expected to write {d}",
-                    .{ n, buf.len },
-                );
-            }
-
-            break;
+            written += @intCast(n);
         }
 
         if (self.proxy_wrapper) |pw| {
@@ -1931,6 +2189,8 @@ pub const Transport = struct {
 
             return 0;
         } else if (n < 0) {
+            self.last_error.set("ssh2.Transport readStandard: transport read failed");
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
@@ -1946,55 +2206,59 @@ pub const Transport = struct {
     fn readProxied(self: *Transport, buf: []u8) !usize {
         self.log.debug("ssh2.Transport readProxied requested", .{});
 
-        try self.session_lock.lock(self.io);
+        while (true) {
+            try self.session_lock.lock(self.io);
 
-        if (ssh2.libssh2_channel_eof(self.proxy_channel.?) == 1) {
-            self.session_lock.unlock(self.io);
-            return errors.ScrapliError.EOF;
-        }
-
-        const n = ssh2.libssh2_channel_read_ex(
-            self.proxy_channel.?,
-            @as(c_int, 0),
-            &buf[0],
-            @intCast(buf.len),
-        );
-
-        self.session_lock.unlock(self.io);
-
-        // need to make sure we are flushing things the *other* way too -- as in back to the server
-        // because if we dont do this our acks and such wont get there
-        self.proxy_wrapper.?.pipeToChannel() catch |err| {
-            switch (err) {
-                error.WouldBlock => {},
-                else => return err,
+            if (ssh2.libssh2_channel_eof(self.proxy_channel.?) == 1) {
+                self.session_lock.unlock(self.io);
+                return errors.ScrapliError.EOF;
             }
-        };
 
-        if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            self.proxy_wrapper.?.channelToPipe() catch |err| {
+            const n = ssh2.libssh2_channel_read_ex(
+                self.proxy_channel.?,
+                @as(c_int, 0),
+                &buf[0],
+                @intCast(buf.len),
+            );
+
+            self.session_lock.unlock(self.io);
+
+            // need to make sure we are flushing things the *other* way too -- as in back to
+            // the server because if we dont do this our acks and such wont get there
+            self.proxy_wrapper.?.pipeToChannel() catch |err| {
                 switch (err) {
-                    error.WouldBlock => {
-                        try self.waiter.wait(self.socket.?);
-
-                        return 0;
-                    },
+                    error.WouldBlock => {},
                     else => return err,
                 }
             };
 
-            return self.readProxied(buf);
-        } else if (n < 0) {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport readProxied: transport read failed, rc {d}",
-                .{n},
-            );
-        }
+            if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+                self.proxy_wrapper.?.channelToPipe() catch |err| {
+                    switch (err) {
+                        error.WouldBlock => {
+                            try self.waiter.wait(self.socket.?);
 
-        return @intCast(n);
+                            return 0;
+                        },
+                        else => return err,
+                    }
+                };
+
+                continue;
+            } else if (n < 0) {
+                self.last_error.set("ssh2.Transport readProxied: transport read failed");
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "ssh2.Transport readProxied: transport read failed, rc {d}",
+                    .{n},
+                );
+            }
+
+            return @intCast(n);
+        }
     }
 
     /// Reads content from the transport session -- dispatches to the appropriate write method based
@@ -2053,16 +2317,39 @@ fn kbdInteractiveCallback(
 }
 
 test "transportInit" {
-    const o = try Options.init(std.testing.allocator, .{});
-    const t = try Transport.init(
+    var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
+        .{},
     );
 
     t.deinit();
-    o.deinit();
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}
+
+fn transportInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    var t = try Transport.init(
+        allocator,
+        std.testing.io,
+        logging.Logger{
+            .allocator = allocator,
+        },
+        .{},
+    );
+
+    t.deinit();
+}
+
+test "transportInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        transportInitForAllocFailures,
+        .{},
+    );
 }

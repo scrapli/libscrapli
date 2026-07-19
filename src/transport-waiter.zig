@@ -5,54 +5,58 @@ const builtin = @import("builtin");
 /// kqueue for darwin.
 pub const Waiter: type = switch (builtin.target.os.tag) {
     .linux => struct {
-        w: *@import("transport-waiter-epoll.zig").EpollWaiter,
+        w: @import("transport-waiter-epoll.zig").EpollWaiter,
 
         /// Initializes the waiter.
-        pub fn init(allocator: std.mem.Allocator) !Waiter {
+        pub fn init() !Waiter {
             return Waiter{
-                .w = try @import("transport-waiter-epoll.zig").EpollWaiter.init(allocator),
+                .w = try @import("transport-waiter-epoll.zig").EpollWaiter.init(),
             };
         }
 
         /// Deinitializes the waiter.
-        pub fn deinit(self: Waiter) void {
+        pub fn deinit(self: *Waiter) void {
             self.w.deinit();
         }
 
         /// Waits for the fd to be readable.
-        pub fn wait(self: Waiter, fd: std.posix.fd_t) !void {
+        pub fn wait(self: *Waiter, fd: std.posix.fd_t) !void {
             return self.w.wait(fd);
         }
 
         /// Unblocks the waiter.
-        pub fn unblock(self: Waiter) !void {
+        pub fn unblock(self: *Waiter) !void {
             return self.w.unblock();
         }
     },
     .macos => struct {
-        w: *@import("transport-waiter-kqueue.zig").KqueueWaiter,
+        w: @import("transport-waiter-kqueue.zig").KqueueWaiter,
 
         /// Initializes the waiter.
-        pub fn init(allocator: std.mem.Allocator) !Waiter {
+        pub fn init() !Waiter {
             return Waiter{
-                .w = try @import("transport-waiter-kqueue.zig").KqueueWaiter.init(allocator),
+                .w = try @import("transport-waiter-kqueue.zig").KqueueWaiter.init(),
             };
         }
 
         /// Deinitializes the waiter.
-        pub fn deinit(self: Waiter) void {
+        pub fn deinit(self: *Waiter) void {
             self.w.deinit();
         }
 
         /// Waits for the fd to be readable.
-        pub fn wait(self: Waiter, fd: std.posix.fd_t) !void {
+        pub fn wait(self: *Waiter, fd: std.posix.fd_t) !void {
             return self.w.wait(fd);
         }
 
         /// Unblocks the waiter.
-        pub fn unblock(self: Waiter) !void {
+        pub fn unblock(self: *Waiter) !void {
             try self.w.unblock();
         }
     },
     else => @compileError("unsupported platform"),
 };
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Waiter);
+}

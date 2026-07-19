@@ -8,11 +8,14 @@ const transport_socket = @import("transport-socket.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 const control_char_iac: u8 = 255;
+const default_eagain_delay_ns: u64 = 100_000;
 const control_char_do: u8 = 253;
 const control_char_dont: u8 = 254;
 const control_char_will: u8 = 251;
 const control_char_wont: u8 = 252;
 const control_char_sga: u8 = 3;
+const control_char_sb: u8 = 250;
+const control_char_se: u8 = 240;
 
 const control_chars_actionable = [4]u8{
     control_char_do,
@@ -26,31 +29,9 @@ const control_chars_actionable_do_dont = [2]u8{
     control_char_dont,
 };
 
-/// Holds option inputs for the telnet transport.
-// zlinter-disable-next-line declaration_naming
-pub const OptionsInputs = struct {};
-
-/// Holds telnet transport options.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-
-    /// Initialize the transport options.
-    pub fn init(allocator: std.mem.Allocator, _: OptionsInputs) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-        };
-
-        return o;
-    }
-
-    /// Deinitialize the transport options.
-    pub fn deinit(self: *Options) void {
-        self.allocator.destroy(self);
-    }
-};
+/// Holds telnet transport options. Clearly a placeholder as there are acutally no current telnet
+/// options available.
+pub const Options = struct {};
 
 /// Transport is the telnet transport implementation.
 pub const Transport = struct {
@@ -59,38 +40,34 @@ pub const Transport = struct {
 
     log: logging.Logger,
 
-    options: *Options,
-
     waiter: transport_waiter.Waiter,
-    closing: bool = false,
+    closing: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
     stream: ?std.Io.net.Stream = null,
     socket: ?std.posix.socket_t = null,
 
     initial_buf: std.ArrayList(u8),
 
+    last_error: errors.LastError = .{},
+
     /// Initialize the transport object.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
         log: logging.Logger,
-        options: *Options,
-    ) !*Transport {
+    ) !Transport {
         logging.traceWithSrc(log, @src(), "telnet.Transport initializing", .{});
 
-        const t = try allocator.create(Transport);
-        errdefer allocator.destroy(t);
+        var w = try transport_waiter.Waiter.init();
+        errdefer w.deinit();
 
-        t.* = Transport{
+        return Transport{
             .allocator = allocator,
             .io = io,
             .log = log,
-            .options = options,
-            .waiter = try transport_waiter.Waiter.init(allocator),
+            .waiter = w,
             .initial_buf = .empty,
         };
-
-        return t;
     }
 
     /// Deinitialize the transport object.
@@ -99,8 +76,11 @@ pub const Transport = struct {
 
         self.initial_buf.deinit(self.allocator);
         self.waiter.deinit();
+    }
 
-        self.allocator.destroy(self);
+    /// Returns the last error message recorded by this transport (empty if none).
+    pub fn getLastError(self: *Transport) []const u8 {
+        return self.last_error.get();
     }
 
     fn handleControlCharResponse(
@@ -109,12 +89,12 @@ pub const Transport = struct {
         maybe_control_char: u8,
     ) !bool {
         if (control_buf.items.len == 0) {
-            if (maybe_control_char != control_char_iac) {
+            if (maybe_control_char == control_char_iac) {
+                try control_buf.append(self.allocator, maybe_control_char);
+            } else {
                 try self.initial_buf.append(self.allocator, maybe_control_char);
 
                 return true;
-            } else {
-                try control_buf.append(self.allocator, maybe_control_char);
             }
         } else if (control_buf.items.len == 1) {
             if (bytes.charIn(&control_chars_actionable, maybe_control_char)) {
@@ -176,36 +156,63 @@ pub const Transport = struct {
 
         while (true) {
             if (cancel != null and cancel.?.*) {
+                const last_error = "telnet.Transport handleControlChars: operation cancelled";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
                     @src(),
                     self.log,
-                    "telnet.Transport handleControlChars: operation cancelled",
+                    last_error,
                     .{},
                 );
             }
 
-            if (operation_timeout_ns != 0 and start_time.untilNow(self.io, .awake).nanoseconds > operation_timeout_ns) {
+            if (operation_timeout_ns != 0 and start_time.untilNow(
+                self.io,
+                .awake,
+            ).nanoseconds > operation_timeout_ns) {
+                const last_error = "telnet.Transport handleControlChars: operation timeout exceeded";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
                     @src(),
                     self.log,
-                    "telnet.Transport handleControlChars: operation timeout exceeded",
+                    last_error,
                     .{},
                 );
             }
 
             var control_char_buf: [1]u8 = undefined;
 
-            try self.waiter.wait(self.socket.?);
+            const n = std.posix.read(self.socket.?, &control_char_buf) catch |err| switch (err) {
+                error.WouldBlock => {
+                    // zlinter-disable-next-line no_swallow_error - best effort backoff
+                    self.io.sleep(
+                        .{
+                            .nanoseconds = default_eagain_delay_ns,
+                        },
+                        .awake,
+                    ) catch {};
 
-            const n = try std.posix.read(self.socket.?, &control_char_buf);
+                    continue;
+                },
+                else => return err,
+            };
             if (n == 0) {
+                const last_error = "telnet.Transport handleControlChars: peer closed connection " ++
+                    "during telnet negotiation";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
                     @src(),
                     self.log,
-                    "telnet.Transport handleControlChars: peer closed connection during telnet negotiation",
+                    last_error,
                     .{},
                 );
             }
@@ -232,6 +239,10 @@ pub const Transport = struct {
         self.log.info("telnet.Transport open requested", .{});
 
         self.stream = transport_socket.getStream(self.io, self.log, host, port) catch {
+            self.last_error.set(
+                "telnet.Transport initSocket: failed initializing socket unable to resolve host",
+            );
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
@@ -245,11 +256,15 @@ pub const Transport = struct {
         self.socket = self.stream.?.socket.handle;
 
         file.setNonBlocking(self.socket.?) catch {
+            const last_error = "telnet.Transport open: failed ensuring socket set to non blocking";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "telnet.Transport open: failed ensuring socket set to non blocking",
+                last_error,
                 .{},
             );
         };
@@ -277,11 +292,15 @@ pub const Transport = struct {
         self.log.debug("telnet.Transport write requested", .{});
 
         if (self.socket == null) {
+            const last_error = "telnet.Transport write: write attempted, but transport not opened";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "telnet.Transport write: write attempted, but transport not opened",
+                last_error,
                 .{},
             );
         }
@@ -296,20 +315,27 @@ pub const Transport = struct {
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
                 std.posix.E.AGAIN => {
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Transport,
-                        @src(),
-                        self.log,
-                        "telnet.Transport write: eagain on write, short write",
-                        .{},
-                    );
+                    // the socket is deliberately nonblocking, so eagain just means the kernel
+                    // buffer is full (i.e. a payload bigger than the buffer) -- back off briefly
+                    // and keep writing rather than failing a healthy session
+                    // zlinter-disable-next-line no_swallow_error - best effort backoff
+                    self.io.sleep(
+                        .{
+                            .nanoseconds = default_eagain_delay_ns,
+                        },
+                        .awake,
+                    ) catch {};
                 },
                 else => |err| {
+                    const last_error = "telnet.Transport write: writing to stream failed";
+
+                    self.last_error.set(last_error);
+
                     return errors.wrapCriticalError(
                         std.posix.unexpectedErrno(err),
                         @src(),
                         self.log,
-                        "telnet.Transport write: writing to stream failed",
+                        last_error,
                         .{},
                     );
                 },
@@ -322,11 +348,15 @@ pub const Transport = struct {
         self.log.trace("telnet.Transport read requested", .{});
 
         if (self.socket == null) {
+            const last_error = "telnet.Transport read: read attempted, but transport not opened";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
                 @src(),
                 self.log,
-                "telnet.Transport read: read attempted, but transport not opened",
+                last_error,
                 .{},
             );
         }
@@ -345,43 +375,217 @@ pub const Transport = struct {
             return n;
         }
 
-        try self.waiter.wait(self.socket.?);
+        while (true) {
+            try self.waiter.wait(self.socket.?);
 
-        if (self.closing) {
-            return 0;
+            if (self.closing.load(std.lang.AtomicOrder.acquire)) {
+                return 0;
+            }
+
+            const n = std.posix.read(self.socket.?, buf) catch |err| {
+                const last_error = "telnet.Transport read: failed reading from stream";
+
+                self.last_error.set(last_error);
+
+                return errors.wrapWarnError(
+                    err,
+                    @src(),
+                    self.log,
+                    last_error,
+                    .{},
+                );
+            };
+
+            if (n == 0) {
+                return n;
+            }
+
+            // servers can (prolly wont? shouldnt?) renegotiate telnet options at any time, so
+            // deal with it
+            const stripped_n = stripInBandControlChars(buf[0..n]);
+
+            if (stripped_n == 0) {
+                continue;
+            }
+
+            return stripped_n;
         }
-
-        const n = std.posix.read(self.socket.?, buf) catch |err| {
-            return errors.wrapWarnError(
-                err,
-                @src(),
-                self.log,
-                "telnet.Transport read: failed reading from stream",
-                .{},
-            );
-        };
-
-        return n;
     }
 
     /// Unblocks any in progress reads and sets the prepare close flag, this prevents us from
     /// making a final read the fd that we are about to nuke.
     pub fn prepareClose(self: *Transport) !void {
+        self.closing.store(true, std.lang.AtomicOrder.release);
         try self.waiter.unblock();
     }
 };
 
 test "transportInit" {
-    const o = try Options.init(std.testing.allocator, .{});
-    const t = try Transport.init(
+    var t = try Transport.init(
         std.testing.allocator,
         std.testing.io,
         logging.Logger{
             .allocator = std.testing.allocator,
         },
-        o,
     );
 
     t.deinit();
-    o.deinit();
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Transport);
+}
+
+fn transportInitForAllocFailures(allocator: std.mem.Allocator) anyerror!void {
+    var t = try Transport.init(
+        allocator,
+        std.testing.io,
+        logging.Logger{
+            .allocator = allocator,
+        },
+    );
+
+    t.deinit();
+}
+
+test "transportInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        transportInitForAllocFailures,
+        .{},
+    );
+}
+
+fn stripInBandControlChars(buf: []u8) usize {
+    if (std.mem.findScalar(u8, buf, control_char_iac) == null) {
+        return buf.len;
+    }
+
+    var out_idx: usize = 0;
+    var idx: usize = 0;
+
+    while (idx < buf.len) {
+        if (buf[idx] != control_char_iac) {
+            buf[out_idx] = buf[idx];
+            out_idx += 1;
+            idx += 1;
+
+            continue;
+        }
+
+        if (idx + 1 >= buf.len) {
+            break;
+        }
+
+        const command = buf[idx + 1];
+
+        if (command == control_char_iac) {
+            buf[out_idx] = control_char_iac;
+            out_idx += 1;
+            idx += 2;
+        } else if (bytes.charIn(&control_chars_actionable, command)) {
+            // do/dont/will/wont + option byte
+            idx = @min(idx + 3, buf.len);
+        } else if (command == control_char_sb) {
+            var scan_idx = idx + 2;
+            var terminated = false;
+
+            while (scan_idx + 1 < buf.len) : (scan_idx += 1) {
+                if (buf[scan_idx] == control_char_iac and buf[scan_idx + 1] == control_char_se) {
+                    terminated = true;
+
+                    break;
+                }
+            }
+
+            if (!terminated) {
+                break;
+            }
+
+            idx = scan_idx + 2;
+        } else {
+            idx += 2;
+        }
+    }
+
+    return out_idx;
+}
+
+test "stripInBandControlChars" {
+    const Case = struct {
+        name: []const u8,
+        input: []const u8,
+        expected: []const u8,
+    };
+
+    const cases = [_]Case{
+        .{
+            .name = "plain payload untouched",
+            .input = "show version",
+            .expected = "show version",
+        },
+        .{
+            .name = "negotiation then payload",
+            .input = &[_]u8{ 255, 253, 24, 'h', 'i' },
+            .expected = "hi",
+        },
+        .{
+            .name = "payload then negotiation",
+            .input = &[_]u8{ 'h', 'i', 255, 251, 1 },
+            .expected = "hi",
+        },
+        .{
+            .name = "only negotiation",
+            .input = &[_]u8{ 255, 253, 24 },
+            .expected = "",
+        },
+        .{
+            .name = "escaped iac is data",
+            .input = &[_]u8{ 'a', 255, 255, 'b' },
+            .expected = &[_]u8{ 'a', 255, 'b' },
+        },
+        .{
+            .name = "subnegotiation skipped",
+            .input = &[_]u8{ 255, 250, 24, 1, 2, 255, 240, 'o', 'k' },
+            .expected = "ok",
+        },
+        .{
+            .name = "trailing bare iac dropped",
+            .input = &[_]u8{ 'h', 'i', 255 },
+            .expected = "hi",
+        },
+        .{
+            .name = "truncated negotiation dropped",
+            .input = &[_]u8{ 'h', 'i', 255, 253 },
+            .expected = "hi",
+        },
+        .{
+            .name = "two byte command skipped",
+            .input = &[_]u8{ 255, 241, 'g', 'o' },
+            .expected = "go",
+        },
+        .{
+            .name = "interleaved negotiation and payload",
+            .input = &[_]u8{ 'a', 255, 253, 3, 'b', 255, 251, 5, 'c' },
+            .expected = "abc",
+        },
+        .{
+            .name = "unterminated subnegotiation drops remainder",
+            .input = &[_]u8{ 'h', 'i', 255, 250, 24, 1 },
+            .expected = "hi",
+        },
+    };
+
+    for (cases) |case| {
+        var buf: [64]u8 = undefined;
+        @memcpy(buf[0..case.input.len], case.input);
+
+        const n = stripInBandControlChars(buf[0..case.input.len]);
+
+        std.testing.expectEqualSlices(u8, case.expected, buf[0..n]) catch |err| {
+            std.debug.print("case failed: {s}\n", .{case.name});
+
+            return err;
+        };
+    }
 }

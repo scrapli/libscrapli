@@ -3,7 +3,7 @@ const std = @import("std");
 /// Conveneince function to initalize a string hashmap with the given keys and items.
 pub fn inlineInitStringHashMap(
     allocator: std.mem.Allocator,
-    comptime T: type,
+    T: type,
     keys: []const []const u8,
     items: []const T,
 ) !std.StringHashMap(T) {

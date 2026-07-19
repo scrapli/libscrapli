@@ -3,13 +3,12 @@
 // https://gist.githubusercontent.com/karlseguin/ \
 // c6bea5b35e4e8d26af6f81c22cb5d76b/raw/cf9f21131e439f266e360477fa60b89431d67920/test_runner.zig
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 
 const scrapli = @import("scrapli");
 const test_helper = scrapli.test_helper;
 
-const border = "=" ** 80;
+const border: [80]u8 = @splat('=');
 
 // yaml is verrrry noisy
 pub const std_options = std.Options{
@@ -90,7 +89,7 @@ pub fn main(init: std.process.Init) !void {
         var status = Status.pass;
         slowest.startTiming();
 
-        std.testing.allocator_instance = .{};
+        std.testing.allocator_instance = std.heap.SafeAllocator.init(std.heap.page_allocator, .{});
 
         const friendly_name = friendlyName(t.name);
 
@@ -125,7 +124,7 @@ pub fn main(init: std.process.Init) !void {
             },
         }
 
-        const leaked = std.testing.allocator_instance.deinit() == .leak;
+        const leaked = std.testing.allocator_instance.deinit() > 0;
         if (leaked) {
             leak += 1;
             printer.status(

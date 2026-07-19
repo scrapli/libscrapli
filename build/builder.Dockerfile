@@ -1,6 +1,6 @@
 FROM debian:bookworm-slim AS builder
 
-ARG ZIG_VERSION="0.15.1"
+ARG ZIG_VERSION=""
 
 RUN apt-get update -y && \
     apt-get install -yq --no-install-recommends \
@@ -11,7 +11,11 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archive/*.deb
 
 RUN curl https://raw.githubusercontent.com/tristanisham/zvm/master/install.sh | bash
-RUN /root/.zvm/self/zvm i --zls --full "${ZIG_VERSION}"
+RUN case "${ZIG_VERSION:-}" in \
+      ""|*dev*) version=master ;; \
+      *)        version="$ZIG_VERSION" ;; \
+    esac && \
+    /root/.zvm/self/zvm i "$version"
 
 FROM debian:bookworm-slim
 

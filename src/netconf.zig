@@ -71,77 +71,45 @@ const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 // zlinter-enable require_doc_comment
 
-/// Config holds a configuration that is the input to netconf Options struct.
-pub const Config = struct {
+/// Options holds available options for the netconf driver.
+pub const Options = struct {
     logger: ?logging.Logger = null,
-    port: ?u16 = null,
-    auth: auth.OptionsInputs = .{},
-    session: session.OptionsInputs = .{},
-    transport: transport.OptionsInputs = .{
+    port: u16 = default_netconf_port,
+    auth: auth.Options = .{},
+    session: session.Options = .{},
+    transport: transport.Options = .{
         .bin = .{},
     },
-    error_tag: ?[]const u8 = null,
+    error_tag: []const u8 = operation.default_rpc_error_tag,
     preferred_version: ?operation.Version = null,
     capabilities_callback: ?ClientCapabilitiesCallback = null,
     message_poll_interval_ns: u64 = default_message_poll_interval_ns,
-};
 
-/// Options holds available options for the netconf driver.
-pub const Options = struct {
-    allocator: std.mem.Allocator,
-    logger: ?logging.Logger,
-    port: ?u16,
-    auth: *auth.Options,
-    session: *session.Options,
-    transport: *transport.Options,
-    error_tag: []const u8 = operation.default_rpc_error_tag,
-    preferred_version: ?operation.Version = null,
-    capabilities_callback: ?ClientCapabilitiesCallback,
-    message_poll_interval_ns: u64 = default_message_poll_interval_ns,
+    fn init(
+        allocator: std.mem.Allocator,
+        opts: Options,
+    ) !Options {
+        var o = opts;
+        errdefer o.deinit(allocator);
 
-    /// Initializes the netconf options.
-    pub fn init(allocator: std.mem.Allocator, config: Config) !*Options {
-        const o = try allocator.create(Options);
-        errdefer allocator.destroy(o);
-
-        o.* = Options{
-            .allocator = allocator,
-            .logger = config.logger,
-            .port = config.port,
-            .auth = try auth.Options.init(allocator, config.auth),
-            .session = try session.Options.init(allocator, config.session),
-            .transport = try transport.Options.init(
-                allocator,
-                config.transport,
-            ),
-            .preferred_version = config.preferred_version,
-            .capabilities_callback = config.capabilities_callback,
-            .message_poll_interval_ns = config.message_poll_interval_ns,
-        };
-
-        o.session.operation_max_search_depth = default_initial_operation_max_search_depth;
-
-        if (&o.error_tag[0] != &operation.default_rpc_error_tag[0]) {
-            o.error_tag = try o.allocator.dupe(u8, o.error_tag);
+        if (o.error_tag.ptr != operation.default_rpc_error_tag.ptr) {
+            o.error_tag = try allocator.dupe(u8, o.error_tag);
         }
 
         return o;
     }
 
     /// Deinitializes the netconf options.
-    pub fn deinit(self: *Options) void {
-        if (&self.error_tag[0] != &operation.default_rpc_error_tag[0]) {
-            self.allocator.free(self.error_tag);
+    pub fn deinit(
+        self: Options,
+        allocator: std.mem.Allocator,
+    ) void {
+        if (self.error_tag.ptr != operation.default_rpc_error_tag.ptr) {
+            allocator.free(self.error_tag);
         }
-
-        self.auth.deinit();
-        self.session.deinit();
-        self.transport.deinit();
-
-        self.allocator.destroy(self);
     }
 
-    fn validate(self: *Options, log: logging.Logger) !void {
+    fn validate(self: Options, log: logging.Logger) !void {
         switch (self.transport.*) {
             .bin => {
                 if (self.auth.private_key_content != null) {
@@ -164,9 +132,9 @@ pub const Driver = struct {
 
     host: []const u8,
 
-    options: *Options,
+    options: Options,
 
-    session: *session.Session,
+    session: session.Session,
 
     server_capabilities: ?std.ArrayList(Capability),
     negotiated_version: operation.Version,
@@ -174,7 +142,7 @@ pub const Driver = struct {
 
     process_thread: ?std.Thread,
     process_stop: std.atomic.Value(ProcessThreadState),
-    process_thread_exited: bool = false,
+    process_thread_exited: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
     message_id: u64,
 
@@ -197,29 +165,30 @@ pub const Driver = struct {
     ),
     subscriptions_lock: std.Io.Mutex,
 
+    last_error: errors.LastError = .{},
+
     /// Initialize a netconf object.
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
         host: []const u8,
-        config: Config,
+        options: Options,
     ) !*Driver {
-        const opts = try Options.init(allocator, config);
-
-        const log = opts.logger orelse logging.Logger{
+        const log = options.logger orelse logging.Logger{
             .allocator = allocator,
         };
 
         logging.traceWithSrc(log, @src(), "netconf.Driver object initializing", .{});
 
-        try opts.validate(log);
+        var o = try Options.init(allocator, options);
+        errdefer o.deinit(allocator);
 
-        switch (opts.transport.*) {
+        switch (o.transport) {
             .bin => {
-                opts.transport.bin.netconf = true;
+                o.transport.bin.netconf = true;
             },
             .ssh2 => {
-                opts.transport.ssh2.netconf = true;
+                o.transport.ssh2.netconf = true;
             },
             .test_ => {
                 // nothing to do for test transport, but its "allowed" so dont return an error
@@ -235,19 +204,18 @@ pub const Driver = struct {
             },
         }
 
-        if (opts.port == null) {
-            opts.port = default_netconf_port;
-        }
-
-        const s = try session.Session.init(
+        var s = try session.Session.init(
             allocator,
             io,
             log,
             delimiter_version_1_0,
-            opts.session,
-            opts.auth,
-            opts.transport,
+            o.session,
+            o.auth,
+            o.transport,
         );
+        errdefer s.deinit();
+
+        s.options.operation_max_search_depth = default_initial_operation_max_search_depth;
 
         const d = try allocator.create(Driver);
 
@@ -256,7 +224,7 @@ pub const Driver = struct {
             .io = io,
             .log = log,
             .host = host,
-            .options = opts,
+            .options = o,
             .session = s,
             .server_capabilities = .empty,
             .negotiated_version = .version_1_0,
@@ -291,7 +259,7 @@ pub const Driver = struct {
     pub fn deinit(self: *Driver) void {
         logging.traceWithSrc(self.log, @src(), "netconf.Driver object deinitializing", .{});
 
-        if (self.process_stop.load(std.builtin.AtomicOrder.acquire) == ProcessThreadState.run) {
+        if (self.process_stop.load(std.lang.AtomicOrder.acquire) == ProcessThreadState.run) {
             // same as session, for ignoring errors on close and just gracefully freeing things
             // zlint-disable suppressed-errors
             const ret = self.close(self.allocator, .{ .force = true }) catch null;
@@ -339,9 +307,25 @@ pub const Driver = struct {
 
         self.subscriptions.deinit();
 
-        self.options.deinit();
+        self.options.deinit(self.allocator);
 
         self.allocator.destroy(self);
+    }
+
+    /// Returns the last error for the driver, the session, or the transport. Slice only valid
+    /// as long as the error does not change and the driver/session/transport are not deinit'd.
+    pub fn getLastError(
+        self: *Driver,
+    ) []const u8 {
+        if (self.last_error.len > 0) {
+            return self.last_error.get();
+        }
+
+        if (self.session.last_error.len > 0) {
+            return self.session.last_error.get();
+        }
+
+        return self.session.transport.getLastError();
     }
 
     fn newResult(
@@ -359,7 +343,7 @@ pub const Driver = struct {
             allocator,
             self.io,
             self.host,
-            self.options.port.?,
+            self.options.port,
             self.negotiated_version,
             self.options.error_tag,
             input,
@@ -388,7 +372,7 @@ pub const Driver = struct {
             try self.session.open(
                 allocator,
                 self.host,
-                self.options.port.?,
+                self.options.port,
                 options.cancel,
             ),
         );
@@ -408,16 +392,20 @@ pub const Driver = struct {
                     u8,
                     res.result,
                     "<hello ",
-                );
-                if (cap_start_index == null) {
+                ) orelse {
+                    const last_error = "netconf.Driver open: could not find start of " ++
+                        "server capabilities";
+
+                    self.last_error.set(last_error);
+
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Driver,
                         @src(),
                         self.log,
-                        "netconf.Driver open: could not find start of server capabilities",
+                        last_error,
                         .{},
                     );
-                }
+                };
 
                 // session will have read up to (and consumed) the prompt (]]>]]> at this point),
                 // so we just need find the end of the server hello/capabilities.
@@ -425,20 +413,24 @@ pub const Driver = struct {
                     u8,
                     res.result,
                     "/hello>",
-                );
-                if (cap_end_index == null) {
+                ) orelse {
+                    const last_error = "netconf.Driver open: could not find end of server " ++
+                        "capabilities";
+
+                    self.last_error.set(last_error);
+
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Driver,
                         @src(),
                         self.log,
-                        "netconf.Driver open: could not find end of server capabilities",
+                        last_error,
                         .{},
                     );
-                }
+                };
 
                 cap_buf = try allocator.dupe(
                     u8,
-                    res.result[cap_start_index.? .. cap_end_index.? + "/hello>".len],
+                    res.result[cap_start_index .. cap_end_index + "/hello>".len],
                 );
             },
             else => {
@@ -448,14 +440,16 @@ pub const Driver = struct {
                     start_timestamp,
                 );
 
-                res.result = try std.fmt.allocPrint(
-                    allocator,
+                const combined_result = try allocator.print(
                     "{s}\n{s}",
                     .{
                         res.result,
                         cap_buf,
                     },
                 );
+
+                allocator.free(res.result);
+                res.result = combined_result;
             },
         }
 
@@ -475,7 +469,7 @@ pub const Driver = struct {
 
         self.process_stop.store(
             ProcessThreadState.run,
-            std.builtin.AtomicOrder.unordered,
+            std.lang.AtomicOrder.unordered,
         );
 
         self.process_thread = std.Thread.spawn(
@@ -483,11 +477,15 @@ pub const Driver = struct {
             Driver.processLoop,
             .{self},
         ) catch |err| {
+            const last_error = "netconf.Driver open: failed spawning message processing thread";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 err,
                 @src(),
                 self.log,
-                "netconf.Driver open: failed spawning message processing thread",
+                last_error,
                 .{},
             );
         };
@@ -498,11 +496,12 @@ pub const Driver = struct {
     fn closeJoinProcessThread(self: *Driver) !void {
         self.process_stop.store(
             ProcessThreadState.stop,
-            std.builtin.AtomicOrder.unordered,
+            std.lang.AtomicOrder.unordered,
         );
 
         if (self.process_thread) |t| {
             t.join();
+            self.process_thread = null;
         }
 
         try self.session.close();
@@ -581,9 +580,11 @@ pub const Driver = struct {
             }
 
             if (!found_cap_start) {
+                // search only the bytes this read actually produced -- the rest of the buffer is
+                // undefined on the first read and stale bytes from prior reads after that
                 const cap_start_index = std.mem.find(
                     u8,
-                    read_cap_buf,
+                    read_cap_buf[0..n],
                     "<hello ",
                 );
                 if (cap_start_index != null) {
@@ -597,11 +598,11 @@ pub const Driver = struct {
 
             const cap_end_index = std.mem.find(
                 u8,
-                read_cap_buf,
+                read_cap_buf[0..n],
                 delimiter_version_1_0,
             );
-            if (cap_end_index != null) {
-                end_copy_index = cap_end_index.?;
+            if (cap_end_index) |idx| {
+                end_copy_index = idx;
             }
 
             try cap_buf.append(
@@ -738,17 +739,19 @@ pub const Driver = struct {
         self.log.info("netconf.Driver hasCapability requested", .{});
         self.log.debug("netconf.Driver hasCapability: name '{s}'", .{name});
 
-        if (self.server_capabilities == null) {
+        const server_capabilities = self.server_capabilities orelse {
+            const last_error = "netconf.Driver hasCapability: requested but capabilities unset";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 self.log,
-                "netconf.Driver hasCapability: requested but capabilities unset",
+                last_error,
                 .{},
             );
-        }
-
-        const server_capabilities = self.server_capabilities.?;
+        };
 
         for (server_capabilities.items) |cap| {
             if (namespace) |ns| {
@@ -797,21 +800,25 @@ pub const Driver = struct {
         } else {
             // we literally did not get a capability for 1.0 or 1.1, something is
             // wrong, bail.
+            const last_error = "netconf.Driver determineVersion: capabilities negotiation failed";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 self.log,
-                "netconf.Driver determineVersion: capabilities negotiation failed",
+                last_error,
                 .{},
             );
         }
 
-        if (self.options.preferred_version == null) {
+        const preferred_version = self.options.preferred_version orelse {
             // user doesnt care, use default
             return;
-        }
+        };
 
-        switch (self.options.preferred_version.?) {
+        switch (preferred_version) {
             .version_1_0 => {
                 if (has_version_1_0) {
                     self.negotiated_version = .version_1_0;
@@ -828,11 +835,15 @@ pub const Driver = struct {
             },
         }
 
+        const last_error = "netconf.Driver determineVersion: preferred capability unavailable";
+
+        self.last_error.set(last_error);
+
         return errors.wrapCriticalError(
             errors.ScrapliError.Driver,
             @src(),
             self.log,
-            "netconf.Driver determineVersion: preferred capability unavailable",
+            last_error,
             .{},
         );
     }
@@ -902,8 +913,7 @@ pub const Driver = struct {
         try writer.elementEnd();
         try writer.eof();
 
-        const caps = try std.fmt.allocPrint(
-            self.allocator,
+        const caps = try self.allocator.print(
             "{s}{s}",
             .{
                 output.written(),
@@ -916,6 +926,22 @@ pub const Driver = struct {
     }
 
     fn processLoop(
+        self: *Driver,
+    ) void {
+        // publish the exited flag however the inner loop ends (clean stop, eof, or error) --
+        // the inner fn's own defers (including the eof drain) run before this does, preserving
+        // the "dont signal exited until remaining messages are processed" ordering
+        defer self.process_thread_exited.store(true, std.lang.AtomicOrder.release);
+
+        self.processLoopInner() catch |err| {
+            self.log.critical(
+                "netconf.Driver processLoop: message processing thread exiting on error {}",
+                .{err},
+            );
+        };
+    }
+
+    fn processLoopInner(
         self: *Driver,
     ) !void {
         self.log.info("netconf.Driver mssage processing thread started", .{});
@@ -931,7 +957,7 @@ pub const Driver = struct {
             .version_1_1 => delimiter_version_1_1,
         };
 
-        while (self.process_stop.load(std.builtin.AtomicOrder.acquire) != ProcessThreadState.stop) {
+        while (self.process_stop.load(std.lang.AtomicOrder.acquire) != ProcessThreadState.stop) {
             const n = self.session.read(buf) catch |err| {
                 switch (err) {
                     errors.ScrapliError.EOF => {
@@ -940,18 +966,11 @@ pub const Driver = struct {
                         const owned_buf = try message_buf.toOwnedSlice(self.allocator);
                         defer self.allocator.free(owned_buf);
 
-                        defer {
-                            self.log.debug(
-                                "netconf.Driver processLoop: message processing thread " ++
-                                    " stopping, session read queue drained and read thread stopped",
-                                .{},
-                            );
-
-                            // dont set this to true till we processed any remaining messages
-                            // otherwise we may bail out of dispatch rpc without seeing a close
-                            // session response
-                            self.process_thread_exited = true;
-                        }
+                        defer self.log.debug(
+                            "netconf.Driver processLoop: message processing thread " ++
+                                " stopping, session read queue drained and read thread stopped",
+                            .{},
+                        );
 
                         switch (self.negotiated_version) {
                             // we'll just squash any errors we get from processing as we maybe
@@ -969,8 +988,6 @@ pub const Driver = struct {
                         return;
                     },
                     else => {
-                        self.process_thread_exited = true;
-
                         return err;
                     },
                 }
@@ -1107,10 +1124,10 @@ pub const Driver = struct {
         }
 
         var _start_index: usize = 0;
-        if (index_of_message_id != null) {
-            _start_index = index_of_message_id.? + message_id_attribute_prefix.len;
-        } else if (index_of_subscription_id != null) {
-            _start_index = index_of_subscription_id.? + subscription_id_attribute_prefix.len;
+        if (index_of_message_id) |idx| {
+            _start_index = idx + message_id_attribute_prefix.len;
+        } else if (index_of_subscription_id) |idx| {
+            _start_index = idx + subscription_id_attribute_prefix.len;
         }
 
         // max should be uint32, so 10 chars covers that
@@ -1140,6 +1157,9 @@ pub const Driver = struct {
         raw_buf: []const u8,
         processed_buf: []const u8,
     ) !void {
+        errdefer self.allocator.free(raw_buf);
+        errdefer self.allocator.free(processed_buf);
+
         const id_info = try Driver.processFoundMessageIds(processed_buf);
 
         if (!id_info.found) {
@@ -1162,9 +1182,6 @@ pub const Driver = struct {
                 .{id_info.found_id},
             );
 
-            // we ignore raw buf of subscriptions/notifications
-            self.allocator.free(raw_buf);
-
             try self.subscriptions_lock.lock(self.io);
             defer self.subscriptions_lock.unlock(self.io);
 
@@ -1174,18 +1191,24 @@ pub const Driver = struct {
             }
 
             try ret.value_ptr.*.append(self.allocator, processed_buf);
+
+            // we ignore raw buf of subscriptions/notifications; freed only now, after the last
+            // fallible operation, so the errdefer above cannot double free it
+            self.allocator.free(raw_buf);
         } else if (id_info.is_notification_message) {
             self.log.debug(
                 "netconf.Driver storeMessageOrSubscription: storing notification message",
                 .{},
             );
 
-            self.allocator.free(raw_buf);
-
             try self.notifications_lock.lock(self.io);
             defer self.notifications_lock.unlock(self.io);
 
             try self.notifications.append(self.allocator, processed_buf);
+
+            // raw ignored for notifications; freed only now, after the last fallible operation,
+            // so the errdefer above cannot double free it
+            self.allocator.free(raw_buf);
         } else {
             self.log.debug(
                 "netconf.Driver storeMessageOrSubscription: storing message, id {d}",
@@ -1205,30 +1228,32 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
-        var delimiter_count = std.mem.count(u8, buf, delimiter_version_1_0);
-
         var message_start_idx: usize = 0;
 
-        while (delimiter_count > 0) {
-            const maybe_delimiter_index = std.mem.find(
-                u8,
-                buf,
-                delimiter_version_1_0,
-            );
+        while (std.mem.find(
+            u8,
+            buf[message_start_idx..],
+            delimiter_version_1_0,
+        )) |relative_delimiter_index| {
+            const delimiter_index = message_start_idx + relative_delimiter_index;
+            const delimiter_end_index = delimiter_index + delimiter_version_1_0.len;
 
-            const delimiter_index = maybe_delimiter_index.?;
             const message_view = buf[message_start_idx..delimiter_index];
 
-            const owned_raw = try self.allocator.alloc(u8, buf.len);
-            @memcpy(owned_raw, buf);
+            const owned_raw = try self.allocator.dupe(
+                u8,
+                buf[message_start_idx..delimiter_end_index],
+            );
 
-            const owned_parsed = try self.allocator.alloc(u8, message_view.len);
-            @memcpy(owned_parsed, message_view);
+            const owned_parsed = self.allocator.dupe(u8, message_view) catch |err| {
+                self.allocator.free(owned_raw);
+
+                return err;
+            };
 
             try self.storeMessageOrSubscription(owned_raw, owned_parsed);
 
-            delimiter_count -= 1;
-            message_start_idx = delimiter_index + delimiter_version_1_0.len + 1;
+            message_start_idx = @min(delimiter_end_index + 1, buf.len);
         }
     }
 
@@ -1238,15 +1263,42 @@ pub const Driver = struct {
         buf: []const u8,
     ) !void {
         // rather than deal w/ an arraylist and a bunch of allocations, we'll allocate a single
-        // slice since the final parsed result will always be smaller than the heap of chunks that
-        // we need to parse. we'll track what we put into it so we can allocate a right sized slice
-        // when we're done. so two (or N for multiple messages found in the chunk we are processing)
-        // allocations rather than a zillion with array list basically.
-        const _parsed = try self.allocator.alloc(u8, buf.len);
-        defer self.allocator.free(_parsed);
+        // scratch slice sized to the whole input -- the parsed (de-chunked) output is always
+        // smaller than the chunked input, and one scratch serves every message in the buf
+        // (parsed_idx resets per message).
+        const parsed_scratch = try self.allocator.alloc(u8, buf.len);
+        defer self.allocator.free(parsed_scratch);
+
+        // remaining is re-sliced past each completed message rather than recursing per message
+        // like this fn used to -- a drain buffer w/ many coalesced messages would grow the
+        // stack (and re-allocate scratch) per message otherwise
+        var remaining = buf;
+
+        while (remaining.len > 0) {
+            const consumed = try self.processSingleFoundMessageVersion1_1(
+                remaining,
+                parsed_scratch,
+            ) orelse return;
+
+            remaining = remaining[consumed..];
+        }
+    }
+
+    /// Parses a single chunked framing (rfc6242) message from the front of buf, storing it via
+    /// storeMessageOrSubscription when its end of message marker (##) is reached. Returns the
+    /// number of bytes consumed so the caller can continue with the rest of the buf, or null
+    /// when no complete message remains (trailing junk, or an incomplete tail which matches
+    /// the historical behavior of being silently dropped -- the process loop only hands over
+    /// bufs w/ a complete delimiter, so that is drain path territory only).
+    fn processSingleFoundMessageVersion1_1(
+        self: *Driver,
+        buf: []const u8,
+        parsed_scratch: []u8,
+    ) !?usize {
+        const truncated_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
+            "parsing netconf message, message truncated";
 
         var parsed_idx: usize = 0;
-
         var iter_idx: usize = 0;
 
         while (iter_idx < buf.len) {
@@ -1257,100 +1309,130 @@ pub const Driver = struct {
             }
 
             if (buf[iter_idx] != ascii.control_chars.hash_char) {
-                // we *must* have found a hash indicating a chunk size, but we didn't something
-                // is wrong and/or we have trailing data like "Connection closed" kind of stuff
-                return;
+                // we *must* have found a hash indicating a chunk size, but we didn't --
+                // something is wrong and/or we have trailing data like "Connection closed"
+                // kind of stuff
+                return null;
             }
 
             iter_idx += 1;
 
-            if (buf[iter_idx] == ascii.control_chars.hash_char) {
-                // now we've found two consequtive hash signs, indicating end of message we can
-                // store the raw and processed bits in the messages map
-                const owned_raw = try self.allocator.alloc(u8, iter_idx);
-                @memcpy(owned_raw, buf[0..iter_idx]);
+            if (iter_idx >= buf.len) {
+                // bare hash truncated at the end of the buffer
+                self.last_error.set(truncated_error);
 
-                const owned_parsed = try self.allocator.alloc(u8, parsed_idx);
-                @memcpy(owned_parsed[0..parsed_idx], _parsed[0..parsed_idx]);
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    truncated_error,
+                    .{},
+                );
+            }
+
+            if (buf[iter_idx] == ascii.control_chars.hash_char) {
+                // now we've found two consecutive hash signs, indicating end of message; we
+                // can store the raw and processed bits in the messages map
+                const owned_raw = try self.allocator.dupe(u8, buf[0..iter_idx]);
+
+                const owned_parsed = self.allocator.dupe(
+                    u8,
+                    parsed_scratch[0..parsed_idx],
+                ) catch |err| {
+                    self.allocator.free(owned_raw);
+
+                    return err;
+                };
 
                 try self.storeMessageOrSubscription(
                     owned_raw,
                     owned_parsed,
                 );
 
-                if (iter_idx + 1 >= buf.len) {
-                    return;
-                }
-
-                return self.processFoundMessageVersion1_1(buf[iter_idx + 1 ..]);
+                return iter_idx + 1;
             }
 
-            var chunk_size_end_idx: usize = 0;
-
             // https://datatracker.ietf.org/doc/html/rfc6242#section-4.2 max chunk size is
-            // 4294967295 so for us that is a max of 10 chars that the chunk size could be when we
-            //  are parsing it out of raw bytes.
-            for (0..10) |maybe_chunk_size_idx_offset| {
-                if (!std.ascii.isDigit(buf[iter_idx + maybe_chunk_size_idx_offset])) {
-                    chunk_size_end_idx = iter_idx + maybe_chunk_size_idx_offset;
-                    break;
-                }
+            // 4294967295 so for us that is a max of 10 chars that the chunk size could be
+            // when we are parsing it out of raw bytes
+            const max_digits = @min(10, buf.len - iter_idx);
+
+            var digit_count: usize = 0;
+
+            while (digit_count < max_digits and
+                std.ascii.isDigit(buf[iter_idx + digit_count]))
+            {
+                digit_count += 1;
+            }
+
+            if (digit_count == 0 or iter_idx + digit_count >= buf.len) {
+                self.last_error.set(truncated_error);
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    truncated_error,
+                    .{},
+                );
             }
 
             var chunk_size: usize = 0;
 
-            for (iter_idx..chunk_size_end_idx) |chunk_idx| {
-                chunk_size = chunk_size * 10 + (buf[chunk_idx] - '0');
+            for (buf[iter_idx .. iter_idx + digit_count]) |digit| {
+                chunk_size = chunk_size * 10 + (digit - '0');
             }
 
             self.log.debug(
-                "netconf.Driver processFoundMessageVersion1_1: found message chunk of size {d}",
+                "netconf.Driver processFoundMessageVersion1_1: found message chunk " ++
+                    "of size {d}",
                 .{chunk_size},
             );
 
             if (chunk_size == 0) {
+                const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
+                    "parsing netconf message, found chunk size of zero";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
                     @src(),
                     self.log,
-                    "netconf.Driver processFoundMessageVersion1_1: failed parsing netconf " ++
-                        "message, found chunk size of zero",
+                    last_error,
                     .{},
                 );
             }
 
-            // now that we processed the size, consume any whitespace up to the chunk to read;
-            // first move the iter_idx past the chunk size marker, then consume cr/lf before the
-            // actual chunk content (whitespace like an actual space is valid for chunks!)
-            iter_idx = chunk_size_end_idx;
+            // move past the chunk size marker, then consume cr/lf before the actual chunk
+            // content (whitespace like an actual space is valid *within* chunks!) --
+            // bounded, since a truncated buffer can end mid newline run
+            iter_idx += digit_count;
+
+            while (iter_idx < buf.len and
+                (buf[iter_idx] == ascii.control_chars.cr or
+                    buf[iter_idx] == ascii.control_chars.lf))
+            {
+                iter_idx += 1;
+            }
 
             if (iter_idx + chunk_size >= buf.len) {
-                // just being defensive here, this should *not* happen in normal circumstances but
-                // ya know... shit happens
+                const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
+                    "parsing netconf message, next index to check out of range";
+
+                self.last_error.set(last_error);
+
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
                     @src(),
                     self.log,
-                    "netconf.Driver processFoundMessageVersion1_1: failed parsing netconf " ++
-                        "message, next index to check out of range",
+                    last_error,
                     .{},
                 );
-            }
-
-            while (true) {
-                if (buf[iter_idx] == ascii.control_chars.cr or
-                    buf[iter_idx] == ascii.control_chars.lf)
-                {
-                    iter_idx += 1;
-
-                    continue;
-                }
-
-                break;
             }
 
             @memcpy(
-                _parsed[parsed_idx .. parsed_idx + chunk_size],
+                parsed_scratch[parsed_idx .. parsed_idx + chunk_size],
                 buf[iter_idx .. iter_idx + chunk_size],
             );
             parsed_idx += chunk_size;
@@ -1358,6 +1440,10 @@ pub const Driver = struct {
             // finally increment iter_idx past this chunk
             iter_idx += chunk_size;
         }
+
+        // ran out of buffer without seeing the ## end of message marker -- an incomplete
+        // trailing message, silently dropped
+        return null;
     }
 
     /// Fetch a subscription message by ID. Caller owns returned memory -- w/ the allocator the
@@ -1366,8 +1452,8 @@ pub const Driver = struct {
         self: *Driver,
         id: u64,
     ) ![][]const u8 {
-        self.subscriptions_lock.lock();
-        defer self.subscriptions_lock.unlock();
+        try self.subscriptions_lock.lock(self.io);
+        defer self.subscriptions_lock.unlock(self.io);
 
         if (!self.subscriptions.contains(id)) {
             return &[_][]const u8{};
@@ -1375,7 +1461,7 @@ pub const Driver = struct {
 
         // we know key is present since we already checked
         var ret = self.subscriptions.fetchRemove(id);
-        return ret.?.value.toOwnedSlice();
+        return ret.?.value.toOwnedSlice(self.allocator);
     }
 
     /// Fetch any stored notification messages. Caller owns returned memory -- w/ the allocator the
@@ -1383,10 +1469,10 @@ pub const Driver = struct {
     pub fn getNotificationMessages(
         self: *Driver,
     ) ![][]const u8 {
-        self.notifications_lock.lock();
-        defer self.notifications_lock.unlock();
+        try self.notifications_lock.lock(self.io);
+        defer self.notifications_lock.unlock(self.io);
 
-        return self.notifications.toOwnedSlice();
+        return self.notifications.toOwnedSlice(self.allocator);
     }
 
     fn processCancelAndTimeout(
@@ -1395,11 +1481,15 @@ pub const Driver = struct {
         cancel: ?*bool,
     ) !void {
         if (cancel != null and cancel.?.*) {
+            const last_error = "netconf.Driver processCancelAndTimeout: operation cancelled";
+
+            self.last_error.set(last_error);
+
             return errors.wrapCriticalError(
                 errors.ScrapliError.Cancelled,
                 @src(),
                 self.log,
-                "netconf.Driver processCancelAndTimeout: operation cancelled",
+                last_error,
                 .{},
             );
         }
@@ -1411,6 +1501,10 @@ pub const Driver = struct {
 
             if (ns_since_start > self.session.options.operation_timeout_ns) {
                 const ns_exceeded_by = ns_since_start - self.session.options.operation_timeout_ns;
+
+                self.last_error.set(
+                    "netconf.Driver processCancelAndTimeout: operation timeout exceeded",
+                );
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1548,14 +1642,12 @@ pub const Driver = struct {
         elem_conent: []const u8,
     ) ![]const u8 {
         if (self.negotiated_version == .version_1_0) {
-            return std.fmt.allocPrint(
-                allocator,
+            return allocator.print(
                 "{s}\n{s}",
                 .{ elem_conent, delimiter_version_1_0 },
             );
         } else {
-            return std.fmt.allocPrint(
-                allocator,
+            return allocator.print(
                 "#{d}\n{s}\n{s}",
                 .{ elem_conent.len, elem_conent, delimiter_version_1_1 },
             );
@@ -1593,7 +1685,7 @@ pub const Driver = struct {
 
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1668,7 +1760,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1735,7 +1827,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1806,7 +1898,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1855,7 +1947,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1903,7 +1995,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1951,7 +2043,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -1999,7 +2091,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2067,7 +2159,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2109,14 +2201,12 @@ pub const Driver = struct {
 
                     try res.record(
                         [2][]const u8{
-                            try std.fmt.allocPrint(
-                                allocator,
+                            try allocator.print(
                                 \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
                             ,
                                 .{self.message_id - 1},
                             ),
-                            try std.fmt.allocPrint(
-                                allocator,
+                            try allocator.print(
                                 \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
                             ,
                                 .{self.message_id - 1},
@@ -2150,7 +2240,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2162,7 +2252,7 @@ pub const Driver = struct {
 
         // see also getMessageId, same situation
         var session_id_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &session_id_buf,
             "{}",
             .{options.session_id},
@@ -2209,7 +2299,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2256,7 +2346,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2301,7 +2391,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2354,7 +2444,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2404,7 +2494,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2468,7 +2558,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2484,7 +2574,7 @@ pub const Driver = struct {
         // like the message id and such, but for datastore, longest (currently) is 12, so 20
         // just for consistency and overhead
         var datastore_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &datastore_buf,
             "ds:{s}",
             .{@tagName(options.datastore)},
@@ -2522,7 +2612,7 @@ pub const Driver = struct {
         if (options.max_depth) |max_depth| {
             try writer.elementStart("max-depth");
             var session_id_buf: [20]u8 = undefined;
-            try writer.text(try std.fmt.bufPrint(
+            try writer.text(try std.mem.print(
                 &session_id_buf,
                 "{}",
                 .{max_depth},
@@ -2580,7 +2670,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2595,7 +2685,7 @@ pub const Driver = struct {
         // like the message id and such, but for datastore, longest (currently) is 12, so 20
         // just for consistency and overhead
         var datastore_buf: [20]u8 = undefined;
-        try writer.text(try std.fmt.bufPrint(
+        try writer.text(try std.mem.print(
             &datastore_buf,
             "ds:{s}",
             .{@tagName(options.datastore)},
@@ -2650,7 +2740,7 @@ pub const Driver = struct {
         try Driver.rpcStart(&writer);
         try writer.attribute(
             "message-id",
-            try std.fmt.bufPrint(
+            try std.mem.print(
                 &message_id_buf,
                 "{}",
                 .{self.message_id},
@@ -2827,13 +2917,19 @@ pub const Driver = struct {
                     o,
                 );
             },
-            else => return errors.wrapCriticalError(
-                errors.ScrapliError.Driver,
-                @src(),
-                self.log,
-                "netconf.Driver dispatchRpc: unsupported operation type",
-                .{},
-            ),
+            else => {
+                const last_error = "netconf.Driver dispatchRpc: unsupported operation type";
+
+                self.last_error.set(last_error);
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    last_error,
+                    .{},
+                );
+            },
         }
 
         var res = try self.newResult(
@@ -2898,16 +2994,15 @@ pub const Driver = struct {
                 return v;
             }
 
-            if (self.process_thread_exited) {
+            if (self.process_thread_exited.load(std.lang.AtomicOrder.acquire)) {
                 return errors.ScrapliError.EOF;
             }
 
-            std.Io.Clock.Duration.sleep(
+            self.io.sleep(
                 .{
-                    .clock = .awake,
-                    .raw = .fromNanoseconds(self.options.message_poll_interval_ns),
+                    .nanoseconds = self.options.message_poll_interval_ns,
                 },
-                self.io,
+                .awake,
             ) catch |err| {
                 self.log.warn(
                     "netconf.Driver sendRpc: sleep error '{}', ignoring",
@@ -2924,13 +3019,9 @@ pub const Driver = struct {
         try self.messages_lock.lock(self.io);
         defer self.messages_lock.unlock(self.io);
 
-        const kv = self.messages.fetchRemove(message_id);
+        const kv = self.messages.fetchRemove(message_id) orelse return null;
 
-        if (kv == null) {
-            return null;
-        }
-
-        return kv.?.value;
+        return kv.value;
     }
 };
 
@@ -3174,20 +3265,68 @@ test "processFoundMessageVersion1_1" {
     }
 }
 
+test "processFoundMessageVersion1_1Truncated" {
+    // the eof drain path feeds this parser arbitrarily truncated data -- every case here
+    // panicked (index out of bounds) before the parser was bounds hardened
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expect_error: bool,
+    }{
+        .{ .name = "bare hash at end", .input = "#", .expect_error = true },
+        .{ .name = "digits truncated", .input = "#123", .expect_error = true },
+        .{ .name = "size but no data", .input = "#4\n", .expect_error = true },
+        .{ .name = "chunk data truncated", .input = "#10\nhello", .expect_error = true },
+        .{ .name = "hash then garbage", .input = "#x", .expect_error = true },
+        .{ .name = "trailing junk only", .input = "Connection closed.", .expect_error = false },
+        .{ .name = "whitespace only", .input = "\n\n", .expect_error = false },
+        .{ .name = "empty", .input = "", .expect_error = false },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            std.testing.io,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = .version_1_1;
+
+        const r = d.processFoundMessageVersion1_1(case.input);
+
+        if (case.expect_error) {
+            std.testing.expectError(errors.ScrapliError.Driver, r) catch |err| {
+                std.debug.print("case failed: {s}\n", .{case.name});
+
+                return err;
+            };
+        } else {
+            r catch |err| {
+                std.debug.print("case failed: {s}\n", .{case.name});
+
+                return err;
+            };
+        }
+    }
+}
+
 test "buildRawRpcElement" {
     const test_name = "buildRawRpcElement";
 
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.RawRpcOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3201,7 +3340,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3216,7 +3355,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.0-with-extra-namespaces",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3233,7 +3372,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.1-with-extra-namespaces",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3251,7 +3390,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.0-with-prefix-and-extra-namespaces",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3269,7 +3408,7 @@ test "buildRawRpcElement" {
         .{
             .name = "simple-1.1-with-prefix-and-extra-namespaces",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .payload =
                 \\<get-config><source><running></running></source></get-config>
@@ -3292,7 +3431,7 @@ test "buildRawRpcElement" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3320,14 +3459,14 @@ test "buildGetConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.GetConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-config><source><running></running></source></get-config></rpc>
@@ -3337,7 +3476,7 @@ test "buildGetConfigElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#175
@@ -3348,7 +3487,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
@@ -3361,7 +3500,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
@@ -3375,7 +3514,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.0-with-defaults",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
@@ -3389,7 +3528,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.1-with-defaults",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "<foo:interface/>",
                 .filter_type = operation.FilterType.subtree,
@@ -3404,7 +3543,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.0-xpath",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "/interfaces/interface[name='Management0']/state",
                 .filter_type = operation.FilterType.xpath,
@@ -3417,7 +3556,7 @@ test "buildGetConfigElem" {
         .{
             .name = "filtered-1.1-xpath",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .filter = "/interfaces/interface[name='Management0']/state",
                 .filter_type = operation.FilterType.xpath,
@@ -3435,7 +3574,7 @@ test "buildGetConfigElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3463,14 +3602,14 @@ test "builEditConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.EditConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3484,7 +3623,7 @@ test "builEditConfigElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3499,7 +3638,7 @@ test "builEditConfigElem" {
         .{
             .name = "1.1-with-defaults-operation",
             .version = .version_1_1,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3515,7 +3654,7 @@ test "builEditConfigElem" {
         .{
             .name = "1.1-with-test-option",
             .version = .version_1_1,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3531,7 +3670,7 @@ test "builEditConfigElem" {
         .{
             .name = "1.1-with-error-option",
             .version = .version_1_1,
-            .driver_config = Config{},
+            .driver_options = .{},
             .options = operation.EditConfigOptions{
                 .cancel = null,
                 .config = "<top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top>",
@@ -3551,7 +3690,7 @@ test "builEditConfigElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3579,14 +3718,14 @@ test "builCopyConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.CopyConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><copy-config><source><running></running></source><target><startup></startup></target></copy-config></rpc>
@@ -3596,7 +3735,7 @@ test "builCopyConfigElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#213
@@ -3611,7 +3750,7 @@ test "builCopyConfigElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3639,14 +3778,14 @@ test "builDeleteConfigElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.DeleteConfigOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><delete-config><target><running></running></target></delete-config></rpc>
@@ -3656,7 +3795,7 @@ test "builDeleteConfigElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#181
@@ -3671,7 +3810,7 @@ test "builDeleteConfigElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3699,14 +3838,14 @@ test "buildLockElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.LockUnlockOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><lock><target><running></running></target></lock></rpc>
@@ -3716,7 +3855,7 @@ test "buildLockElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#163
@@ -3731,7 +3870,7 @@ test "buildLockElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3759,14 +3898,14 @@ test "buildUnlockElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.LockUnlockOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><unlock><target><running></running></target></unlock></rpc>
@@ -3776,7 +3915,7 @@ test "buildUnlockElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#167
@@ -3791,7 +3930,7 @@ test "buildUnlockElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3819,14 +3958,14 @@ test "buildGetElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.GetOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get></get></rpc>
@@ -3836,7 +3975,7 @@ test "buildGetElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#125
@@ -3851,7 +3990,7 @@ test "buildGetElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3879,14 +4018,14 @@ test "buildCloseSessionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.CloseSessionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><close-session></close-session></rpc>
@@ -3896,7 +4035,7 @@ test "buildCloseSessionElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#145
@@ -3911,7 +4050,7 @@ test "buildCloseSessionElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -3939,14 +4078,14 @@ test "buildKillSessionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.KillSessionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -3959,7 +4098,7 @@ test "buildKillSessionElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = operation.KillSessionOptions{
                 .cancel = null,
                 .session_id = 1234,
@@ -3977,7 +4116,7 @@ test "buildKillSessionElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4005,14 +4144,14 @@ test "buildCommitElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.CommitOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><commit></commit></rpc>
@@ -4022,7 +4161,7 @@ test "buildCommitElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#131
@@ -4037,7 +4176,7 @@ test "buildCommitElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4065,14 +4204,14 @@ test "buildDiscardElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.DiscardOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><discard-changes></discard-changes></rpc>
@@ -4082,7 +4221,7 @@ test "buildDiscardElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#149
@@ -4097,7 +4236,7 @@ test "buildDiscardElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4125,14 +4264,14 @@ test "buildCancelCommitElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.CancelCommitOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><cancel-commit></cancel-commit></rpc>
@@ -4142,7 +4281,7 @@ test "buildCancelCommitElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#145
@@ -4153,7 +4292,7 @@ test "buildCancelCommitElem" {
         .{
             .name = "persist-id",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .persist_id = "1234",
             },
@@ -4170,7 +4309,7 @@ test "buildCancelCommitElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4198,14 +4337,14 @@ test "buildValidateElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.ValidateOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><validate xmlns="urn:ietf:params:xml:ns:netconf:capability:validate:1.0"><source><running></running></source></validate></rpc>
@@ -4215,7 +4354,7 @@ test "buildValidateElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#234
@@ -4230,7 +4369,7 @@ test "buildValidateElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4258,14 +4397,14 @@ test "buildGetSchemaElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.GetSchemaOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .identifier = "foo",
             },
@@ -4277,7 +4416,7 @@ test "buildGetSchemaElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .identifier = "foo",
             },
@@ -4294,7 +4433,7 @@ test "buildGetSchemaElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4322,14 +4461,14 @@ test "buildGetDataElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.GetDataOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><get-data xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-nmda" xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores" xmlns:or="urn:ietf:params:xml:ns:yang:ietf-origin"><datastore>ds:running</datastore></get-data></rpc>
@@ -4339,7 +4478,7 @@ test "buildGetDataElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{},
             .expected =
             \\#328
@@ -4354,7 +4493,7 @@ test "buildGetDataElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4382,14 +4521,14 @@ test "builEditDataElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.EditDataOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .edit_content = "foo",
             },
@@ -4401,7 +4540,7 @@ test "builEditDataElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .edit_content = "foo",
             },
@@ -4414,7 +4553,7 @@ test "builEditDataElem" {
         .{
             .name = "default-operation",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .edit_content = "foo",
                 .default_operation = operation.DefaultOperation.merge,
@@ -4432,7 +4571,7 @@ test "builEditDataElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4460,14 +4599,14 @@ test "builActionElem" {
     const cases = [_]struct {
         name: []const u8,
         version: operation.Version,
-        driver_config: Config,
+        driver_options: Options,
         options: operation.ActionOptions,
         expected: []const u8,
     }{
         .{
             .name = "simple-1.0",
             .version = .version_1_0,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .action = "foo",
             },
@@ -4479,7 +4618,7 @@ test "builActionElem" {
         .{
             .name = "simple-1.1",
             .version = .version_1_1,
-            .driver_config = .{},
+            .driver_options = .{},
             .options = .{
                 .action = "foo",
             },
@@ -4496,7 +4635,7 @@ test "builActionElem" {
             std.testing.allocator,
             std.testing.io,
             "localhost",
-            case.driver_config,
+            case.driver_options,
         );
 
         defer d.deinit();
@@ -4557,4 +4696,27 @@ test "processLoopBufContainsCompleteDelim" {
 
         try std.testing.expectEqual(case.expected, actual);
     }
+}
+
+test "refAllDecls" {
+    std.testing.refAllDecls(Driver);
+}
+
+fn driverInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    const d = try Driver.init(
+        allocator,
+        std.testing.io,
+        "localhost",
+        .{},
+    );
+
+    d.deinit();
+}
+
+test "driverInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        driverInitForAllocFailures,
+        .{},
+    );
 }
