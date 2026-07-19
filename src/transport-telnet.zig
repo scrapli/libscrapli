@@ -14,6 +14,8 @@ const control_char_dont: u8 = 254;
 const control_char_will: u8 = 251;
 const control_char_wont: u8 = 252;
 const control_char_sga: u8 = 3;
+const control_char_sb: u8 = 250;
+const control_char_se: u8 = 240;
 
 const control_chars_actionable = [4]u8{
     control_char_do,
@@ -409,14 +411,15 @@ pub const Transport = struct {
                 return n;
             }
 
-            if (buf[0] == control_char_iac) {
-                // a telnet negotiation byte leaked into a normal read; drop this chunk and wait
-                // for the next one rather than recursing, which could overflow the stack if the
-                // peer streams IAC bytes
+            // servers can (prolly wont? shouldnt?) renegotiate telnet options at any time, so
+            // deal with it
+            const stripped_n = stripInBandControlChars(buf[0..n]);
+
+            if (stripped_n == 0) {
                 continue;
             }
 
-            return n;
+            return stripped_n;
         }
     }
 
@@ -462,4 +465,138 @@ test "transportInitAllocationFailures" {
         transportInitForAllocFailures,
         .{},
     );
+}
+
+fn stripInBandControlChars(buf: []u8) usize {
+    if (std.mem.findScalar(u8, buf, control_char_iac) == null) {
+        return buf.len;
+    }
+
+    var out_idx: usize = 0;
+    var idx: usize = 0;
+
+    while (idx < buf.len) {
+        if (buf[idx] != control_char_iac) {
+            buf[out_idx] = buf[idx];
+            out_idx += 1;
+            idx += 1;
+
+            continue;
+        }
+
+        if (idx + 1 >= buf.len) {
+            break;
+        }
+
+        const command = buf[idx + 1];
+
+        if (command == control_char_iac) {
+            buf[out_idx] = control_char_iac;
+            out_idx += 1;
+            idx += 2;
+        } else if (bytes.charIn(&control_chars_actionable, command)) {
+            // do/dont/will/wont + option byte
+            idx = @min(idx + 3, buf.len);
+        } else if (command == control_char_sb) {
+            var scan_idx = idx + 2;
+            var terminated = false;
+
+            while (scan_idx + 1 < buf.len) : (scan_idx += 1) {
+                if (buf[scan_idx] == control_char_iac and buf[scan_idx + 1] == control_char_se) {
+                    terminated = true;
+
+                    break;
+                }
+            }
+
+            if (!terminated) {
+                break;
+            }
+
+            idx = scan_idx + 2;
+        } else {
+            idx += 2;
+        }
+    }
+
+    return out_idx;
+}
+
+test "stripInBandControlChars" {
+    const Case = struct {
+        name: []const u8,
+        input: []const u8,
+        expected: []const u8,
+    };
+
+    const cases = [_]Case{
+        .{
+            .name = "plain payload untouched",
+            .input = "show version",
+            .expected = "show version",
+        },
+        .{
+            .name = "negotiation then payload",
+            .input = &[_]u8{ 255, 253, 24, 'h', 'i' },
+            .expected = "hi",
+        },
+        .{
+            .name = "payload then negotiation",
+            .input = &[_]u8{ 'h', 'i', 255, 251, 1 },
+            .expected = "hi",
+        },
+        .{
+            .name = "only negotiation",
+            .input = &[_]u8{ 255, 253, 24 },
+            .expected = "",
+        },
+        .{
+            .name = "escaped iac is data",
+            .input = &[_]u8{ 'a', 255, 255, 'b' },
+            .expected = &[_]u8{ 'a', 255, 'b' },
+        },
+        .{
+            .name = "subnegotiation skipped",
+            .input = &[_]u8{ 255, 250, 24, 1, 2, 255, 240, 'o', 'k' },
+            .expected = "ok",
+        },
+        .{
+            .name = "trailing bare iac dropped",
+            .input = &[_]u8{ 'h', 'i', 255 },
+            .expected = "hi",
+        },
+        .{
+            .name = "truncated negotiation dropped",
+            .input = &[_]u8{ 'h', 'i', 255, 253 },
+            .expected = "hi",
+        },
+        .{
+            .name = "two byte command skipped",
+            .input = &[_]u8{ 255, 241, 'g', 'o' },
+            .expected = "go",
+        },
+        .{
+            .name = "interleaved negotiation and payload",
+            .input = &[_]u8{ 'a', 255, 253, 3, 'b', 255, 251, 5, 'c' },
+            .expected = "abc",
+        },
+        .{
+            .name = "unterminated subnegotiation drops remainder",
+            .input = &[_]u8{ 'h', 'i', 255, 250, 24, 1 },
+            .expected = "hi",
+        },
+    };
+
+    for (cases) |case| {
+        var buf: [64]u8 = undefined;
+        @memcpy(buf[0..case.input.len], case.input);
+
+        const n = stripInBandControlChars(buf[0..case.input.len]);
+
+        std.testing.expectEqualSlices(u8, case.expected, buf[0..n]) catch |err| {
+            std.debug.print("case failed: {s}\n", .{case.name});
+
+            return err;
+        };
+    }
 }
