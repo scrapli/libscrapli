@@ -594,8 +594,7 @@ pub const Transport = struct {
     proxy_channel: ?*ssh2.LIBSSH2_CHANNEL = null,
     proxy_wrapper: ?*ProxyWrapper = null,
 
-    last_error: [512]u8 = @splat(0),
-    last_error_len: usize = 0,
+    last_error: errors.LastError = .{},
 
     /// Initializes the transport.
     pub fn init(
@@ -658,19 +657,9 @@ pub const Transport = struct {
         self.waiter.deinit();
     }
 
-    fn setLastError(
-        self: *Transport,
-        s: []const u8,
-    ) void {
-        const len = @min(s.len, self.last_error.len);
-
-        @memcpy(self.last_error[0..len], s[0..len]);
-        self.last_error_len = len;
-    }
-
     /// Returns the last error message recorded by this transport (empty if none).
     pub fn getLastError(self: *Transport) []const u8 {
-        return self.last_error[0..self.last_error_len];
+        return self.last_error.get();
     }
 
     /// Opens the transport object.
@@ -783,7 +772,7 @@ pub const Transport = struct {
         self.log.debug("ssh2.Transport initSocket requested", .{});
 
         self.stream = transport_socket.getStream(self.io, self.log, host, port) catch {
-            self.setLastError(
+            self.last_error.set(
                 "ssh2.Transport initSocket: failed initializing socket, unable to resolve host",
             );
 
@@ -819,7 +808,7 @@ pub const Transport = struct {
         if (self.initial_session == null) {
             const last_error = "ssh2.Transport initSession: failed creating libssh2 session";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -851,7 +840,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport initSession: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -867,7 +856,7 @@ pub const Transport = struct {
             {
                 const last_error = "ssh2.Transport initSession: operation timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -898,7 +887,7 @@ pub const Transport = struct {
 
             const last_error = "ssh2.Transport initSession: failed session handshake";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -935,7 +924,7 @@ pub const Transport = struct {
         if (nh == null) {
             const last_error = "ssh2.Transport initKnownHost: failed libssh2 known hosts init";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -955,7 +944,7 @@ pub const Transport = struct {
         if (read_rc < 0) {
             const last_error = "ssh2.Transport initKnownHost: failed to read known hosts file";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -977,7 +966,7 @@ pub const Transport = struct {
         if (host_fingerprint == null) {
             const last_error = "ssh2.Transport initKnownHost: failed to fingerprint target host";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -1007,7 +996,7 @@ pub const Transport = struct {
             ssh2.LIBSSH2_KNOWNHOST_CHECK_MISMATCH => {
                 const last_error = "ssh2.Transport initKnownHost: known host check mismatch";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
@@ -1020,7 +1009,7 @@ pub const Transport = struct {
             ssh2.LIBSSH2_KNOWNHOST_CHECK_NOTFOUND => {
                 const last_error = "ssh2.Transport initKnownHost: known host check not found";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
@@ -1033,7 +1022,7 @@ pub const Transport = struct {
             ssh2.LIBSSH2_KNOWNHOST_CHECK_FAILURE => {
                 const last_error = "ssh2.Transport initKnownHost: known host check failure";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
@@ -1046,7 +1035,7 @@ pub const Transport = struct {
             else => {
                 const last_error = "ssh2.Transport initKnownHost: known host unknown error";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
@@ -1150,7 +1139,7 @@ pub const Transport = struct {
 
         const last_error = "ssh2.Transport authenticate: all authentication methods have failed";
 
-        self.setLastError(last_error);
+        self.last_error.set(last_error);
 
         return errors.wrapCriticalError(
             errors.ScrapliError.Transport,
@@ -1172,7 +1161,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport isAuthenticated: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1191,7 +1180,7 @@ pub const Transport = struct {
             {
                 const last_error = "ssh2.Transport isAuthenticated: operation timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1250,7 +1239,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport handlePrivateKeyAuth: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1269,7 +1258,7 @@ pub const Transport = struct {
             {
                 const last_error = "ssh2.Transport handlePrivateKeyAuth: operation timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1326,7 +1315,7 @@ pub const Transport = struct {
                 self.log.debug("libssh2 error: {} (no message)", .{err});
             }
 
-            self.setLastError(
+            self.last_error.set(
                 "ssh2.Transport handlePrivateKeyAuth: failed private key authentication",
             );
 
@@ -1364,7 +1353,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport handlePrivateKeyContentAuth: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1384,7 +1373,7 @@ pub const Transport = struct {
                 const last_error = "ssh2.Transport handlePrivateKeyContentAuth: operation " ++
                     "timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1439,7 +1428,7 @@ pub const Transport = struct {
                 self.log.debug("libssh2 error: {} (no message)", .{err});
             }
 
-            self.setLastError(
+            self.last_error.set(
                 "ssh2.Transport handlePrivateKeyContentAuth: failed private key authentication",
             );
 
@@ -1467,7 +1456,7 @@ pub const Transport = struct {
                 const last_error = "ssh2.Transport handleKeyboardInteractiveAuth: " ++
                     "operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1487,7 +1476,7 @@ pub const Transport = struct {
                 const last_error = "ssh2.Transport handleKeyboardInteractiveAuth: operation " ++
                     "timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1549,7 +1538,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport handlePasswordAuth: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1568,7 +1557,7 @@ pub const Transport = struct {
             {
                 const last_error = "ssh2.Transport handlePasswordAuth: operation timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1622,7 +1611,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport openChannel: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1641,7 +1630,7 @@ pub const Transport = struct {
             {
                 const last_error = "ssh2.Transport openChannel: operation timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1673,7 +1662,7 @@ pub const Transport = struct {
 
             const last_error = "ssh2.Transport openChannel: failed opening session channel";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -1705,7 +1694,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport openProxyChannel: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1724,7 +1713,7 @@ pub const Transport = struct {
             {
                 const last_error = "ssh2.Transport openProxyChannel: operation timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1758,7 +1747,7 @@ pub const Transport = struct {
                 continue;
             }
 
-            self.setLastError(
+            self.last_error.set(
                 "ssh2.Transport openProxyChannel: failed opening session " ++
                     "(initial direct tcpip) channel",
             );
@@ -1782,7 +1771,7 @@ pub const Transport = struct {
         if (self.proxy_session == null) {
             const last_error = "ssh2.Transport openProxyChannel: failed creating libssh2 session";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -1838,7 +1827,7 @@ pub const Transport = struct {
         if (handshake_rc != 0) {
             const last_error = "ssh2.Transport openProxyChannel: failed libssh2 session handshake";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -1891,7 +1880,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport requestPty: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1910,7 +1899,7 @@ pub const Transport = struct {
             {
                 const last_error = "ssh2.Transport requestPty: operation timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -1938,7 +1927,7 @@ pub const Transport = struct {
 
             const last_error = "ssh2.Transport requestPty: failed requesting pty";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -1961,7 +1950,7 @@ pub const Transport = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "ssh2.Transport requestShell: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -1980,7 +1969,7 @@ pub const Transport = struct {
             {
                 const last_error = "ssh2.Transport requestShell: operation timeout exceeded";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.TimeoutExceeded,
@@ -2011,7 +2000,7 @@ pub const Transport = struct {
 
             const last_error = "ssh2.Transport requestShell: failed requesting shell";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -2090,7 +2079,7 @@ pub const Transport = struct {
             }
 
             if (n < 0) {
-                self.setLastError("ssh2.Transport writeStandard: write failed");
+                self.last_error.set("ssh2.Transport writeStandard: write failed");
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
@@ -2134,7 +2123,7 @@ pub const Transport = struct {
             }
 
             if (n < 0) {
-                self.setLastError("ssh2.Transport writeProxied: write failed");
+                self.last_error.set("ssh2.Transport writeProxied: write failed");
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,
@@ -2200,7 +2189,7 @@ pub const Transport = struct {
 
             return 0;
         } else if (n < 0) {
-            self.setLastError("ssh2.Transport readStandard: transport read failed");
+            self.last_error.set("ssh2.Transport readStandard: transport read failed");
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -2257,7 +2246,7 @@ pub const Transport = struct {
 
                 continue;
             } else if (n < 0) {
-                self.setLastError("ssh2.Transport readProxied: transport read failed");
+                self.last_error.set("ssh2.Transport readProxied: transport read failed");
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Transport,

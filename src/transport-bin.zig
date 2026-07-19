@@ -103,8 +103,7 @@ pub const Transport = struct {
 
     open_args: std.ArrayList(strings.MaybeHeapString),
 
-    last_error: [512]u8 = @splat(0),
-    last_error_len: usize = 0,
+    last_error: errors.LastError = .{},
 
     /// Initializes the transport.
     pub fn init(
@@ -144,19 +143,9 @@ pub const Transport = struct {
         self.waiter.deinit();
     }
 
-    fn setLastError(
-        self: *Transport,
-        s: []const u8,
-    ) void {
-        const len = @min(s.len, self.last_error.len);
-
-        @memcpy(self.last_error[0..len], s[0..len]);
-        self.last_error_len = len;
-    }
-
     /// Returns the last error message recorded by this transport (empty if none).
     pub fn getLastError(self: *Transport) []const u8 {
-        return self.last_error[0..self.last_error_len];
+        return self.last_error.get();
     }
 
     fn buildArgs(
@@ -452,7 +441,7 @@ pub const Transport = struct {
         ) catch |err| {
             const last_error = "bin.Transport open: failed inizializing master_fd";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 err,
@@ -521,7 +510,7 @@ pub const Transport = struct {
         if (self.fd == null) {
             const last_error = "bin.Transport write: write attempted, but transport not opened";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,
@@ -552,7 +541,7 @@ pub const Transport = struct {
                 else => |err| {
                     const last_error = "bin.Transport write: writing to fd failed";
 
-                    self.setLastError(last_error);
+                    self.last_error.set(last_error);
 
                     return errors.wrapCriticalError(
                         std.posix.unexpectedErrno(err),
@@ -573,7 +562,7 @@ pub const Transport = struct {
         if (self.fd == null) {
             const last_error = "bin.Transport read: read attempted, but transport not opened";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Transport,

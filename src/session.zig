@@ -212,8 +212,7 @@ pub const Session = struct {
 
     last_consumed_prompt: std.ArrayList(u8) = .empty,
 
-    last_error: [512]u8 = @splat(0),
-    last_error_len: usize = 0,
+    last_error: errors.LastError = .{},
 
     // reusable scratch buffers for building operation output; owned by the session and reset
     // at the start of each op so we dont reallocate every time
@@ -356,33 +355,6 @@ pub const Session = struct {
         self.scratch.deinit();
     }
 
-    fn setLastError(
-        self: *Session,
-        s: []const u8,
-    ) void {
-        const len = @min(s.len, self.last_error.len);
-
-        @memcpy(self.last_error[0..len], s[0..len]);
-        self.last_error_len = len;
-    }
-
-    fn setLastErrorFmt(
-        self: *Session,
-        comptime fmt: []const u8,
-        args: anytype,
-        defaultMsg: []const u8,
-    ) void {
-        const message = std.fmt.bufPrint(self.last_error[0..], fmt, args) catch |err| switch (err) {
-            error.NoSpaceLeft => {
-                self.setLastError(defaultMsg);
-
-                return;
-            },
-        };
-
-        self.last_error_len = message.len;
-    }
-
     /// Opens the session object, starting the background read thread, and ensuring the underlying
     /// transport is opened, authenticated, and ready to accept reads/writes.
     pub fn open(
@@ -426,7 +398,7 @@ pub const Session = struct {
         ) catch |err| {
             const last_error = "session.Session open: failed spawning read thread";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 err,
@@ -619,7 +591,7 @@ pub const Session = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "session.Session authenticate: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -634,7 +606,7 @@ pub const Session = struct {
                 const ns_since_start = start_timestamp.untilNow(self.io, .awake).nanoseconds;
 
                 if (ns_since_start > self.options.operation_timeout_ns) {
-                    self.setLastError("session.Session authenticate: operation timeout exceeded");
+                    self.last_error.set("session.Session authenticate: operation timeout exceeded");
 
                     return errors.wrapCriticalError(
                         errors.ScrapliError.TimeoutExceeded,
@@ -659,7 +631,7 @@ pub const Session = struct {
                         const error_message = try auth.openMessageHandler(bufs.processed.items);
 
                         if (error_message) |msg| {
-                            self.setLastErrorFmt(
+                            self.last_error.setFmt(
                                 "session.Session authenticate: open failed, error: '{s}'",
                                 .{msg},
                                 "session.Session authenticate: open failed, EOF",
@@ -674,7 +646,7 @@ pub const Session = struct {
                             );
                         }
 
-                        self.setLastError("session.Session authenticate: open failed");
+                        self.last_error.set("session.Session authenticate: open failed");
 
                         return errors.wrapCriticalError(
                             errors.ScrapliError.Transport,
@@ -723,7 +695,7 @@ pub const Session = struct {
             const error_message = try auth.openMessageHandler(bufs.processed.items);
 
             if (error_message) |msg| {
-                self.setLastErrorFmt(
+                self.last_error.setFmt(
                     "session.Session authenticate: open failed, error: '{s}'",
                     .{msg},
                     "session.Session authenticate: error in stdout",
@@ -758,7 +730,7 @@ pub const Session = struct {
                             const last_error = "session.Session authenticate: username prompt " ++
                                 "seen multiple times, assuming authentication failed";
 
-                            self.setLastError(last_error);
+                            self.last_error.set(last_error);
 
                             return errors.wrapCriticalError(
                                 errors.ScrapliError.Session,
@@ -778,7 +750,7 @@ pub const Session = struct {
                         const last_error = "session.Session authenticate: username prompt seen " ++
                             "but no username set";
 
-                        self.setLastError(last_error);
+                        self.last_error.set(last_error);
 
                         return errors.wrapCriticalError(
                             errors.ScrapliError.Session,
@@ -797,7 +769,7 @@ pub const Session = struct {
                             const last_error = "session.Session authenticate: password prompt  " ++
                                 "seen multiple times, assuming authentication failed";
 
-                            self.setLastError(last_error);
+                            self.last_error.set(last_error);
 
                             return errors.wrapCriticalError(
                                 errors.ScrapliError.Session,
@@ -812,7 +784,7 @@ pub const Session = struct {
                             self.auth_options.resolveAuthValue(
                                 pw,
                             ) catch |err| {
-                                self.setLastError(
+                                self.last_error.set(
                                     "session.Session authenticate: failed resolving auth " ++
                                         "lookup value",
                                 );
@@ -836,7 +808,7 @@ pub const Session = struct {
                         const last_error = "session.Session authenticate: password prompt seen " ++
                             "but no password set";
 
-                        self.setLastError(last_error);
+                        self.last_error.set(last_error);
 
                         return errors.wrapCriticalError(
                             errors.ScrapliError.Session,
@@ -856,7 +828,7 @@ pub const Session = struct {
                                 "passphrase prompt seen multiple times, assuming authentication " ++
                                 "failed";
 
-                            self.setLastError(last_error);
+                            self.last_error.set(last_error);
 
                             return errors.wrapCriticalError(
                                 errors.ScrapliError.Session,
@@ -871,7 +843,7 @@ pub const Session = struct {
                             self.auth_options.resolveAuthValue(
                                 pk,
                             ) catch |err| {
-                                self.setLastError(
+                                self.last_error.set(
                                     "session.Session authenticate: failed resolving auth " ++
                                         "lookup value",
                                 );
@@ -893,7 +865,7 @@ pub const Session = struct {
                         const last_error = "session.Session authenticate: private key " ++
                             "passphrase prompt seen but no passphrase set";
 
-                        self.setLastError(last_error);
+                        self.last_error.set(last_error);
 
                         return errors.wrapCriticalError(
                             errors.ScrapliError.Session,
@@ -957,7 +929,7 @@ pub const Session = struct {
             if (cancel != null and cancel.?.*) {
                 const last_error = "session.Session readTimeout: operation cancelled";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Cancelled,
@@ -972,7 +944,7 @@ pub const Session = struct {
                 const ns_since_start = start_timestamp.untilNow(self.io, .awake).nanoseconds;
 
                 if (ns_since_start > self.options.operation_timeout_ns) {
-                    self.setLastError("session.Session readTimeout: operation timeout exceeded");
+                    self.last_error.set("session.Session readTimeout: operation timeout exceeded");
 
                     return errors.wrapCriticalError(
                         errors.ScrapliError.TimeoutExceeded,
@@ -1130,7 +1102,7 @@ pub const Session = struct {
         );
 
         if (found_prompt == null) {
-            self.setLastError("session.Session getPrompt: no prompt found matching prompt pattern");
+            self.last_error.set("session.Session getPrompt: no prompt found matching prompt pattern");
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
@@ -1345,7 +1317,7 @@ pub const Session = struct {
             if (pattern.len > 0) {
                 compiled_pattern = re.pcre2Compile(pattern);
                 if (compiled_pattern == null) {
-                    self.setLastError(
+                    self.last_error.set(
                         "session.Session sendPromptedInput: failed compiling pattern",
                     );
 

@@ -76,8 +76,7 @@ pub const Driver = struct {
     session: session.Session,
     current_mode: []const u8 = mode.unknown_mode,
 
-    last_error: [512]u8 = @splat(0),
-    last_error_len: usize = 0,
+    last_error: errors.LastError = .{},
 
     /// Initialize the cli driver.
     pub fn init(
@@ -144,27 +143,17 @@ pub const Driver = struct {
         self.allocator.destroy(self);
     }
 
-    fn setLastError(
-        self: *Driver,
-        s: []const u8,
-    ) void {
-        const len = @min(s.len, self.last_error.len);
-
-        @memcpy(self.last_error[0..len], s[0..len]);
-        self.last_error_len = len;
-    }
-
     /// Returns the last error for the driver, the session, or the transport. Slice only valid
     /// as long as the error does not change and the driver/session/transport are not deinit'd.
     pub fn getLastError(
         self: *Driver,
     ) []const u8 {
-        if (self.last_error_len > 0) {
-            return self.last_error[0..self.last_error_len];
+        if (self.last_error.len > 0) {
+            return self.last_error.get();
         }
 
-        if (self.session.last_error_len > 0) {
-            return self.session.last_error[0..self.session.last_error_len];
+        if (self.session.last_error.len > 0) {
+            return self.session.last_error.get();
         }
 
         return self.session.transport.getLastError();
@@ -362,7 +351,7 @@ pub const Driver = struct {
         );
 
         if (!self.definition.modes.contains(options.requested_mode)) {
-            self.setLastError("cli.Driver requested mode not in definition");
+            self.last_error.set("cli.Driver requested mode not in definition");
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Operation,
@@ -402,7 +391,7 @@ pub const Driver = struct {
             self.definition.modes,
             current_prompt,
         ) catch |err| {
-            self.setLastError("cli.Driver enterMode: failed determining prompt");
+            self.last_error.set("cli.Driver enterMode: failed determining prompt");
 
             return errors.wrapCriticalError(
                 err,
@@ -449,7 +438,7 @@ pub const Driver = struct {
 
             const step_mode = self.definition.modes.get(step);
             if (step_mode == null) {
-                self.setLastError("cli.Driver enterMode mode not in definition");
+                self.last_error.set("cli.Driver enterMode mode not in definition");
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Operation,
@@ -464,7 +453,7 @@ pub const Driver = struct {
 
             const next_operation = step_mode.?.accessible_modes.get(next_mode_name);
             if (next_operation == null) {
-                self.setLastError("cli.Driver enterMode mode not accessible from current mode");
+                self.last_error.set("cli.Driver enterMode mode not accessible from current mode");
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Operation,
@@ -807,7 +796,7 @@ pub const Driver = struct {
                     callback.options.only_once,
                     triggered_callbacks,
                 ) catch |err| {
-                    self.setLastError(
+                    self.last_error.set(
                         "cli.Driver readWithCallbacks failed determining if callback should execute",
                     );
 
@@ -953,7 +942,7 @@ pub const Driver = struct {
             new_compiled_pattern = re.pcre2Compile(new_definition.prompt_pattern);
 
             if (new_compiled_pattern == null) {
-                self.setLastError("cli.replaceDefinition failed compiling prompt pattern");
+                self.last_error.set("cli.replaceDefinition failed compiling prompt pattern");
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,

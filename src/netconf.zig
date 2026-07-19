@@ -165,8 +165,7 @@ pub const Driver = struct {
     ),
     subscriptions_lock: std.Io.Mutex,
 
-    last_error: [512]u8 = @splat(0),
-    last_error_len: usize = 0,
+    last_error: errors.LastError = .{},
 
     /// Initialize a netconf object.
     pub fn init(
@@ -313,27 +312,17 @@ pub const Driver = struct {
         self.allocator.destroy(self);
     }
 
-    fn setLastError(
-        self: *Driver,
-        s: []const u8,
-    ) void {
-        const len = @min(s.len, self.last_error.len);
-
-        @memcpy(self.last_error[0..len], s[0..len]);
-        self.last_error_len = len;
-    }
-
     /// Returns the last error for the driver, the session, or the transport. Slice only valid
     /// as long as the error does not change and the driver/session/transport are not deinit'd.
     pub fn getLastError(
         self: *Driver,
     ) []const u8 {
-        if (self.last_error_len > 0) {
-            return self.last_error[0..self.last_error_len];
+        if (self.last_error.len > 0) {
+            return self.last_error.get();
         }
 
-        if (self.session.last_error_len > 0) {
-            return self.session.last_error[0..self.session.last_error_len];
+        if (self.session.last_error.len > 0) {
+            return self.session.last_error.get();
         }
 
         return self.session.transport.getLastError();
@@ -408,7 +397,7 @@ pub const Driver = struct {
                     const last_error = "netconf.Driver open: could not find start of " ++
                         "server capabilities";
 
-                    self.setLastError(last_error);
+                    self.last_error.set(last_error);
 
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Driver,
@@ -430,7 +419,7 @@ pub const Driver = struct {
                     const last_error = "netconf.Driver open: could not find end of server " ++
                         "capabilities";
 
-                    self.setLastError(last_error);
+                    self.last_error.set(last_error);
 
                     return errors.wrapCriticalError(
                         errors.ScrapliError.Driver,
@@ -492,7 +481,7 @@ pub const Driver = struct {
         ) catch |err| {
             const last_error = "netconf.Driver open: failed spawning message processing thread";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 err,
@@ -755,7 +744,7 @@ pub const Driver = struct {
         if (self.server_capabilities == null) {
             const last_error = "netconf.Driver hasCapability: requested but capabilities unset";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
@@ -817,7 +806,7 @@ pub const Driver = struct {
             // wrong, bail.
             const last_error = "netconf.Driver determineVersion: capabilities negotiation failed";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
@@ -852,7 +841,7 @@ pub const Driver = struct {
 
         const last_error = "netconf.Driver determineVersion: preferred capability unavailable";
 
-        self.setLastError(last_error);
+        self.last_error.set(last_error);
 
         return errors.wrapCriticalError(
             errors.ScrapliError.Driver,
@@ -1334,7 +1323,7 @@ pub const Driver = struct {
 
             if (iter_idx >= buf.len) {
                 // bare hash truncated at the end of the buffer
-                self.setLastError(truncated_error);
+                self.last_error.set(truncated_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
@@ -1381,7 +1370,7 @@ pub const Driver = struct {
             }
 
             if (digit_count == 0 or iter_idx + digit_count >= buf.len) {
-                self.setLastError(truncated_error);
+                self.last_error.set(truncated_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
@@ -1408,7 +1397,7 @@ pub const Driver = struct {
                 const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
                     "parsing netconf message, found chunk size of zero";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
@@ -1435,7 +1424,7 @@ pub const Driver = struct {
                 const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
                     "parsing netconf message, next index to check out of range";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
@@ -1498,7 +1487,7 @@ pub const Driver = struct {
         if (cancel != null and cancel.?.*) {
             const last_error = "netconf.Driver processCancelAndTimeout: operation cancelled";
 
-            self.setLastError(last_error);
+            self.last_error.set(last_error);
 
             return errors.wrapCriticalError(
                 errors.ScrapliError.Cancelled,
@@ -1517,7 +1506,7 @@ pub const Driver = struct {
             if (ns_since_start > self.session.options.operation_timeout_ns) {
                 const ns_exceeded_by = ns_since_start - self.session.options.operation_timeout_ns;
 
-                self.setLastError(
+                self.last_error.set(
                     "netconf.Driver processCancelAndTimeout: operation timeout exceeded",
                 );
 
@@ -2935,7 +2924,7 @@ pub const Driver = struct {
             else => {
                 const last_error = "netconf.Driver dispatchRpc: unsupported operation type";
 
-                self.setLastError(last_error);
+                self.last_error.set(last_error);
 
                 return errors.wrapCriticalError(
                     errors.ScrapliError.Driver,
