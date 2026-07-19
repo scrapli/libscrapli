@@ -167,6 +167,15 @@ pub const Result = struct {
         self.allocator.destroy(self);
     }
 
+    /// Safe mem.ql at index for rpc error parsing checks.
+    fn matchAt(haystack: []const u8, idx: usize, needle: []const u8) bool {
+        if (idx + needle.len > haystack.len) {
+            return false;
+        }
+
+        return std.mem.eql(u8, haystack[idx .. idx + needle.len], needle);
+    }
+
     fn parseRpcErrors(
         self: *Result,
         ret: []const u8,
@@ -185,22 +194,14 @@ pub const Result = struct {
                 continue;
             }
 
-            // check if the message is ending so we dont go out of bounds
-            if (std.mem.eql(
-                u8,
-                ret[iter_idx + 2 .. iter_idx + 2 + rpc_reply_tag.len],
-                rpc_reply_tag,
-            )) {
+            // check if the message is ending
+            if (matchAt(ret, iter_idx + 2, rpc_reply_tag)) {
                 return;
             }
 
             // we havent found an error message yet, see if this tag is an error message starting
             if (message_start_idx == null) {
-                if (std.mem.eql(
-                    u8,
-                    ret[iter_idx + 1 .. iter_idx + 1 + rpc_error_tag.len],
-                    rpc_error_tag,
-                )) {
+                if (matchAt(ret, iter_idx + 1, rpc_error_tag)) {
                     message_start_idx = iter_idx;
                     iter_idx = iter_idx + 2 + rpc_error_tag.len;
                 } else {
@@ -212,11 +213,9 @@ pub const Result = struct {
 
             // next we can check if the message is ending, so jump ahead 2 (to include the closing
             // "/" char when checking
-            if (std.mem.eql(
-                u8,
-                ret[iter_idx + 2 .. iter_idx + 2 + rpc_error_tag.len],
-                rpc_error_tag,
-            )) {
+            if (matchAt(ret, iter_idx + 2, rpc_error_tag)) {
+                const message_end_idx = @min(iter_idx + rpc_error_tag.len + 3, ret.len);
+
                 // default to error if we failed to parse the severity from the message
                 var sev: []const u8 = rpc_error_severity_error;
 
@@ -233,12 +232,12 @@ pub const Result = struct {
                 if (std.mem.eql(u8, sev, rpc_error_severity_error)) {
                     try self.result_error_messages.append(
                         self.allocator,
-                        ret[message_start_idx.? .. iter_idx + rpc_error_tag.len + 3],
+                        ret[message_start_idx.?..message_end_idx],
                     );
                 } else {
                     try self.result_warning_messages.append(
                         self.allocator,
-                        ret[message_start_idx.? .. iter_idx + rpc_error_tag.len + 3],
+                        ret[message_start_idx.?..message_end_idx],
                     );
                 }
 
@@ -252,31 +251,25 @@ pub const Result = struct {
             }
 
             // otherwise we just need to find the severity element
-            if (std.mem.eql(
-                u8,
-                ret[iter_idx + 1 .. iter_idx + 1 + rpc_error_severity_tag.len],
-                rpc_error_severity_tag,
-            )) {
+            if (matchAt(ret, iter_idx + 1, rpc_error_severity_tag)) {
                 message_severity_start_idx = iter_idx + 2 + rpc_error_severity_tag.len;
 
                 iter_idx = iter_idx + 2 + rpc_error_severity_tag.len;
 
-                while (true) {
+                while (iter_idx < ret.len) {
                     if (ret[iter_idx] != ascii.control_chars.open_element_char) {
                         iter_idx += 1;
 
                         continue;
                     }
 
-                    if (std.mem.eql(
-                        u8,
-                        ret[iter_idx + 2 .. iter_idx + 2 + rpc_error_severity_tag.len],
-                        rpc_error_severity_tag,
-                    )) {
+                    if (matchAt(ret, iter_idx + 2, rpc_error_severity_tag)) {
                         message_severity_end_idx = iter_idx;
 
                         break;
                     }
+
+                    iter_idx += 1;
                 }
             }
 
@@ -517,5 +510,83 @@ test "parseRpcErrors" {
         for (0.., case.result.result_warning_messages.items) |idx, actual| {
             try std.testing.expectEqualStrings(case.expected_warnings[idx], actual);
         }
+    }
+}
+
+test "parseRpcErrorsTruncated" {
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expected_warning_count: usize,
+        expected_error_count: usize,
+    }{
+        .{
+            .name = "open element char at very end",
+            .input = "<rpc-error>oh no<",
+            .expected_warning_count = 0,
+            .expected_error_count = 0,
+        },
+        .{
+            .name = "truncated closing tag without gt",
+            .input = "<rpc-error>oh no</rpc-error",
+            .expected_warning_count = 0,
+            .expected_error_count = 1,
+        },
+        .{
+            .name = "unterminated severity element",
+            .input = "<rpc-error><error-severity>error",
+            .expected_warning_count = 0,
+            .expected_error_count = 0,
+        },
+        .{
+            .name = "severity followed by non closing element",
+            .input = "<rpc-error><error-severity>error<foo></error-severity></rpc-error>",
+            .expected_warning_count = 0,
+            .expected_error_count = 1,
+        },
+        .{
+            .name = "truncated rpc reply close",
+            .input = "<rpc-error>x</rpc-error></rpc-repl",
+            .expected_warning_count = 0,
+            .expected_error_count = 1,
+        },
+    };
+
+    for (cases) |case| {
+        const r = try Result.init(
+            std.testing.allocator,
+            std.testing.io,
+            "1.2.3.4",
+            830,
+            .version_1_0,
+            operation.default_rpc_error_tag,
+            "",
+            operation.Kind.get,
+        );
+        defer r.deinit();
+
+        r.parseRpcErrors(case.input) catch |err| {
+            std.debug.print("case failed (unexpected error): {s}\n", .{case.name});
+
+            return err;
+        };
+
+        std.testing.expectEqual(
+            case.expected_warning_count,
+            r.result_warning_messages.items.len,
+        ) catch |err| {
+            std.debug.print("case failed (warning count): {s}\n", .{case.name});
+
+            return err;
+        };
+
+        std.testing.expectEqual(
+            case.expected_error_count,
+            r.result_error_messages.items.len,
+        ) catch |err| {
+            std.debug.print("case failed (error count): {s}\n", .{case.name});
+
+            return err;
+        };
     }
 }

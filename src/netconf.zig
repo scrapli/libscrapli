@@ -1278,15 +1278,42 @@ pub const Driver = struct {
         buf: []const u8,
     ) !void {
         // rather than deal w/ an arraylist and a bunch of allocations, we'll allocate a single
-        // slice since the final parsed result will always be smaller than the heap of chunks that
-        // we need to parse. we'll track what we put into it so we can allocate a right sized slice
-        // when we're done. so two (or N for multiple messages found in the chunk we are processing)
-        // allocations rather than a zillion with array list basically.
-        const _parsed = try self.allocator.alloc(u8, buf.len);
-        defer self.allocator.free(_parsed);
+        // scratch slice sized to the whole input -- the parsed (de-chunked) output is always
+        // smaller than the chunked input, and one scratch serves every message in the buf
+        // (parsed_idx resets per message).
+        const parsed_scratch = try self.allocator.alloc(u8, buf.len);
+        defer self.allocator.free(parsed_scratch);
+
+        // remaining is re-sliced past each completed message rather than recursing per message
+        // like this fn used to -- a drain buffer w/ many coalesced messages would grow the
+        // stack (and re-allocate scratch) per message otherwise
+        var remaining = buf;
+
+        while (remaining.len > 0) {
+            const consumed = try self.processSingleFoundMessageVersion1_1(
+                remaining,
+                parsed_scratch,
+            ) orelse return;
+
+            remaining = remaining[consumed..];
+        }
+    }
+
+    /// Parses a single chunked framing (rfc6242) message from the front of buf, storing it via
+    /// storeMessageOrSubscription when its end of message marker (##) is reached. Returns the
+    /// number of bytes consumed so the caller can continue with the rest of the buf, or null
+    /// when no complete message remains (trailing junk, or an incomplete tail which matches
+    /// the historical behavior of being silently dropped -- the process loop only hands over
+    /// bufs w/ a complete delimiter, so that is drain path territory only).
+    fn processSingleFoundMessageVersion1_1(
+        self: *Driver,
+        buf: []const u8,
+        parsed_scratch: []u8,
+    ) !?usize {
+        const truncated_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
+            "parsing netconf message, message truncated";
 
         var parsed_idx: usize = 0;
-
         var iter_idx: usize = 0;
 
         while (iter_idx < buf.len) {
@@ -1297,54 +1324,83 @@ pub const Driver = struct {
             }
 
             if (buf[iter_idx] != ascii.control_chars.hash_char) {
-                // we *must* have found a hash indicating a chunk size, but we didn't something
-                // is wrong and/or we have trailing data like "Connection closed" kind of stuff
-                return;
+                // we *must* have found a hash indicating a chunk size, but we didn't --
+                // something is wrong and/or we have trailing data like "Connection closed"
+                // kind of stuff
+                return null;
             }
 
             iter_idx += 1;
 
-            if (buf[iter_idx] == ascii.control_chars.hash_char) {
-                // now we've found two consequtive hash signs, indicating end of message we can
-                // store the raw and processed bits in the messages map
-                const owned_raw = try self.allocator.alloc(u8, iter_idx);
-                @memcpy(owned_raw, buf[0..iter_idx]);
+            if (iter_idx >= buf.len) {
+                // bare hash truncated at the end of the buffer
+                self.setLastError(truncated_error);
 
-                const owned_parsed = try self.allocator.alloc(u8, parsed_idx);
-                @memcpy(owned_parsed[0..parsed_idx], _parsed[0..parsed_idx]);
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    truncated_error,
+                    .{},
+                );
+            }
+
+            if (buf[iter_idx] == ascii.control_chars.hash_char) {
+                // now we've found two consecutive hash signs, indicating end of message; we
+                // can store the raw and processed bits in the messages map
+                const owned_raw = try self.allocator.dupe(u8, buf[0..iter_idx]);
+
+                const owned_parsed = self.allocator.dupe(
+                    u8,
+                    parsed_scratch[0..parsed_idx],
+                ) catch |err| {
+                    self.allocator.free(owned_raw);
+
+                    return err;
+                };
 
                 try self.storeMessageOrSubscription(
                     owned_raw,
                     owned_parsed,
                 );
 
-                if (iter_idx + 1 >= buf.len) {
-                    return;
-                }
-
-                return self.processFoundMessageVersion1_1(buf[iter_idx + 1 ..]);
+                return iter_idx + 1;
             }
 
-            var chunk_size_end_idx: usize = 0;
-
             // https://datatracker.ietf.org/doc/html/rfc6242#section-4.2 max chunk size is
-            // 4294967295 so for us that is a max of 10 chars that the chunk size could be when we
-            //  are parsing it out of raw bytes.
-            for (0..10) |maybe_chunk_size_idx_offset| {
-                if (!std.ascii.isDigit(buf[iter_idx + maybe_chunk_size_idx_offset])) {
-                    chunk_size_end_idx = iter_idx + maybe_chunk_size_idx_offset;
-                    break;
-                }
+            // 4294967295 so for us that is a max of 10 chars that the chunk size could be
+            // when we are parsing it out of raw bytes
+            const max_digits = @min(10, buf.len - iter_idx);
+
+            var digit_count: usize = 0;
+
+            while (digit_count < max_digits and
+                std.ascii.isDigit(buf[iter_idx + digit_count]))
+            {
+                digit_count += 1;
+            }
+
+            if (digit_count == 0 or iter_idx + digit_count >= buf.len) {
+                self.setLastError(truncated_error);
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    truncated_error,
+                    .{},
+                );
             }
 
             var chunk_size: usize = 0;
 
-            for (iter_idx..chunk_size_end_idx) |chunk_idx| {
-                chunk_size = chunk_size * 10 + (buf[chunk_idx] - '0');
+            for (buf[iter_idx .. iter_idx + digit_count]) |digit| {
+                chunk_size = chunk_size * 10 + (digit - '0');
             }
 
             self.log.debug(
-                "netconf.Driver processFoundMessageVersion1_1: found message chunk of size {d}",
+                "netconf.Driver processFoundMessageVersion1_1: found message chunk " ++
+                    "of size {d}",
                 .{chunk_size},
             );
 
@@ -1363,14 +1419,19 @@ pub const Driver = struct {
                 );
             }
 
-            // now that we processed the size, consume any whitespace up to the chunk to read;
-            // first move the iter_idx past the chunk size marker, then consume cr/lf before the
-            // actual chunk content (whitespace like an actual space is valid for chunks!)
-            iter_idx = chunk_size_end_idx;
+            // move past the chunk size marker, then consume cr/lf before the actual chunk
+            // content (whitespace like an actual space is valid *within* chunks!) --
+            // bounded, since a truncated buffer can end mid newline run
+            iter_idx += digit_count;
+
+            while (iter_idx < buf.len and
+                (buf[iter_idx] == ascii.control_chars.cr or
+                    buf[iter_idx] == ascii.control_chars.lf))
+            {
+                iter_idx += 1;
+            }
 
             if (iter_idx + chunk_size >= buf.len) {
-                // just being defensive here, this should *not* happen in normal circumstances but
-                // ya know... shit happens
                 const last_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
                     "parsing netconf message, next index to check out of range";
 
@@ -1385,20 +1446,8 @@ pub const Driver = struct {
                 );
             }
 
-            while (true) {
-                if (buf[iter_idx] == ascii.control_chars.cr or
-                    buf[iter_idx] == ascii.control_chars.lf)
-                {
-                    iter_idx += 1;
-
-                    continue;
-                }
-
-                break;
-            }
-
             @memcpy(
-                _parsed[parsed_idx .. parsed_idx + chunk_size],
+                parsed_scratch[parsed_idx .. parsed_idx + chunk_size],
                 buf[iter_idx .. iter_idx + chunk_size],
             );
             parsed_idx += chunk_size;
@@ -1406,6 +1455,10 @@ pub const Driver = struct {
             // finally increment iter_idx past this chunk
             iter_idx += chunk_size;
         }
+
+        // ran out of buffer without seeing the ## end of message marker -- an incomplete
+        // trailing message, silently dropped
+        return null;
     }
 
     /// Fetch a subscription message by ID. Caller owns returned memory -- w/ the allocator the
@@ -3228,6 +3281,54 @@ test "processFoundMessageVersion1_1" {
         defer d.allocator.free(actual_kv.?.value[1]);
 
         try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
+    }
+}
+
+test "processFoundMessageVersion1_1Truncated" {
+    // the eof drain path feeds this parser arbitrarily truncated data -- every case here
+    // panicked (index out of bounds) before the parser was bounds hardened
+    const cases = [_]struct {
+        name: []const u8,
+        input: []const u8,
+        expect_error: bool,
+    }{
+        .{ .name = "bare hash at end", .input = "#", .expect_error = true },
+        .{ .name = "digits truncated", .input = "#123", .expect_error = true },
+        .{ .name = "size but no data", .input = "#4\n", .expect_error = true },
+        .{ .name = "chunk data truncated", .input = "#10\nhello", .expect_error = true },
+        .{ .name = "hash then garbage", .input = "#x", .expect_error = true },
+        .{ .name = "trailing junk only", .input = "Connection closed.", .expect_error = false },
+        .{ .name = "whitespace only", .input = "\n\n", .expect_error = false },
+        .{ .name = "empty", .input = "", .expect_error = false },
+    };
+
+    for (cases) |case| {
+        const d = try Driver.init(
+            std.testing.allocator,
+            std.testing.io,
+            "localhost",
+            .{},
+        );
+
+        defer d.deinit();
+
+        d.negotiated_version = .version_1_1;
+
+        const r = d.processFoundMessageVersion1_1(case.input);
+
+        if (case.expect_error) {
+            std.testing.expectError(errors.ScrapliError.Driver, r) catch |err| {
+                std.debug.print("case failed: {s}\n", .{case.name});
+
+                return err;
+            };
+        } else {
+            r catch |err| {
+                std.debug.print("case failed: {s}\n", .{case.name});
+
+                return err;
+            };
+        }
     }
 }
 
