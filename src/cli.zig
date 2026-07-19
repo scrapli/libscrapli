@@ -1111,11 +1111,29 @@ test "refAllDecls" {
 }
 
 fn driverInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    // note: this deliberately passes a pre-built definition rather than exercising the default
+    // (yaml string) definition source -- zig-yaml's Value.fromNode has a bug in its error
+    // cleanup path where the errdefer deinits a just-inserted (still undefined) map value when
+    // a child allocation fails, panicking with "switch on corrupt value" under failure
+    // injection. the yaml -> definition path is otherwise covered by
+    // definitionInitAllocationFailures (cli-platform.zig) minus the yaml parse itself.
+    // thank you to our friend clawd for helping figuring this one out, even if im not fully
+    // sure i am satisified w/ the explanation since it only happens in release safe and is not
+    // reproducible on darwin? so thats weird
+    var definition = platform.Definition{
+        .prompt_pattern = "^.*[>#$]\\s?+$",
+        .default_mode = "cli",
+    };
+
     const d = try Driver.init(
         allocator,
         std.testing.io,
         "localhost",
-        .{},
+        .{
+            .definition = .{
+                .definition = &definition,
+            },
+        },
     );
 
     d.deinit();
