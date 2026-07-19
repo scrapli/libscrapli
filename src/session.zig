@@ -42,35 +42,33 @@ const Recorder = struct {
     recorder: ?std.Io.File.Writer,
 
     fn init(io: std.Io, rd: ?RecordDestination, buf: []u8) !Recorder {
-        if (rd == null) {
-            return Recorder{
-                .rd = rd,
-                .recorder = null,
-            };
-        }
+        const destination = rd orelse return Recorder{
+            .rd = null,
+            .recorder = null,
+        };
 
-        switch (rd.?) {
-            .f => {
+        switch (destination) {
+            .f => |path| {
                 const out_f = try std.Io.Dir.cwd().createFile(
                     io,
-                    rd.?.f,
+                    path,
                     .{},
                 );
 
                 return Recorder{
-                    .rd = rd,
+                    .rd = destination,
                     .recorder = out_f.writer(io, buf),
                 };
             },
-            .writer => {
+            .writer => |writer| {
                 return Recorder{
-                    .rd = rd,
-                    .recorder = rd.?.writer,
+                    .rd = destination,
+                    .recorder = writer,
                 };
             },
             .cb => {
                 return Recorder{
-                    .rd = rd,
+                    .rd = destination,
                     .recorder = null,
                 };
             },
@@ -265,51 +263,43 @@ pub const Session = struct {
 
         try s.scratch.reserve(s.options.scratch_initial_size);
 
-        s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern);
-        if (s.compiled_username_pattern == null) {
+        s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern) orelse
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 log,
-                "session.Session init: failed compling username pattern {s}",
+                "session.Session init: failed compiling username pattern {s}",
                 .{s.auth_options.username_pattern},
             );
-        }
 
-        s.compiled_password_pattern = re.pcre2Compile(s.auth_options.password_pattern);
-        if (s.compiled_password_pattern == null) {
+        s.compiled_password_pattern = re.pcre2Compile(s.auth_options.password_pattern) orelse
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 log,
-                "session.Session init: failed compling password pattern {s}",
+                "session.Session init: failed compiling password pattern {s}",
                 .{s.auth_options.password_pattern},
             );
-        }
 
         s.compiled_private_key_passphrase_pattern = re.pcre2Compile(
             s.auth_options.private_key_passphrase_pattern,
-        );
-        if (s.compiled_private_key_passphrase_pattern == null) {
+        ) orelse
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 log,
-                "session.Session init: failed compling passphrase pattern {s}",
+                "session.Session init: failed compiling passphrase pattern {s}",
                 .{s.auth_options.private_key_passphrase_pattern},
             );
-        }
 
-        s.compiled_prompt_pattern = re.pcre2Compile(s.prompt_pattern);
-        if (s.compiled_prompt_pattern == null) {
+        s.compiled_prompt_pattern = re.pcre2Compile(s.prompt_pattern) orelse
             return errors.wrapCriticalError(
                 errors.ScrapliError.Driver,
                 @src(),
                 log,
-                "session.Session init: failed compling prompt pattern {s}",
+                "session.Session init: failed compiling prompt pattern {s}",
                 .{s.prompt_pattern},
             );
-        }
 
         return s;
     }
@@ -334,20 +324,20 @@ pub const Session = struct {
         self.allocator.free(self.read_into_buf);
         self.allocator.free(self.read_loop_buf);
 
-        if (self.compiled_username_pattern != null) {
-            re.pcre2Free(self.compiled_username_pattern.?);
+        if (self.compiled_username_pattern) |compiled_pattern| {
+            re.pcre2Free(compiled_pattern);
         }
 
-        if (self.compiled_password_pattern != null) {
-            re.pcre2Free(self.compiled_password_pattern.?);
+        if (self.compiled_password_pattern) |compiled_pattern| {
+            re.pcre2Free(compiled_pattern);
         }
 
-        if (self.compiled_private_key_passphrase_pattern != null) {
-            re.pcre2Free(self.compiled_private_key_passphrase_pattern.?);
+        if (self.compiled_private_key_passphrase_pattern) |compiled_pattern| {
+            re.pcre2Free(compiled_pattern);
         }
 
-        if (self.compiled_prompt_pattern != null) {
-            re.pcre2Free(self.compiled_prompt_pattern.?);
+        if (self.compiled_prompt_pattern) |compiled_pattern| {
+            re.pcre2Free(compiled_pattern);
         }
 
         self.transport.deinit();
@@ -1099,9 +1089,7 @@ pub const Session = struct {
         const found_prompt = try re.pcre2Find(
             self.compiled_prompt_pattern.?,
             bufs.processed.items,
-        );
-
-        if (found_prompt == null) {
+        ) orelse {
             self.last_error.set("session.Session getPrompt: no prompt found matching prompt pattern");
 
             return errors.wrapCriticalError(
@@ -1114,13 +1102,13 @@ pub const Session = struct {
                     bufs.processed.items,
                 },
             );
-        }
+        };
 
         // the match is a view into the (reused) scratch buffer, and both consumers need their
         // own copy with their own allocator: the caller owns the returned prompt (operation
         // allocator), and the session retains its own (session allocator) for prepending to
         // the next operation's buf
-        const owned_found_prompt = try allocator.dupe(u8, found_prompt.?);
+        const owned_found_prompt = try allocator.dupe(u8, found_prompt);
         errdefer allocator.free(owned_found_prompt);
 
         // we want to ensure we are storing the last consumed prompt so that our send_input
@@ -1128,7 +1116,7 @@ pub const Session = struct {
         self.last_consumed_prompt.clearRetainingCapacity();
         try self.last_consumed_prompt.appendSlice(
             self.allocator,
-            found_prompt.?,
+            found_prompt,
         );
 
         return [2][]const u8{ try allocator.dupe(u8, bufs.raw.items), owned_found_prompt };
@@ -1315,8 +1303,7 @@ pub const Session = struct {
 
         if (options.prompt_pattern) |pattern| {
             if (pattern.len > 0) {
-                compiled_pattern = re.pcre2Compile(pattern);
-                if (compiled_pattern == null) {
+                compiled_pattern = re.pcre2Compile(pattern) orelse {
                     self.last_error.set(
                         "session.Session sendPromptedInput: failed compiling pattern",
                     );
@@ -1328,7 +1315,7 @@ pub const Session = struct {
                         "session.Session sendPromptedInput: failed compiling pattern '{s}'",
                         .{pattern},
                     );
-                }
+                };
             }
         }
 
