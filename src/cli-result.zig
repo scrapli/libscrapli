@@ -36,7 +36,7 @@ pub const Result = struct {
     result_failure_indicator: i16,
 
     /// Initializes a heap allocated Result object, this object *does not own* the failed_indicators
-    /// arraylist and will *not* free any of that memory!
+    /// slice and will *not* free any of that memory!
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,

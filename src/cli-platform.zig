@@ -267,6 +267,39 @@ pub const BoundOnXCallback = struct {
     }
 };
 
+fn dupeStringSlice(
+    allocator: std.mem.Allocator,
+    src: []const []const u8,
+) ![]const []const u8 {
+    const owned = try allocator.alloc([]const u8, src.len);
+    errdefer allocator.free(owned);
+
+    // only ever free the strings actually duped so a failure partway through cannot free
+    // uninitialized slots
+    var duped: usize = 0;
+    errdefer for (owned[0..duped]) |s| {
+        allocator.free(s);
+    };
+
+    for (0.., src) |idx, s| {
+        owned[idx] = try allocator.dupe(u8, s);
+        duped = idx + 1;
+    }
+
+    return owned;
+}
+
+fn freeStringSlice(
+    allocator: std.mem.Allocator,
+    src: []const []const u8,
+) void {
+    for (src) |s| {
+        allocator.free(s);
+    }
+
+    allocator.free(src);
+}
+
 /// Definition is a cli "definition" -- that is the information that helps libscrapli drive a cli
 /// connection to some device, it holds callbacks and information about available "modes" etc..
 pub const Definition = struct {
@@ -314,15 +347,7 @@ pub const Definition = struct {
         d.prompt_pattern = try allocator.dupe(u8, options.prompt_pattern);
 
         if (options.prompt_excludes) |prompt_excludes| {
-            const owned_prompt_excludes = try allocator.alloc([]const u8, prompt_excludes.len);
-
-            for (0.., prompt_excludes) |idx, prompt_exclude| {
-                const owned_prompt_exclude = try allocator.dupe(u8, prompt_exclude);
-
-                owned_prompt_excludes[idx] = owned_prompt_exclude;
-            }
-
-            d.prompt_excludes = owned_prompt_excludes;
+            d.prompt_excludes = try dupeStringSlice(allocator, prompt_excludes);
         }
 
         if (options.default_mode.ptr != mode.default_mode.ptr) {
@@ -338,15 +363,7 @@ pub const Definition = struct {
         }
 
         if (options.failure_indicators) |failure_indicators| {
-            const owned_failure_indicators = try allocator.alloc([]const u8, failure_indicators.len);
-
-            for (0.., failure_indicators) |idx, failure_indicator| {
-                const owned_failure_indicator = try allocator.dupe(u8, failure_indicator);
-
-                owned_failure_indicators[idx] = owned_failure_indicator;
-            }
-
-            d.failure_indicators = owned_failure_indicators;
+            d.failure_indicators = try dupeStringSlice(allocator, failure_indicators);
         }
 
         d.modes = options.modes;
@@ -361,11 +378,7 @@ pub const Definition = struct {
         allocator.free(self.prompt_pattern);
 
         if (self.prompt_excludes) |prompt_excludes| {
-            for (prompt_excludes) |prompt_exclude| {
-                allocator.free(prompt_exclude);
-            }
-
-            allocator.free(prompt_excludes);
+            freeStringSlice(allocator, prompt_excludes);
         }
 
         if (self.default_mode.ptr != mode.default_mode.ptr) {
@@ -382,11 +395,7 @@ pub const Definition = struct {
         self.modes.deinit(allocator);
 
         if (self.failure_indicators) |failure_indicators| {
-            for (failure_indicators) |failure_indicator| {
-                allocator.free(failure_indicator);
-            }
-
-            allocator.free(failure_indicators);
+            freeStringSlice(allocator, failure_indicators);
         }
 
         if (self.bound_on_open_callback) |cb| {
@@ -529,3 +538,38 @@ pub const YamlDefinition = struct {
         );
     }
 };
+
+fn definitionInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    // definition w/ all duped fields populated so allocation failures at any point during the
+    // copy exercise the partial-failure cleanup path (and would catch any invalid free of
+    // caller owned memory or leak of partially duped state); modes and bound callbacks are
+    // deliberately left empty/null -- those are adopted rather than duped and on failure
+    // remain caller owned
+    var d = try Definition.init(
+        allocator,
+        .{
+            .prompt_pattern = "^some-prompt>\\s?$",
+            .prompt_excludes = &[_][]const u8{
+                "not-this-prompt",
+                "or-this-one",
+            },
+            .default_mode = "some-custom-default-mode",
+            .failure_indicators = &[_][]const u8{
+                "% Invalid input",
+                "% Error",
+            },
+            .ntc_templates_platform = "some_ntc_platform",
+            .genie_platform = "some_genie_platform",
+        },
+    );
+
+    d.deinit(allocator);
+}
+
+test "definitionInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        definitionInitForAllocFailures,
+        .{},
+    );
+}

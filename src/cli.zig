@@ -35,6 +35,11 @@ const default_definition_string =
 pub const DefinitionSource = union(enum) {
     string: []const u8,
     file: []const u8,
+    // ownership note: string fields of the given definition are *copied*, but its modes map and
+    // any bound on open/close callbacks are *adopted* by the driver's definition -- once
+    // Driver.init has been called do not deinit or reuse the given definition. the only
+    // exception is when Driver.init fails while loading the definition itself (before the
+    // driver's own cleanup takes over), in which case the caller still owns those resources.
     definition: *platform.Definition,
 };
 
