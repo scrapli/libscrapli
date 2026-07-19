@@ -489,23 +489,33 @@ pub const ProxyJumpOptions = struct {
 
     fn init(opts: ProxyJumpOptions, allocator: std.mem.Allocator) !ProxyJumpOptions {
         var o = opts;
+
+        // reset the owned pointer fields so the owned copy only ever holds pointers this init
+        // actually duped -- that way a failure partway through only frees memory we own, never
+        // the caller's
+        o.host = "";
+        o.username = null;
+        o.password = null;
+        o.private_key_path = null;
+        o.private_key_passphrase = null;
+
         errdefer o.deinit(allocator);
 
-        o.host = try allocator.dupe(u8, o.host);
+        o.host = try allocator.dupe(u8, opts.host);
 
-        if (o.username) |username| {
+        if (opts.username) |username| {
             o.username = try allocator.dupe(u8, username);
         }
 
-        if (o.password) |password| {
+        if (opts.password) |password| {
             o.password = try allocator.dupe(u8, password);
         }
 
-        if (o.private_key_path) |private_key_path| {
+        if (opts.private_key_path) |private_key_path| {
             o.private_key_path = try allocator.dupe(u8, private_key_path);
         }
 
-        if (o.private_key_passphrase) |private_key_passphrase| {
+        if (opts.private_key_passphrase) |private_key_passphrase| {
             o.private_key_passphrase = try allocator.dupe(u8, private_key_passphrase);
         }
 
@@ -542,13 +552,20 @@ pub const Options = struct {
 
     fn init(allocator: std.mem.Allocator, opts: Options) !Options {
         var o = opts;
+
+        // reset the owned pointer fields so the owned copy only ever holds pointers this init
+        // actually duped -- that way a failure partway through only frees memory we own, never
+        // the caller's
+        o.known_hosts_path = null;
+        o.proxy_jump_options = null;
+
         errdefer o.deinit(allocator);
 
-        if (o.known_hosts_path) |known_hosts_path| {
+        if (opts.known_hosts_path) |known_hosts_path| {
             o.known_hosts_path = try allocator.dupe(u8, known_hosts_path);
         }
 
-        if (o.proxy_jump_options) |pjo| {
+        if (opts.proxy_jump_options) |pjo| {
             o.proxy_jump_options = try pjo.init(allocator);
         }
 
@@ -2350,6 +2367,35 @@ test "transportInitAllocationFailures" {
     try std.testing.checkAllAllocationFailures(
         std.testing.allocator,
         transportInitForAllocFailures,
+        .{},
+    );
+}
+
+fn optionsInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    // options w/ all owned fields populated so allocation failures at any point during the
+    // copy exercise the partial-failure cleanup path (and would catch any invalid free of
+    // caller owned memory)
+    const o = try Options.init(
+        allocator,
+        .{
+            .known_hosts_path = "/some/known_hosts",
+            .proxy_jump_options = .{
+                .host = "jumphost",
+                .username = "admin",
+                .password = "password",
+                .private_key_path = "/some/key",
+                .private_key_passphrase = "passphrase",
+            },
+        },
+    );
+
+    o.deinit(allocator);
+}
+
+test "optionsInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        optionsInitForAllocFailures,
         .{},
     );
 }

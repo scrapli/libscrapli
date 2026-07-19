@@ -39,25 +39,35 @@ pub const Options = struct {
 
     fn init(allocator: std.mem.Allocator, opts: Options) !Options {
         var o = opts;
+
+        // reset the owned pointer fields so the owned copy only ever holds pointers this init
+        // actually duped -- that way a failure partway through only frees memory we own, never
+        // the caller's
+        o.bin = default_ssh_bin;
+        o.extra_open_args = null;
+        o.override_open_args = null;
+        o.ssh_config_path = null;
+        o.known_hosts_path = null;
+
         errdefer o.deinit(allocator);
 
-        if (o.bin.ptr != default_ssh_bin.ptr) {
-            o.bin = try allocator.dupe(u8, o.bin);
+        if (opts.bin.ptr != default_ssh_bin.ptr) {
+            o.bin = try allocator.dupe(u8, opts.bin);
         }
 
-        if (o.extra_open_args) |extra_open_args| {
+        if (opts.extra_open_args) |extra_open_args| {
             o.extra_open_args = try allocator.dupe(u8, extra_open_args);
         }
 
-        if (o.override_open_args) |override_open_args| {
+        if (opts.override_open_args) |override_open_args| {
             o.override_open_args = try allocator.dupe(u8, override_open_args);
         }
 
-        if (o.ssh_config_path) |ssh_config_path| {
+        if (opts.ssh_config_path) |ssh_config_path| {
             o.ssh_config_path = try allocator.dupe(u8, ssh_config_path);
         }
 
-        if (o.known_hosts_path) |known_hosts_path| {
+        if (opts.known_hosts_path) |known_hosts_path| {
             o.known_hosts_path = try allocator.dupe(u8, known_hosts_path);
         }
 
@@ -814,6 +824,32 @@ test "transportInitAllocationFailures" {
     try std.testing.checkAllAllocationFailures(
         std.testing.allocator,
         transportInitForAllocFailures,
+        .{},
+    );
+}
+
+fn optionsInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    // options w/ all owned fields populated so allocation failures at any point during the
+    // copy exercise the partial-failure cleanup path (and would catch any invalid free of
+    // caller owned memory)
+    const o = try Options.init(
+        allocator,
+        .{
+            .bin = "/usr/local/bin/ssh",
+            .extra_open_args = "-o SomeOption=yes",
+            .override_open_args = "-o OtherOption=no",
+            .ssh_config_path = "/some/ssh/config",
+            .known_hosts_path = "/some/known_hosts",
+        },
+    );
+
+    o.deinit(allocator);
+}
+
+test "optionsInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        optionsInitForAllocFailures,
         .{},
     );
 }

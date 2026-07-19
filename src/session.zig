@@ -131,20 +131,29 @@ pub const Options = struct {
         opts: Options,
     ) !Options {
         var o = opts;
+
+        // reset the owned pointer fields so the owned copy only ever holds pointers this init
+        // actually duped -- that way a failure partway through only frees memory we own, never
+        // the caller's
+        o.return_char = default_return_char;
+        o.record_destination = null;
+
         errdefer o.deinit(allocator);
 
-        if (o.return_char.ptr != default_return_char.ptr) {
-            o.return_char = try allocator.dupe(u8, o.return_char);
+        if (opts.return_char.ptr != default_return_char.ptr) {
+            o.return_char = try allocator.dupe(u8, opts.return_char);
         }
 
-        if (o.record_destination) |rd| {
+        if (opts.record_destination) |rd| {
             switch (rd) {
                 .f => {
                     o.record_destination = RecordDestination{
                         .f = try allocator.dupe(u8, rd.f),
                     };
                 },
-                else => {},
+                else => {
+                    o.record_destination = rd;
+                },
             }
         }
 
@@ -1464,6 +1473,31 @@ test "sessionInitAllocationFailures" {
     try std.testing.checkAllAllocationFailures(
         std.testing.allocator,
         sessionInitForAllocFailures,
+        .{},
+    );
+}
+
+fn optionsInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    // options w/ all owned fields populated so allocation failures at any point during the
+    // copy exercise the partial-failure cleanup path (and would catch any invalid free of
+    // caller owned memory)
+    const o = try Options.init(
+        allocator,
+        .{
+            .return_char = "\r\n",
+            .record_destination = .{
+                .f = "record-out.log",
+            },
+        },
+    );
+
+    o.deinit(allocator);
+}
+
+test "optionsInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        optionsInitForAllocFailures,
         .{},
     );
 }

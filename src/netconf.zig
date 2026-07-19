@@ -90,10 +90,14 @@ pub const Options = struct {
         opts: Options,
     ) !Options {
         var o = opts;
+
+        // reset the owned pointer field so a failed dupe below never frees the caller's memory
+        o.error_tag = operation.default_rpc_error_tag;
+
         errdefer o.deinit(allocator);
 
-        if (o.error_tag.ptr != operation.default_rpc_error_tag.ptr) {
-            o.error_tag = try allocator.dupe(u8, o.error_tag);
+        if (opts.error_tag.ptr != operation.default_rpc_error_tag.ptr) {
+            o.error_tag = try allocator.dupe(u8, opts.error_tag);
         }
 
         return o;
@@ -110,7 +114,7 @@ pub const Options = struct {
     }
 
     fn validate(self: Options, log: logging.Logger) !void {
-        switch (self.transport.*) {
+        switch (self.transport) {
             .bin => {
                 if (self.auth.private_key_content != null) {
                     // its only a warning, for future things we may want to actually return errors
@@ -4717,6 +4721,27 @@ test "driverInitAllocationFailures" {
     try std.testing.checkAllAllocationFailures(
         std.testing.allocator,
         driverInitForAllocFailures,
+        .{},
+    );
+}
+
+fn optionsInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    // options w/ the owned field populated so allocation failures exercise the partial-failure
+    // cleanup path (and would catch any invalid free of caller owned memory)
+    const o = try Options.init(
+        allocator,
+        .{
+            .error_tag = "custom-error-tag",
+        },
+    );
+
+    o.deinit(allocator);
+}
+
+test "optionsInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        optionsInitForAllocFailures,
         .{},
     );
 }

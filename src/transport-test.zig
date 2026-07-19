@@ -9,6 +9,10 @@ pub const Options = struct {
 
     fn init(allocator: std.mem.Allocator, opts: Options) !Options {
         var o = opts;
+
+        // reset the owned pointer field so a failed dupe below never frees the caller's memory
+        o.f = null;
+
         errdefer o.deinit(allocator);
 
         if (opts.f) |f| {
@@ -125,4 +129,25 @@ pub const Transport = struct {
 
 test "refAllDecls" {
     std.testing.refAllDecls(Transport);
+}
+
+fn optionsInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    // options w/ the owned field populated so allocation failures exercise the partial-failure
+    // cleanup path (and would catch any invalid free of caller owned memory)
+    const o = try Options.init(
+        allocator,
+        .{
+            .f = "/some/file",
+        },
+    );
+
+    o.deinit(allocator);
+}
+
+test "optionsInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        optionsInitForAllocFailures,
+        .{},
+    );
 }

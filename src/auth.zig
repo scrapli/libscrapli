@@ -50,17 +50,23 @@ pub const LookupItems = struct {
     fn cloneOwned(self: *const LookupItems, allocator: std.mem.Allocator) !LookupItems {
         var out = LookupItems{
             .items = @splat(std.mem.zeroes(LookupKeyValue)),
-            .count = self.count,
+            .count = 0,
         };
+        // count only ever covers fully cloned items, so a failure partway through frees
+        // exactly what was cloned so far
+        errdefer out.deinitOwned(allocator);
 
-        for (self.items[0..self.count], 0..) |kv, i| {
+        for (self.items[0..self.count]) |kv| {
             const key_copy = try allocator.dupe(u8, kv.key);
+            errdefer allocator.free(key_copy);
+
             const value_copy = try allocator.dupe(u8, kv.value);
 
-            out.items[i] = .{
+            out.items[out.count] = .{
                 .key = key_copy,
                 .value = value_copy,
             };
+            out.count += 1;
         }
 
         return out;
@@ -109,40 +115,54 @@ pub const Options = struct {
         opts: Options,
     ) !Options {
         var o = opts;
+
+        // reset all the owned pointer fields so the owned copy only ever holds pointers this
+        // init actually duped -- that way a failure partway through only frees memory we own,
+        // never the caller's
+        o.username = null;
+        o.password = null;
+        o.private_key_path = null;
+        o.private_key_passphrase = null;
+        o.private_key_content = null;
+        o.lookups = .{};
+        o.username_pattern = default_username_pattern;
+        o.password_pattern = default_password_pattern;
+        o.private_key_passphrase_pattern = default_passphrase_pattern;
+
         errdefer o.deinit(allocator);
 
-        if (o.username) |username| {
+        if (opts.username) |username| {
             o.username = try allocator.dupe(u8, username);
         }
 
-        if (o.password) |password| {
+        if (opts.password) |password| {
             o.password = try allocator.dupe(u8, password);
         }
 
-        if (o.private_key_path) |private_key_path| {
+        if (opts.private_key_path) |private_key_path| {
             o.private_key_path = try allocator.dupe(u8, private_key_path);
         }
 
-        if (o.private_key_passphrase) |private_key_passphrase| {
+        if (opts.private_key_passphrase) |private_key_passphrase| {
             o.private_key_passphrase = try allocator.dupe(u8, private_key_passphrase);
         }
 
-        if (o.private_key_content) |private_key_content| {
+        if (opts.private_key_content) |private_key_content| {
             o.private_key_content = try allocator.dupe(u8, private_key_content);
         }
 
         o.lookups = try opts.lookups.cloneOwned(allocator);
 
-        if (o.username_pattern.ptr != default_username_pattern.ptr) {
-            o.username_pattern = try allocator.dupe(u8, o.username_pattern);
+        if (opts.username_pattern.ptr != default_username_pattern.ptr) {
+            o.username_pattern = try allocator.dupe(u8, opts.username_pattern);
         }
 
-        if (o.password_pattern.ptr != default_password_pattern.ptr) {
-            o.password_pattern = try allocator.dupe(u8, o.password_pattern);
+        if (opts.password_pattern.ptr != default_password_pattern.ptr) {
+            o.password_pattern = try allocator.dupe(u8, opts.password_pattern);
         }
 
-        if (o.private_key_passphrase_pattern.ptr != default_passphrase_pattern.ptr) {
-            o.private_key_passphrase_pattern = try allocator.dupe(u8, o.private_key_passphrase_pattern);
+        if (opts.private_key_passphrase_pattern.ptr != default_passphrase_pattern.ptr) {
+            o.private_key_passphrase_pattern = try allocator.dupe(u8, opts.private_key_passphrase_pattern);
         }
 
         return o;
@@ -223,6 +243,38 @@ test "optionsInit" {
     );
 
     o.deinit(std.testing.allocator);
+}
+
+fn optionsInitForAllocFailures(allocator: std.mem.Allocator) !void {
+    // options w/ all owned fields populated so allocation failures at any point during the
+    // copy exercise the partial-failure cleanup path (and would catch any invalid free of
+    // caller owned memory)
+    const o = try Options.init(
+        allocator,
+        .{
+            .username = "admin",
+            .password = "password",
+            .private_key_path = "/some/key",
+            .private_key_passphrase = "passphrase",
+            .private_key_content = "key-content",
+            .lookups = LookupItems.init(&[_]LookupKeyValue{
+                .{ .key = lookup_default_key, .value = "enable-password" },
+            }),
+            .username_pattern = "^custom-username:",
+            .password_pattern = "^custom-password:",
+            .private_key_passphrase_pattern = "^custom-passphrase:",
+        },
+    );
+
+    o.deinit(allocator);
+}
+
+test "optionsInitAllocationFailures" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        optionsInitForAllocFailures,
+        .{},
+    );
 }
 
 /// Processes the "searchable buf" for in session auth by checking if any of the auth patterns
