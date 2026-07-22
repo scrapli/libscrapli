@@ -169,11 +169,9 @@ pub const FfiDriver = struct {
 
     /// Deinitialize the FfiDriver and its underlying "real" driver.
     pub fn deinit(self: *FfiDriver) void {
-        self.operation_stop.store(true, std.lang.AtomicOrder.unordered);
-
-        // signal to the operation thread to iterate, it should then catch the stored stop condition
         // zlinter-disable-next-line no_swallow_error - standard lock should "never" fail
         self.operation_lock.lock(self.io) catch {};
+        self.operation_stop.store(true, std.lang.AtomicOrder.release);
         self.operation_condition.signal(self.io);
         self.operation_lock.unlock(self.io);
 
@@ -305,22 +303,26 @@ pub const FfiDriver = struct {
         self.operation_ready.store(true, std.lang.AtomicOrder.unordered);
 
         while (true) {
-            const stop = self.operation_stop.load(std.lang.AtomicOrder.acquire);
-            if (stop) {
-                break;
-            }
-
             self.operation_lock.lock(self.io) catch {
                 @panic("failed acquiring operation lock");
             };
 
-            if (self.operation_queue.count == 0) {
+            while (self.operation_queue.count == 0 and
+                !self.operation_stop.load(std.lang.AtomicOrder.acquire))
+            {
                 // nothing in the queue to process, wait for the signal
                 self.operation_condition.wait(self.io, &self.operation_lock) catch {
                     @panic(
                         "ffi-driver.FfiDriver: failed waiting for signal to unblock operation loop",
                     );
                 };
+            }
+
+            if (self.operation_stop.load(std.lang.AtomicOrder.acquire) and
+                self.operation_queue.count == 0)
+            {
+                self.operation_lock.unlock(self.io);
+                break;
             }
 
             const maybe_op = self.operation_queue.readItem();
@@ -478,22 +480,26 @@ pub const FfiDriver = struct {
         self.operation_ready.store(true, std.lang.AtomicOrder.unordered);
 
         while (true) {
-            const stop = self.operation_stop.load(std.lang.AtomicOrder.acquire);
-            if (stop) {
-                break;
-            }
-
             self.operation_lock.lock(self.io) catch {
                 @panic("ffi-driver.FfiDriver: failed acquiring operation lock");
             };
 
-            if (self.operation_queue.count == 0) {
+            while (self.operation_queue.count == 0 and
+                !self.operation_stop.load(std.lang.AtomicOrder.acquire))
+            {
                 // nothing in the queue to process, wait for the signal
                 self.operation_condition.wait(self.io, &self.operation_lock) catch {
                     @panic(
                         "ffi-driver.FfiDriver: failed waiting for signal to unblock operation loop",
                     );
                 };
+            }
+
+            if (self.operation_stop.load(std.lang.AtomicOrder.acquire) and
+                self.operation_queue.count == 0)
+            {
+                self.operation_lock.unlock(self.io);
+                break;
             }
 
             const maybe_op = self.operation_queue.readItem();
