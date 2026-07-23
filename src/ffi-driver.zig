@@ -346,81 +346,19 @@ pub const FfiDriver = struct {
             };
 
             switch (op.operation.cli) {
-                .open => |o| {
-                    if (rd.open(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .close => |o| {
-                    if (rd.close(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .enter_mode => |o| {
-                    if (rd.enterMode(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .get_prompt => |o| {
-                    if (rd.getPrompt(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .send_input => |o| {
-                    if (rd.sendInput(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .send_inputs => |o| {
-                    if (rd.sendInputs(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .send_prompted_input => |o| {
-                    if (rd.sendPromptedInput(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .read_any => |o| {
-                    if (rd.readAny(
-                        self.allocator,
-                        o,
-                    )) |ret| {
+                inline else => |o, tag| {
+                    const method_name = comptime switch (tag) {
+                        .open => "open",
+                        .close => "close",
+                        .enter_mode => "enterMode",
+                        .get_prompt => "getPrompt",
+                        .send_input => "sendInput",
+                        .send_inputs => "sendInputs",
+                        .send_prompted_input => "sendPromptedInput",
+                        .read_any => "readAny",
+                    };
+
+                    if (@field(@TypeOf(rd.*), method_name)(rd, self.allocator, o)) |ret| {
                         ret_ok = ret;
                     } else |err| {
                         ret_err = err;
@@ -524,198 +462,32 @@ pub const FfiDriver = struct {
             };
 
             switch (op.operation.netconf) {
-                .open => |o| {
-                    if (rd.open(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .close => |o| {
-                    if (rd.close(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .raw_rpc => |o| {
-                    if (rd.rawRpc(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .get_config => |o| {
-                    if (rd.getConfig(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .edit_config => |o| {
-                    if (rd.editConfig(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .copy_config => |o| {
-                    if (rd.copyConfig(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .delete_config => |o| {
-                    if (rd.deleteConfig(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .lock => |o| {
-                    if (rd.lock(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .unlock => |o| {
-                    if (rd.unlock(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .get => |o| {
-                    if (rd.get(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .close_session => |o| {
-                    if (rd.closeSession(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .kill_session => |o| {
-                    if (rd.killSession(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .commit => |o| {
-                    if (rd.commit(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .discard => |o| {
-                    if (rd.discard(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .cancel_commit => |o| {
-                    if (rd.cancelCommit(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .validate => |o| {
-                    if (rd.validate(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .get_schema => |o| {
-                    if (rd.getSchema(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .get_data => |o| {
-                    if (rd.getData(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .edit_data => |o| {
-                    if (rd.editData(
-                        self.allocator,
-                        o,
-                    )) |ret| {
-                        ret_ok = ret;
-                    } else |err| {
-                        ret_err = err;
-                    }
-                },
-                .action => |o| {
-                    if (rd.action(
+                inline else => |o, tag| {
+                    const method_name = comptime switch (tag) {
+                        .open => "open",
+                        .close => "close",
+                        .raw_rpc => "rawRpc",
+                        .get_config => "getConfig",
+                        .edit_config => "editConfig",
+                        .copy_config => "copyConfig",
+                        .delete_config => "deleteConfig",
+                        .lock => "lock",
+                        .unlock => "unlock",
+                        .get => "get",
+                        .close_session => "closeSession",
+                        .kill_session => "killSession",
+                        .commit => "commit",
+                        .discard => "discard",
+                        .cancel_commit => "cancelCommit",
+                        .validate => "validate",
+                        .get_schema => "getSchema",
+                        .get_data => "getData",
+                        .edit_data => "editData",
+                        .action => "action",
+                    };
+
+                    if (@field(@TypeOf(rd.*), method_name)(
+                        rd,
                         self.allocator,
                         o,
                     )) |ret| {
