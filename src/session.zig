@@ -35,6 +35,10 @@ pub const RecordDestination = union(enum) {
     writer: std.Io.File.Writer,
     f: []const u8,
     cb: *const fn (buf: *const []u8) callconv(.c) void,
+    ffi: struct {
+        user_data: usize,
+        cb: *const fn (user_data: usize, buf: *const []u8) callconv(.c) void,
+    },
 };
 
 const Recorder = struct {
@@ -66,7 +70,7 @@ const Recorder = struct {
                     .recorder = writer,
                 };
             },
-            .cb => {
+            .cb, .ffi => {
                 return Recorder{
                     .rd = destination,
                     .recorder = null,
@@ -105,6 +109,9 @@ const Recorder = struct {
                 },
                 .cb => {
                     rd.cb(&buf);
+                },
+                .ffi => |f| {
+                    f.cb(f.user_data, &buf);
                 },
             }
         }

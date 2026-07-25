@@ -58,6 +58,7 @@ pub const FFIOptions = extern struct {
         record_destination: [*c]const u8 = undefined,
         record_destination_len: usize = 0,
         recordCallback: ?*const fn (
+            user_data: usize,
             buf: *const []u8,
         ) callconv(.c) void = null,
         scratch_initial_size: ?*u64 = null,
@@ -225,7 +226,10 @@ pub const FFIOptions = extern struct {
             };
         } else if (self.session.recordCallback) |cb| {
             o.record_destination = .{
-                .cb = cb,
+                .ffi = .{
+                    .user_data = self.user_data,
+                    .cb = cb,
+                },
             };
         }
 
@@ -353,9 +357,11 @@ pub const FFIOptions = extern struct {
         if (self.loggerCallback) |cb| {
             l = logging.Logger{
                 .allocator = allocator,
-                .user_data = self.user_data,
                 .f = .{
-                    .ffi = cb,
+                    .ffi = .{
+                        .user_data = self.user_data,
+                        .cb = cb,
+                    },
                 },
                 .level = @fromBackingInt(@intCast(self.logger_level)),
             };
@@ -379,9 +385,11 @@ pub const FFIOptions = extern struct {
         if (self.loggerCallback) |cb| {
             l = logging.Logger{
                 .allocator = allocator,
-                .user_data = self.user_data,
                 .f = .{
-                    .ffi = cb,
+                    .ffi = .{
+                        .user_data = self.user_data,
+                        .cb = cb,
+                    },
                 },
                 .level = @fromBackingInt(@intCast(self.logger_level)),
             };

@@ -60,13 +60,15 @@ pub fn stdLogf(level: u8, message: *[]u8) callconv(.c) void {
 
 const loggerF = union(enum) {
     z: *const fn (level: u8, message: *[]u8) callconv(.c) void,
-    ffi: *const fn (user_data: usize, level: u8, message: *[]u8) callconv(.c) void,
+    ffi: struct {
+        user_data: usize,
+        cb: *const fn (user_data: usize, level: u8, message: *[]u8) callconv(.c) void,
+    },
 };
 
 /// Logger is a simple logger for use in libscrapli.
 pub const Logger = struct {
     allocator: std.mem.Allocator,
-    user_data: usize = 0,
     f: ?loggerF = null,
     level: LogLevel = LogLevel.warn,
 
@@ -111,8 +113,8 @@ pub const Logger = struct {
                 .z => |cb| {
                     cb(@backingInt(level), &msg);
                 },
-                .ffi => |cb| {
-                    cb(self.user_data, @backingInt(level), &msg);
+                .ffi => |ffi_cb| {
+                    ffi_cb.cb(ffi_cb.user_data, @backingInt(level), &msg);
                 },
             }
         }
