@@ -50,15 +50,15 @@ pub fn getConfigOptionsFromArgs(
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (source) |src| {
-        options.source = @enumFromInt(src.*);
+        options.source = @fromBackingInt(@intCast(src.*));
     }
 
     if (filter_type) |flt| {
-        options.filter_type = @enumFromInt(flt.*);
+        options.filter_type = @fromBackingInt(@intCast(flt.*));
     }
 
     if (defaults_type) |dfl| {
-        options.defaults_type = @enumFromInt(dfl.*);
+        options.defaults_type = @fromBackingInt(@intCast(dfl.*));
     }
 
     const spanned_filter = std.mem.span(filter);
@@ -95,19 +95,19 @@ pub fn editConfigOptionsFromArgs(
     };
 
     if (target) |tgt| {
-        options.target = @enumFromInt(tgt.*);
+        options.target = @fromBackingInt(@intCast(tgt.*));
     }
 
     if (default_operation) |dfo| {
-        options.default_operation = @enumFromInt(dfo.*);
+        options.default_operation = @fromBackingInt(@intCast(dfo.*));
     }
 
     if (test_option) |tso| {
-        options.test_option = @enumFromInt(tso.*);
+        options.test_option = @fromBackingInt(@intCast(tso.*));
     }
 
     if (error_option) |ero| {
-        options.error_option = @enumFromInt(ero.*);
+        options.error_option = @fromBackingInt(@intCast(ero.*));
     }
 
     return options;
@@ -124,11 +124,11 @@ pub fn copyConfigOptionsFromArgs(
     };
 
     if (target) |tgt| {
-        options.target = @enumFromInt(tgt.*);
+        options.target = @fromBackingInt(@intCast(tgt.*));
     }
 
     if (source) |src| {
-        options.source = @enumFromInt(src.*);
+        options.source = @fromBackingInt(@intCast(src.*));
     }
 
     return options;
@@ -144,7 +144,7 @@ pub fn deleteConfigOptionsFromArgs(
     };
 
     if (target) |tgt| {
-        options.target = @enumFromInt(tgt.*);
+        options.target = @fromBackingInt(@intCast(tgt.*));
     }
 
     return options;
@@ -160,7 +160,7 @@ pub fn lockUnlockOptionsFromArgs(
     };
 
     if (target) |tgt| {
-        options.target = @enumFromInt(tgt.*);
+        options.target = @fromBackingInt(@intCast(tgt.*));
     }
 
     return options;
@@ -183,11 +183,11 @@ pub fn getOptionsFromArgs(
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (filter_type) |flt| {
-        options.filter_type = @enumFromInt(flt.*);
+        options.filter_type = @fromBackingInt(@intCast(flt.*));
     }
 
     if (defaults_type) |dfl| {
-        options.defaults_type = @enumFromInt(dfl.*);
+        options.defaults_type = @fromBackingInt(@intCast(dfl.*));
     }
 
     const spanned_filter = std.mem.span(filter);
@@ -218,7 +218,7 @@ pub fn validateOptionsFromArgs(
     };
 
     if (source) |src| {
-        options.source = @enumFromInt(src.*);
+        options.source = @fromBackingInt(@intCast(src.*));
     }
 
     return options;
@@ -263,7 +263,7 @@ pub fn getSchemaOptionsFromArgs(
     options.version = try allocator.dupe(u8, std.mem.span(version));
 
     if (format) |fmt| {
-        options.format = @enumFromInt(fmt.*);
+        options.format = @fromBackingInt(@intCast(fmt.*));
     }
 
     return options;
@@ -291,15 +291,15 @@ pub fn getDataOptionsFromArgs(
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
     if (datastore) |str| {
-        options.datastore = @enumFromInt(str.*);
+        options.datastore = @fromBackingInt(@intCast(str.*));
     }
 
     if (filter_type) |flt| {
-        options.filter_type = @enumFromInt(flt.*);
+        options.filter_type = @fromBackingInt(@intCast(flt.*));
     }
 
     if (defaults_type) |dfl| {
-        options.defaults_type = @enumFromInt(dfl.*);
+        options.defaults_type = @fromBackingInt(@intCast(dfl.*));
     }
 
     if (config_filter) |cff| {
@@ -351,11 +351,11 @@ pub fn editDataOptionsFromArgs(
     };
 
     if (datastore) |dst| {
-        options.datastore = @enumFromInt(dst.*);
+        options.datastore = @fromBackingInt(@intCast(dst.*));
     }
 
     if (default_operation) |dfo| {
-        options.default_operation = @enumFromInt(dfo.*);
+        options.default_operation = @fromBackingInt(@intCast(dfo.*));
     }
 
     return options;

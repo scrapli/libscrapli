@@ -17,7 +17,10 @@ const transport = @import("transport.zig");
 /// because we check the length -- if the length is non zero then we know it was something,
 /// there shouldnt be any fields here where an empty string is a valid user input
 pub const FFIOptions = extern struct {
+    user_data: usize,
+
     loggerCallback: ?*const fn (
+        user_data: usize,
         level: u8,
         message: *const []u8,
     ) callconv(.c) void = null,
@@ -238,7 +241,7 @@ pub const FFIOptions = extern struct {
     }
 
     fn transportOptionsInputs(self: *FFIOptions) transport.Options {
-        const transport_kind: transport.Kind = @enumFromInt(self.transport_kind);
+        const transport_kind: transport.Kind = @fromBackingInt(@intCast(self.transport_kind));
 
         switch (transport_kind) {
             transport.Kind.bin => {
@@ -350,8 +353,11 @@ pub const FFIOptions = extern struct {
         if (self.loggerCallback) |cb| {
             l = logging.Logger{
                 .allocator = allocator,
-                .f = cb,
-                .level = @enumFromInt(self.logger_level),
+                .user_data = self.user_data,
+                .f = .{
+                    .ffi = cb,
+                },
+                .level = @fromBackingInt(@intCast(self.logger_level)),
             };
         }
 
@@ -373,8 +379,11 @@ pub const FFIOptions = extern struct {
         if (self.loggerCallback) |cb| {
             l = logging.Logger{
                 .allocator = allocator,
-                .f = cb,
-                .level = @enumFromInt(self.logger_level),
+                .user_data = self.user_data,
+                .f = .{
+                    .ffi = cb,
+                },
+                .level = @fromBackingInt(@intCast(self.logger_level)),
             };
         }
 
@@ -432,7 +441,7 @@ export fn ls_fetch_options_size(
 
     options_json_len.* = opt_string.len;
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_fetch_options(
@@ -451,7 +460,7 @@ export fn ls_fetch_options(
 
     @memcpy(options_json.*[0..], opt_string);
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 fn optU16(val: ?*const u16) ?u16 {
@@ -485,8 +494,8 @@ const ffi_options_top_level_args_json_ish_placeholder =
 ;
 
 fn ffiOptionsTopLevelToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
-    const transport_kind: transport.Kind = @enumFromInt(o.transport_kind);
-    const logger_level: logging.LogLevel = @enumFromInt(o.logger_level);
+    const transport_kind: transport.Kind = @fromBackingInt(@intCast(o.transport_kind));
+    const logger_level: logging.LogLevel = @fromBackingInt(@intCast(o.logger_level));
 
     return allocator.print(
         ffi_options_top_level_args_json_ish_placeholder,

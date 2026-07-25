@@ -235,7 +235,7 @@ fn buildZlinter(
             );
 
             inline for (@typeInfo(zlinter.BuiltinLintRule).@"enum".field_values) |field_value| {
-                const rule: zlinter.BuiltinLintRule = @enumFromInt(field_value);
+                const rule: zlinter.BuiltinLintRule = @fromBackingInt(@intCast(field_value));
 
                 switch (rule) {
                     .function_naming => {
@@ -324,7 +324,7 @@ fn buildZlinter(
                     else => {
                         builder.addRule(
                             .{
-                                .builtin = @enumFromInt(field_value),
+                                .builtin = @fromBackingInt(@intCast(field_value)),
                             },
                             .{},
                         );

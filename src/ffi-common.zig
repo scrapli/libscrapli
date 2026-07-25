@@ -16,7 +16,7 @@ const debug_allocator = da.allocator();
 /// Returns true if built w/ debug optimizations or the `libscrapli_ffi_debug_mode_env_var` is not
 /// empty.
 pub fn isDebugMode() bool {
-    if (builtin.mode == .Debug) {
+    if (builtin.mode == .debug) {
         return true;
     }
 
@@ -101,5 +101,5 @@ pub fn toFfiResult(err: anyerror) u8 {
         else => FfiResult.unknown,
     };
 
-    return @intFromEnum(out);
+    return @backingInt(out);
 }

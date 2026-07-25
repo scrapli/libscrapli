@@ -41,18 +41,18 @@ export fn ls_cli_get_ntc_templates_platform(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const rd = getRealCliDriver(d) orelse {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     };
 
     if (rd.definition.ntc_templates_platform == null) {
-        return @intFromEnum(ffi_common.FfiResult.success);
+        return @backingInt(ffi_common.FfiResult.success);
     }
 
     for (0.., rd.definition.ntc_templates_platform.?) |idx, char| {
         ntc_template_platform.*[idx] = char;
     }
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 /// writes the genie platform from the driver's definition into the character slice at
@@ -65,18 +65,18 @@ export fn ls_cli_get_genie_platform(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     const rd = getRealCliDriver(d) orelse {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     };
 
     if (rd.definition.genie_platform == null) {
-        return @intFromEnum(ffi_common.FfiResult.success);
+        return @backingInt(ffi_common.FfiResult.success);
     }
 
     for (0.., rd.definition.genie_platform.?) |idx, char| {
         genie_platform.*[idx] = char;
     }
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_open(
@@ -100,7 +100,7 @@ export fn ls_cli_open(
     };
 
     _ = getRealCliDriver(d) orelse {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     };
 
     operation_id.* = d.queueOperation(
@@ -154,7 +154,7 @@ export fn ls_cli_open(
         };
     }
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_close(
@@ -165,7 +165,7 @@ export fn ls_cli_close(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     _ = getRealCliDriver(d) orelse {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     };
 
     operation_id.* = d.queueOperation(
@@ -192,7 +192,7 @@ export fn ls_cli_close(
         return ffi_common.toFfiResult(err);
     };
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_fetch_operation_sizes(
@@ -240,7 +240,7 @@ export fn ls_cli_fetch_operation_sizes(
                     .{},
                 ) catch {};
 
-                return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+                return @backingInt(ffi_common.FfiResult.invalid_argument);
             },
         };
 
@@ -254,7 +254,7 @@ export fn ls_cli_fetch_operation_sizes(
         operation_last_error_size.* = 0;
     }
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_fetch_operation(
@@ -304,7 +304,7 @@ export fn ls_cli_fetch_operation(
                     .{},
                 ) catch {};
 
-                return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+                return @backingInt(ffi_common.FfiResult.invalid_argument);
             },
         };
 
@@ -331,7 +331,7 @@ export fn ls_cli_fetch_operation(
         };
     }
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_enter_mode(
@@ -341,7 +341,7 @@ export fn ls_cli_enter_mode(
     requested_mode: [*c]const u8,
 ) callconv(.c) u8 {
     if (requested_mode == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
@@ -378,7 +378,7 @@ export fn ls_cli_enter_mode(
 
     operation_id.* = _operation_id;
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_get_prompt(
@@ -414,7 +414,7 @@ export fn ls_cli_get_prompt(
 
     operation_id.* = _operation_id;
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_send_input(
@@ -428,7 +428,7 @@ export fn ls_cli_send_input(
     retain_trailing_prompt: bool,
 ) callconv(.c) u8 {
     if (input == null or requested_mode == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
@@ -469,7 +469,7 @@ export fn ls_cli_send_input(
 
     operation_id.* = _operation_id;
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_send_inputs(
@@ -485,7 +485,7 @@ export fn ls_cli_send_inputs(
     stop_on_indicated_failure: bool,
 ) callconv(.c) u8 {
     if (inputs == null or requested_mode == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
@@ -527,7 +527,7 @@ export fn ls_cli_send_inputs(
 
     operation_id.* = _operation_id;
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_send_prompted_input(
@@ -551,7 +551,7 @@ export fn ls_cli_send_prompted_input(
         abort_input == null or
         requested_mode == null)
     {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
@@ -596,7 +596,7 @@ export fn ls_cli_send_prompted_input(
 
     operation_id.* = _operation_id;
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_read_any(
@@ -632,7 +632,7 @@ export fn ls_cli_read_any(
 
     operation_id.* = _operation_id;
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_read_callback_should_execute(
@@ -649,7 +649,7 @@ export fn ls_cli_read_callback_should_execute(
         contains_pattern == null or
         not_contains == null)
     {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
     var triggered_callbacks: std.ArrayList([]const u8) = .empty;
@@ -676,7 +676,7 @@ export fn ls_cli_read_callback_should_execute(
         execute.* = false;
     }
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_cli_replace_definition(
@@ -686,11 +686,11 @@ export fn ls_cli_replace_definition(
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
     if (definition_string == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
     const rd = getRealCliDriver(d) orelse {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     };
 
     rd.replaceDefinition(
@@ -701,14 +701,14 @@ export fn ls_cli_replace_definition(
         return ffi_common.toFfiResult(err);
     };
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 test "ffi: ls_cli_enter_mode null requested_mode" {
     var op_id: u32 = 0;
     var cancel: bool = false;
     const result = ls_cli_enter_mode(@ptrFromInt(0xDEADBEEF), &op_id, &cancel, null);
-    try std.testing.expectEqual(@intFromEnum(ffi_common.FfiResult.invalid_argument), result);
+    try std.testing.expectEqual(@backingInt(ffi_common.FfiResult.invalid_argument), result);
 }
 
 test "ffi: ls_cli_send_input null arguments" {
@@ -716,7 +716,7 @@ test "ffi: ls_cli_send_input null arguments" {
     var cancel: bool = false;
 
     try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
+        @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_cli_send_input(
             @ptrFromInt(0xDEADBEEF),
             &op_id,
@@ -730,7 +730,7 @@ test "ffi: ls_cli_send_input null arguments" {
     );
 
     try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
+        @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_cli_send_input(
             @ptrFromInt(0xDEADBEEF),
             &op_id,
@@ -749,7 +749,7 @@ test "ffi: ls_cli_send_inputs null arguments" {
     var cancel: bool = false;
 
     try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
+        @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_cli_send_inputs(
             @ptrFromInt(0xDEADBEEF),
             &op_id,
@@ -764,7 +764,7 @@ test "ffi: ls_cli_send_inputs null arguments" {
     );
 
     try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
+        @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_cli_send_inputs(
             @ptrFromInt(0xDEADBEEF),
             &op_id,
@@ -784,7 +784,7 @@ test "ffi: ls_cli_send_prompted_input null arguments" {
     var cancel: bool = false;
 
     try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
+        @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_cli_send_prompted_input(
             @ptrFromInt(0xDEADBEEF),
             &op_id,
@@ -802,7 +802,7 @@ test "ffi: ls_cli_send_prompted_input null arguments" {
     );
 
     try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
+        @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_cli_send_prompted_input(
             @ptrFromInt(0xDEADBEEF),
             &op_id,
@@ -824,7 +824,7 @@ test "ffi: ls_cli_read_callback_should_execute null arguments" {
     var execute: bool = false;
 
     try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
+        @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_cli_read_callback_should_execute(
             null,
             "name",
@@ -836,7 +836,7 @@ test "ffi: ls_cli_read_callback_should_execute null arguments" {
     );
 
     try std.testing.expectEqual(
-        @intFromEnum(ffi_common.FfiResult.invalid_argument),
+        @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_cli_read_callback_should_execute(
             "buf",
             null,
@@ -895,5 +895,5 @@ test "ffi: ls_cli_fetch_operation_sizes incomplete operation" {
         &operation_last_error_size,
     );
 
-    try std.testing.expectEqual(@intFromEnum(ffi_common.FfiResult.operation), ret);
+    try std.testing.expectEqual(@backingInt(ffi_common.FfiResult.operation), ret);
 }

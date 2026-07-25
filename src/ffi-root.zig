@@ -54,6 +54,7 @@ export fn ls_alloc_driver_options() callconv(.c) ?*ffi_common.LsOptions {
     };
 
     o.* = ffi_options.FFIOptions{
+        .user_data = 0,
         .cli = .{},
         .netconf = .{},
         .session = .{},
@@ -183,7 +184,7 @@ export fn ls_session_read(
 
     read_n.* = n;
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 /// Writes from the driver's session, bypassing the "driver" itself, use with care. Bypasses the
@@ -194,7 +195,7 @@ export fn ls_session_write(
     redacted: bool,
 ) callconv(.c) u8 {
     if (buf == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
@@ -217,7 +218,7 @@ export fn ls_session_write(
         return ffi_common.toFfiResult(err);
     };
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_session_write_and_return(
@@ -226,7 +227,7 @@ export fn ls_session_write_and_return(
     redacted: bool,
 ) callconv(.c) u8 {
     if (buf == null) {
-        return @intFromEnum(ffi_common.FfiResult.invalid_argument);
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
@@ -249,7 +250,7 @@ export fn ls_session_write_and_return(
         return ffi_common.toFfiResult(err);
     };
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_session_write_return(
@@ -275,7 +276,7 @@ export fn ls_session_write_return(
         return ffi_common.toFfiResult(err);
     };
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 export fn ls_session_operation_timeout_ns(
@@ -293,7 +294,7 @@ export fn ls_session_operation_timeout_ns(
         },
     }
 
-    return @intFromEnum(ffi_common.FfiResult.success);
+    return @backingInt(ffi_common.FfiResult.success);
 }
 
 test "ffi: ls_cli_alloc null host" {
@@ -315,11 +316,11 @@ test "ffi: ls_netconf_alloc null host" {
 test "ffi: ls_session_write null buf" {
     const result = ls_session_write(@ptrFromInt(0xDEADBEEF), null, false);
 
-    try std.testing.expectEqual(@intFromEnum(ffi_common.FfiResult.invalid_argument), result);
+    try std.testing.expectEqual(@backingInt(ffi_common.FfiResult.invalid_argument), result);
 }
 
 test "ffi: ls_session_write_and_return null buf" {
     const result = ls_session_write_and_return(@ptrFromInt(0xDEADBEEF), null, false);
 
-    try std.testing.expectEqual(@intFromEnum(ffi_common.FfiResult.invalid_argument), result);
+    try std.testing.expectEqual(@backingInt(ffi_common.FfiResult.invalid_argument), result);
 }

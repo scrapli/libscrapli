@@ -32,22 +32,22 @@ pub const LogLevel = enum(u8) {
 /// A standard debug.print logger function.
 pub fn stdLogf(level: u8, message: *[]u8) callconv(.c) void {
     switch (level) {
-        @intFromEnum(LogLevel.trace) => {
+        @backingInt(LogLevel.trace) => {
             std.debug.print("   trace: {s}\n", .{message.*});
         },
-        @intFromEnum(LogLevel.debug) => {
+        @backingInt(LogLevel.debug) => {
             std.debug.print("   debug: {s}\n", .{message.*});
         },
-        @intFromEnum(LogLevel.info) => {
+        @backingInt(LogLevel.info) => {
             std.debug.print("    info: {s}\n", .{message.*});
         },
-        @intFromEnum(LogLevel.warn) => {
+        @backingInt(LogLevel.warn) => {
             std.debug.print("    warn: {s}\n", .{message.*});
         },
-        @intFromEnum(LogLevel.critical) => {
+        @backingInt(LogLevel.critical) => {
             std.debug.print("critical: {s}\n", .{message.*});
         },
-        @intFromEnum(LogLevel.fatal) => {
+        @backingInt(LogLevel.fatal) => {
             std.debug.print("   fatal: {s}\n", .{message.*});
 
             std.process.exit(1);
@@ -58,10 +58,16 @@ pub fn stdLogf(level: u8, message: *[]u8) callconv(.c) void {
     }
 }
 
+const loggerF = union(enum) {
+    z: *const fn (level: u8, message: *[]u8) callconv(.c) void,
+    ffi: *const fn (user_data: usize, level: u8, message: *[]u8) callconv(.c) void,
+};
+
 /// Logger is a simple logger for use in libscrapli.
 pub const Logger = struct {
     allocator: std.mem.Allocator,
-    f: ?*const fn (level: u8, message: *[]u8) callconv(.c) void = null,
+    user_data: usize = 0,
+    f: ?loggerF = null,
     level: LogLevel = LogLevel.warn,
 
     /// Formats the message.
@@ -86,9 +92,7 @@ pub const Logger = struct {
         comptime format: []const u8,
         args: anytype,
     ) void {
-        const cb = self.f orelse return;
-
-        if (level != LogLevel.fatal and @intFromEnum(self.level) > @intFromEnum(level)) {
+        if (level != LogLevel.fatal and @backingInt(self.level) > @backingInt(level)) {
             return;
         }
 
@@ -102,7 +106,16 @@ pub const Logger = struct {
 
         var msg: []u8 = formatted_message orelse @constCast(format);
 
-        cb(@intFromEnum(level), &msg);
+        if (self.f) |f| {
+            switch (f) {
+                .z => |cb| {
+                    cb(@backingInt(level), &msg);
+                },
+                .ffi => |cb| {
+                    cb(self.user_data, @backingInt(level), &msg);
+                },
+            }
+        }
     }
 
     /// Emit a log at the "trace" level.
