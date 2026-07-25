@@ -43,6 +43,7 @@ pub const FFIOptions = extern struct {
         preferred_version_len: usize = 0,
         message_poll_interval: ?*u64 = null,
         capabilitiesCallback: ?*const fn (
+            user_data: usize,
             cap_buf: *[]const u8,
         ) callconv(.c) *[]const u8 = null,
     },
@@ -401,7 +402,10 @@ pub const FFIOptions = extern struct {
             .session = self.sessionOptionsInputs(),
             .transport = self.transportOptionsInputs(),
             .capabilities_callback = if (self.netconf.capabilitiesCallback) |cb| .{
-                .ffi = cb,
+                .ffi = .{
+                    .user_data = self.user_data,
+                    .cb = cb,
+                },
             } else null,
         };
 

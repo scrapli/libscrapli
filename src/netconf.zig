@@ -43,9 +43,13 @@ pub const ClientCapabilitiesCallback = union(enum) {
         server_capabilities: std.ArrayList(Capability),
         negotiated_version: operation.Version,
     ) anyerror![]const u8,
-    ffi: *const fn (
-        cap_buf: *[]const u8,
-    ) callconv(.c) *[]const u8,
+    ffi: struct {
+        user_data: usize,
+        cb: *const fn (
+            user_data: usize,
+            cap_buf: *[]const u8,
+        ) callconv(.c) *[]const u8,
+    },
 };
 
 // zlinter-disable require_doc_comment
@@ -904,10 +908,10 @@ pub const Driver = struct {
                         ),
                     );
                 },
-                .ffi => |cb| {
+                .ffi => |ffi_cb| {
                     var cap_buf_v = cap_buf;
 
-                    const ffi_caps = cb(&cap_buf_v);
+                    const ffi_caps = ffi_cb.cb(ffi_cb.user_data, &cap_buf_v);
 
                     try writer.embed(ffi_caps.*);
                 },
