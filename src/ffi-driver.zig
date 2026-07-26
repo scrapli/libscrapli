@@ -7,6 +7,7 @@ const errors = @import("errors.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const logging = @import("logging.zig");
 const netconf = @import("netconf.zig");
+const platform = @import("cli-platform.zig");
 const queue = @import("queue.zig");
 const result = @import("cli-result.zig");
 const result_netconf = @import("netconf-result.zig");
@@ -725,3 +726,179 @@ pub const FfiDriver = struct {
         };
     }
 };
+
+fn ffiDriverInitForTests(definition: *platform.Definition) !*FfiDriver {
+    return FfiDriver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        .{
+            .definition = .{
+                .definition = definition,
+            },
+        },
+    );
+}
+
+fn queueCloseOperationForTests(d: *FfiDriver) !u32 {
+    // close against a never (network) opened driver completes basically instantly (and close is
+    // explicitly safe pre-open), so it makes a nice no-network op to exercise the queue/loop with
+    return d.queueOperation(
+        .{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .close = .{},
+                },
+            },
+        },
+    );
+}
+
+fn waitForOperationResultForTests(
+    d: *FfiDriver,
+    operation_id: u32,
+) !ffi_operations.OperationResult {
+    var attempts: usize = 0;
+
+    while (true) {
+        const ret = d.dequeueOperation(operation_id, true) catch |err| switch (err) {
+            errors.ScrapliError.Operation => {
+                // not done yet; an op against a never opened driver should complete (or fail)
+                // near instantly, so if we approach this ~10s ceiling the operation loop is
+                // hung or a wakeup was lost
+                attempts += 1;
+
+                try std.testing.expect(attempts < 10_000);
+
+                try std.testing.io.sleep(
+                    .{
+                        .nanoseconds = std.time.ns_per_ms,
+                    },
+                    .awake,
+                );
+
+                continue;
+            },
+            else => return err,
+        };
+
+        return ret;
+    }
+}
+
+// spin up a driver, queue a close (because its a safe op that doesnt require a device since close
+// on session is effectively a noop -- there are things happening (recorder/transport shutdown etc,
+// but nothing that requires a device/connection, and the cli driver has no close callbacks) -- we
+// should assert that the op is done, its not an error, and we dont leak anything. this is
+// basically happy path test.
+test "ffiDriverOperationLifecycle" {
+    var definition = platform.Definition{
+        .prompt_pattern = "^.*[>#$]\\s?+$",
+        .default_mode = "cli",
+    };
+
+    const d = try ffiDriverInitForTests(&definition);
+    defer d.deinit();
+
+    try d.open();
+
+    const operation_id = try queueCloseOperationForTests(d);
+
+    try std.testing.expect(operation_id != 0);
+
+    const ret = try waitForOperationResultForTests(d, operation_id);
+
+    try std.testing.expect(ret.done);
+    try std.testing.expect(ret.err == null);
+
+    ret.deinit(std.testing.allocator);
+}
+
+// the ffi driver always handles ops serially -- thats the only sensible mode for libscrapli
+// since 1 connection is 1 connection (sorta kinda notwithstanding netconf subs/notifications,
+// though even then ops are serial from the ffi perspective). this tests two things, first ping-pong
+// -- queue one (noop-ish, see previous test comment) op, wait for its result, repeat -- every
+// iteration forces the op loop to sleep and get rewoken, so a lost wakeup (see baed870) shows up
+// here as a hang/timeout. then a burst -- queue a pile all at once, then collect; ids must be
+// handed out in order and every op must complete w/ no errors/leaks in both cases.
+test "ffiDriverOperationSerialProcessing" {
+    var definition = platform.Definition{
+        .prompt_pattern = "^.*[>#$]\\s?+$",
+        .default_mode = "cli",
+    };
+
+    const d = try ffiDriverInitForTests(&definition);
+    defer d.deinit();
+
+    try d.open();
+
+    var last_operation_id: u32 = 0;
+
+    // ping-pong -- queue an op, wait for its result, repeat; every iteration requires the
+    // operation loop to sleep then be woken again, so a lost wakeup (see baed870) shows up
+    // here as a hang/timeout
+    for (0..50) |_| {
+        const operation_id = try queueCloseOperationForTests(d);
+
+        // operation ids must be handed out monotonically, one at a time
+        try std.testing.expect(operation_id == last_operation_id + 1);
+
+        last_operation_id = operation_id;
+
+        const ret = try waitForOperationResultForTests(d, operation_id);
+
+        try std.testing.expect(ret.done);
+        try std.testing.expect(ret.err == null);
+
+        ret.deinit(std.testing.allocator);
+    }
+
+    // burst -- queue a pile of ops before collecting any results; all of them must eventually
+    // be processed and every result must land in the results map
+    var operation_ids: [10]u32 = undefined;
+
+    for (&operation_ids) |*operation_id| {
+        operation_id.* = try queueCloseOperationForTests(d);
+    }
+
+    for (operation_ids) |operation_id| {
+        const ret = try waitForOperationResultForTests(d, operation_id);
+
+        try std.testing.expect(ret.done);
+        try std.testing.expect(ret.err == null);
+
+        ret.deinit(std.testing.allocator);
+    }
+}
+
+// tests that we dont hang on a deinit when we have operations queued, all ops have to be drained
+// and freed, so testing allocator will be enforcing that for us.
+test "ffiDriverDeinitWithQueuedOperations" {
+    var definition = platform.Definition{
+        .prompt_pattern = "^.*[>#$]\\s?+$",
+        .default_mode = "cli",
+    };
+
+    const d = try ffiDriverInitForTests(&definition);
+
+    try d.open();
+
+    for (0..10) |_| {
+        _ = try queueCloseOperationForTests(d);
+    }
+
+    d.deinit();
+}
+
+// just assert that even when not opened (no op thread) we close/deinit gracefully w/out hanging.
+test "ffiDriverDeinitWithoutOpen" {
+    var definition = platform.Definition{
+        .prompt_pattern = "^.*[>#$]\\s?+$",
+        .default_mode = "cli",
+    };
+
+    const d = try ffiDriverInitForTests(&definition);
+
+    d.deinit();
+}
