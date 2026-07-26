@@ -1,77 +1,23 @@
-// TODO this whole file... not great! should use w/e new io thing im supposed to use instead of
-// this deprecated stuff
+// vendored (and heavily trimmed) from the old/deprecated std.fifo.LinearFifo -- only the
+// dynamic-buffer flavor survives, and only the operations libscrapli actually uses: the session
+// read queue needs write/read/readableLength, and the ffi driver operation queue needs
+// writeItem/readItem/count.
 const std = @import("std");
 const math = std.math;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const assert = std.debug.assert;
 
-pub const LinearFifoBufferType = union(enum) {
-    /// The buffer is internal to the fifo; it is of the specified size.
-    static: usize,
-
-    /// The buffer is passed as a slice to the initialiser.
-    slice,
-
-    /// The buffer is managed dynamically using a `mem.Allocator`.
-    dynamic,
-};
-
-pub fn LinearFifo(
-    T: type,
-    comptime buffer_type: LinearFifoBufferType,
-) type {
-    const autoalign = false;
-
-    const powers_of_two = switch (buffer_type) {
-        .static => std.math.isPowerOfTwo(buffer_type.Static),
-        .slice => false, // Any size slice could be passed in
-        .dynamic => true, // This could be configurable in future
-    };
-
+pub fn LinearFifo(T: type) type {
     return struct {
-        allocator: if (buffer_type == .dynamic) Allocator else void,
-        buf: if (buffer_type == .static) [buffer_type.Static]T else []T,
+        allocator: Allocator,
+        buf: []T,
         head: usize,
         count: usize,
 
         const Self = @This();
-        pub const Reader = std.io.Reader(*Self, error{}, readFn);
-        pub const Writer = std.io.Writer(*Self, error{OutOfMemory}, appendWrite);
 
-        // Type of Self argument for slice operations.
-        // If buffer is inline (Static) then we need to ensure we haven't
-        // returned a slice into a copy on the stack
-        const SliceSelfArg: type = if (buffer_type == .static) *Self else Self;
-
-        pub const init = switch (buffer_type) {
-            .static => initStatic,
-            .slice => initSlice,
-            .dynamic => initDynamic,
-        };
-
-        fn initStatic() Self {
-            comptime assert(buffer_type == .static);
-            return .{
-                .allocator = {},
-                .buf = undefined,
-                .head = 0,
-                .count = 0,
-            };
-        }
-
-        fn initSlice(buf: []T) Self {
-            comptime assert(buffer_type == .slice);
-            return .{
-                .allocator = {},
-                .buf = buf,
-                .head = 0,
-                .count = 0,
-            };
-        }
-
-        fn initDynamic(allocator: Allocator) Self {
-            comptime assert(buffer_type == .dynamic);
+        pub fn init(allocator: Allocator) Self {
             return .{
                 .allocator = allocator,
                 .buf = &.{},
@@ -81,10 +27,10 @@ pub fn LinearFifo(
         }
 
         pub fn deinit(self: Self) void {
-            if (buffer_type == .dynamic) self.allocator.free(self.buf);
+            self.allocator.free(self.buf);
         }
 
-        pub fn realign(self: *Self) void {
+        fn realign(self: *Self) void {
             if (self.buf.len - self.head >= self.count) {
                 mem.copyForwards(T, self.buf[0..self.count], self.buf[self.head..][0..self.count]);
                 self.head = 0;
@@ -106,43 +52,33 @@ pub fn LinearFifo(
             }
         }
 
-        /// Reduce allocated capacity to `size`.
-        pub fn shrink(self: *Self, size: usize) void {
-            assert(size >= self.count);
-            if (buffer_type == .dynamic) {
-                self.realign();
-                self.buf = self.allocator.realloc(self.buf, size) catch |e| switch (e) {
-                    error.OutOfMemory => return, // no problem, capacity is still correct then.
-                };
-            }
-        }
-
-        /// Ensure that the buffer can fit at least `size` items
-        pub fn ensureTotalCapacity(self: *Self, size: usize) !void {
+        /// Ensure that the buffer can fit at least `size` items.
+        fn ensureTotalCapacity(self: *Self, size: usize) error{OutOfMemory}!void {
             if (self.buf.len >= size) return;
-            if (buffer_type == .dynamic) {
-                self.realign();
-                const new_size = if (powers_of_two) math.ceilPowerOfTwo(usize, size) catch return error.OutOfMemory else size;
-                self.buf = try self.allocator.realloc(self.buf, new_size);
-            } else {
-                return error.OutOfMemory;
-            }
+
+            self.realign();
+
+            const new_size = math.ceilPowerOfTwo(usize, size) catch return error.OutOfMemory;
+
+            self.buf = try self.allocator.realloc(self.buf, new_size);
         }
 
-        /// Makes sure at least `size` items are unused
-        pub fn ensureUnusedCapacity(self: *Self, size: usize) error{OutOfMemory}!void {
+        /// Makes sure at least `size` items are unused.
+        fn ensureUnusedCapacity(self: *Self, size: usize) error{OutOfMemory}!void {
             if (self.writableLength() >= size) return;
 
-            return try self.ensureTotalCapacity(math.add(usize, self.count, size) catch return error.OutOfMemory);
+            return try self.ensureTotalCapacity(
+                math.add(usize, self.count, size) catch return error.OutOfMemory,
+            );
         }
 
-        /// Returns number of items currently in fifo
+        /// Returns number of items currently in the fifo.
         pub fn readableLength(self: Self) usize {
             return self.count;
         }
 
-        /// Returns a writable slice from the 'read' end of the fifo
-        fn readableSliceMut(self: SliceSelfArg, offset: usize) []T {
+        /// Returns a mutable slice from the 'read' end of the fifo.
+        fn readableSliceMut(self: Self, offset: usize) []T {
             if (offset > self.count) return &[_]T{};
 
             var start = self.head + offset;
@@ -155,24 +91,8 @@ pub fn LinearFifo(
             }
         }
 
-        /// Returns a readable slice from `offset`
-        pub fn readableSlice(self: SliceSelfArg, offset: usize) []const T {
-            return self.readableSliceMut(offset);
-        }
-
-        pub fn readableSliceOfLen(self: *Self, len: usize) []const T {
-            assert(len <= self.count);
-            const buf = self.readableSlice(0);
-            if (buf.len >= len) {
-                return buf[0..len];
-            } else {
-                self.realign();
-                return self.readableSlice(0)[0..len];
-            }
-        }
-
-        /// Discard first `count` items in the fifo
-        pub fn discard(self: *Self, count: usize) void {
+        /// Discard first `count` items in the fifo.
+        fn discard(self: *Self, count: usize) void {
             assert(count <= self.count);
             { // set old range to undefined. Note: may be wrapped around
                 const slice = self.readableSliceMut(0);
@@ -182,28 +102,21 @@ pub fn LinearFifo(
                 } else {
                     const unused = mem.sliceAsBytes(slice[0..]);
                     @memset(unused, undefined);
-                    const unused2 = mem.sliceAsBytes(self.readableSliceMut(slice.len)[0 .. count - slice.len]);
+                    const unused2 = mem.sliceAsBytes(
+                        self.readableSliceMut(slice.len)[0 .. count - slice.len],
+                    );
                     @memset(unused2, undefined);
                 }
             }
-            if (autoalign and self.count == count) {
-                self.head = 0;
-                self.count = 0;
-            } else {
-                var head = self.head + count;
-                if (powers_of_two) {
-                    // Note it is safe to do a wrapping subtract as
-                    // bitwise & with all 1s is a noop
-                    head &= self.buf.len -% 1;
-                } else {
-                    head %= self.buf.len;
-                }
-                self.head = head;
-                self.count -= count;
-            }
+
+            var head = self.head + count;
+            // note it is safe to do a wrapping subtract as bitwise & with all 1s is a noop
+            head &= self.buf.len -% 1;
+            self.head = head;
+            self.count -= count;
         }
 
-        /// Read the next item from the fifo
+        /// Read the next item from the fifo.
         pub fn readItem(self: *Self) ?T {
             if (self.count == 0) return null;
 
@@ -217,7 +130,7 @@ pub fn LinearFifo(
             var dst_left = dst;
 
             while (dst_left.len > 0) {
-                const slice = self.readableSlice(0);
+                const slice = self.readableSliceMut(0);
                 if (slice.len == 0) break;
                 const n = @min(slice.len, dst_left.len);
                 @memcpy(dst_left[0..n], slice[0..n]);
@@ -228,24 +141,13 @@ pub fn LinearFifo(
             return dst.len - dst_left.len;
         }
 
-        /// Same as `read` except it returns an error union
-        /// The purpose of this function existing is to match `std.io.Reader` API.
-        fn readFn(self: *Self, dest: []u8) error{}!usize {
-            return self.read(dest);
-        }
-
-        pub fn reader(self: *Self) Reader {
-            return .{ .context = self };
-        }
-
-        /// Returns number of items available in fifo
-        pub fn writableLength(self: Self) usize {
+        /// Returns number of items available in the fifo.
+        fn writableLength(self: Self) usize {
             return self.buf.len - self.count;
         }
 
-        /// Returns the first section of writable buffer.
-        /// Note that this may be of length 0
-        pub fn writableSlice(self: SliceSelfArg, offset: usize) []T {
+        /// Returns the first section of writable buffer. Note that this may be of length 0.
+        fn writableSlice(self: Self, offset: usize) []T {
             if (offset > self.buf.len) return &[_]T{};
 
             const tail = self.head + offset + self.count;
@@ -256,30 +158,19 @@ pub fn LinearFifo(
             }
         }
 
-        /// Returns a writable buffer of at least `size` items, allocating memory as needed.
-        /// Use `fifo.update` once you've written data to it.
-        pub fn writableWithSize(self: *Self, size: usize) ![]T {
-            try self.ensureUnusedCapacity(size);
+        /// Write a single item to the fifo, allocating more memory as necessary.
+        pub fn writeItem(self: *Self, item: T) error{OutOfMemory}!void {
+            try self.ensureUnusedCapacity(1);
 
-            // try to avoid realigning buffer
-            var slice = self.writableSlice(0);
-            if (slice.len < size) {
-                self.realign();
-                slice = self.writableSlice(0);
-            }
-            return slice;
+            var tail = self.head + self.count;
+            tail &= self.buf.len - 1;
+            self.buf[tail] = item;
+            self.count += 1;
         }
 
-        /// Update the tail location of the buffer (usually follows use of writable/writableWithSize)
-        pub fn update(self: *Self, count: usize) void {
-            assert(self.count + count <= self.buf.len);
-            self.count += count;
-        }
-
-        /// Appends the data in `src` to the fifo.
-        /// You must have ensured there is enough space.
-        pub fn writeAssumeCapacity(self: *Self, src: []const T) void {
-            assert(self.writableLength() >= src.len);
+        /// Appends the data in `src` to the fifo, allocating more memory as necessary.
+        pub fn write(self: *Self, src: []const T) error{OutOfMemory}!void {
+            try self.ensureUnusedCapacity(src.len);
 
             var src_left = src;
             while (src_left.len > 0) {
@@ -287,124 +178,65 @@ pub fn LinearFifo(
                 assert(writable_slice.len != 0);
                 const n = @min(writable_slice.len, src_left.len);
                 @memcpy(writable_slice[0..n], src_left[0..n]);
-                self.update(n);
+                self.count += n;
                 src_left = src_left[n..];
             }
         }
-
-        /// Write a single item to the fifo
-        pub fn writeItem(self: *Self, item: T) !void {
-            try self.ensureUnusedCapacity(1);
-            return self.writeItemAssumeCapacity(item);
-        }
-
-        pub fn writeItemAssumeCapacity(self: *Self, item: T) void {
-            var tail = self.head + self.count;
-            if (powers_of_two) {
-                tail &= self.buf.len - 1;
-            } else {
-                tail %= self.buf.len;
-            }
-            self.buf[tail] = item;
-            self.update(1);
-        }
-
-        /// Appends the data in `src` to the fifo.
-        /// Allocates more memory as necessary
-        pub fn write(self: *Self, src: []const T) !void {
-            try self.ensureUnusedCapacity(src.len);
-
-            return self.writeAssumeCapacity(src);
-        }
-
-        /// Same as `write` except it returns the number of bytes written, which is always the same
-        /// as `bytes.len`. The purpose of this function existing is to match `std.io.Writer` API.
-        fn appendWrite(self: *Self, bytes: []const u8) error{OutOfMemory}!usize {
-            try self.write(bytes);
-            return bytes.len;
-        }
-
-        pub fn writer(self: *Self) Writer {
-            return .{ .context = self };
-        }
-
-        /// Make `count` items available before the current read location
-        fn rewind(self: *Self, count: usize) void {
-            assert(self.writableLength() >= count);
-
-            var head = self.head + (self.buf.len - count);
-            if (powers_of_two) {
-                head &= self.buf.len - 1;
-            } else {
-                head %= self.buf.len;
-            }
-            self.head = head;
-            self.count += count;
-        }
-
-        /// Place data back into the read stream
-        pub fn unget(self: *Self, src: []const T) !void {
-            try self.ensureUnusedCapacity(src.len);
-
-            self.rewind(src.len);
-
-            const slice = self.readableSliceMut(0);
-            if (src.len < slice.len) {
-                @memcpy(slice[0..src.len], src);
-            } else {
-                @memcpy(slice, src[0..slice.len]);
-                const slice2 = self.readableSliceMut(slice.len);
-                @memcpy(slice2[0 .. src.len - slice.len], src[slice.len..]);
-            }
-        }
-
-        /// Returns the item at `offset`.
-        /// Asserts offset is within bounds.
-        pub fn peekItem(self: Self, offset: usize) T {
-            assert(offset < self.count);
-
-            var index = self.head + offset;
-            if (powers_of_two) {
-                index &= self.buf.len - 1;
-            } else {
-                index %= self.buf.len;
-            }
-            return self.buf[index];
-        }
-
-        /// Pump data from a reader into a writer.
-        /// Stops when reader returns 0 bytes (EOF).
-        /// Buffer size must be set before calling; a buffer length of 0 is invalid.
-        pub fn pump(self: *Self, src_reader: anytype, dest_writer: anytype) !void {
-            assert(self.buf.len > 0);
-            while (true) {
-                if (self.writableLength() > 0) {
-                    const n = try src_reader.read(self.writableSlice(0));
-                    if (n == 0) break; // EOF
-                    self.update(n);
-                }
-                self.discard(try dest_writer.write(self.readableSlice(0)));
-            }
-            // flush remaining data
-            while (self.readableLength() > 0) {
-                self.discard(try dest_writer.write(self.readableSlice(0)));
-            }
-        }
-
-        pub fn toOwnedSlice(self: *Self) Allocator.Error![]T {
-            if (self.head != 0) self.realign();
-            assert(self.head == 0);
-            assert(self.count <= self.buf.len);
-            const allocator = self.allocator;
-            if (allocator.resize(self.buf, self.count)) {
-                const result = self.buf[0..self.count];
-                self.* = Self.init(allocator);
-                return result;
-            }
-            const new_memory = try allocator.dupe(T, self.buf[0..self.count]);
-            allocator.free(self.buf);
-            self.* = Self.init(allocator);
-            return new_memory;
-        }
     };
+}
+
+test "linearFifoBytes" {
+    var fifo = LinearFifo(u8).init(std.testing.allocator);
+    defer fifo.deinit();
+
+    try fifo.write("hello ");
+    try fifo.write("world");
+
+    try std.testing.expectEqual(11, fifo.readableLength());
+
+    var buf: [16]u8 = undefined;
+
+    try std.testing.expectEqual(5, fifo.read(buf[0..5]));
+    try std.testing.expectEqualStrings("hello", buf[0..5]);
+
+    try fifo.write(" again");
+
+    const n = fifo.read(&buf);
+    try std.testing.expectEqual(12, n);
+    try std.testing.expectEqualStrings(" world again", buf[0..n]);
+
+    try std.testing.expectEqual(0, fifo.readableLength());
+    try std.testing.expectEqual(null, fifo.readItem());
+}
+
+test "linearFifoItems" {
+    const Item = struct {
+        id: u32,
+    };
+
+    var fifo = LinearFifo(Item).init(std.testing.allocator);
+    defer fifo.deinit();
+
+    var next_read_id: u32 = 0;
+    var next_write_id: u32 = 0;
+
+    for (0..10) |_| {
+        for (0..7) |_| {
+            try fifo.writeItem(.{ .id = next_write_id });
+            next_write_id += 1;
+        }
+
+        for (0..5) |_| {
+            const item = fifo.readItem().?;
+            try std.testing.expectEqual(next_read_id, item.id);
+            next_read_id += 1;
+        }
+    }
+
+    while (fifo.readItem()) |item| {
+        try std.testing.expectEqual(next_read_id, item.id);
+        next_read_id += 1;
+    }
+
+    try std.testing.expectEqual(next_write_id, next_read_id);
 }

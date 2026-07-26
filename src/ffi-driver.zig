@@ -40,10 +40,7 @@ pub const FfiDriver = struct {
     operation_lock: std.Io.Mutex,
     operation_condition: std.Io.Condition,
     operation_predicate: u32,
-    operation_queue: queue.LinearFifo(
-        ffi_operations.OperationOptions,
-        .dynamic,
-    ),
+    operation_queue: queue.LinearFifo(ffi_operations.OperationOptions),
     operation_results: std.AutoHashMap(
         u32,
         ffi_operations.OperationResult,
@@ -99,10 +96,7 @@ pub const FfiDriver = struct {
             .operation_lock = std.Io.Mutex.init,
             .operation_condition = std.Io.Condition.init,
             .operation_predicate = 0,
-            .operation_queue = queue.LinearFifo(
-                ffi_operations.OperationOptions,
-                .dynamic,
-            ).init(allocator),
+            .operation_queue = queue.LinearFifo(ffi_operations.OperationOptions).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
                 ffi_operations.OperationResult,
@@ -151,10 +145,7 @@ pub const FfiDriver = struct {
             .operation_lock = std.Io.Mutex.init,
             .operation_condition = std.Io.Condition.init,
             .operation_predicate = 0,
-            .operation_queue = queue.LinearFifo(
-                ffi_operations.OperationOptions,
-                .dynamic,
-            ).init(allocator),
+            .operation_queue = queue.LinearFifo(ffi_operations.OperationOptions).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
                 ffi_operations.OperationResult,
