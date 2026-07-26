@@ -9,6 +9,10 @@ pub const cli_operation = @import("cli-operation.zig");
 pub const cli_platform = @import("cli-platform.zig");
 pub const cli_result = @import("cli-result.zig");
 pub const errors = @import("errors.zig");
+pub const ffi_driver = @import("ffi-driver.zig");
+pub const ffi_root = @import("ffi-root.zig");
+pub const ffi_root_cli = @import("ffi-root-cli.zig");
+pub const ffi_root_netconf = @import("ffi-root-netconf.zig");
 pub const file = @import("file.zig");
 pub const logging = @import("logging.zig");
 pub const netconf = @import("netconf.zig");
@@ -22,6 +26,7 @@ pub const transport = @import("transport.zig");
 pub const transport_bin = @import("transport-bin.zig");
 pub const transport_ssh2 = @import("transport-ssh2.zig");
 pub const transport_telnet = @import("transport-telnet.zig");
+pub const transport_waiter = @import("transport-waiter.zig");
 
 test {
     _ = ascii;
@@ -30,7 +35,13 @@ test {
     _ = bytes_check;
     _ = cli;
     _ = cli_mode;
+    _ = cli_platform;
+    _ = cli_result;
     _ = errors;
+    _ = ffi_driver;
+    _ = ffi_root;
+    _ = ffi_root_cli;
+    _ = ffi_root_netconf;
     _ = netconf;
     _ = netconf_result;
     _ = re;
@@ -39,6 +50,7 @@ test {
     _ = transport_bin;
     _ = transport_ssh2;
     _ = transport_telnet;
+    _ = transport_waiter;
 
     _ = @import("ffi-root.zig");
     _ = @import("ffi-root-cli.zig");
