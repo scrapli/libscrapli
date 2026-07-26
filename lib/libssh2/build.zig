@@ -8,16 +8,20 @@ pub fn build(b: *std.Build) void {
         "openssl",
         .{
             .target = target,
-            // w/ ReleaseSafe this caused some out of bounds trap to fire in openssl; it
-            // *seems* like this is safe. annoying that it is not consistent w/ everything
-            // else but... it works and we now are able to safely(?) use the dzfrias openssl
-            // zig package which is very handy
-            // maybe this one or similar things in/around it fixed it (but we have 3.6.0 and
-            // looks like this was 5mo after that release)
-            // https://github.com/openssl/openssl/pull/30342
-            .optimize = .ReleaseFast,
+            .optimize = optimize,
         },
     );
+
+    const ssl = openssl.artifact("ssl");
+    const crypto = openssl.artifact("crypto");
+
+    // openssl deliberately calls through mismatched fn pointers (lhash/doall etc.),
+    // which UBSan's function check traps on; nuke sanitizers. honestly fabio (fable) helped
+    // figure this out as im not 100% i understand, but i *do* understand that we hit traps related
+    // to ubsan w/out this unless in ReleaseFast which skipped some checks, now we can be in
+    // ReleaseSafe and w/ these flags we are gucci.
+    ssl.root_module.sanitize_c = .off;
+    crypto.root_module.sanitize_c = .off;
 
     const upstream = b.dependency(
         "libssh2",

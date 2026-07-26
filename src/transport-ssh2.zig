@@ -2044,18 +2044,26 @@ pub const Transport = struct {
 
         if (self.proxy_channel) |chan| {
             libssh2CloseChannel(self.io, chan, self.log);
+            libssh2FreeChannel(self.io, chan, self.log);
+            self.proxy_channel = null;
         }
 
         if (self.initial_channel) |chan| {
             libssh2CloseChannel(self.io, chan, self.log);
+            libssh2FreeChannel(self.io, chan, self.log);
+            self.initial_channel = null;
         }
 
         if (self.proxy_session) |sess| {
             libssh2DisconnectSession(self.io, sess, self.log);
+            libssh2FreeSession(self.io, sess, self.log);
+            self.proxy_session = null;
         }
 
         if (self.initial_session) |sess| {
             libssh2DisconnectSession(self.io, sess, self.log);
+            libssh2FreeSession(self.io, sess, self.log);
+            self.initial_session = null;
         }
 
         if (self.stream) |stream| {
