@@ -98,7 +98,9 @@ pub fn main(init: std.process.Init) !void {
             // for a simple logger setup
             // .logger = logging.Logger{
             //     .allocator = allocator,
-            //     .f = logging.stdLogf,
+            //     .f = .{
+            //         .z = logging.stdLogf,
+            //      },
             // },
             .port = try getPort(init.environ_map),
             .auth = .{

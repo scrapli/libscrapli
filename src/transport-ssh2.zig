@@ -682,8 +682,8 @@ pub const Transport = struct {
     /// Opens the transport object.
     pub fn open(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
@@ -697,8 +697,8 @@ pub const Transport = struct {
             }
         }
 
-        try self.initSocket(host, port);
-        try self.initSession(start_time, cancel, operation_timeout_ns);
+        try self.initSocket(cancel, start_time, operation_timeout_ns, host, port);
+        try self.initSession(cancel, start_time, operation_timeout_ns);
         try self.initKnownHost(host, port);
 
         if (auth_options.username != null and auth_options.password != null) {
@@ -710,8 +710,8 @@ pub const Transport = struct {
         }
 
         try self.authenticate(
-            start_time,
             cancel,
+            start_time,
             operation_timeout_ns,
             self.initial_session.?,
             auth_options,
@@ -724,8 +724,8 @@ pub const Transport = struct {
         if (self.options.proxy_jump_options == null) {
             // no proxy jump, normal flow
             self.initial_channel = try self.openChannel(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 self.initial_session.?,
             );
@@ -737,15 +737,15 @@ pub const Transport = struct {
             self.proxy_wrapper = try ProxyWrapper.init(self.allocator, self.io, self.log);
 
             try self.openProxyChannel(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 auth_options,
             );
 
             self.proxy_channel = try self.openChannel(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 self.proxy_session.?,
             );
@@ -758,16 +758,16 @@ pub const Transport = struct {
             // not in netconf), and disabling them via term mode only makes it echo once
             // not twice :p
             try self.requestPty(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 channel.?,
             );
         }
 
         try self.requestShell(
-            start_time,
             cancel,
+            start_time,
             operation_timeout_ns,
             channel.?,
         );
@@ -783,24 +783,66 @@ pub const Transport = struct {
 
     fn initSocket(
         self: *Transport,
+        cancel: ?*bool,
+        start_time: std.Io.Timestamp,
+        operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
     ) !void {
         self.log.debug("ssh2.Transport initSocket requested", .{});
 
-        self.stream = transport_socket.getStream(self.io, self.log, host, port) catch {
-            self.last_error.set(
-                "ssh2.Transport initSocket: failed initializing socket, unable to resolve host",
-            );
+        self.stream = transport_socket.getStream(
+            self.io,
+            self.log,
+            cancel,
+            start_time,
+            operation_timeout_ns,
+            host,
+            port,
+        ) catch |err| {
+            switch (err) {
+                errors.ScrapliError.Cancelled => {
+                    self.last_error.set(
+                        "ssh2.Transport initSocket: cancelled during getStream",
+                    );
 
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "ssh2.Transport initSocket: failed initializing socket, " ++
-                    "unable to resolve host '{s}'",
-                .{host},
-            );
+                    return errors.wrapCriticalError(
+                        err,
+                        @src(),
+                        self.log,
+                        "ssh2.Transport initSocket: cancelled during getStream",
+                        .{},
+                    );
+                },
+                errors.ScrapliError.TimeoutExceeded => {
+                    self.last_error.set(
+                        "ssh2.Transport initSocket: timed out during getStream",
+                    );
+
+                    return errors.wrapCriticalError(
+                        err,
+                        @src(),
+                        self.log,
+                        "ssh2.Transport initSocket: timed out during getStream",
+                        .{},
+                    );
+                },
+                else => {
+                    self.last_error.set(
+                        "ssh2.Transport initSocket: failed initializing socket, unable to " ++
+                            "resolve host",
+                    );
+
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Transport,
+                        @src(),
+                        self.log,
+                        "ssh2.Transport initSocket: failed initializing socket, " ++
+                            "unable to resolve host '{s}'",
+                        .{host},
+                    );
+                },
+            }
         };
 
         if (self.stream) |stream| {
@@ -810,8 +852,8 @@ pub const Transport = struct {
 
     fn initSession(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
     ) !void {
         self.log.debug("ssh2.Transport initSession requested", .{});
@@ -1067,8 +1109,8 @@ pub const Transport = struct {
 
     fn authenticate(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
         auth_options: auth.Options,
@@ -1077,8 +1119,8 @@ pub const Transport = struct {
 
         if (auth_options.private_key_content != null) {
             self.handlePrivateKeyContentAuth(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 session,
                 auth_options,
@@ -1087,8 +1129,8 @@ pub const Transport = struct {
             };
 
             if (try self.isAuthenticated(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 session,
             )) {
@@ -1096,8 +1138,8 @@ pub const Transport = struct {
             }
         } else if (auth_options.private_key_path != null) {
             self.handlePrivateKeyAuth(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 session,
                 auth_options,
@@ -1106,8 +1148,8 @@ pub const Transport = struct {
             };
 
             if (try self.isAuthenticated(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 session,
             )) {
@@ -1117,8 +1159,8 @@ pub const Transport = struct {
 
         if (auth_options.username != null and auth_options.password != null) {
             self.handlePasswordAuth(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 session,
                 auth_options,
@@ -1128,8 +1170,8 @@ pub const Transport = struct {
             };
 
             if (try self.isAuthenticated(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 session,
             )) {
@@ -1137,16 +1179,16 @@ pub const Transport = struct {
             }
 
             try self.handleKeyboardInteractiveAuth(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 session,
                 auth_options,
             );
 
             if (try self.isAuthenticated(
-                start_time,
                 cancel,
+                start_time,
                 operation_timeout_ns,
                 session,
             )) {
@@ -1169,8 +1211,8 @@ pub const Transport = struct {
 
     fn isAuthenticated(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
     ) !bool {
@@ -1230,8 +1272,8 @@ pub const Transport = struct {
 
     fn handlePrivateKeyAuth(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
         auth_options: auth.Options,
@@ -1349,8 +1391,8 @@ pub const Transport = struct {
 
     fn handlePrivateKeyContentAuth(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
         auth_options: auth.Options,
@@ -1462,8 +1504,8 @@ pub const Transport = struct {
 
     fn handleKeyboardInteractiveAuth(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
         auth_options: auth.Options,
@@ -1538,8 +1580,8 @@ pub const Transport = struct {
 
     fn handlePasswordAuth(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
         auth_options: auth.Options,
@@ -1619,8 +1661,8 @@ pub const Transport = struct {
 
     fn openChannel(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         session: *ssh2.LIBSSH2_SESSION,
     ) !?*ssh2.LIBSSH2_CHANNEL {
@@ -1693,8 +1735,8 @@ pub const Transport = struct {
 
     fn openProxyChannel(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         auth_options: auth.Options,
     ) !void {
@@ -1878,8 +1920,8 @@ pub const Transport = struct {
         }
 
         try self.authenticate(
-            start_time,
             cancel,
+            start_time,
             operation_timeout_ns,
             self.proxy_session.?,
             pa,
@@ -1888,8 +1930,8 @@ pub const Transport = struct {
 
     fn requestPty(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         channel: *ssh2.LIBSSH2_CHANNEL,
     ) !void {
@@ -1958,8 +2000,8 @@ pub const Transport = struct {
 
     fn requestShell(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         channel: *ssh2.LIBSSH2_CHANNEL,
     ) !void {

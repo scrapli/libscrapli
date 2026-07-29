@@ -230,27 +230,66 @@ pub const Transport = struct {
     /// Open the transport object.
     pub fn open(
         self: *Transport,
-        start_time: std.Io.Timestamp,
         cancel: ?*bool,
+        start_time: std.Io.Timestamp,
         operation_timeout_ns: u64,
         host: []const u8,
         port: u16,
     ) !void {
         self.log.info("telnet.Transport open requested", .{});
 
-        self.stream = transport_socket.getStream(self.io, self.log, host, port) catch {
-            self.last_error.set(
-                "telnet.Transport initSocket: failed initializing socket unable to resolve host",
-            );
+        self.stream = transport_socket.getStream(
+            self.io,
+            self.log,
+            cancel,
+            start_time,
+            operation_timeout_ns,
+            host,
+            port,
+        ) catch |err| {
+            switch (err) {
+                errors.ScrapliError.Cancelled => {
+                    self.last_error.set(
+                        "telnet.Transport open: cancelled during getStream",
+                    );
 
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "telnet.Transport initSocket: failed initializing socket, " ++
-                    "unable to resolve host '{s}'",
-                .{host},
-            );
+                    return errors.wrapCriticalError(
+                        err,
+                        @src(),
+                        self.log,
+                        "telnet.Transport open: cancelled during getStream",
+                        .{},
+                    );
+                },
+                errors.ScrapliError.TimeoutExceeded => {
+                    self.last_error.set(
+                        "telnet.Transport open: timed out during getStream",
+                    );
+
+                    return errors.wrapCriticalError(
+                        err,
+                        @src(),
+                        self.log,
+                        "telnet.Transport open: timed out during getStream",
+                        .{},
+                    );
+                },
+                else => {
+                    self.last_error.set(
+                        "telnet.Transport open: failed initializing socket, unable to " ++
+                            "resolve host",
+                    );
+
+                    return errors.wrapCriticalError(
+                        errors.ScrapliError.Transport,
+                        @src(),
+                        self.log,
+                        "telnet.Transport open: failed initializing socket, " ++
+                            "unable to resolve host '{s}'",
+                        .{host},
+                    );
+                },
+            }
         };
 
         self.socket = self.stream.?.socket.handle;

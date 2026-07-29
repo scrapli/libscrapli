@@ -140,15 +140,26 @@ pub const Transport = struct {
                 // bin transport doesnt need the timer, since we just pass the timeout value to
                 // to the cli args and let openssh do it, then the rest of the timing out bits
                 // happen in in session auth
-                try self.implementation.bin.open(operation_timeout_ns, host, port, auth_options);
+                try self.implementation.bin.open(
+                    operation_timeout_ns,
+                    host,
+                    port,
+                    auth_options,
+                );
             },
             Kind.telnet => {
-                try self.implementation.telnet.open(start_time, cancel, operation_timeout_ns, host, port);
+                try self.implementation.telnet.open(
+                    cancel,
+                    start_time,
+                    operation_timeout_ns,
+                    host,
+                    port,
+                );
             },
             Kind.ssh2 => {
                 try self.implementation.ssh2.open(
-                    start_time,
                     cancel,
+                    start_time,
                     operation_timeout_ns,
                     host,
                     port,
