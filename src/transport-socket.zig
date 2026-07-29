@@ -59,8 +59,6 @@ pub fn getStream(
 
     const result = try select.await();
 
-    std.debug.print("RESULT > {any}\n", .{result});
-
     while (true) {
         const cancelled_result = select.cancel();
 

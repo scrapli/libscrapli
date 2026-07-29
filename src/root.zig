@@ -18,6 +18,7 @@ pub const logging = @import("logging.zig");
 pub const netconf = @import("netconf.zig");
 pub const netconf_operation = @import("netconf-operation.zig");
 pub const netconf_result = @import("netconf-result.zig");
+pub const once = @import("once.zig");
 pub const queue = @import("queue.zig");
 pub const re = @import("re.zig");
 pub const session = @import("session.zig");
@@ -46,6 +47,7 @@ test {
     _ = ffi_root_netconf;
     _ = netconf;
     _ = netconf_result;
+    _ = once;
     _ = queue;
     _ = re;
     _ = session;

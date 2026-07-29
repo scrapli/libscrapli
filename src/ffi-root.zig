@@ -88,6 +88,7 @@ export fn ls_cli_alloc(
     }
 
     ffi_common.registerSegfaultHandler();
+    ffi_common.initIo();
 
     const allocator = ffi_common.getAllocator();
 
@@ -122,6 +123,7 @@ export fn ls_netconf_alloc(
     }
 
     ffi_common.registerSegfaultHandler();
+    ffi_common.initIo();
 
     const allocator = ffi_common.getAllocator();
 

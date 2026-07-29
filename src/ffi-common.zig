@@ -5,6 +5,7 @@ const builtin = @import("builtin");
 const c = @import("c");
 
 const errors = @import("errors.zig");
+const once = @import("once.zig");
 
 const libscrapli_ffi_debug_mode_env_var = "LIBSCRAPLI_DEBUG";
 
@@ -33,9 +34,28 @@ pub fn getAllocator() std.mem.Allocator {
 }
 
 // this may need to be revisited, but doing it this way there is no requirement for
-// deinit to free anything so this seems safest/most ideal for the ffi side of things
+// deinit to free anything so this seems safest/most ideal for the ffi side of things.
+// also not ethe extra init_io_once and initIo func -- this is because the init_single_threaded
+// has a failing allocator in it and no concurrency enabled which caused the first use of real
+// Io interface (in transport-socket) to fail because obviously it was setup for zero concurrency
+// so... that was bad. so we globally make this thing, then the ffi entrypoints will update it
+// by doing the initIo which will (behind the once) tickle this initializing a compatible (
+// concurrency friendl) io for us.
 // zlinter-disable no_global_vars
 var threaded: std.Io.Threaded = .init_single_threaded;
+
+fn initThreaded() void {
+    threaded = .init(std.heap.c_allocator, .{});
+}
+
+// zlinter-disable no_global_vars
+var init_io_once: once.Once(initThreaded) = .{};
+
+/// Initializes the backing io implementation (see note above `threaded`) - obviously required
+/// before doing ffi things so the alloc funcs will always call this.
+pub fn initIo() void {
+    init_io_once.call();
+}
 
 /// The base io object for ffi ops.
 pub const io = threaded.io();
@@ -44,9 +64,6 @@ pub const io = threaded.io();
 pub const LsOptions = opaque {};
 /// Opaque types for use in ffi handles.
 pub const LsDriver = opaque {};
-
-// zlinter-disable no_global_vars
-var segfault_handler_registered: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 
 /// The handler to attached to segfault signals when in debug mode.
 pub fn segfaultHandler(_: c_int) callconv(.c) void {
@@ -59,17 +76,20 @@ pub fn segfaultHandler(_: c_int) callconv(.c) void {
     std.process.exit(1);
 }
 
-/// Registers the segfault handler if in debug mode and not already registered.
-pub fn registerSegfaultHandler() void {
+fn registerSegfaultHandlerImpl() void {
     if (!isDebugMode()) {
         return;
     }
 
-    if (segfault_handler_registered.swap(true, .acquire)) {
-        return;
-    }
-
     _ = c.signal(c.SIGSEGV, segfaultHandler);
+}
+
+// zlinter-disable no_global_vars
+var register_segfault_handler_once: once.Once(registerSegfaultHandlerImpl) = .{};
+
+/// Registers the segfault handler if in debug mode and not already registered.
+pub fn registerSegfaultHandler() void {
+    register_segfault_handler_once.call();
 }
 
 /// Represents stable error codes for FFI consumers.
