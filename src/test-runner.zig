@@ -34,6 +34,12 @@ var current_test: ?[]const u8 = null;
 pub fn main(init: std.process.Init) !void {
     test_helper.args = init.minimal.args;
 
+    // w/out explicitly setting this the "io_instance" in std.testing.io is currently (pre 0.17.0
+    // release) - undefined so we segfault on some things :) will this change? i dunno, but this
+    // is prolly fine/safe anyway.
+    std.testing.io_instance = .init(std.heap.page_allocator, .{});
+    defer std.testing.io_instance.deinit();
+
     const unit_tests = test_helper.parseCustomFlag(
         "--unit",
         true,

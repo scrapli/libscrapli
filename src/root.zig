@@ -25,6 +25,7 @@ pub const strings = @import("strings.zig");
 pub const test_helper = @import("test-helper.zig");
 pub const transport = @import("transport.zig");
 pub const transport_bin = @import("transport-bin.zig");
+pub const transport_socket = @import("transport-socket.zig");
 pub const transport_ssh2 = @import("transport-ssh2.zig");
 pub const transport_telnet = @import("transport-telnet.zig");
 pub const transport_waiter = @import("transport-waiter.zig");
@@ -50,6 +51,7 @@ test {
     _ = session;
     _ = transport;
     _ = transport_bin;
+    _ = transport_socket;
     _ = transport_ssh2;
     _ = transport_telnet;
     _ = transport_waiter;
