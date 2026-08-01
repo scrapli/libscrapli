@@ -299,47 +299,11 @@ pub const Result = struct {
         if (out.len == 0) return;
 
         var cur: usize = 0;
-        var pending_ws: usize = 0;
 
         for (0.., self.results.items) |idx, result| {
-            const render_result = if (options.normalize_trailing_whitespace)
-                std.mem.trim(u8, result, "\t\n\r")
-            else
-                result;
-
-            for (render_result) |ch| {
-                if (options.normalize_line_feeds and ch == '\r') continue;
-
-                if (options.normalize_trailing_whitespace) {
-                    if (ch == '\n') {
-                        pending_ws = 0;
-
-                        out[cur] = ch;
-                        cur += 1;
-                    } else if (ch == ' ' or ch == '\t') {
-                        pending_ws += 1;
-                    } else {
-                        var i: usize = 0;
-                        while (i < pending_ws) : (i += 1) {
-                            out[cur] = ' ';
-                            cur += 1;
-                        }
-                        pending_ws = 0;
-
-                        out[cur] = ch;
-                        cur += 1;
-                    }
-                } else {
-                    out[cur] = ch;
-                    cur += 1;
-                }
-            }
+            cur = renderResult(result, options, out, cur);
 
             if (idx != self.results.items.len - 1) {
-                if (options.normalize_trailing_whitespace) {
-                    pending_ws = 0;
-                }
-
                 for (options.delimiter) |delimiter_char| {
                     out[cur] = delimiter_char;
                     cur += 1;
@@ -371,50 +335,105 @@ pub const Result = struct {
     }
 };
 
+/// render means do line feed normalization (if set -- \r are removed) and trailing whitespace
+/// normalization (if set) -- no other changes, scrapli shouldnt be messing w/ output from a
+/// device in other situations (barring the ansi/ascii stuff that would already have happened).
+fn renderResult(
+    entry: []const u8,
+    options: GetResultOptions,
+    maybe_out: ?[]u8,
+    start: usize,
+) usize {
+    const trimmed = if (options.normalize_trailing_whitespace)
+        // trim leading newlines since if that exists its probably left over from the preceeding
+        // input/prompt, but as the setting is *trailing whitespace* make sure we are only trimming
+        // whitespace at the *end*
+        std.mem.trimStart(u8, std.mem.trimEnd(u8, entry, " \t\n\r"), "\n\r")
+    else
+        entry;
+
+    var cur = start;
+    var idx: usize = 0;
+
+    while (idx < trimmed.len) {
+        const ch = trimmed[idx];
+
+        if (options.normalize_line_feeds and ch == '\r') {
+            // iterate past \r we are removing them
+            idx += 1;
+
+            continue;
+        }
+
+        if (options.normalize_trailing_whitespace and (ch == ' ' or ch == '\t')) {
+            // cur character is whitespace -- go run up ahead and see when whitespace stops
+            // and move our cursor to that position for the outer loop
+            var run_end = idx;
+
+            while (run_end < trimmed.len) : (run_end += 1) {
+                const run_ch = trimmed[run_end];
+
+                if (run_ch == ' ' or
+                    run_ch == '\t' or
+                    (options.normalize_line_feeds and run_ch == '\r'))
+                {
+                    continue;
+                }
+
+                break;
+            }
+
+            if (run_end == trimmed.len or trimmed[run_end] == '\n') {
+                // end of the line or end of the full result, so we are done checking for whitespace
+                // and can continue the *outer* loop while pushign the idx up past the whitespace we
+                // just ran past; this shouldnt ever get hit since we do the trim at the start of
+                // the func, but... just in case it can stay
+                idx = run_end;
+
+                continue;
+            }
+
+            // wasn't end of line, so write into the out buf (if provided -- it wont have been if
+            // caller is just fetching length), and increment the total size cursor
+            while (idx < run_end) : (idx += 1) {
+                const run_ch = trimmed[idx];
+
+                if (options.normalize_line_feeds and run_ch == '\r') {
+                    continue;
+                }
+
+                if (maybe_out) |out| {
+                    out[cur] = run_ch;
+                }
+
+                cur += 1;
+            }
+
+            continue;
+        }
+
+        if (maybe_out) |out| {
+            out[cur] = ch;
+        }
+
+        cur += 1;
+        idx += 1;
+    }
+
+    return cur;
+}
+
 fn getJoinedLen(
     items: []const []const u8,
     options: GetResultOptions,
 ) usize {
     var len: usize = 0;
 
-    var line_start: usize = 0;
-    var pending_ws: usize = 0;
-
     for (0.., items) |idx, result| {
-        const render_result = if (options.normalize_trailing_whitespace)
-            std.mem.trim(u8, result, "\t\n\r")
-        else
-            result;
-
-        for (render_result) |ch| {
-            if (options.normalize_line_feeds and ch == '\r') continue;
-
-            if (options.normalize_trailing_whitespace) {
-                if (ch == '\n') {
-                    pending_ws = 0;
-                    len += 1;
-                    line_start = len;
-                } else if (ch == ' ' or ch == '\t') {
-                    pending_ws += 1;
-                } else {
-                    len += pending_ws;
-                    pending_ws = 0;
-                    len += 1;
-                }
-            } else {
-                len += 1;
-            }
-        }
+        len = renderResult(result, options, null, len);
 
         if (idx != items.len - 1) {
-            if (options.normalize_trailing_whitespace) {
-                pending_ws = 0;
-            }
-
             len += options.delimiter.len;
-
-            line_start = len;
-            pending_ws = 0;
         }
     }
 
@@ -463,5 +482,89 @@ test "getJoinedLen" {
         const actual = getJoinedLen(case.items, case.options);
 
         try std.testing.expectEqual(case.expected, actual);
+    }
+}
+
+test "getResultPreservesWhitespace" {
+    // this test case was created to ensure that we dont ever remove any kind of whitespace inside
+    // the actual content we get from a device -- thats not something scrapli should do, it should
+    // just present whatever the device gave us. we *do* trim trailing whitespace and we also do
+    // line normalization and stuff but that shouldnt ever mess w/ content from the device we are
+    // talking to.
+    const cases = [_]struct {
+        name: []const u8,
+        entry: []const u8,
+        options: GetResultOptions,
+        expected: []const u8,
+    }{
+        .{
+            .name = "interior tab preserved",
+            .entry = "foo\tbar",
+            .options = .{},
+            .expected = "foo\tbar",
+        },
+        .{
+            .name = "interior mixed whitespace preserved",
+            .entry = "a \t b\r\n",
+            .options = .{},
+            .expected = "a \t b",
+        },
+        .{
+            .name = "tab aligned columns preserved, trailing ws still dropped",
+            .entry = "col1\t\tcol2  end \r\n",
+            .options = .{},
+            .expected = "col1\t\tcol2  end",
+        },
+        .{
+            .name = "cr interleaved in whitespace run is stripped, run preserved",
+            .entry = "a \r\t b",
+            .options = .{},
+            .expected = "a \t b",
+        },
+        .{
+            .name = "eol trailing whitespace dropped per line",
+            .entry = "line1 \t\nline2\t\n",
+            .options = .{},
+            .expected = "line1\nline2",
+        },
+        .{
+            .name = "no normalization passes everything through",
+            .entry = "a \t b\r\n",
+            .options = .{
+                .normalize_line_feeds = false,
+                .normalize_trailing_whitespace = false,
+            },
+            .expected = "a \t b\r\n",
+        },
+    };
+
+    for (cases) |case| {
+        var res = try Result.init(
+            std.testing.allocator,
+            std.testing.io,
+            "localhost",
+            22,
+            operation.Kind.send_input,
+            null,
+        );
+        defer res.deinit();
+
+        try res.record(
+            .{
+                .rets = [2][]const u8{
+                    try std.testing.allocator.dupe(u8, case.entry),
+                    try std.testing.allocator.dupe(u8, case.entry),
+                },
+            },
+        );
+
+        const actual = try res.getResult(std.testing.allocator, case.options);
+        defer std.testing.allocator.free(actual);
+
+        std.testing.expectEqualStrings(case.expected, actual) catch |err| {
+            std.debug.print("getResultPreservesWhitespace case failed: {s}\n", .{case.name});
+
+            return err;
+        };
     }
 }
