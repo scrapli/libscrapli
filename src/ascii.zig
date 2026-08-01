@@ -149,6 +149,10 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
                 else => {},
             }
 
+            // tracks a just seen ESC inside dcs/osc payloads so the 7 bit string
+            // terminator (ESC \) can be recognized
+            var st_pending_esc = false;
+
             while (read_idx < haystack.len) {
                 var done = false;
 
@@ -167,9 +171,21 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
                         done = true;
                     }
                 } else if (is_device_control_sequence) {
-                    // do we need to do things?
+                    // a device control string runs until a string terminator (ST) -- the
+                    // 8 bit form (0x9C) or the 7 bit ESC \ pair. previously this consumed
+                    // to the end of the buffer, eating any real output that followed a
+                    // dcs in the same read!
+                    if (csi_char == 0x9C or (st_pending_esc and csi_char == '\\')) {
+                        is_escaped = false;
+                        is_device_control_sequence = false;
+                        done = true;
+                    }
                 } else if (is_operating_system_control_sequence) {
-                    if (csi_char == control_chars.bel or csi_char == 0x9C) {
+                    // osc accepts BEL as a terminator in addition to both ST forms
+                    if (csi_char == control_chars.bel or
+                        csi_char == 0x9C or
+                        (st_pending_esc and csi_char == '\\'))
+                    {
                         // sequence is complete, continue iterating through haystack at csi_idx
                         is_escaped = false;
                         is_operating_system_control_sequence = false;
@@ -181,6 +197,10 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
                         is_escaped = false;
                         done = true;
                     }
+                }
+
+                if (csi_char == control_chars.esc) {
+                    st_pending_esc = true;
                 }
 
                 read_idx += 1;
@@ -202,7 +222,13 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
             continue;
         }
 
-        // if we've made it this far, hooray! we want this char!
+        // if we've made it this far, hooray! we want this char! note that if we got here
+        // while "escaped" the char must be > 0x7F (everything else was handled above) -- a
+        // byte like that cannot be part of an escape sequence, so treat the dangling ESC
+        // as aborted rather than leaving the flag armed to eat an innocent printable char
+        // somewhere later in the buf
+        is_escaped = false;
+
         haystack[write_idx] = char;
         write_idx += 1;
         read_idx += 1;
@@ -439,6 +465,42 @@ test "stripAsciiAndAnsiControlCharsInPlace" {
             .start_idx = 0,
             .expected_new_size = 179,
             .expected = "Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts. (admin@localhost) Password:  Last login: Thu Dec 26 22:02:14 2024 from 172.20.20.1 eos1> eos1>",
+        },
+
+        .{
+            .name = "escape aborted by multi byte char, later printables unharmed",
+            .haystack = "\x1B\xE2\x9D\xAFfoo",
+            .start_idx = 0,
+            .expected_new_size = 6,
+            .expected = "\xE2\x9D\xAFfoo",
+        },
+        .{
+            .name = "dcs terminated by 7 bit st",
+            .haystack = "\x1BPq#0;2;0;0;0#1;2;100;100;0\x1B\\after",
+            .start_idx = 0,
+            .expected_new_size = 5,
+            .expected = "after",
+        },
+        .{
+            .name = "dcs terminated by 8 bit st",
+            .haystack = "\x1BPjunk\x9Cafter",
+            .start_idx = 0,
+            .expected_new_size = 5,
+            .expected = "after",
+        },
+        .{
+            .name = "unterminated dcs still consumes to end of buf",
+            .haystack = "\x1BPjunk with no st",
+            .start_idx = 0,
+            .expected_new_size = 0,
+            .expected = "",
+        },
+        .{
+            .name = "osc terminated by 7 bit st",
+            .haystack = "\x1B]0;some title\x1B\\prompt$",
+            .start_idx = 0,
+            .expected_new_size = 7,
+            .expected = "prompt$",
         },
     };
 
@@ -1017,6 +1079,10 @@ pub fn stripAnsiiControlSequences(
                 else => {},
             }
 
+            // tracks a just seen ESC inside dcs/osc payloads so the 7 bit string
+            // terminator (ESC \) can be recognized
+            var st_pending_esc = false;
+
             while (haystack_idx < haystack.len) {
                 var done = false;
 
@@ -1035,9 +1101,21 @@ pub fn stripAnsiiControlSequences(
                         done = true;
                     }
                 } else if (is_device_control_sequence) {
-                    // do we need to do things?
+                    // a device control string runs until a string terminator (ST) -- the
+                    // 8 bit form (0x9C) or the 7 bit ESC \ pair. previously this consumed
+                    // to the end of the buffer, eating any real output that followed a
+                    // dcs in the same read!
+                    if (csi_char == 0x9C or (st_pending_esc and csi_char == '\\')) {
+                        is_escaped = false;
+                        is_device_control_sequence = false;
+                        done = true;
+                    }
                 } else if (is_operating_system_control_sequence) {
-                    if (csi_char == control_chars.bel or csi_char == 0x9C) {
+                    // osc accepts BEL as a terminator in addition to both ST forms
+                    if (csi_char == control_chars.bel or
+                        csi_char == 0x9C or
+                        (st_pending_esc and csi_char == '\\'))
+                    {
                         // sequence is complete, continue iterating through haystack at csi_idx
                         is_escaped = false;
                         is_operating_system_control_sequence = false;
@@ -1050,6 +1128,8 @@ pub fn stripAnsiiControlSequences(
                         done = true;
                     }
                 }
+
+                st_pending_esc = csi_char == control_chars.esc;
 
                 haystack_idx += 1;
 
@@ -1071,7 +1151,13 @@ pub fn stripAnsiiControlSequences(
             continue;
         }
 
-        // if we've made it this far, hooray! we want this char!
+        // if we've made it this far, hooray! we want this char! note that if we got here
+        // while "escaped" the char must be > 0x7F (everything else was handled above) -- a
+        // byte like that cannot be part of an escape sequence, so treat the dangling ESC
+        // as aborted rather than leaving the flag armed to eat an innocent printable char
+        // somewhere later in the buf
+        is_escaped = false;
+
         haystack_idx += 1;
 
         processed[processed_idx] = char;
@@ -1233,6 +1319,32 @@ test "stripAnsiiControlSequences" {
             .name = "more eos prompt/login",
             .haystack = "Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts.\x1B\x4D\x1B\x4D\x1B\x4C \x1B\x4D(admin@localhost) Password: \x1B\x4D\x1B\x4C Last login: Thu Dec 26 22:02:14 2024 from 172.20.20.1\x1B\x4D\x1B\x4D\x1B\x4C \x1B\x5B5neos1>\x1B\x4D\x1B\x4C eos1>",
             .expected = "Warning: Permanently added '[localhost]:22022' (ED25519) to the list of known hosts. (admin@localhost) Password:  Last login: Thu Dec 26 22:02:14 2024 from 172.20.20.1 eos1> eos1>",
+        },
+
+        .{
+            .name = "escape aborted by multi byte char, later printables unharmed",
+            .haystack = "\x1B\xE2\x9D\xAFfoo",
+            .expected = "\xE2\x9D\xAFfoo",
+        },
+        .{
+            .name = "dcs terminated by 7 bit st",
+            .haystack = "\x1BPq#0;2;0;0;0#1;2;100;100;0\x1B\\after",
+            .expected = "after",
+        },
+        .{
+            .name = "dcs terminated by 8 bit st",
+            .haystack = "\x1BPjunk\x9Cafter",
+            .expected = "after",
+        },
+        .{
+            .name = "unterminated dcs still consumes to end of buf",
+            .haystack = "\x1BPjunk with no st",
+            .expected = "",
+        },
+        .{
+            .name = "osc terminated by 7 bit st",
+            .haystack = "\x1B]0;some title\x1B\\prompt$",
+            .expected = "prompt$",
         },
     };
 
