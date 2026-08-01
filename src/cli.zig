@@ -887,8 +887,8 @@ pub const Driver = struct {
             try self.session.writeAndReturn(initial_input, false);
         }
 
-        var bufs = bytes.ProcessedBuf.init(allocator);
-        defer bufs.deinit();
+        var bufs = bytes.ProcessedBuf.init();
+        defer bufs.deinit(allocator);
 
         var triggered_callbacks: std.ArrayList([]const u8) = .empty;
         defer triggered_callbacks.deinit(allocator);
@@ -906,7 +906,7 @@ pub const Driver = struct {
         try res.record(
             .{
                 .input = options.initial_input orelse "",
-                .rets = try bufs.toOwnedSlices(),
+                .rets = try bufs.toOwnedSlices(allocator),
                 // this may be the only place we *dont* want to trim whitespace
                 // .trim_processed = false,
             },

@@ -171,29 +171,33 @@ pub fn getBufSearchView(
 
 /// A type that holds the "raw" and "processed" buffers (array list) for scrapli session objects.
 pub const ProcessedBuf = struct {
-    allocator: std.mem.Allocator,
     raw: std.ArrayList(u8),
+    journal: std.ArrayList(u8),
     processed: std.ArrayList(u8),
 
     /// Initialize the ProcessedBuf object.
-    pub fn init(allocator: std.mem.Allocator) ProcessedBuf {
+    pub fn init() ProcessedBuf {
         return ProcessedBuf{
-            .allocator = allocator,
             .raw = .empty,
+            .journal = .empty,
             .processed = .empty,
         };
     }
 
     /// Deinitialize the Processedbuf object.
-    pub fn deinit(self: *ProcessedBuf) void {
-        self.raw.deinit(self.allocator);
-        self.processed.deinit(self.allocator);
+    pub fn deinit(self: *ProcessedBuf, allocator: std.mem.Allocator) void {
+        self.raw.deinit(allocator);
+        self.processed.deinit(allocator);
     }
 
     /// Append the given buf to both raw and processed buffers, trimming asni/ascii chars before
     /// writing to the processed buf.
-    pub fn appendSlice(self: *ProcessedBuf, buf: []u8) !void {
-        try self.raw.appendSlice(self.allocator, buf);
+    pub fn appendSlice(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        buf: []u8,
+    ) !void {
+        try self.raw.appendSlice(allocator, buf);
 
         if (std.mem.find(u8, buf, &[_]u8{ascii.control_chars.esc}) != null) {
             // if ESC in the new buf look at last n of processed buf to replace if
@@ -205,27 +209,34 @@ pub const ProcessedBuf = struct {
                 buf,
                 0,
             );
-            try self.processed.appendSlice(self.allocator, buf[0..n]);
+            try self.processed.appendSlice(allocator, buf[0..n]);
         } else {
-            try self.processed.appendSlice(self.allocator, buf);
+            try self.processed.appendSlice(allocator, buf);
         }
     }
 
     /// Return the "raw" and "processed" buffers, caller owns memory.
-    pub fn toOwnedSlices(self: *ProcessedBuf) ![2][]const u8 {
+    pub fn toOwnedSlices(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+    ) ![2][]const u8 {
         return [2][]const u8{
-            try self.raw.toOwnedSlice(self.allocator),
-            try self.processed.toOwnedSlice(self.allocator),
+            try self.raw.toOwnedSlice(allocator),
+            try self.processed.toOwnedSlice(allocator),
         };
     }
 
     /// Reserve space in both buffers -- intended so that we dont have to grow from 0 when the
     /// session fires up basically.
-    pub fn reserve(self: *ProcessedBuf, n: u64) !void {
+    pub fn reserve(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        n: u64,
+    ) !void {
         const cap: usize = @intCast(n);
 
-        try self.raw.ensureTotalCapacity(self.allocator, cap);
-        try self.processed.ensureTotalCapacity(self.allocator, cap);
+        try self.raw.ensureTotalCapacity(allocator, cap);
+        try self.processed.ensureTotalCapacity(allocator, cap);
     }
 
     /// Clear both the raw and processed bufs -- retain max lets us retain some space in the buffers
@@ -233,11 +244,15 @@ pub const ProcessedBuf = struct {
     /// below the retained max. *But* importantly we have a *max* because if you do for example a
     /// show tech that is huge, we probably dont want to have that amount of memory just always
     /// allocated for us, so we can shrink back down to the max size.
-    pub fn reset(self: *ProcessedBuf, retain_max: u64) !void {
+    pub fn reset(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        retain_max: u64,
+    ) !void {
         const cap: usize = @intCast(retain_max);
 
-        try resetBuf(&self.raw, self.allocator, cap);
-        try resetBuf(&self.processed, self.allocator, cap);
+        try resetBuf(&self.raw, allocator, cap);
+        try resetBuf(&self.processed, allocator, cap);
     }
 
     fn resetBuf(

@@ -267,14 +267,14 @@ pub const Session = struct {
             .read_loop_buf = &[_]u8{},
             .prompt_pattern = prompt_pattern,
             .prompt_excludes = prompt_excludes,
-            .scratch = bytes.ProcessedBuf.init(allocator),
+            .scratch = bytes.ProcessedBuf.init(),
         };
         errdefer s.deinit();
 
         s.read_into_buf = try allocator.alloc(u8, o.read_size);
         s.read_loop_buf = try allocator.alloc(u8, o.read_size);
 
-        try s.scratch.reserve(s.options.scratch_initial_size);
+        try s.scratch.reserve(allocator, s.options.scratch_initial_size);
 
         s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern) orelse
             return errors.wrapCriticalError(
@@ -355,7 +355,7 @@ pub const Session = struct {
 
         self.transport.deinit();
         self.read_queue.deinit();
-        self.scratch.deinit();
+        self.scratch.deinit(self.allocator);
     }
 
     /// Opens the session object, starting the background read thread, and ensuring the underlying
@@ -570,7 +570,7 @@ pub const Session = struct {
         var cur_read_delay_ns: u64 = self.options.read_min_delay_ns;
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         var cur_check_start_idx: usize = 0;
 
@@ -688,7 +688,7 @@ pub const Session = struct {
                 cur_read_delay_ns = self.options.read_min_delay_ns;
             }
 
-            try bufs.appendSlice(buf[0..n]);
+            try bufs.appendSlice(self.allocator, buf[0..n]);
 
             const searchable_buf = bytes.getBufSearchView(
                 bufs.processed.items[cur_check_start_idx..],
@@ -988,7 +988,7 @@ pub const Session = struct {
                 cur_read_delay_ns = self.options.read_min_delay_ns;
             }
 
-            try bufs.appendSlice(buf[0..n]);
+            try bufs.appendSlice(self.allocator, buf[0..n]);
 
             // weve logged "raw" reads in the readloop, now that we have processed something
             // (ProcessedBuf handles ascii filtering on appendSlice) we can show the processed bits
@@ -1054,7 +1054,7 @@ pub const Session = struct {
         self.log.info("session.Session readAny requested", .{});
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
@@ -1082,7 +1082,7 @@ pub const Session = struct {
         try self.writeReturn();
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
@@ -1203,7 +1203,7 @@ pub const Session = struct {
             return;
         }
 
-        try bufs.appendSlice(self.last_consumed_prompt.items);
+        try bufs.appendSlice(self.allocator, self.last_consumed_prompt.items);
         try self.last_consumed_prompt.resize(self.allocator, 0);
     }
 
@@ -1230,7 +1230,7 @@ pub const Session = struct {
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         try self.prependLastConsumedPrompt(bufs);
 
@@ -1339,7 +1339,7 @@ pub const Session = struct {
         };
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         try self.prependLastConsumedPrompt(bufs);
 
