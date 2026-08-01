@@ -282,3 +282,44 @@ pub const ProcessedBuf = struct {
         return [2][]const u8{ raw_copy, processed_copy };
     }
 };
+
+test "ProcessedBuf append journal" {
+    const cases = [_]struct {
+        name: []const u8,
+        in_buf: []const u8,
+        expected_processed: []const u8,
+        expected_journal: []const u8,
+    }{
+        .{
+            .name = "simple, no journal entry",
+            .in_buf = "foo",
+            .expected_processed = "foo",
+            .expected_journal = "",
+        },
+        .{
+            .name = "simple journal entry",
+            .in_buf = "\x1Bxfoo",
+            .expected_processed = "foo",
+            .expected_journal = "",
+        },
+    };
+
+    for (cases) |case| {
+        var pb = ProcessedBuf.init();
+        defer pb.deinit(std.testing.allocator);
+
+        const in_buf = try std.testing.allocator.dupe(u8, case.in_buf);
+        defer std.testing.allocator.free(in_buf);
+
+        const expected_processed = try std.testing.allocator.dupe(u8, case.expected_processed);
+        defer std.testing.allocator.free(expected_processed);
+
+        const expected_journal = try std.testing.allocator.dupe(u8, case.expected_journal);
+        defer std.testing.allocator.free(expected_journal);
+
+        try pb.appendSlice(std.testing.allocator, in_buf);
+
+        try std.testing.expectEqualStrings(expected_processed, pb.processed.items);
+        try std.testing.expectEqualStrings(expected_journal, pb.journal.items);
+    }
+}
