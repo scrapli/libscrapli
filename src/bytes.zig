@@ -196,50 +196,44 @@ pub const ProcessedBuf = struct {
         self.processed.deinit(allocator);
     }
 
-    /// Append the given buf to both raw and processed buffers, trimming asni/ascii chars before
-    /// writing to the processed buf.
+    /// Append the given buf and store a journal of anything we trim/strip (ascii/ansii stuff).
     pub fn appendSlice(
         self: *ProcessedBuf,
         allocator: std.mem.Allocator,
         buf: []u8,
     ) !void {
-        // TODO is this check acceptable?
-        if (std.mem.find(u8, buf, &[_]u8{ascii.control_chars.esc}) != null) {
-            // if ESC in the new buf look at last n of processed buf to replace if
-            // necessary; this *feels* bad like we may miss sequences (if our read gets part
-            // of a sequence, then a subsequent read gets the rest), however this has never
-            // happened in 5+ years of scrapli/scrapligo only checking/cleaning the read buf
-            // so we are going to roll with it and hope :)
-
-            var iter = ascii.AsciiAnsiControlStripIterator{
-                .haystack = buf,
-            };
-
-            while (true) {
-                switch (iter.next()) {
-                    .item => |i| {
-                        // raw buf holds *only* the raw content, the "journal" (index?) thing holds
-                        // where these go to repopulate a full "raw" output
-                        try self.raw.appendSlice(allocator, i.content);
-
-                        try self.raw_journal.append(
-                            allocator,
-                            ProcessedBufRawJournalEntry{
-                                // have to increment the pos + the already processed len so its
-                                // absolute
-                                .pos = i.pos + self.processed.items.len,
-                                .len = i.content.len,
-                            },
-                        );
-                    },
-                    .done => |n| {
-                        try self.processed.appendSlice(allocator, buf[0..n]);
-                        break;
-                    },
-                }
-            }
-        } else {
+        if (!ascii.hasStrippableByte(buf)) {
             try self.processed.appendSlice(allocator, buf);
+
+            return;
+        }
+
+        var iter = ascii.AsciiAnsiControlStripIterator{
+            .haystack = buf,
+        };
+
+        while (true) {
+            switch (iter.next()) {
+                .item => |i| {
+                    // raw buf holds *only* the raw content, the "journal" (index?) thing holds
+                    // where these go to repopulate a full "raw" output
+                    try self.raw.appendSlice(allocator, i.content);
+
+                    try self.raw_journal.append(
+                        allocator,
+                        ProcessedBufRawJournalEntry{
+                            // have to increment the pos + the already processed len so its
+                            // absolute
+                            .pos = i.pos + self.processed.items.len,
+                            .len = i.content.len,
+                        },
+                    );
+                },
+                .done => |n| {
+                    try self.processed.appendSlice(allocator, buf[0..n]);
+                    break;
+                },
+            }
         }
     }
 

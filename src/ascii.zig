@@ -87,6 +87,35 @@ pub const control_chars = struct {
 };
 // zlinter-enable require_doc_comment
 
+// true for any byte the strip state machine might remove -- all C0 controls except the
+// whitespace we keep (tab/lf/vt/cr), plus DEL. ESC too ofc.
+const strippable_byte = blk: {
+    var table: [256]bool = @splat(false);
+
+    for (0..0x20) |i| {
+        table[i] = true;
+    }
+
+    table[control_chars.tab] = false;
+    table[control_chars.lf] = false;
+    table[control_chars.vt] = false;
+    table[control_chars.cr] = false;
+    table[control_chars.del] = true;
+
+    break :blk table;
+};
+
+/// Returns true if we need to process buf w/ the ascii/ansi stripping bits.
+pub fn hasStrippableByte(buf: []const u8) bool {
+    for (buf) |c| {
+        if (strippable_byte[c]) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub const AsciiAnsiControlStripJournalEntry = struct {
     pos: usize = 0,
     content: []const u8,
