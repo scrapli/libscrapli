@@ -243,6 +243,89 @@ pub const ProcessedBuf = struct {
         }
     }
 
+    // trims content off the right side of *processed* -- the stuff that gets trimmed gets put into
+    // the journal though so the full "raw" bits can be reconstructed later.
+    pub fn rightTrimProcessed(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        pos: usize,
+    ) !void {
+        if (pos >= self.processed.items.len) {
+            return;
+        }
+
+        var raw_max_safe_entry_index: usize = 0;
+        var raw_content_offset: usize = 0;
+
+        for (self.raw_journal.items) |j| {
+            if (j.pos >= pos) {
+                break;
+            }
+
+            raw_content_offset += j.len;
+            raw_max_safe_entry_index += 1;
+        }
+
+        const new_final_raw_len = (self.processed.items.len - pos) +
+            (self.raw.items.len - raw_content_offset);
+
+        const new_final_raw = try allocator.alloc(u8, new_final_raw_len);
+        defer allocator.free(new_final_raw);
+
+        // assemble the new final raw entry... so basically we collapse all the raw entries that
+        // we had stored up to the position we are trimming and we collapse that into a single
+        // entry. after that we can add the processed part that is being trimmed back in
+        var new_final_raw_cur: usize = 0;
+        var processed_read_idx: usize = pos;
+        var post_trim_offset: usize = raw_content_offset;
+
+        const post_trim_entries = self.raw_journal.items[raw_max_safe_entry_index..];
+
+        for (post_trim_entries) |e| {
+            const keep_len = e.pos - processed_read_idx;
+
+            @memcpy(
+                new_final_raw[new_final_raw_cur..][0..keep_len],
+                self.processed.items[processed_read_idx..e.pos],
+            );
+            new_final_raw_cur += keep_len;
+            processed_read_idx = e.pos;
+
+            @memcpy(
+                new_final_raw[new_final_raw_cur..][0..e.len],
+                self.raw.items[post_trim_offset..][0..e.len],
+            );
+            new_final_raw_cur += e.len;
+            post_trim_offset += e.len;
+        }
+
+        // remaining processed content after the last folded entry
+        const tail_len = self.processed.items.len - processed_read_idx;
+
+        @memcpy(
+            new_final_raw[new_final_raw_cur..][0..tail_len],
+            self.processed.items[processed_read_idx..],
+        );
+        new_final_raw_cur += tail_len;
+
+        std.debug.assert(new_final_raw_cur == new_final_raw.len);
+
+        // now its safe to cut all three, then stuff the new reshaped final raw entry in (w/ the
+        // corresponding journal)
+        self.processed.shrinkRetainingCapacity(pos);
+        self.raw.shrinkRetainingCapacity(raw_content_offset);
+        self.raw_journal.shrinkRetainingCapacity(raw_max_safe_entry_index);
+
+        try self.raw.appendSlice(allocator, new_final_raw);
+        try self.raw_journal.append(
+            allocator,
+            .{
+                .pos = pos,
+                .len = new_final_raw.len,
+            },
+        );
+    }
+
     /// Return the "raw" and "processed" buffers, caller owns memory.
     pub fn toOwnedSlices(
         self: *ProcessedBuf,
@@ -279,6 +362,7 @@ pub const ProcessedBuf = struct {
         const cap: usize = @intCast(n);
 
         try self.raw.ensureTotalCapacity(allocator, getRawCap(cap));
+        try self.raw_journal.ensureTotalCapacity(allocator, getRawJournalCap(cap));
         try self.processed.ensureTotalCapacity(allocator, cap);
     }
 
@@ -474,77 +558,104 @@ test "ProcessedBuf append journal multiple appends" {
     }
 }
 
-// test "ProcessedBuf demote from" {
-//     const cases = [_]struct {
-//         name: []const u8,
-//         chunks: []const []const u8,
-//         demote_from: usize,
-//         expected_processed: []const u8,
-//         expected_journal: []const u8,
-//     }{
-//         .{
-//             // the "retain_trailing_prompt = false" case: trim the prompt off the end,
-//             // its bytes move into the journal at the trim position
-//             .name = "plain suffix demote",
-//             .chunks = &.{"show version\nrouter#"},
-//             .demote_from = 13,
-//             .expected_processed = "show version\n",
-//             .expected_journal = "\x0D\x00\x00\x00\x00\x00\x00\x00\x07\x00\x00\x00\x00\x00\x00\x00router#",
-//         },
-//         .{
-//             // junk that was already journaled *inside* the demoted range must weave into
-//             // the demoted blob in wire order, and its old record must be gone from the
-//             // journal -- one record total afterwards
-//             .name = "suffix demote weaves existing record in range",
-//             .chunks = &.{ "show version\n", "\x1B[0mrouter#" },
-//             .demote_from = 13,
-//             .expected_processed = "show version\n",
-//             .expected_journal = "\x0D\x00\x00\x00\x00\x00\x00\x00\x0B\x00\x00\x00\x00\x00\x00\x00\x1B[0mrouter#",
-//         },
-//         .{
-//             // records entirely before the demote position are untouched, byte for byte
-//             .name = "record before demote position survives",
-//             .chunks = &.{"f\x1Bxoo"},
-//             .demote_from = 2,
-//             .expected_processed = "fo",
-//             .expected_journal = "\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x1Bx" ++
-//                 "\x02\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00o",
-//         },
-//         .{
-//             // the "retain_input = false" case: demote *everything* -- processed goes
-//             // empty and the journal's single record at pos 0 is the entire raw input
-//             .name = "demote everything",
-//             .chunks = &.{"show ver\x1B[K\n"},
-//             .demote_from = 0,
-//             .expected_processed = "",
-//             .expected_journal = "\x00\x00\x00\x00\x00\x00\x00\x00\x0C\x00\x00\x00\x00\x00\x00\x00show ver\x1B[K\n",
-//         },
-//     };
+test "ProcessedBuf rightTrimFrom" {
+    const cases = [_]struct {
+        name: []const u8,
+        chunks: []const []const u8,
+        trim_from: usize,
+        expected_processed: []const u8,
+        expected_raw: []const u8,
+        expected_journal: []const ProcessedBufRawJournalEntry,
+    }{
+        .{
+            // the "retain_trailing_prompt = false" case: trim the prompt off the end,
+            // that content gets tsuffed into raw w/ a journal entry where to put it when
+            // doing reconstruction.
+            .name = "plain suffix demote",
+            .chunks = &.{"show version\nrouter#"},
+            .trim_from = 13,
+            .expected_processed = "show version\n",
+            .expected_raw = "router#",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{
+                    .pos = 13,
+                    .len = 7,
+                },
+            },
+        },
+        .{
+            // junk that was already journaled *inside* the demoted range must weave into
+            // the demoted blob in wire order, and its old record must be gone from the
+            // journal -- one record total afterwards
+            .name = "suffix demote weaves existing record in range",
+            .chunks = &.{ "show version\n", "\x1B[0mrouter#" },
+            .trim_from = 13,
+            .expected_processed = "show version\n",
+            .expected_raw = "\x1B[0mrouter#",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{
+                    .pos = 13,
+                    .len = 11,
+                },
+            },
+        },
+        .{
+            // records entirely before the demote position are untouched, byte for byte
+            .name = "record before demote position survives",
+            .chunks = &.{"f\x1Bxoo"},
+            .trim_from = 2,
+            .expected_processed = "fo",
+            .expected_raw = "\x1Bxo",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{
+                    .pos = 1,
+                    .len = 2,
+                },
+                .{
+                    .pos = 2,
+                    .len = 1,
+                },
+            },
+        },
+        .{
+            // the "retain_input = false" case: demote *everything* -- processed goes
+            // empty and the journal's single record at pos 0 is the entire raw input
+            .name = "demote everything",
+            .chunks = &.{"show ver\x1B[K\n"},
+            .trim_from = 0,
+            .expected_processed = "",
+            .expected_raw = "show ver\x1B[K\n",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{
+                    .pos = 0,
+                    .len = 12,
+                },
+            },
+        },
+    };
 
-//     for (cases) |case| {
-//         var pb = ProcessedBuf.init();
+    for (cases) |case| {
+        var pb = ProcessedBuf.init();
 
-//         defer pb.deinit(std.testing.allocator);
+        defer pb.deinit(std.testing.allocator);
 
-//         for (case.chunks) |chunk| {
-//             const mut_chunk = try std.testing.allocator.dupe(u8, chunk);
-//             defer std.testing.allocator.free(mut_chunk);
+        for (case.chunks) |chunk| {
+            const mut_chunk = try std.testing.allocator.dupe(u8, chunk);
+            defer std.testing.allocator.free(mut_chunk);
 
-//             try pb.appendSlice(std.testing.allocator, mut_chunk);
-//         }
+            try pb.appendSlice(std.testing.allocator, mut_chunk);
+        }
 
-//         try pb.demoteFrom(std.testing.allocator, case.demote_from);
+        try pb.rightTrimProcessed(std.testing.allocator, case.trim_from);
 
-//         std.testing.expectEqualStrings(case.expected_processed, pb.processed.items) catch |err| {
-//             std.debug.print("demote from case failed (processed): {s}\n", .{case.name});
+        try std.testing.expectEqualStrings(case.expected_processed, pb.processed.items);
+        try std.testing.expectEqualStrings(case.expected_raw, pb.raw.items);
 
-//             return err;
-//         };
+        try std.testing.expectEqual(case.expected_journal.len, pb.raw_journal.items.len);
 
-//         std.testing.expectEqualStrings(case.expected_journal, pb.journal.items) catch |err| {
-//             std.debug.print("demote from case failed (journal): {s}\n", .{case.name});
-
-//             return err;
-//         };
-//     }
-// }
+        for (0.., pb.raw_journal.items) |idx, i| {
+            try std.testing.expectEqual(case.expected_journal[idx].pos, i.pos);
+            try std.testing.expectEqual(case.expected_journal[idx].len, i.len);
+        }
+    }
+}
