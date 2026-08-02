@@ -175,6 +175,10 @@ pub const Driver = struct {
 
     last_error: errors.LastError = .{},
 
+    // same concept as the session object -- a scratch buf (w/ same sizing caps/settings as session)
+    // but this one is just for the 1.1 message processing.
+    parsed_scratch: std.ArrayList(u8),
+
     /// Initialize a netconf object.
     pub fn init(
         allocator: std.mem.Allocator,
@@ -259,7 +263,14 @@ pub const Driver = struct {
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
             .subscriptions_lock = std.Io.Mutex.init,
+            .parsed_scratch = .empty,
         };
+        errdefer allocator.destroy(d);
+
+        try d.parsed_scratch.ensureTotalCapacity(
+            allocator,
+            @intCast(s.options.scratch_initial_size),
+        );
 
         return d;
     }
@@ -317,6 +328,8 @@ pub const Driver = struct {
         self.subscriptions.deinit();
 
         self.options.deinit(self.allocator);
+
+        self.parsed_scratch.deinit(self.allocator);
 
         self.allocator.destroy(self);
     }
@@ -377,14 +390,34 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        try res.record(
-            try self.session.open(
+        {
+            // session.open returns the (journaled raw, processed) pair -- netconf keeps
+            // its historical behavior of holding the fully materialized raw, so
+            // reconstruct it right away (for now?)
+            const open_ret = try self.session.open(
                 allocator,
                 self.host,
                 self.options.port,
                 options.cancel,
-            ),
-        );
+            );
+
+            const open_raw = bytes.reconstructRaw(
+                allocator,
+                open_ret[0],
+                open_ret[1],
+            ) catch |err| {
+                allocator.free(open_ret[0]);
+                allocator.free(open_ret[1]);
+
+                return err;
+            };
+
+            allocator.free(open_ret[0]);
+
+            try res.record(
+                [2][]const u8{ open_raw, open_ret[1] },
+            );
+        }
 
         // SAFETY: undefined now but will always be set before use (below) or we will have
         // errored out.
@@ -961,6 +994,11 @@ pub const Driver = struct {
         var message_buf: std.ArrayList(u8) = .empty;
         defer message_buf.deinit(self.allocator);
 
+        try message_buf.ensureTotalCapacity(
+            self.allocator,
+            @intCast(self.session.options.scratch_initial_size),
+        );
+
         const message_complete_delim = switch (self.negotiated_version) {
             .version_1_0 => delimiter_version_1_0,
             .version_1_1 => delimiter_version_1_1,
@@ -972,9 +1010,6 @@ pub const Driver = struct {
                     errors.ScrapliError.EOF => {
                         // the session read thread has errored/closed and there is nothing remaining
                         // in the read queue, try one last time to parse out any remaining message(s)
-                        const owned_buf = try message_buf.toOwnedSlice(self.allocator);
-                        defer self.allocator.free(owned_buf);
-
                         defer self.log.debug(
                             "netconf.Driver processLoop: message processing thread " ++
                                 " stopping, session read queue drained and read thread stopped",
@@ -986,11 +1021,11 @@ pub const Driver = struct {
                             // didnt even have valid data anyway
                             .version_1_0 => {
                                 // zlinter-disable-next-line no_swallow_error
-                                self.processFoundMessageVersion1_0(owned_buf) catch {};
+                                self.processFoundMessageVersion1_0(message_buf.items) catch {};
                             },
                             .version_1_1 => {
                                 // zlinter-disable-next-line no_swallow_error
-                                self.processFoundMessageVersion1_1(owned_buf) catch {};
+                                self.processFoundMessageVersion1_1(message_buf.items) catch {};
                             },
                         }
 
@@ -1017,16 +1052,24 @@ pub const Driver = struct {
             if (found) {
                 self.log.info("netconf.Driver processLoop: found end of message", .{});
 
-                const owned_buf = try message_buf.toOwnedSlice(self.allocator);
-                defer self.allocator.free(owned_buf);
-
                 switch (self.negotiated_version) {
                     .version_1_0 => {
-                        try self.processFoundMessageVersion1_0(owned_buf);
+                        try self.processFoundMessageVersion1_0(message_buf.items);
                     },
                     .version_1_1 => {
-                        try self.processFoundMessageVersion1_1(owned_buf);
+                        try self.processFoundMessageVersion1_1(message_buf.items);
                     },
+                }
+
+                if (message_buf.capacity > self.session.options.scratch_retain_max) {
+                    message_buf.clearAndFree(self.allocator);
+
+                    try message_buf.ensureTotalCapacity(
+                        self.allocator,
+                        @intCast(self.session.options.scratch_retain_max),
+                    );
+                } else {
+                    message_buf.clearRetainingCapacity();
                 }
             }
         }
@@ -1271,12 +1314,16 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
-        // rather than deal w/ an arraylist and a bunch of allocations, we'll allocate a single
-        // scratch slice sized to the whole input -- the parsed (de-chunked) output is always
-        // smaller than the chunked input, and one scratch serves every message in the buf
-        // (parsed_idx resets per message).
-        const parsed_scratch = try self.allocator.alloc(u8, buf.len);
-        defer self.allocator.free(parsed_scratch);
+        if (self.parsed_scratch.capacity > self.session.options.scratch_retain_max) {
+            self.parsed_scratch.clearAndFree(self.allocator);
+
+            try self.parsed_scratch.ensureTotalCapacity(
+                self.allocator,
+                @intCast(self.session.options.scratch_retain_max),
+            );
+        } else {
+            self.parsed_scratch.clearRetainingCapacity();
+        }
 
         // remaining is re-sliced past each completed message rather than recursing per message
         // like this fn used to -- a drain buffer w/ many coalesced messages would grow the
@@ -1286,7 +1333,6 @@ pub const Driver = struct {
         while (remaining.len > 0) {
             const consumed = try self.processSingleFoundMessageVersion1_1(
                 remaining,
-                parsed_scratch,
             ) orelse return;
 
             remaining = remaining[consumed..];
@@ -1302,12 +1348,13 @@ pub const Driver = struct {
     fn processSingleFoundMessageVersion1_1(
         self: *Driver,
         buf: []const u8,
-        parsed_scratch: []u8,
     ) !?usize {
         const truncated_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
             "parsing netconf message, message truncated";
 
-        var parsed_idx: usize = 0;
+        // each message starts w/ a fresh (but warm) parsed scratch
+        self.parsed_scratch.clearRetainingCapacity();
+
         var iter_idx: usize = 0;
 
         while (iter_idx < buf.len) {
@@ -1346,7 +1393,7 @@ pub const Driver = struct {
 
                 const owned_parsed = self.allocator.dupe(
                     u8,
-                    parsed_scratch[0..parsed_idx],
+                    self.parsed_scratch.items,
                 ) catch |err| {
                     self.allocator.free(owned_raw);
 
@@ -1440,11 +1487,10 @@ pub const Driver = struct {
                 );
             }
 
-            @memcpy(
-                parsed_scratch[parsed_idx .. parsed_idx + chunk_size],
+            try self.parsed_scratch.appendSlice(
+                self.allocator,
                 buf[iter_idx .. iter_idx + chunk_size],
             );
-            parsed_idx += chunk_size;
 
             // finally increment iter_idx past this chunk
             iter_idx += chunk_size;
@@ -3272,6 +3318,47 @@ test "processFoundMessageVersion1_1" {
 
         try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
     }
+}
+
+test "processFoundMessageVersion1_1 handle multi message" {
+    const message_one = "<rpc-reply xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"101\"><one/></rpc-reply>";
+    const message_two = "<rpc-reply xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"102\"><two/></rpc-reply>";
+
+    const input = "\n#" ++
+        std.fmt.comptimePrint("{d}", .{message_one.len}) ++
+        "\n" ++
+        message_one ++
+        "\n##\n" ++
+        "\n#" ++
+        std.fmt.comptimePrint("{d}", .{message_two.len}) ++
+        "\n" ++
+        message_two ++
+        "\n##\n";
+
+    const d = try Driver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        .{},
+    );
+
+    defer d.deinit();
+
+    d.negotiated_version = .version_1_1;
+
+    try d.processFoundMessageVersion1_1(input);
+
+    const first_kv = d.messages.fetchRemove(101);
+    defer d.allocator.free(first_kv.?.value[0]);
+    defer d.allocator.free(first_kv.?.value[1]);
+
+    try std.testing.expectEqualStrings(message_one, first_kv.?.value[1]);
+
+    const second_kv = d.messages.fetchRemove(102);
+    defer d.allocator.free(second_kv.?.value[0]);
+    defer d.allocator.free(second_kv.?.value[1]);
+
+    try std.testing.expectEqualStrings(message_two, second_kv.?.value[1]);
 }
 
 test "processFoundMessageVersion1_1Truncated" {

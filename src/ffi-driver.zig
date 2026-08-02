@@ -626,13 +626,13 @@ pub const FfiDriver = struct {
     pub fn getCliResultLens(
         self: *FfiDriver,
         r: *result.Result,
-    ) ffi_operations.CliOperationSizes {
+    ) !ffi_operations.CliOperationSizes {
         const get_options = self.getCliResultOptions(r);
 
         var sizes = ffi_operations.CliOperationSizes{
             .operation_count = r.results.items.len,
             .operation_input_size = r.getInputLen(get_options),
-            .operation_result_raw_size = r.getResultRawLen(get_options),
+            .operation_result_raw_size = try r.getResultRawLen(get_options),
             .operation_result_size = r.getResultLen(get_options),
             .operation_failure_indicator_size = 0,
         };

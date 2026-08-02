@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const bytes = @import("bytes.zig");
 const operation = @import("cli-operation.zig");
 
 /// Holds options related to how a result should look.
@@ -23,7 +24,7 @@ pub const Result = struct {
 
     inputs: std.ArrayList([]const u8),
 
-    results_raw: std.ArrayList([]const u8),
+    results_raw_journal: std.ArrayList([]const u8),
     results: std.ArrayList([]const u8),
 
     start_time_ns: i128,
@@ -55,7 +56,7 @@ pub const Result = struct {
             .operation_kind = operation_kind,
             .failed_indicators = failed_indicators,
             .inputs = .empty,
-            .results_raw = .empty,
+            .results_raw_journal = .empty,
             .results = .empty,
             .start_time_ns = std.Io.Timestamp.now(io, .real).nanoseconds,
             .splits_ns = .empty,
@@ -70,7 +71,7 @@ pub const Result = struct {
     pub fn deinit(
         self: *Result,
     ) void {
-        for (self.results_raw.items) |result_raw| {
+        for (self.results_raw_journal.items) |result_raw| {
             self.allocator.free(result_raw);
         }
 
@@ -82,7 +83,7 @@ pub const Result = struct {
             self.allocator.free(input);
         }
 
-        self.results_raw.deinit(self.allocator);
+        self.results_raw_journal.deinit(self.allocator);
         self.results.deinit(self.allocator);
         self.inputs.deinit(self.allocator);
         self.splits_ns.deinit(self.allocator);
@@ -100,7 +101,7 @@ pub const Result = struct {
     ) !void {
         try self.splits_ns.append(self.allocator, std.Io.Timestamp.now(self.io, .real).nanoseconds);
         try self.inputs.append(self.allocator, try self.allocator.dupe(u8, data.input));
-        try self.results_raw.append(self.allocator, data.rets[0]);
+        try self.results_raw_journal.append(self.allocator, data.rets[0]);
 
         try self.results.append(self.allocator, data.rets[1]);
 
@@ -129,10 +130,10 @@ pub const Result = struct {
         self: *Result,
         res: *Result,
     ) !void {
-        for (0.., res.results_raw.items) |idx, _| {
+        for (0.., res.results_raw_journal.items) |idx, _| {
             try self.splits_ns.append(self.allocator, res.splits_ns.items[idx]);
             try self.inputs.append(self.allocator, res.inputs.items[idx]);
-            try self.results_raw.append(self.allocator, res.results_raw.items[idx]);
+            try self.results_raw_journal.append(self.allocator, res.results_raw_journal.items[idx]);
             try self.results.append(self.allocator, res.results.items[idx]);
 
             if (!self.result_failure_indicated and res.result_failure_indicated) {
@@ -142,11 +143,11 @@ pub const Result = struct {
         }
 
         res.inputs.clearRetainingCapacity();
-        res.results_raw.clearRetainingCapacity();
+        res.results_raw_journal.clearRetainingCapacity();
         res.results.clearRetainingCapacity();
         res.splits_ns.clearRetainingCapacity();
 
-        res.results_raw.deinit(self.allocator);
+        res.results_raw_journal.deinit(self.allocator);
         res.results.deinit(self.allocator);
         res.inputs.deinit(self.allocator);
         res.splits_ns.deinit(self.allocator);
@@ -213,13 +214,18 @@ pub const Result = struct {
     pub fn getResultRawLen(
         self: *Result,
         options: GetResultOptions,
-    ) usize {
+    ) !usize {
         var out_size: usize = 0;
 
-        for (0.., self.results_raw.items) |idx, result_raw| {
-            out_size += result_raw.len;
+        for (0.., self.results_raw_journal.items) |idx, result_raw_journal| {
+            // results_raw_journal holds each entry's *journaled* raw (see bytes.zig) -- the size
+            // we report would be the full size of the "reconstructed" raw output.
+            out_size += try bytes.reconstructedRawLen(
+                result_raw_journal,
+                self.results.items[idx].len,
+            );
 
-            if (idx != self.results_raw.items.len - 1) {
+            if (idx != self.results_raw_journal.items.len - 1) {
                 // not last result, add spacing for the delimiter
                 out_size += options.delimiter.len;
             }
@@ -229,6 +235,8 @@ pub const Result = struct {
     }
 
     /// Returns all raw results joined on a options.delim string, caller owns joined string.
+    /// Note that this *reconstructs* the raw output from each entry's (journaled raw,
+    /// processed) pair -- raw is never retained anywhere, only rebuilt on demand.
     pub fn getResultRaw(
         self: *Result,
         allocator: std.mem.Allocator,
@@ -236,25 +244,15 @@ pub const Result = struct {
     ) ![]const u8 {
         const out = try allocator.alloc(
             u8,
-            self.getResultRawLen(
+            try self.getResultRawLen(
                 .{
                     .delimiter = options.delimiter,
                 },
             ),
         );
+        errdefer allocator.free(out);
 
-        var cur: usize = 0;
-        for (0.., self.results_raw.items) |idx, result_raw| {
-            @memcpy(out[cur .. cur + result_raw.len], result_raw);
-            cur += result_raw.len;
-
-            if (idx != self.results_raw.items.len - 1) {
-                for (options.delimiter) |delimiter_char| {
-                    out[cur] = delimiter_char;
-                    cur += 1;
-                }
-            }
-        }
+        try self.getResultRawPreAllocated(out, options);
 
         return out;
     }
@@ -314,6 +312,7 @@ pub const Result = struct {
 
     /// Returns all raw results joined on options.delim string, but expects user to have already
     /// allocated buf to the appropriate size (hint: use getResultRawLen w/ the same options).
+    /// Reconstructs each entry's raw from its (journaled raw, processed) pair.
     pub fn getResultRawPreAllocated(
         self: *Result,
         out: []u8,
@@ -321,11 +320,18 @@ pub const Result = struct {
     ) !void {
         var cur: usize = 0;
 
-        for (0.., self.results_raw.items) |idx, result_raw| {
-            @memcpy(out[cur .. cur + result_raw.len], result_raw);
-            cur += result_raw.len;
+        for (0.., self.results_raw_journal.items) |idx, result_raw_journal| {
+            const entry_raw = try bytes.reconstructRaw(
+                self.allocator,
+                result_raw_journal,
+                self.results.items[idx],
+            );
+            defer self.allocator.free(entry_raw);
 
-            if (idx != self.results_raw.items.len - 1) {
+            @memcpy(out[cur..][0..entry_raw.len], entry_raw);
+            cur += entry_raw.len;
+
+            if (idx != self.results_raw_journal.items.len - 1) {
                 for (options.delimiter) |delimiter_char| {
                     out[cur] = delimiter_char;
                     cur += 1;
