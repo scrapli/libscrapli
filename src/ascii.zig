@@ -87,6 +87,233 @@ pub const control_chars = struct {
 };
 // zlinter-enable require_doc_comment
 
+pub const AsciiAnsiControlStripJournalEntry = struct {
+    pos: usize = 0,
+    content: []const u8,
+
+    pub fn encodeToJournalEntry(
+        self: AsciiAnsiControlStripJournalEntry,
+        buf: []u8,
+        reencode_start_pos: usize,
+    ) void {
+        std.mem.writeInt(
+            u64,
+            buf[0..][0..8],
+            @intCast(self.pos + reencode_start_pos),
+            .little,
+        );
+
+        std.mem.writeInt(
+            u64,
+            buf[8..][0..8],
+            @intCast(self.content.len),
+            .little,
+        );
+
+        @memcpy(
+            buf[16..][0..self.content.len],
+            self.content,
+        );
+    }
+};
+
+pub const AsciiAnsiControlStripIteratorNext = union(enum) {
+    item: AsciiAnsiControlStripJournalEntry,
+    done: usize,
+};
+
+pub const AsciiAnsiControlStripIterator = struct {
+    haystack: []u8,
+
+    read_idx: usize = 0,
+    write_idx: usize = 0,
+
+    is_escaped: bool = false,
+
+    pub fn next(
+        self: *AsciiAnsiControlStripIterator,
+    ) AsciiAnsiControlStripIteratorNext {
+        var is_control_sequence = false;
+        var is_device_control_sequence = false;
+        var is_operating_system_control_sequence = false;
+
+        var deleting_start_idx: ?usize = null;
+
+        while (self.read_idx < self.haystack.len) {
+            const char = self.haystack[self.read_idx];
+
+            switch (char) {
+                control_chars.esc => {
+                    if (deleting_start_idx == null) {
+                        deleting_start_idx = self.read_idx;
+                    }
+
+                    self.is_escaped = true;
+                    self.read_idx += 1;
+                    continue;
+                },
+                control_chars.tab, control_chars.lf, control_chars.vt, control_chars.cr => {
+                    // Keep non-display chars we want to preserve.
+                    if (deleting_start_idx) |start| {
+                        return .{
+                            .item = .{
+                                .pos = self.write_idx,
+                                .content = self.haystack[start..self.read_idx],
+                            },
+                        };
+                    }
+
+                    self.haystack[self.write_idx] = char;
+
+                    self.write_idx += 1;
+                    self.read_idx += 1;
+                    continue;
+                },
+                else => {},
+            }
+
+            if ((0x00 <= char and char <= 0x1F) or char == control_chars.del) {
+                // all single byte control codes (minus escape since we care about that one
+                // differently) also note that 0x00 -> 0x1F was specified then DEL (0x7F appened
+                // for some reason) and newlines and carriage returns fall in this range which is
+                // why they are handled above. could put this in the switch but a little nicer this
+                // way than having multiple ranges to work around LF/CR in the switch (cant have
+                // dup cases)
+                if (deleting_start_idx == null) {
+                    deleting_start_idx = self.read_idx;
+                }
+
+                self.read_idx += 1;
+                continue;
+            }
+
+            if (self.is_escaped and (char == control_chars.control_sequence_introducer or
+                char == control_chars.control_sequence_introducer_device or
+                char == control_chars.control_sequence_introducer_operating_system))
+            {
+                // increment past the csi char
+                self.read_idx += 1;
+
+                switch (char) {
+                    control_chars.control_sequence_introducer => {
+                        is_control_sequence = true;
+                    },
+                    control_chars.control_sequence_introducer_device => {
+                        is_device_control_sequence = true;
+                    },
+                    control_chars.control_sequence_introducer_operating_system => {
+                        is_operating_system_control_sequence = true;
+                    },
+                    else => {},
+                }
+
+                // tracks a just seen ESC inside dcs/osc payloads so the 7 bit string
+                // terminator (ESC \) can be recognized
+                var st_pending_esc = false;
+
+                while (self.read_idx < self.haystack.len) {
+                    var done = false;
+
+                    const csi_char = self.haystack[self.read_idx];
+
+                    if (is_control_sequence) {
+                        if (0x30 <= csi_char and csi_char <= 0x3F) {
+                            // nothing to do, this is a "parameter byte" we dont want it
+                        } else if (0x20 <= csi_char and csi_char <= 0x2F) {
+                            // still nothing to do, "intermediate byte", we also dont want it
+                        }
+                        if (0x40 <= csi_char and csi_char <= 0x7E) {
+                            // sequence is complete, continue iterating through haystack at csi_idx
+                            self.is_escaped = false;
+                            is_control_sequence = false;
+                            done = true;
+                        }
+                    } else if (is_device_control_sequence) {
+                        // a device control string runs until a string terminator (ST) -- the
+                        // 8 bit form (0x9C) or the 7 bit ESC \ pair. previously this consumed
+                        // to the end of the buffer, eating any real output that followed a
+                        // dcs in the same read!
+                        if (csi_char == 0x9C or (st_pending_esc and csi_char == '\\')) {
+                            self.is_escaped = false;
+                            is_device_control_sequence = false;
+                            done = true;
+                        }
+                    } else if (is_operating_system_control_sequence) {
+                        // osc accepts BEL as a terminator in addition to both ST forms
+                        if (csi_char == control_chars.bel or
+                            csi_char == 0x9C or
+                            (st_pending_esc and csi_char == '\\'))
+                        {
+                            // sequence is complete, continue iterating through haystack at csi_idx
+                            self.is_escaped = false;
+                            is_operating_system_control_sequence = false;
+                            done = true;
+                        }
+                    } else {
+                        if (0x40 <= csi_char and csi_char <= 0x7E) {
+                            // sequence is complete, continue iterating through haystack at csi_idx
+                            self.is_escaped = false;
+                            done = true;
+                        }
+                    }
+
+                    st_pending_esc = csi_char == control_chars.esc;
+
+                    self.read_idx += 1;
+
+                    if (done) {
+                        break;
+                    }
+                }
+
+                continue;
+            }
+
+            // after checking for the csi/ocs/dcs bits we can check for single char control sequences
+            if (self.is_escaped and (0x20 < char and char < 0x7F)) {
+                // standard one byte escape sequence, we don't really care about the
+                // specific sequence, we just want to get rid of those bytes :)
+                self.is_escaped = false;
+                self.read_idx += 1;
+
+                continue;
+            }
+
+            // if we've made it this far, hooray! we want this char! note that if we got here
+            // while "escaped" the char must be > 0x7F (everything else was handled above) -- a
+            // byte like that cannot be part of an escape sequence, so treat the dangling ESC
+            // as aborted rather than leaving the flag armed to eat an innocent printable char
+            // somewhere later in the buf
+            self.is_escaped = false;
+
+            if (deleting_start_idx) |start| {
+                return .{
+                    .item = .{
+                        .pos = self.write_idx,
+                        .content = self.haystack[start..self.read_idx],
+                    },
+                };
+            }
+
+            self.haystack[self.write_idx] = char;
+
+            self.write_idx += 1;
+            self.read_idx += 1;
+        }
+
+        if (deleting_start_idx) |start| {
+            return .{
+                .item = .{
+                    .pos = self.write_idx,
+                    .content = self.haystack[start..self.read_idx],
+                },
+            };
+        }
+
+        return .{ .done = self.write_idx };
+    }
+};
+
 /// Strips ascii and ansi chars in place in the haystack.
 pub fn stripAsciiAndAnsiControlCharsInPlace(
     haystack: []u8,
@@ -199,9 +426,7 @@ pub fn stripAsciiAndAnsiControlCharsInPlace(
                     }
                 }
 
-                if (csi_char == control_chars.esc) {
-                    st_pending_esc = true;
-                }
+                st_pending_esc = csi_char == control_chars.esc;
 
                 read_idx += 1;
 

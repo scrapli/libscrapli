@@ -169,17 +169,22 @@ pub fn getBufSearchView(
     return buf[buf.len - depth ..];
 }
 
+const ProcessedBufRawJournalEntry = struct {
+    pos: usize,
+    len: usize,
+};
+
 /// A type that holds the "raw" and "processed" buffers (array list) for scrapli session objects.
 pub const ProcessedBuf = struct {
     raw: std.ArrayList(u8),
-    journal: std.ArrayList(u8),
+    raw_journal: std.ArrayList(ProcessedBufRawJournalEntry),
     processed: std.ArrayList(u8),
 
     /// Initialize the ProcessedBuf object.
     pub fn init() ProcessedBuf {
         return ProcessedBuf{
             .raw = .empty,
-            .journal = .empty,
+            .raw_journal = .empty,
             .processed = .empty,
         };
     }
@@ -187,6 +192,7 @@ pub const ProcessedBuf = struct {
     /// Deinitialize the Processedbuf object.
     pub fn deinit(self: *ProcessedBuf, allocator: std.mem.Allocator) void {
         self.raw.deinit(allocator);
+        self.raw_journal.deinit(allocator);
         self.processed.deinit(allocator);
     }
 
@@ -197,19 +203,41 @@ pub const ProcessedBuf = struct {
         allocator: std.mem.Allocator,
         buf: []u8,
     ) !void {
-        try self.raw.appendSlice(allocator, buf);
-
+        // TODO is this check acceptable?
         if (std.mem.find(u8, buf, &[_]u8{ascii.control_chars.esc}) != null) {
             // if ESC in the new buf look at last n of processed buf to replace if
             // necessary; this *feels* bad like we may miss sequences (if our read gets part
             // of a sequence, then a subsequent read gets the rest), however this has never
             // happened in 5+ years of scrapli/scrapligo only checking/cleaning the read buf
             // so we are going to roll with it and hope :)
-            const n = ascii.stripAsciiAndAnsiControlCharsInPlace(
-                buf,
-                0,
-            );
-            try self.processed.appendSlice(allocator, buf[0..n]);
+
+            var iter = ascii.AsciiAnsiControlStripIterator{
+                .haystack = buf,
+            };
+
+            while (true) {
+                switch (iter.next()) {
+                    .item => |i| {
+                        // raw buf holds *only* the raw content, the "journal" (index?) thing holds
+                        // where these go to repopulate a full "raw" output
+                        try self.raw.appendSlice(allocator, i.content);
+
+                        try self.raw_journal.append(
+                            allocator,
+                            ProcessedBufRawJournalEntry{
+                                // have to increment the pos + the already processed len so its
+                                // absolute
+                                .pos = i.pos + self.processed.items.len,
+                                .len = i.content.len,
+                            },
+                        );
+                    },
+                    .done => |n| {
+                        try self.processed.appendSlice(allocator, buf[0..n]);
+                        break;
+                    },
+                }
+            }
         } else {
             try self.processed.appendSlice(allocator, buf);
         }
@@ -226,6 +254,21 @@ pub const ProcessedBuf = struct {
         };
     }
 
+    fn getRawCap(n: usize) usize {
+        // raw is 1/100th the size users request for "scratch" processed buf since raw only holds
+        // things that we woulda stripped out of the processed buf
+        return @divTrunc(n, 100);
+    }
+
+    fn getRawJournalCap(n: usize) usize {
+        // raw *journal* is the index/journal of where things in raw go when rehydrating raw content
+        // so this is even smaller since this is not *bytes* but indicies -- so w/ default numbers
+        // its like 32_768 for scatch, then raw is 1/100 of that, then we will do half 1/10th that
+        // again which gives us ~33 but obviously scaled/adjusted if/when users tweak the scrach
+        // capacity.
+        return @divTrunc(getRawCap(n), 10);
+    }
+
     /// Reserve space in both buffers -- intended so that we dont have to grow from 0 when the
     /// session fires up basically.
     pub fn reserve(
@@ -235,7 +278,7 @@ pub const ProcessedBuf = struct {
     ) !void {
         const cap: usize = @intCast(n);
 
-        try self.raw.ensureTotalCapacity(allocator, cap);
+        try self.raw.ensureTotalCapacity(allocator, getRawCap(cap));
         try self.processed.ensureTotalCapacity(allocator, cap);
     }
 
@@ -251,12 +294,31 @@ pub const ProcessedBuf = struct {
     ) !void {
         const cap: usize = @intCast(retain_max);
 
-        try resetBuf(&self.raw, allocator, cap);
-        try resetBuf(&self.processed, allocator, cap);
+        try resetBuf(
+            u8,
+            &self.raw,
+            allocator,
+            getRawCap(cap),
+        );
+
+        try resetBuf(
+            ProcessedBufRawJournalEntry,
+            &self.raw_journal,
+            allocator,
+            getRawJournalCap(cap),
+        );
+
+        try resetBuf(
+            u8,
+            &self.processed,
+            allocator,
+            cap,
+        );
     }
 
     fn resetBuf(
-        list: *std.ArrayList(u8),
+        comptime T: type,
+        list: *std.ArrayList(T),
         allocator: std.mem.Allocator,
         retain_max: usize,
     ) !void {
@@ -288,24 +350,57 @@ test "ProcessedBuf append journal" {
         name: []const u8,
         in_buf: []const u8,
         expected_processed: []const u8,
-        expected_journal: []const u8,
+        expected_raw: []const u8,
+        expected_journal: []const ProcessedBufRawJournalEntry,
     }{
         .{
             .name = "simple, no journal entry",
             .in_buf = "foo",
             .expected_processed = "foo",
-            .expected_journal = "",
+            .expected_raw = "",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{},
         },
         .{
-            .name = "simple journal entry",
+            .name = "simple journal entry remove at start",
             .in_buf = "\x1Bxfoo",
             .expected_processed = "foo",
-            .expected_journal = "",
+            .expected_raw = "\x1Bx",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{
+                    .pos = 0,
+                    .len = 2,
+                },
+            },
+        },
+        .{
+            .name = "simple journal entry remove at mid",
+            .in_buf = "f\x1Bxoo",
+            .expected_processed = "foo",
+            .expected_raw = "\x1Bx",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{
+                    .pos = 1,
+                    .len = 2,
+                },
+            },
+        },
+        .{
+            .name = "simple journal entry remove at end",
+            .in_buf = "foo\x1Bx",
+            .expected_processed = "foo",
+            .expected_raw = "\x1Bx",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{
+                    .pos = 3,
+                    .len = 2,
+                },
+            },
         },
     };
 
     for (cases) |case| {
         var pb = ProcessedBuf.init();
+
         defer pb.deinit(std.testing.allocator);
 
         const in_buf = try std.testing.allocator.dupe(u8, case.in_buf);
@@ -314,12 +409,142 @@ test "ProcessedBuf append journal" {
         const expected_processed = try std.testing.allocator.dupe(u8, case.expected_processed);
         defer std.testing.allocator.free(expected_processed);
 
-        const expected_journal = try std.testing.allocator.dupe(u8, case.expected_journal);
-        defer std.testing.allocator.free(expected_journal);
+        const expected_raw = try std.testing.allocator.dupe(u8, case.expected_raw);
+        defer std.testing.allocator.free(expected_raw);
 
         try pb.appendSlice(std.testing.allocator, in_buf);
 
         try std.testing.expectEqualStrings(expected_processed, pb.processed.items);
-        try std.testing.expectEqualStrings(expected_journal, pb.journal.items);
+        try std.testing.expectEqualStrings(expected_raw, pb.raw.items);
+
+        try std.testing.expectEqual(case.expected_journal.len, pb.raw_journal.items.len);
+
+        for (0.., pb.raw_journal.items) |idx, i| {
+            try std.testing.expectEqual(case.expected_journal[idx].pos, i.pos);
+            try std.testing.expectEqual(case.expected_journal[idx].len, i.len);
+        }
     }
 }
+
+test "ProcessedBuf append journal multiple appends" {
+    // positions in the journal are relative to the *whole* processed buffer, not the
+    // chunk being appended -- this tests that since we have some non journaled chunks
+    // preceeding journaled chunks so we gotta make sure the journal positions land where we
+    // expect for proper reconstruction.
+    var pb = ProcessedBuf.init();
+
+    defer pb.deinit(std.testing.allocator);
+
+    const chunk_one = try std.testing.allocator.dupe(u8, "foo");
+    defer std.testing.allocator.free(chunk_one);
+
+    const chunk_two = try std.testing.allocator.dupe(u8, "\x1Bxbar");
+    defer std.testing.allocator.free(chunk_two);
+
+    const chunk_three = try std.testing.allocator.dupe(u8, "\x1B[0mbaz");
+    defer std.testing.allocator.free(chunk_three);
+
+    try pb.appendSlice(std.testing.allocator, chunk_one);
+    try pb.appendSlice(std.testing.allocator, chunk_two);
+    try pb.appendSlice(std.testing.allocator, chunk_three);
+
+    try std.testing.expectEqualStrings("foobarbaz", pb.processed.items);
+
+    // two records: "\x1Bx" removed at processed pos 3, "\x1B[0m" removed at processed
+    // pos 6
+    const expected_raw = "\x1Bx\x1B[0m";
+    const expected_journal = &[_]ProcessedBufRawJournalEntry{
+        .{
+            .len = 2,
+            .pos = 3,
+        },
+        .{
+            .len = 4,
+            .pos = 6,
+        },
+    };
+
+    try std.testing.expectEqualStrings(expected_raw, pb.raw.items);
+
+    try std.testing.expectEqual(expected_journal.len, pb.raw_journal.items.len);
+
+    for (0.., pb.raw_journal.items) |idx, i| {
+        try std.testing.expectEqual(expected_journal[idx].pos, i.pos);
+        try std.testing.expectEqual(expected_journal[idx].len, i.len);
+    }
+}
+
+// test "ProcessedBuf demote from" {
+//     const cases = [_]struct {
+//         name: []const u8,
+//         chunks: []const []const u8,
+//         demote_from: usize,
+//         expected_processed: []const u8,
+//         expected_journal: []const u8,
+//     }{
+//         .{
+//             // the "retain_trailing_prompt = false" case: trim the prompt off the end,
+//             // its bytes move into the journal at the trim position
+//             .name = "plain suffix demote",
+//             .chunks = &.{"show version\nrouter#"},
+//             .demote_from = 13,
+//             .expected_processed = "show version\n",
+//             .expected_journal = "\x0D\x00\x00\x00\x00\x00\x00\x00\x07\x00\x00\x00\x00\x00\x00\x00router#",
+//         },
+//         .{
+//             // junk that was already journaled *inside* the demoted range must weave into
+//             // the demoted blob in wire order, and its old record must be gone from the
+//             // journal -- one record total afterwards
+//             .name = "suffix demote weaves existing record in range",
+//             .chunks = &.{ "show version\n", "\x1B[0mrouter#" },
+//             .demote_from = 13,
+//             .expected_processed = "show version\n",
+//             .expected_journal = "\x0D\x00\x00\x00\x00\x00\x00\x00\x0B\x00\x00\x00\x00\x00\x00\x00\x1B[0mrouter#",
+//         },
+//         .{
+//             // records entirely before the demote position are untouched, byte for byte
+//             .name = "record before demote position survives",
+//             .chunks = &.{"f\x1Bxoo"},
+//             .demote_from = 2,
+//             .expected_processed = "fo",
+//             .expected_journal = "\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x1Bx" ++
+//                 "\x02\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00o",
+//         },
+//         .{
+//             // the "retain_input = false" case: demote *everything* -- processed goes
+//             // empty and the journal's single record at pos 0 is the entire raw input
+//             .name = "demote everything",
+//             .chunks = &.{"show ver\x1B[K\n"},
+//             .demote_from = 0,
+//             .expected_processed = "",
+//             .expected_journal = "\x00\x00\x00\x00\x00\x00\x00\x00\x0C\x00\x00\x00\x00\x00\x00\x00show ver\x1B[K\n",
+//         },
+//     };
+
+//     for (cases) |case| {
+//         var pb = ProcessedBuf.init();
+
+//         defer pb.deinit(std.testing.allocator);
+
+//         for (case.chunks) |chunk| {
+//             const mut_chunk = try std.testing.allocator.dupe(u8, chunk);
+//             defer std.testing.allocator.free(mut_chunk);
+
+//             try pb.appendSlice(std.testing.allocator, mut_chunk);
+//         }
+
+//         try pb.demoteFrom(std.testing.allocator, case.demote_from);
+
+//         std.testing.expectEqualStrings(case.expected_processed, pb.processed.items) catch |err| {
+//             std.debug.print("demote from case failed (processed): {s}\n", .{case.name});
+
+//             return err;
+//         };
+
+//         std.testing.expectEqualStrings(case.expected_journal, pb.journal.items) catch |err| {
+//             std.debug.print("demote from case failed (journal): {s}\n", .{case.name});
+
+//             return err;
+//         };
+//     }
+// }
