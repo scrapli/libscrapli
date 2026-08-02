@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const ascii = @import("ascii.zig");
+const errors = @import("errors.zig");
 
 /// A string that is used to delimit multiple substrings -- used in a few places for passing things
 /// via ffi to not have to deal w/ c arrays and such
@@ -458,16 +459,16 @@ pub const ProcessedBuf = struct {
         list.clearRetainingCapacity();
     }
 
-    /// Return owned copies of the "raw" and "processed" buffers (caller owns the returned memory)
-    /// without consuming this ProcessedBuf, so the (almost certainly) Session can continue using
-    /// this object..
+    /// Return owned copies of the (journaled) "raw" and "processed" buffers (caller owns the
+    /// returned memory) without consuming this ProcessedBuf, so the (almost certainly) Session
+    /// can continue using this object..
     pub fn dupeOwnedSlices(self: *ProcessedBuf, allocator: std.mem.Allocator) ![2][]const u8 {
-        const raw_copy = try allocator.dupe(u8, self.raw.items);
-        errdefer allocator.free(raw_copy);
+        const journaled_raw = try self.rawToJournaledOwnedSlice(allocator);
+        errdefer allocator.free(journaled_raw);
 
         const processed_copy = try allocator.dupe(u8, self.processed.items);
 
-        return [2][]const u8{ raw_copy, processed_copy };
+        return [2][]const u8{ journaled_raw, processed_copy };
     }
 };
 
@@ -824,6 +825,40 @@ test "reconstructRaw round trip" {
     }
 }
 
+/// Returns the size of the raw output that reconstructRaw will produce for the given
+/// (journaled) raw and processed pair -- used for sizing buffers for ffi bits to know how big of
+/// a string to pre allocate.
+pub fn reconstructedRawLen(
+    raw_journal: []const u8,
+    processed_len: usize,
+) !usize {
+    var out_len: usize = processed_len;
+
+    var idx: usize = 0;
+
+    while (idx < raw_journal.len) {
+        if (idx + journal_entry_header_len > raw_journal.len) {
+            return errors.ScrapliError.IndexError;
+        }
+
+        const len = std.mem.readInt(
+            u64,
+            raw_journal[idx + journal_entry_header_element_len ..][0..8],
+            .little,
+        );
+
+        if (len > raw_journal.len - idx - journal_entry_header_len) {
+            return errors.ScrapliError.IndexError;
+        }
+
+        idx += journal_entry_header_len + len;
+
+        out_len += len;
+    }
+
+    return out_len;
+}
+
 pub fn reconstructRaw(
     allocator: std.mem.Allocator,
     raw_journal: []const u8,
@@ -833,37 +868,11 @@ pub fn reconstructRaw(
         return try allocator.dupe(u8, processed);
     }
 
-    var out_len: usize = 0;
-
-    var idx: usize = 0;
-
-    while (true) {
-        if (idx >= raw_journal.len) {
-            break;
-        }
-
-        if (idx + journal_entry_header_len > raw_journal.len) {
-            return error.CorruptJournal;
-        }
-
-        const len = std.mem.readInt(
-            u64,
-            raw_journal[idx +
-                journal_entry_header_element_len .. idx +
-                journal_entry_header_len][0..journal_entry_header_element_len],
-            .little,
-        );
-
-        if (idx + journal_entry_header_len + len > raw_journal.len) {
-            return error.CorruptJournal;
-        }
-
-        idx += journal_entry_header_len + len;
-
-        out_len += len;
-    }
-
-    const out = try allocator.alloc(u8, out_len + processed.len);
+    const out = try allocator.alloc(
+        u8,
+        try reconstructedRawLen(raw_journal, processed.len),
+    );
+    errdefer allocator.free(out);
 
     var raw_idx: usize = 0;
     var processed_idx: usize = 0;
@@ -875,6 +884,12 @@ pub fn reconstructRaw(
             raw_journal[raw_idx..][0..8],
             .little,
         );
+
+        if (pos < processed_idx or pos > processed.len) {
+            // out of order or out of range entry -- this really really shouldnt be happening but
+            // ya know...
+            return errors.ScrapliError.IndexError;
+        }
 
         const len = std.mem.readInt(
             u64,

@@ -20,6 +20,9 @@ pub const ScrapliError = error{
     Session,
     Transport,
     Operation,
+
+    // for bounds checking mostly around the raw reconstruction bits
+    IndexError,
 };
 
 /// Wraps a critical error with additional logging info.
