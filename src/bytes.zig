@@ -169,6 +169,10 @@ pub fn getBufSearchView(
     return buf[buf.len - depth ..];
 }
 
+/// overhead for serializing journal entry pos+len as u64 little endian.
+const journal_entry_header_len: usize = 16;
+const journal_entry_header_element_len: usize = 8;
+
 const ProcessedBufRawJournalEntry = struct {
     pos: usize,
     len: usize,
@@ -320,15 +324,59 @@ pub const ProcessedBuf = struct {
         );
     }
 
+    fn rawToJournaledOwnedSlice(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+    ) ![]const u8 {
+        const out = try allocator.alloc(
+            u8,
+            self.raw_journal.items.len * journal_entry_header_len + self.raw.items.len,
+        );
+
+        var cur: usize = 0;
+        var content_offset: usize = 0;
+
+        for (self.raw_journal.items) |e| {
+            std.mem.writeInt(
+                u64,
+                out[cur..][0..journal_entry_header_element_len],
+                e.pos,
+                .little,
+            );
+
+            std.mem.writeInt(
+                u64,
+                out[cur + journal_entry_header_element_len ..][0..8],
+                e.len,
+                .little,
+            );
+
+            @memcpy(
+                out[cur + journal_entry_header_len ..][0..e.len],
+                self.raw.items[content_offset..][0..e.len],
+            );
+
+            cur += journal_entry_header_len + e.len;
+            content_offset += e.len;
+        }
+
+        return out;
+    }
+
     /// Return the "raw" and "processed" buffers, caller owns memory.
     pub fn toOwnedSlices(
         self: *ProcessedBuf,
         allocator: std.mem.Allocator,
     ) ![2][]const u8 {
-        return [2][]const u8{
-            try self.raw.toOwnedSlice(allocator),
-            try self.processed.toOwnedSlice(allocator),
-        };
+        const journaled_raw = try self.rawToJournaledOwnedSlice(allocator);
+        errdefer allocator.free(journaled_raw);
+
+        const processed = try self.processed.toOwnedSlice(allocator);
+
+        self.raw.clearRetainingCapacity();
+        self.raw_journal.clearRetainingCapacity();
+
+        return [2][]const u8{ journaled_raw, processed };
     }
 
     fn getRawCap(n: usize) usize {
@@ -652,4 +700,212 @@ test "ProcessedBuf rightTrimFrom" {
             try std.testing.expectEqual(case.expected_journal[idx].len, i.len);
         }
     }
+}
+
+test "ProcessedBuf buildJournalBuf" {
+    const cases = [_]struct {
+        name: []const u8,
+        chunks: []const []const u8,
+        expected_raw_journaled_buf: []const u8,
+    }{
+        .{
+            .name = "simple - nothing journaled",
+            .chunks = &.{"show version\nrouter#"},
+            .expected_raw_journaled_buf = "",
+        },
+        .{
+            .name = "simple - leading raw journaled",
+            .chunks = &.{"\x1Bxfoo"},
+            .expected_raw_journaled_buf = "\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x1Bx",
+        },
+    };
+
+    for (cases) |case| {
+        var pb = ProcessedBuf.init();
+
+        defer pb.deinit(std.testing.allocator);
+
+        for (case.chunks) |chunk| {
+            const mut_chunk = try std.testing.allocator.dupe(u8, chunk);
+            defer std.testing.allocator.free(mut_chunk);
+
+            try pb.appendSlice(std.testing.allocator, mut_chunk);
+        }
+
+        const owned_bufs = try pb.toOwnedSlices(std.testing.allocator);
+
+        defer std.testing.allocator.free(owned_bufs[0]);
+        std.testing.allocator.free(owned_bufs[1]);
+
+        try std.testing.expectEqualStrings(case.expected_raw_journaled_buf, owned_bufs[0]);
+    }
+}
+
+test "reconstructRaw round trip" {
+    const cases = [_]struct {
+        name: []const u8,
+        chunks: []const []const u8,
+        trim_from: ?usize = null,
+        expected_raw: []const u8,
+    }{
+        .{
+            .name = "clean, empty journal",
+            .chunks = &.{"show version\nrouter#"},
+            .expected_raw = "show version\nrouter#",
+        },
+        .{
+            .name = "junk at the start",
+            .chunks = &.{"\x1Bxfoo"},
+            .expected_raw = "\x1Bxfoo",
+        },
+        .{
+            .name = "junk in the middle",
+            .chunks = &.{"f\x1Bxoo"},
+            .expected_raw = "f\x1Bxoo",
+        },
+        .{
+            .name = "junk at end",
+            .chunks = &.{"foo\x1Bx"},
+            .expected_raw = "foo\x1Bx",
+        },
+        .{
+            .name = "two entries at the same position (junk split across chunks)",
+            .chunks = &.{ "foo\x1B[0m", "\x1B[Kbar" },
+            .expected_raw = "foo\x1B[0m\x1B[Kbar",
+        },
+        .{
+            .name = "csi soup",
+            .chunks = &.{"\x1B[m\x1B[27m\x1B[24mroot@server[~]# \x1B[K\x1B[?2004h"},
+            .expected_raw = "\x1B[m\x1B[27m\x1B[24mroot@server[~]# \x1B[K\x1B[?2004h",
+        },
+        .{
+            .name = "trimmed trailing prompt still reconstructs",
+            .chunks = &.{ "show version\n", "uptime 4 weeks\n\x1B[0mrouter#" },
+            .trim_from = 28,
+            .expected_raw = "show version\nuptime 4 weeks\n\x1B[0mrouter#",
+        },
+        .{
+            .name = "trim everything (retain_input false style)",
+            .chunks = &.{"show ver\x1B[K\n"},
+            .trim_from = 0,
+            .expected_raw = "show ver\x1B[K\n",
+        },
+    };
+
+    for (cases) |case| {
+        var pb = ProcessedBuf.init();
+
+        defer pb.deinit(std.testing.allocator);
+
+        for (case.chunks) |chunk| {
+            const mut_chunk = try std.testing.allocator.dupe(u8, chunk);
+            defer std.testing.allocator.free(mut_chunk);
+
+            try pb.appendSlice(std.testing.allocator, mut_chunk);
+        }
+
+        if (case.trim_from) |trim_from| {
+            try pb.rightTrimProcessed(std.testing.allocator, trim_from);
+        }
+
+        const owned_bufs = try pb.toOwnedSlices(std.testing.allocator);
+        defer std.testing.allocator.free(owned_bufs[0]);
+        defer std.testing.allocator.free(owned_bufs[1]);
+
+        const reconstructed = try reconstructRaw(
+            std.testing.allocator,
+            owned_bufs[0],
+            owned_bufs[1],
+        );
+
+        defer std.testing.allocator.free(reconstructed);
+
+        try std.testing.expectEqualStrings(case.expected_raw, reconstructed);
+    }
+}
+
+pub fn reconstructRaw(
+    allocator: std.mem.Allocator,
+    raw_journal: []const u8,
+    processed: []const u8,
+) ![]const u8 {
+    if (raw_journal.len == 0) {
+        return try allocator.dupe(u8, processed);
+    }
+
+    var out_len: usize = 0;
+
+    var idx: usize = 0;
+
+    while (true) {
+        if (idx >= raw_journal.len) {
+            break;
+        }
+
+        if (idx + journal_entry_header_len > raw_journal.len) {
+            return error.CorruptJournal;
+        }
+
+        const len = std.mem.readInt(
+            u64,
+            raw_journal[idx +
+                journal_entry_header_element_len .. idx +
+                journal_entry_header_len][0..journal_entry_header_element_len],
+            .little,
+        );
+
+        if (idx + journal_entry_header_len + len > raw_journal.len) {
+            return error.CorruptJournal;
+        }
+
+        idx += journal_entry_header_len + len;
+
+        out_len += len;
+    }
+
+    const out = try allocator.alloc(u8, out_len + processed.len);
+
+    var raw_idx: usize = 0;
+    var processed_idx: usize = 0;
+    var out_idx: usize = 0;
+
+    while (raw_idx < raw_journal.len) {
+        const pos = std.mem.readInt(
+            u64,
+            raw_journal[raw_idx..][0..8],
+            .little,
+        );
+
+        const len = std.mem.readInt(
+            u64,
+            raw_journal[raw_idx + journal_entry_header_element_len ..][0..8],
+            .little,
+        );
+
+        const keep_len = pos - processed_idx;
+
+        @memcpy(
+            out[out_idx..][0..keep_len],
+            processed[processed_idx..pos],
+        );
+
+        out_idx += keep_len;
+        processed_idx = pos;
+
+        @memcpy(
+            out[out_idx..][0..len],
+            raw_journal[raw_idx + journal_entry_header_len ..][0..len],
+        );
+
+        out_idx += len;
+
+        raw_idx += journal_entry_header_len + len;
+    }
+
+    const tail_len = processed.len - processed_idx;
+
+    @memcpy(out[out_idx..][0..tail_len], processed[processed_idx..]);
+    out_idx += tail_len;
+
+    return out;
 }

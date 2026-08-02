@@ -119,31 +119,6 @@ pub fn hasStrippableByte(buf: []const u8) bool {
 pub const AsciiAnsiControlStripJournalEntry = struct {
     pos: usize = 0,
     content: []const u8,
-
-    pub fn encodeToJournalEntry(
-        self: AsciiAnsiControlStripJournalEntry,
-        buf: []u8,
-        reencode_start_pos: usize,
-    ) void {
-        std.mem.writeInt(
-            u64,
-            buf[0..][0..8],
-            @intCast(self.pos + reencode_start_pos),
-            .little,
-        );
-
-        std.mem.writeInt(
-            u64,
-            buf[8..][0..8],
-            @intCast(self.content.len),
-            .little,
-        );
-
-        @memcpy(
-            buf[16..][0..self.content.len],
-            self.content,
-        );
-    }
 };
 
 pub const AsciiAnsiControlStripIteratorNext = union(enum) {
