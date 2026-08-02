@@ -267,7 +267,10 @@ pub const Driver = struct {
         };
         errdefer allocator.destroy(d);
 
-        try d.parsed_scratch.ensureTotalCapacity(allocator, s.options.scratch_initial_size);
+        try d.parsed_scratch.ensureTotalCapacity(
+            allocator,
+            @intCast(s.options.scratch_initial_size),
+        );
 
         return d;
     }
@@ -991,6 +994,11 @@ pub const Driver = struct {
         var message_buf: std.ArrayList(u8) = .empty;
         defer message_buf.deinit(self.allocator);
 
+        try message_buf.ensureTotalCapacity(
+            self.allocator,
+            @intCast(self.session.options.scratch_initial_size),
+        );
+
         const message_complete_delim = switch (self.negotiated_version) {
             .version_1_0 => delimiter_version_1_0,
             .version_1_1 => delimiter_version_1_1,
@@ -1002,9 +1010,6 @@ pub const Driver = struct {
                     errors.ScrapliError.EOF => {
                         // the session read thread has errored/closed and there is nothing remaining
                         // in the read queue, try one last time to parse out any remaining message(s)
-                        const owned_buf = try message_buf.toOwnedSlice(self.allocator);
-                        defer self.allocator.free(owned_buf);
-
                         defer self.log.debug(
                             "netconf.Driver processLoop: message processing thread " ++
                                 " stopping, session read queue drained and read thread stopped",
@@ -1016,11 +1021,11 @@ pub const Driver = struct {
                             // didnt even have valid data anyway
                             .version_1_0 => {
                                 // zlinter-disable-next-line no_swallow_error
-                                self.processFoundMessageVersion1_0(owned_buf) catch {};
+                                self.processFoundMessageVersion1_0(message_buf.items) catch {};
                             },
                             .version_1_1 => {
                                 // zlinter-disable-next-line no_swallow_error
-                                self.processFoundMessageVersion1_1(owned_buf) catch {};
+                                self.processFoundMessageVersion1_1(message_buf.items) catch {};
                             },
                         }
 
@@ -1047,16 +1052,24 @@ pub const Driver = struct {
             if (found) {
                 self.log.info("netconf.Driver processLoop: found end of message", .{});
 
-                const owned_buf = try message_buf.toOwnedSlice(self.allocator);
-                defer self.allocator.free(owned_buf);
-
                 switch (self.negotiated_version) {
                     .version_1_0 => {
-                        try self.processFoundMessageVersion1_0(owned_buf);
+                        try self.processFoundMessageVersion1_0(message_buf.items);
                     },
                     .version_1_1 => {
-                        try self.processFoundMessageVersion1_1(owned_buf);
+                        try self.processFoundMessageVersion1_1(message_buf.items);
                     },
+                }
+
+                if (message_buf.capacity > self.session.options.scratch_retain_max) {
+                    message_buf.clearAndFree(self.allocator);
+
+                    try message_buf.ensureTotalCapacity(
+                        self.allocator,
+                        @intCast(self.session.options.scratch_retain_max),
+                    );
+                } else {
+                    message_buf.clearRetainingCapacity();
                 }
             }
         }
@@ -1306,7 +1319,7 @@ pub const Driver = struct {
 
             try self.parsed_scratch.ensureTotalCapacity(
                 self.allocator,
-                self.session.options.scratch_retain_max,
+                @intCast(self.session.options.scratch_retain_max),
             );
         } else {
             self.parsed_scratch.clearRetainingCapacity();
