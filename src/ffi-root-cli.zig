@@ -244,7 +244,19 @@ export fn ls_cli_fetch_operation_sizes(
             },
         };
 
-        const sizes = d.getCliResultLens(dret);
+        const sizes = d.getCliResultLens(dret) catch |err| {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: error during fetch operation sizes {any}",
+                .{err},
+            ) catch {};
+
+            return ffi_common.toFfiResult(err);
+        };
+
         operation_count.* = @intCast(sizes.operation_count);
         operation_input_size.* = sizes.operation_input_size;
         operation_result_raw_size.* = sizes.operation_result_raw_size;

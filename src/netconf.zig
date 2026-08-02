@@ -377,14 +377,34 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        try res.record(
-            try self.session.open(
+        {
+            // session.open returns the (journaled raw, processed) pair -- netconf keeps
+            // its historical behavior of holding the fully materialized raw, so
+            // reconstruct it right away (for now?)
+            const open_ret = try self.session.open(
                 allocator,
                 self.host,
                 self.options.port,
                 options.cancel,
-            ),
-        );
+            );
+
+            const open_raw = bytes.reconstructRaw(
+                allocator,
+                open_ret[0],
+                open_ret[1],
+            ) catch |err| {
+                allocator.free(open_ret[0]);
+                allocator.free(open_ret[1]);
+
+                return err;
+            };
+
+            allocator.free(open_ret[0]);
+
+            try res.record(
+                [2][]const u8{ open_raw, open_ret[1] },
+            );
+        }
 
         // SAFETY: undefined now but will always be set before use (below) or we will have
         // errored out.

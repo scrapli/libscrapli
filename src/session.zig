@@ -1121,7 +1121,10 @@ pub const Session = struct {
             found_prompt,
         );
 
-        return [2][]const u8{ try allocator.dupe(u8, bufs.raw.items), owned_found_prompt };
+        // TODO probably just return the found prompt here instead?
+        // the "processed" side of a getPrompt result is only ever the prompt itself, so we just
+        // return an empty string for the raw side of things.
+        return [2][]const u8{ try allocator.dupe(u8, ""), owned_found_prompt };
     }
 
     fn innerSendInput(
@@ -1215,10 +1218,11 @@ pub const Session = struct {
     }
 
     /// Sends the given input to the transport, reading until the input is written, then sending
-    /// return, then reading until the next prompt is read. It returns two buffers -- the "raw"
-    /// buffer, that is the unprocessed content that we read from the device, and the "processed"
-    /// buffer, that is the content that was processed -- i.e. had ascii/ansi control chars
-    /// removed to give only human readable text output.
+    /// return, then reading until the next prompt is read. It returns two buffers -- the
+    /// journaled "raw" buffer, from which the raw/unprocessed content read from the device can
+    /// be reconstructed on demand (see bytes.reconstructRaw), and the "processed" buffer, that
+    /// is the content that was processed -- i.e. had ascii/ansi control chars removed to give
+    /// only human readable text output.
     pub fn sendInput(
         self: *Session,
         allocator: std.mem.Allocator,
@@ -1244,8 +1248,10 @@ pub const Session = struct {
         );
 
         if (!options.retain_input) {
-            // if we dont want to retain inputs, just resize the processed buffer to 0
-            try bufs.processed.resize(self.allocator, 0);
+            // if we dont want to retain inputs trim *everything* read so far (the input
+            // echo) out of the processed buf -- it lands in the raw journal so the raw
+            // output still contains it
+            try bufs.rightTrimProcessed(self.allocator, 0);
         }
 
         const check_args = bytes_check.CheckArgs{
@@ -1254,7 +1260,7 @@ pub const Session = struct {
             .excludes = self.prompt_excludes,
         };
 
-        var prompt_indexes = try self.readTimeout(
+        const prompt_indexes = try self.readTimeout(
             start_time,
             options.cancel,
             bytes_check.patternInBuf,
@@ -1268,13 +1274,12 @@ pub const Session = struct {
         );
 
         if (!options.retain_trailing_prompt) {
-            // using the prompt indexes, replace that range holding the trailing prompt out
-            // of the processed buf
-            try bufs.processed.replaceRange(
+            // trim the trailing prompt (and anything after it, which should be nothing)
+            // out of the processed buf -- it lands in the raw journal so the raw output
+            // still contains it
+            try bufs.rightTrimProcessed(
                 self.allocator,
                 prompt_indexes.start,
-                prompt_indexes.len(),
-                "",
             );
         }
 
@@ -1391,7 +1396,7 @@ pub const Session = struct {
             );
         }
 
-        var prompt_indexes = try self.readTimeout(
+        const prompt_indexes = try self.readTimeout(
             start_time,
             options.cancel,
             bytes_check.patternInBuf,
@@ -1405,13 +1410,12 @@ pub const Session = struct {
         );
 
         if (!options.retain_trailing_prompt) {
-            // using the prompt indexes, replace that range holding the trailing prompt out
-            // of the processed buf
-            try bufs.processed.replaceRange(
+            // trim the trailing prompt (and anything after it, which should be nothing)
+            // out of the processed buf -- it lands in the raw journal so the raw output
+            // still contains it
+            try bufs.rightTrimProcessed(
                 self.allocator,
                 prompt_indexes.start,
-                prompt_indexes.len(),
-                "",
             );
         }
 
