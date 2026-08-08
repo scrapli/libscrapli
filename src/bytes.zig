@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const ascii = @import("ascii.zig");
-const errors = @import("errors.zig");
 
 /// A string that is used to delimit multiple substrings -- used in a few places for passing things
 /// via ffi to not have to deal w/ c arrays and such
@@ -170,9 +169,72 @@ pub fn getBufSearchView(
     return buf[buf.len - depth ..];
 }
 
-/// overhead for serializing journal entry pos+len as u64 little endian.
-const journal_entry_header_len: usize = 16;
-const journal_entry_header_element_len: usize = 8;
+// journal entries serialize as varint(pos delta) | varint(len) | content. positions are
+// non-decreasing by construction, so each entry's pos is stored as the delta from the previous
+// entry's pos (the first entry deltas from zero) -- deltas and lens are almost always tiny (a
+// carriage return per line, a small whitespace run, etc.) so LEB128 varints keep the per entry
+// overhead at ~2-3 bytes instead of a fixed 16. a nice side effect of delta encoding: out of
+// order entries are unrepresentable, the decoder's position can only ever move forward.
+
+/// Returns the number of bytes v occupies as a LEB128 varint.
+fn varintLen(v: u64) usize {
+    var n: usize = 1;
+    var x = v;
+
+    while (x >= 0x80) : (x >>= 7) {
+        n += 1;
+    }
+
+    return n;
+}
+
+/// Writes v as a LEB128 varint into out at idx, returning the index after the written bytes.
+fn writeVarint(out: []u8, idx: usize, v: u64) usize {
+    var i = idx;
+    var x = v;
+
+    while (x >= 0x80) : (x >>= 7) {
+        out[i] = @as(u8, @truncate(x)) | 0x80;
+        i += 1;
+    }
+
+    out[i] = @truncate(x);
+
+    return i + 1;
+}
+
+/// Reads a LEB128 varint from buf at idx, advancing idx past the read bytes. Errors on
+/// truncated input or a value that would overflow u64.
+fn readVarint(buf: []const u8, idx: *usize) !u64 {
+    var v: u64 = 0;
+    var shift: u7 = 0;
+
+    while (true) {
+        if (idx.* >= buf.len) {
+            return error.CorruptJournal;
+        }
+
+        const b = buf[idx.*];
+        idx.* += 1;
+
+        if (shift == 63 and b > 1) {
+            // 10th byte can only contribute a single bit for u64
+            return error.CorruptJournal;
+        }
+
+        v |= @as(u64, b & 0x7F) << @intCast(shift);
+
+        if (b & 0x80 == 0) {
+            return v;
+        }
+
+        shift += 7;
+
+        if (shift > 63) {
+            return error.CorruptJournal;
+        }
+    }
+}
 
 const ProcessedBufRawJournalEntry = struct {
     pos: usize,
@@ -693,35 +755,35 @@ pub const ProcessedBuf = struct {
         self: *ProcessedBuf,
         allocator: std.mem.Allocator,
     ) ![]const u8 {
-        const out = try allocator.alloc(
-            u8,
-            self.raw_journal.items.len * journal_entry_header_len + self.raw.items.len,
-        );
+        // size pass and fill pass must agree byte for byte, so both walk the entries the same
+        // way (deltas from the previous entry's pos)
+        var out_len: usize = 0;
+        var prev_pos: usize = 0;
+
+        for (self.raw_journal.items) |e| {
+            out_len += varintLen(e.pos - prev_pos) + varintLen(e.len) + e.len;
+            prev_pos = e.pos;
+        }
+
+        const out = try allocator.alloc(u8, out_len);
 
         var cur: usize = 0;
         var content_offset: usize = 0;
 
-        for (self.raw_journal.items) |e| {
-            std.mem.writeInt(
-                u64,
-                out[cur..][0..journal_entry_header_element_len],
-                e.pos,
-                .little,
-            );
+        prev_pos = 0;
 
-            std.mem.writeInt(
-                u64,
-                out[cur + journal_entry_header_element_len ..][0..8],
-                e.len,
-                .little,
-            );
+        for (self.raw_journal.items) |e| {
+            cur = writeVarint(out, cur, e.pos - prev_pos);
+            prev_pos = e.pos;
+
+            cur = writeVarint(out, cur, e.len);
 
             @memcpy(
-                out[cur + journal_entry_header_len ..][0..e.len],
+                out[cur..][0..e.len],
                 self.raw.items[content_offset..][0..e.len],
             );
 
-            cur += journal_entry_header_len + e.len;
+            cur += e.len;
             content_offset += e.len;
         }
 
@@ -1493,6 +1555,10 @@ test "ProcessedBuf rightTrimFrom" {
 }
 
 test "ProcessedBuf buildJournalBuf" {
+    // 200 chars of filler then a 2 byte escape then a keeper -- gives the buildJournalBuf test a
+    // journal entry at pos 200 so the pos delta needs a multi byte varint
+    const multi_byte_delta_chunk = @as([200]u8, @splat('a')) ++ [_]u8{ 0x1B, 'x', 'b' };
+
     const cases = [_]struct {
         name: []const u8,
         chunks: []const []const u8,
@@ -1504,9 +1570,22 @@ test "ProcessedBuf buildJournalBuf" {
             .expected_raw_journaled_buf = "",
         },
         .{
+            // varint(pos delta 0) | varint(len 2) | content
             .name = "simple - leading raw journaled",
             .chunks = &.{"\x1Bxfoo"},
-            .expected_raw_journaled_buf = "\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x1Bx",
+            .expected_raw_journaled_buf = "\x00\x02\x1Bx",
+        },
+        .{
+            // pos 200 needs a two byte varint delta (0xC8 0x01 = 200 LEB128)
+            .name = "multi byte varint delta",
+            .chunks = &.{&multi_byte_delta_chunk},
+            .expected_raw_journaled_buf = "\xC8\x01\x02\x1Bx",
+        },
+        .{
+            // two entries -- second entry's pos stores as delta from the first
+            .name = "delta between entries",
+            .chunks = &.{"foo\x1Bxbar\x1Byb"},
+            .expected_raw_journaled_buf = "\x03\x02\x1Bx\x03\x02\x1By",
         },
     };
 
@@ -1614,6 +1693,50 @@ test "reconstructRaw round trip" {
     }
 }
 
+test "reconstructRaw corrupt journals" {
+    const cases = [_]struct {
+        name: []const u8,
+        raw_journal: []const u8,
+        processed: []const u8,
+    }{
+        .{
+            // continuation bit set but nothing follows
+            .name = "truncated varint",
+            .raw_journal = "\x80",
+            .processed = "foo",
+        },
+        .{
+            // entry claims 5 content bytes, only 1 present
+            .name = "len exceeds journal",
+            .raw_journal = "\x00\x05x",
+            .processed = "foo",
+        },
+        .{
+            // delta walks past the end of processed
+            .name = "delta beyond processed",
+            .raw_journal = "\x7F\x01x",
+            .processed = "ab",
+        },
+        .{
+            // valid first entry then a truncated second
+            .name = "truncated second entry",
+            .raw_journal = "\x00\x01x\x02",
+            .processed = "ab",
+        },
+    };
+
+    for (cases) |case| {
+        std.testing.expectError(
+            error.CorruptJournal,
+            reconstructRaw(std.testing.allocator, case.raw_journal, case.processed),
+        ) catch |err| {
+            std.debug.print("corrupt journal case failed: {s}\n", .{case.name});
+
+            return err;
+        };
+    }
+}
+
 /// Returns the size of the raw output that reconstructRaw will produce for the given
 /// (journaled) raw and processed pair -- used for sizing buffers for ffi bits to know how big of
 /// a string to pre allocate.
@@ -1626,21 +1749,16 @@ pub fn reconstructedRawLen(
     var idx: usize = 0;
 
     while (idx < raw_journal.len) {
-        if (idx + journal_entry_header_len > raw_journal.len) {
-            return errors.ScrapliError.IndexError;
+        // pos delta -- not needed for sizing but must be consumed (and validated) to walk
+        _ = try readVarint(raw_journal, &idx);
+
+        const len: usize = @intCast(try readVarint(raw_journal, &idx));
+
+        if (len > raw_journal.len - idx) {
+            return error.CorruptJournal;
         }
 
-        const len = std.mem.readInt(
-            u64,
-            raw_journal[idx + journal_entry_header_element_len ..][0..8],
-            .little,
-        );
-
-        if (len > raw_journal.len - idx - journal_entry_header_len) {
-            return errors.ScrapliError.IndexError;
-        }
-
-        idx += journal_entry_header_len + len;
+        idx += len;
 
         out_len += len;
     }
@@ -1675,31 +1793,24 @@ pub fn reconstructRawInto(
     var raw_idx: usize = 0;
     var processed_idx: usize = 0;
     var out_idx: usize = 0;
+    var pos: usize = 0;
 
     while (raw_idx < raw_journal.len) {
-        if (raw_idx + journal_entry_header_len > raw_journal.len) {
+        const delta: usize = @intCast(try readVarint(raw_journal, &raw_idx));
+
+        if (delta > processed.len - pos) {
+            // entry lands past the end of processed -- if we didnt bail here the pos math
+            // below would overflow/read garbage on a corrupt journal. note that *out of order*
+            // entries are unrepresentable with delta encoding, so thats one whole class of
+            // corruption we no longer have to check for
             return error.CorruptJournal;
         }
 
-        const pos: usize = @intCast(std.mem.readInt(
-            u64,
-            raw_journal[raw_idx..][0..8],
-            .little,
-        ));
+        pos += delta;
 
-        if (pos < processed_idx or pos > processed.len) {
-            // out of order or out of range entry -- if we didnt bail here the keep_len
-            // math below would underflow/read garbage on a corrupt journal
-            return error.CorruptJournal;
-        }
+        const len: usize = @intCast(try readVarint(raw_journal, &raw_idx));
 
-        const len: usize = @intCast(std.mem.readInt(
-            u64,
-            raw_journal[raw_idx + journal_entry_header_element_len ..][0..8],
-            .little,
-        ));
-
-        if (len > raw_journal.len - raw_idx - journal_entry_header_len) {
+        if (len > raw_journal.len - raw_idx) {
             return error.CorruptJournal;
         }
 
@@ -1719,12 +1830,12 @@ pub fn reconstructRawInto(
 
         @memcpy(
             out[out_idx..][0..len],
-            raw_journal[raw_idx + journal_entry_header_len ..][0..len],
+            raw_journal[raw_idx..][0..len],
         );
 
         out_idx += len;
 
-        raw_idx += journal_entry_header_len + len;
+        raw_idx += len;
     }
 
     const tail_len = processed.len - processed_idx;
