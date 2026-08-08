@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const ascii = @import("ascii.zig");
+const bytes = @import("bytes.zig");
 const operation = @import("netconf-operation.zig");
 
 const rpc_error_tag = "rpc-error";
@@ -102,7 +103,7 @@ pub const Result = struct {
     operation_kind: operation.Kind,
     input: []const u8,
 
-    result_raw: []const u8,
+    result_raw_journal: []const u8,
     result: []const u8,
 
     start_time_ns: i128,
@@ -135,7 +136,7 @@ pub const Result = struct {
             .error_tag = error_tag,
             .operation_kind = operation_kind,
             .input = input,
-            .result_raw = "",
+            .result_raw_journal = "",
             .result = "",
             .start_time_ns = std.Io.Timestamp.now(io, .real).nanoseconds,
             .end_time_ns = 0,
@@ -153,7 +154,7 @@ pub const Result = struct {
     ) void {
         self.allocator.free(self.input);
 
-        self.allocator.free(self.result_raw);
+        self.allocator.free(self.result_raw_journal);
         self.allocator.free(self.result);
 
         // important note: we *do not* deallocate warnings/errors as we hold
@@ -283,7 +284,7 @@ pub const Result = struct {
         ret: [2][]const u8,
     ) !void {
         self.end_time_ns = std.Io.Timestamp.now(self.io, .real).nanoseconds;
-        self.result_raw = ret[0];
+        self.result_raw_journal = ret[0];
         self.result = ret[1];
 
         if (std.mem.find(u8, ret[1], self.error_tag) != null) {
@@ -291,6 +292,20 @@ pub const Result = struct {
 
             try self.parseRpcErrors(ret[1]);
         }
+    }
+
+    /// Gets the size of the reconstructed raw result, used for ensuring we have properly
+    /// sized buffers when passing a result out of zig into the ffi layer.
+    pub fn getResultRawLen(self: *Result) !usize {
+        return bytes.reconstructedRawLen(self.result_raw_journal, self.result.len);
+    }
+
+    /// Reconstructs and returns the raw result -- caller owns the returned memory.
+    pub fn getResultRaw(
+        self: *Result,
+        allocator: std.mem.Allocator,
+    ) ![]const u8 {
+        return bytes.reconstructRaw(allocator, self.result_raw_journal, self.result);
     }
 
     /// Returns the elapsed time in seconds for the operation this result object represents.

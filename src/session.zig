@@ -688,7 +688,7 @@ pub const Session = struct {
                 cur_read_delay_ns = self.options.read_min_delay_ns;
             }
 
-            try bufs.appendSlice(self.allocator, buf[0..n]);
+            try bufs.appendWithProcessing(self.allocator, buf[0..n]);
 
             const searchable_buf = bytes.getBufSearchView(
                 bufs.processed.items[cur_check_start_idx..],
@@ -988,7 +988,7 @@ pub const Session = struct {
                 cur_read_delay_ns = self.options.read_min_delay_ns;
             }
 
-            try bufs.appendSlice(self.allocator, buf[0..n]);
+            try bufs.appendWithProcessing(self.allocator, buf[0..n]);
 
             // weve logged "raw" reads in the readloop, now that we have processed something
             // (ProcessedBuf handles ascii filtering on appendSlice) we can show the processed bits
@@ -1206,7 +1206,7 @@ pub const Session = struct {
             return;
         }
 
-        try bufs.appendSlice(self.allocator, self.last_consumed_prompt.items);
+        try bufs.appendWithProcessing(self.allocator, self.last_consumed_prompt.items);
         try self.last_consumed_prompt.resize(self.allocator, 0);
     }
 

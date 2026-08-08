@@ -201,8 +201,88 @@ pub const ProcessedBuf = struct {
         self.processed.deinit(allocator);
     }
 
+    fn getRawCap(n: usize) usize {
+        // raw is 1/100th the size users request for "scratch" processed buf since raw only holds
+        // things that we woulda stripped out of the processed buf
+        return @divTrunc(n, 100);
+    }
+
+    fn getRawJournalCap(n: usize) usize {
+        // raw *journal* is the index/journal of where things in raw go when rehydrating raw content
+        // so this is even smaller since this is not *bytes* but indicies -- so w/ default numbers
+        // its like 32_768 for scatch, then raw is 1/100 of that, then we will do half 1/10th that
+        // again which gives us ~33 but obviously scaled/adjusted if/when users tweak the scrach
+        // capacity.
+        return @divTrunc(getRawCap(n), 10);
+    }
+
+    /// Reserve space in both buffers -- intended so that we dont have to grow from 0 when the
+    /// session fires up basically.
+    pub fn reserve(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        n: u64,
+    ) !void {
+        const cap: usize = @intCast(n);
+
+        try self.raw.ensureTotalCapacity(allocator, getRawCap(cap));
+        try self.raw_journal.ensureTotalCapacity(allocator, getRawJournalCap(cap));
+        try self.processed.ensureTotalCapacity(allocator, cap);
+    }
+
+    /// Clear both the raw and processed bufs -- retain max lets us retain some space in the buffers
+    /// so the idea is basically to start the bufs w/ some capacity (reserve) then never shrink them
+    /// below the retained max. *But* importantly we have a *max* because if you do for example a
+    /// show tech that is huge, we probably dont want to have that amount of memory just always
+    /// allocated for us, so we can shrink back down to the max size.
+    pub fn reset(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        retain_max: u64,
+    ) !void {
+        const cap: usize = @intCast(retain_max);
+
+        try resetBuf(
+            u8,
+            &self.raw,
+            allocator,
+            getRawCap(cap),
+        );
+
+        try resetBuf(
+            ProcessedBufRawJournalEntry,
+            &self.raw_journal,
+            allocator,
+            getRawJournalCap(cap),
+        );
+
+        try resetBuf(
+            u8,
+            &self.processed,
+            allocator,
+            cap,
+        );
+    }
+
+    fn resetBuf(
+        comptime T: type,
+        list: *std.ArrayList(T),
+        allocator: std.mem.Allocator,
+        retain_max: usize,
+    ) !void {
+        if (list.capacity > retain_max) {
+            list.clearAndFree(allocator);
+            try list.ensureTotalCapacity(allocator, retain_max);
+
+            return;
+        }
+
+        list.clearRetainingCapacity();
+    }
+
     /// Append the given buf and store a journal of anything we trim/strip (ascii/ansii stuff).
-    pub fn appendSlice(
+    /// Called "appendWithProcessing" because it does the ascii/ansi stripping (if applicable).
+    pub fn appendWithProcessing(
         self: *ProcessedBuf,
         allocator: std.mem.Allocator,
         buf: []u8,
@@ -240,6 +320,39 @@ pub const ProcessedBuf = struct {
                 },
             }
         }
+    }
+
+    /// Append bytes that are kept -- i.e. the "processed" bytes -- this path is (currently?) just
+    /// for netconf as we are appending directly to processed buf w/out any ascii clean up path like
+    /// the cli bits do.
+    pub fn appendProcessed(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        buf: []const u8,
+    ) !void {
+        try self.processed.appendSlice(allocator, buf);
+    }
+
+    /// Append to the raw journal -- this is (currently?) just for netconf as we are appending stuff
+    /// we know that we don't want like the chunk framing and such.
+    pub fn appendRaw(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        buf: []const u8,
+    ) !void {
+        if (buf.len == 0) {
+            return;
+        }
+
+        try self.raw.appendSlice(allocator, buf);
+
+        try self.raw_journal.append(
+            allocator,
+            ProcessedBufRawJournalEntry{
+                .pos = self.processed.items.len,
+                .len = buf.len,
+            },
+        );
     }
 
     // trims content off the right side of *processed* -- the stuff that gets trimmed gets put into
@@ -380,85 +493,6 @@ pub const ProcessedBuf = struct {
         return [2][]const u8{ journaled_raw, processed };
     }
 
-    fn getRawCap(n: usize) usize {
-        // raw is 1/100th the size users request for "scratch" processed buf since raw only holds
-        // things that we woulda stripped out of the processed buf
-        return @divTrunc(n, 100);
-    }
-
-    fn getRawJournalCap(n: usize) usize {
-        // raw *journal* is the index/journal of where things in raw go when rehydrating raw content
-        // so this is even smaller since this is not *bytes* but indicies -- so w/ default numbers
-        // its like 32_768 for scatch, then raw is 1/100 of that, then we will do half 1/10th that
-        // again which gives us ~33 but obviously scaled/adjusted if/when users tweak the scrach
-        // capacity.
-        return @divTrunc(getRawCap(n), 10);
-    }
-
-    /// Reserve space in both buffers -- intended so that we dont have to grow from 0 when the
-    /// session fires up basically.
-    pub fn reserve(
-        self: *ProcessedBuf,
-        allocator: std.mem.Allocator,
-        n: u64,
-    ) !void {
-        const cap: usize = @intCast(n);
-
-        try self.raw.ensureTotalCapacity(allocator, getRawCap(cap));
-        try self.raw_journal.ensureTotalCapacity(allocator, getRawJournalCap(cap));
-        try self.processed.ensureTotalCapacity(allocator, cap);
-    }
-
-    /// Clear both the raw and processed bufs -- retain max lets us retain some space in the buffers
-    /// so the idea is basically to start the bufs w/ some capacity (reserve) then never shrink them
-    /// below the retained max. *But* importantly we have a *max* because if you do for example a
-    /// show tech that is huge, we probably dont want to have that amount of memory just always
-    /// allocated for us, so we can shrink back down to the max size.
-    pub fn reset(
-        self: *ProcessedBuf,
-        allocator: std.mem.Allocator,
-        retain_max: u64,
-    ) !void {
-        const cap: usize = @intCast(retain_max);
-
-        try resetBuf(
-            u8,
-            &self.raw,
-            allocator,
-            getRawCap(cap),
-        );
-
-        try resetBuf(
-            ProcessedBufRawJournalEntry,
-            &self.raw_journal,
-            allocator,
-            getRawJournalCap(cap),
-        );
-
-        try resetBuf(
-            u8,
-            &self.processed,
-            allocator,
-            cap,
-        );
-    }
-
-    fn resetBuf(
-        comptime T: type,
-        list: *std.ArrayList(T),
-        allocator: std.mem.Allocator,
-        retain_max: usize,
-    ) !void {
-        if (list.capacity > retain_max) {
-            list.clearAndFree(allocator);
-            try list.ensureTotalCapacity(allocator, retain_max);
-
-            return;
-        }
-
-        list.clearRetainingCapacity();
-    }
-
     /// Return owned copies of the (journaled) "raw" and "processed" buffers (caller owns the
     /// returned memory) without consuming this ProcessedBuf, so the (almost certainly) Session
     /// can continue using this object..
@@ -539,7 +573,7 @@ test "ProcessedBuf append journal" {
         const expected_raw = try std.testing.allocator.dupe(u8, case.expected_raw);
         defer std.testing.allocator.free(expected_raw);
 
-        try pb.appendSlice(std.testing.allocator, in_buf);
+        try pb.appendWithProcessing(std.testing.allocator, in_buf);
 
         try std.testing.expectEqualStrings(expected_processed, pb.processed.items);
         try std.testing.expectEqualStrings(expected_raw, pb.raw.items);
@@ -571,9 +605,9 @@ test "ProcessedBuf append journal multiple appends" {
     const chunk_three = try std.testing.allocator.dupe(u8, "\x1B[0mbaz");
     defer std.testing.allocator.free(chunk_three);
 
-    try pb.appendSlice(std.testing.allocator, chunk_one);
-    try pb.appendSlice(std.testing.allocator, chunk_two);
-    try pb.appendSlice(std.testing.allocator, chunk_three);
+    try pb.appendWithProcessing(std.testing.allocator, chunk_one);
+    try pb.appendWithProcessing(std.testing.allocator, chunk_two);
+    try pb.appendWithProcessing(std.testing.allocator, chunk_three);
 
     try std.testing.expectEqualStrings("foobarbaz", pb.processed.items);
 
@@ -686,7 +720,7 @@ test "ProcessedBuf rightTrimFrom" {
             const mut_chunk = try std.testing.allocator.dupe(u8, chunk);
             defer std.testing.allocator.free(mut_chunk);
 
-            try pb.appendSlice(std.testing.allocator, mut_chunk);
+            try pb.appendWithProcessing(std.testing.allocator, mut_chunk);
         }
 
         try pb.rightTrimProcessed(std.testing.allocator, case.trim_from);
@@ -730,7 +764,7 @@ test "ProcessedBuf buildJournalBuf" {
             const mut_chunk = try std.testing.allocator.dupe(u8, chunk);
             defer std.testing.allocator.free(mut_chunk);
 
-            try pb.appendSlice(std.testing.allocator, mut_chunk);
+            try pb.appendWithProcessing(std.testing.allocator, mut_chunk);
         }
 
         const owned_bufs = try pb.toOwnedSlices(std.testing.allocator);
@@ -802,7 +836,7 @@ test "reconstructRaw round trip" {
             const mut_chunk = try std.testing.allocator.dupe(u8, chunk);
             defer std.testing.allocator.free(mut_chunk);
 
-            try pb.appendSlice(std.testing.allocator, mut_chunk);
+            try pb.appendWithProcessing(std.testing.allocator, mut_chunk);
         }
 
         if (case.trim_from) |trim_from| {
@@ -864,40 +898,61 @@ pub fn reconstructRaw(
     raw_journal: []const u8,
     processed: []const u8,
 ) ![]const u8 {
-    if (raw_journal.len == 0) {
-        return try allocator.dupe(u8, processed);
-    }
-
     const out = try allocator.alloc(
         u8,
         try reconstructedRawLen(raw_journal, processed.len),
     );
     errdefer allocator.free(out);
 
+    try reconstructRawInto(raw_journal, processed, out);
+
+    return out;
+}
+
+/// Reconstructs raw from the given (journaled) raw and processed pair into the given
+/// pre allocated out buffer (sized via reconstructedRawLen) -- used by the ffi layer
+/// which fills caller provided buffers.
+pub fn reconstructRawInto(
+    raw_journal: []const u8,
+    processed: []const u8,
+    out: []u8,
+) !void {
     var raw_idx: usize = 0;
     var processed_idx: usize = 0;
     var out_idx: usize = 0;
 
     while (raw_idx < raw_journal.len) {
-        const pos = std.mem.readInt(
+        if (raw_idx + journal_entry_header_len > raw_journal.len) {
+            return error.CorruptJournal;
+        }
+
+        const pos: usize = @intCast(std.mem.readInt(
             u64,
             raw_journal[raw_idx..][0..8],
             .little,
-        );
+        ));
 
         if (pos < processed_idx or pos > processed.len) {
-            // out of order or out of range entry -- this really really shouldnt be happening but
-            // ya know...
-            return errors.ScrapliError.IndexError;
+            // out of order or out of range entry -- if we didnt bail here the keep_len
+            // math below would underflow/read garbage on a corrupt journal
+            return error.CorruptJournal;
         }
 
-        const len = std.mem.readInt(
+        const len: usize = @intCast(std.mem.readInt(
             u64,
             raw_journal[raw_idx + journal_entry_header_element_len ..][0..8],
             .little,
-        );
+        ));
+
+        if (len > raw_journal.len - raw_idx - journal_entry_header_len) {
+            return error.CorruptJournal;
+        }
 
         const keep_len = pos - processed_idx;
+
+        if (out_idx + keep_len + len > out.len) {
+            return error.LengthMismatch;
+        }
 
         @memcpy(
             out[out_idx..][0..keep_len],
@@ -919,8 +974,9 @@ pub fn reconstructRaw(
 
     const tail_len = processed.len - processed_idx;
 
-    @memcpy(out[out_idx..][0..tail_len], processed[processed_idx..]);
-    out_idx += tail_len;
+    if (out.len - out_idx != tail_len) {
+        return error.LengthMismatch;
+    }
 
-    return out;
+    @memcpy(out[out_idx..][0..tail_len], processed[processed_idx..]);
 }

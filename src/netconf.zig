@@ -175,9 +175,11 @@ pub const Driver = struct {
 
     last_error: errors.LastError = .{},
 
-    // same concept as the session object -- a scratch buf (w/ same sizing caps/settings as session)
-    // but this one is just for the 1.1 message processing.
-    parsed_scratch: std.ArrayList(u8),
+    // same concept as the session object -- a scratch buf (w/ same sizing caps/settings as
+    // session) for message processing. holds the parsed (de-framed) message content plus the
+    // journal of the framing we removed, so the raw message is reconstructable w/out ever
+    // being stored (see bytes.zig)
+    parsed_scratch: bytes.ProcessedBuf,
 
     /// Initialize a netconf object.
     pub fn init(
@@ -230,6 +232,14 @@ pub const Driver = struct {
 
         s.options.operation_max_search_depth = default_initial_operation_max_search_depth;
 
+        var parsed_scratch = bytes.ProcessedBuf.init();
+        errdefer parsed_scratch.deinit(allocator);
+
+        try parsed_scratch.reserve(
+            allocator,
+            s.options.scratch_initial_size,
+        );
+
         const d = try allocator.create(Driver);
 
         d.* = Driver{
@@ -263,14 +273,8 @@ pub const Driver = struct {
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
             .subscriptions_lock = std.Io.Mutex.init,
-            .parsed_scratch = .empty,
+            .parsed_scratch = parsed_scratch,
         };
-        errdefer allocator.destroy(d);
-
-        try d.parsed_scratch.ensureTotalCapacity(
-            allocator,
-            @intCast(s.options.scratch_initial_size),
-        );
 
         return d;
     }
@@ -390,34 +394,14 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        {
-            // session.open returns the (journaled raw, processed) pair -- netconf keeps
-            // its historical behavior of holding the fully materialized raw, so
-            // reconstruct it right away (for now?)
-            const open_ret = try self.session.open(
+        try res.record(
+            try self.session.open(
                 allocator,
                 self.host,
                 self.options.port,
                 options.cancel,
-            );
-
-            const open_raw = bytes.reconstructRaw(
-                allocator,
-                open_ret[0],
-                open_ret[1],
-            ) catch |err| {
-                allocator.free(open_ret[0]);
-                allocator.free(open_ret[1]);
-
-                return err;
-            };
-
-            allocator.free(open_ret[0]);
-
-            try res.record(
-                [2][]const u8{ open_raw, open_ret[1] },
-            );
-        }
+            ),
+        );
 
         // SAFETY: undefined now but will always be set before use (below) or we will have
         // errored out.
@@ -1314,16 +1298,10 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
-        if (self.parsed_scratch.capacity > self.session.options.scratch_retain_max) {
-            self.parsed_scratch.clearAndFree(self.allocator);
-
-            try self.parsed_scratch.ensureTotalCapacity(
-                self.allocator,
-                @intCast(self.session.options.scratch_retain_max),
-            );
-        } else {
-            self.parsed_scratch.clearRetainingCapacity();
-        }
+        try self.parsed_scratch.reset(
+            self.allocator,
+            self.session.options.scratch_retain_max,
+        );
 
         // remaining is re-sliced past each completed message rather than recursing per message
         // like this fn used to -- a drain buffer w/ many coalesced messages would grow the
@@ -1352,8 +1330,16 @@ pub const Driver = struct {
         const truncated_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
             "parsing netconf message, message truncated";
 
-        // each message starts w/ a fresh (but warm) parsed scratch
-        self.parsed_scratch.clearRetainingCapacity();
+        try self.parsed_scratch.reset(
+            self.allocator,
+            self.session.options.scratch_retain_max,
+        );
+
+        // everything in buf that is *not* chunk content (leading whitespace, chunk size
+        // markers, the end of message marker) is framing -- which gets written into the "journal"
+        // of the raw bits so it can be reconstructed later if users want. removed_start tracks the
+        // start of the current run of framing stuff
+        var removed_start: usize = 0;
 
         var iter_idx: usize = 0;
 
@@ -1387,23 +1373,17 @@ pub const Driver = struct {
             }
 
             if (buf[iter_idx] == ascii.control_chars.hash_char) {
-                // now we've found two consecutive hash signs, indicating end of message; we
-                // can store the raw and processed bits in the messages map
-                const owned_raw = try self.allocator.dupe(u8, buf[0..iter_idx]);
-
-                const owned_parsed = self.allocator.dupe(
-                    u8,
-                    self.parsed_scratch.items,
-                ) catch |err| {
-                    self.allocator.free(owned_raw);
-
-                    return err;
-                };
-
-                try self.storeMessageOrSubscription(
-                    owned_raw,
-                    owned_parsed,
+                // now we've found two consecutive hash signs, indicating end of message --
+                // stuff this into the raw "journal" then dump the processed/raw into the message
+                // map for users to get them later
+                try self.parsed_scratch.appendRaw(
+                    self.allocator,
+                    buf[removed_start..iter_idx],
                 );
+
+                const owned = try self.parsed_scratch.dupeOwnedSlices(self.allocator);
+
+                try self.storeMessageOrSubscription(owned[0], owned[1]);
 
                 return iter_idx + 1;
             }
@@ -1487,13 +1467,21 @@ pub const Driver = struct {
                 );
             }
 
-            try self.parsed_scratch.appendSlice(
+            // the framing run (whitespace/hash/size/newlines) between the previous chunk
+            // (or message start) and this chunk's content
+            try self.parsed_scratch.appendRaw(
+                self.allocator,
+                buf[removed_start..iter_idx],
+            );
+
+            try self.parsed_scratch.appendProcessed(
                 self.allocator,
                 buf[iter_idx .. iter_idx + chunk_size],
             );
 
             // finally increment iter_idx past this chunk
             iter_idx += chunk_size;
+            removed_start = iter_idx;
         }
 
         // ran out of buffer without seeing the ## end of message marker -- an incomplete
@@ -2256,11 +2244,9 @@ pub const Driver = struct {
 
                     try res.record(
                         [2][]const u8{
-                            try allocator.print(
-                                \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
-                            ,
-                                .{self.message_id - 1},
-                            ),
+                            // an "empty" raw means no diff from the processed, which in this case
+                            // obv is true since we know we made a nice message to return
+                            try allocator.dupe(u8, ""),
                             try allocator.print(
                                 \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
                             ,
@@ -3359,6 +3345,41 @@ test "processFoundMessageVersion1_1 handle multi message" {
     defer d.allocator.free(second_kv.?.value[1]);
 
     try std.testing.expectEqualStrings(message_two, second_kv.?.value[1]);
+
+    // the stored raw slot is the journal -- reconstructing against the parsed content must
+    // yield the exact framed bytes as they came off the wire (up to where the historical
+    // raw ended: not including the second end of message hash)
+    const first_expected_raw = "\n#" ++
+        std.fmt.comptimePrint("{d}", .{message_one.len}) ++
+        "\n" ++
+        message_one ++
+        "\n#";
+
+    const first_raw = try bytes.reconstructRaw(
+        std.testing.allocator,
+        first_kv.?.value[0],
+        first_kv.?.value[1],
+    );
+    defer std.testing.allocator.free(first_raw);
+
+    try std.testing.expectEqualStrings(first_expected_raw, first_raw);
+
+    // note the extra leading newline: message one's consumption stops at its second end
+    // of message hash, so the newline that followed it belongs to message two's framing
+    const second_expected_raw = "\n\n#" ++
+        std.fmt.comptimePrint("{d}", .{message_two.len}) ++
+        "\n" ++
+        message_two ++
+        "\n#";
+
+    const second_raw = try bytes.reconstructRaw(
+        std.testing.allocator,
+        second_kv.?.value[0],
+        second_kv.?.value[1],
+    );
+    defer std.testing.allocator.free(second_raw);
+
+    try std.testing.expectEqualStrings(second_expected_raw, second_raw);
 }
 
 test "processFoundMessageVersion1_1Truncated" {

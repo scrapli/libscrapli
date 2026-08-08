@@ -2,6 +2,7 @@
 const std = @import("std");
 
 const ascii = @import("ascii.zig");
+const bytes = @import("bytes.zig");
 const errors = @import("errors.zig");
 const ffi_args_to_options = @import("ffi-args-to-netconf-options.zig");
 const ffi_common = @import("ffi-common.zig");
@@ -222,7 +223,18 @@ export fn ls_netconf_fetch_operation_sizes(
         };
 
         operation_input_size.* = dret.input.len;
-        operation_result_raw_size.* = dret.result_raw.len;
+        operation_result_raw_size.* = dret.getResultRawLen() catch |err| {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: error sizing reconstructed raw result {any}",
+                .{err},
+            ) catch {};
+
+            return ffi_common.toFfiResult(err);
+        };
         operation_result_size.* = dret.result.len;
 
         operation_error_size.* = 0;
@@ -307,8 +319,26 @@ export fn ls_netconf_fetch_operation(
         }
 
         @memcpy(operation_input.*, dret.input);
-        @memcpy(operation_result_raw.*, dret.result_raw);
         @memcpy(operation_result.*, dret.result);
+
+        // the raw slot is filled by *reconstructing* from the stored (journaled raw,
+        // result) pair -- raw is never retained zig side
+        bytes.reconstructRawInto(
+            dret.result_raw_journal,
+            dret.result,
+            operation_result_raw.*,
+        ) catch |err| {
+            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+            errors.wrapCriticalError(
+                errors.ScrapliError.Operation,
+                @src(),
+                d.getLogger(),
+                "ffi: error reconstructing raw result {any}",
+                .{err},
+            ) catch {};
+
+            return ffi_common.toFfiResult(err);
+        };
 
         // to avoid a pointless allocation since we are already copying from the result into the
         // given string pointers, we'll do basically the same thing the result does in normal (zig)
