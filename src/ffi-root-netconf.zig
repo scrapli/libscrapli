@@ -223,18 +223,10 @@ export fn ls_netconf_fetch_operation_sizes(
         };
 
         operation_input_size.* = dret.input.len;
-        operation_result_raw_size.* = dret.getResultRawLen() catch |err| {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: error sizing reconstructed raw result {any}",
-                .{err},
-            ) catch {};
-
-            return ffi_common.toFfiResult(err);
-        };
+        // the "raw" slot ships the serialized raw journal, *not* the reconstructed raw --
+        // callers that want the actual raw bytes reconstruct on demand w/
+        // ls_netconf_get_reconstructed_raw_size + ls_netconf_reconstruct_result_raw
+        operation_result_raw_size.* = dret.result_raw_journal.len;
         operation_result_size.* = dret.result.len;
 
         operation_error_size.* = 0;
@@ -321,24 +313,8 @@ export fn ls_netconf_fetch_operation(
         @memcpy(operation_input.*, dret.input);
         @memcpy(operation_result.*, dret.result);
 
-        // the raw slot is filled by *reconstructing* from the stored (journaled raw,
-        // result) pair -- raw is never retained zig side
-        bytes.reconstructRawInto(
-            dret.result_raw_journal,
-            dret.result,
-            operation_result_raw.*,
-        ) catch |err| {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: error reconstructing raw result {any}",
-                .{err},
-            ) catch {};
-
-            return ffi_common.toFfiResult(err);
-        };
+        // the "raw" slot holds the raw journal, users can reconstruct it later if they want
+        @memcpy(operation_result_raw.*, dret.result_raw_journal);
 
         // to avoid a pointless allocation since we are already copying from the result into the
         // given string pointers, we'll do basically the same thing the result does in normal (zig)
@@ -367,6 +343,40 @@ export fn ls_netconf_fetch_operation(
             }
         }
     }
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+/// Get the size of the buffer needed to rebuild the raw result into.
+export fn ls_netconf_get_reconstructed_result_raw_size(
+    operation_result: *[]u8,
+    operation_result_raw_journal: *[]u8,
+    raw_size: *usize,
+) callconv(.c) u8 {
+    raw_size.* = bytes.reconstructedRawLen(
+        operation_result_raw_journal.*,
+        operation_result.*.len,
+    ) catch {
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    };
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+/// Reconstructs the raw result from the given (result, journal) pair into the caller provided
+/// (and owned) buf.
+export fn ls_netconf_get_reconstructed_result_raw(
+    operation_result: *[]u8,
+    operation_result_raw_journal: *[]u8,
+    operation_result_raw: *[]u8,
+) callconv(.c) u8 {
+    bytes.reconstructRawInto(
+        operation_result_raw_journal.*,
+        operation_result.*,
+        operation_result_raw.*,
+    ) catch {
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    };
 
     return @backingInt(ffi_common.FfiResult.success);
 }
