@@ -310,6 +310,105 @@ pub const Result = struct {
         }
     }
 
+    /// Total size of all inputs packed back-to-back (no delimiters) -- used for sizing the ffi
+    /// layer's packed input buffer.
+    pub fn getInputsPackedLen(
+        self: *Result,
+    ) usize {
+        var out_size: usize = 0;
+
+        for (self.inputs.items) |input| {
+            out_size += input.len;
+        }
+
+        return out_size;
+    }
+
+    /// Total size of all raw journals packed back-to-back (no delimiters) -- used for sizing the
+    /// ffi layer's packed raw journal buffer. Note this is the *journal* size, not the size of
+    /// any reconstructed raw -- the ffi caller reconstructs raw on demand.
+    pub fn getResultsRawJournalPackedLen(
+        self: *Result,
+    ) usize {
+        var out_size: usize = 0;
+
+        for (self.results_raw_journal.items) |result_raw_journal| {
+            out_size += result_raw_journal.len;
+        }
+
+        return out_size;
+    }
+
+    /// Total size of all rendered results packed back-to-back (no delimiters) -- used for sizing
+    /// the ffi layer's packed result buffer.
+    pub fn getResultsPackedLen(
+        self: *Result,
+        options: GetResultOptions,
+    ) usize {
+        var out_size: usize = 0;
+
+        for (self.results.items) |result| {
+            out_size = renderResult(result, options, null, out_size);
+        }
+
+        return out_size;
+    }
+
+    /// Packs all inputs back-to-back into out (sized via getInputsPackedLen), recording each
+    /// entry's length into lens (sized to the result count) so the caller can slice the packed
+    /// buffer back apart.
+    pub fn packInputs(
+        self: *Result,
+        out: []u8,
+        lens: []u64,
+    ) void {
+        var cur: usize = 0;
+
+        for (0.., self.inputs.items) |idx, input| {
+            @memcpy(out[cur..][0..input.len], input);
+            cur += input.len;
+
+            lens[idx] = @intCast(input.len);
+        }
+    }
+
+    /// Packs all raw journals back-to-back into out (sized via getResultsRawJournalPackedLen),
+    /// recording each entry's length into lens (sized to the result count) so the caller can
+    /// slice the packed buffer back apart.
+    pub fn packResultsRawJournal(
+        self: *Result,
+        out: []u8,
+        lens: []u64,
+    ) void {
+        var cur: usize = 0;
+
+        for (0.., self.results_raw_journal.items) |idx, result_raw_journal| {
+            @memcpy(out[cur..][0..result_raw_journal.len], result_raw_journal);
+            cur += result_raw_journal.len;
+
+            lens[idx] = @intCast(result_raw_journal.len);
+        }
+    }
+
+    /// Packs all rendered results back-to-back into out (sized via getResultsPackedLen w/ the
+    /// same options), recording each entry's length into lens (sized to the result count) so the
+    /// caller can slice the packed buffer back apart.
+    pub fn packResults(
+        self: *Result,
+        out: []u8,
+        lens: []u64,
+        options: GetResultOptions,
+    ) void {
+        var cur: usize = 0;
+
+        for (0.., self.results.items) |idx, result| {
+            const end = renderResult(result, options, out, cur);
+
+            lens[idx] = @intCast(end - cur);
+            cur = end;
+        }
+    }
+
     /// Returns all raw results joined on options.delim string, but expects user to have already
     /// allocated buf to the appropriate size (hint: use getResultRawLen w/ the same options).
     /// Reconstructs each entry's raw from its (journaled raw, processed) pair.

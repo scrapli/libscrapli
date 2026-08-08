@@ -1,6 +1,7 @@
 // zlinter-disable no_panic - ignoring as we do panic on things that *really* should not happen
 const std = @import("std");
 
+const bytes = @import("bytes.zig");
 const cli = @import("cli.zig");
 const errors = @import("errors.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
@@ -244,18 +245,7 @@ export fn ls_cli_fetch_operation_sizes(
             },
         };
 
-        const sizes = d.getCliResultLens(dret) catch |err| {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: error during fetch operation sizes {any}",
-                .{err},
-            ) catch {};
-
-            return ffi_common.toFfiResult(err);
-        };
+        const sizes = d.getCliResultLens(dret);
 
         operation_count.* = @intCast(sizes.operation_count);
         operation_input_size.* = sizes.operation_input_size;
@@ -275,8 +265,11 @@ export fn ls_cli_fetch_operation(
     operation_start_time: *u64,
     operation_splits: *[]u64,
     operation_input: *[]u8,
+    operation_input_lens: *[]u64,
     operation_result_raw: *[]u8,
+    operation_result_raw_lens: *[]u64,
     operation_result: *[]u8,
+    operation_result_lens: *[]u64,
     operation_result_failed_indicator: *[]u8,
     operation_error: *[]u8,
     operation_last_error: *[]u8,
@@ -325,23 +318,51 @@ export fn ls_cli_fetch_operation(
             operation_start_time,
             operation_splits,
             operation_input,
+            operation_input_lens,
             operation_result_raw,
+            operation_result_raw_lens,
             operation_result,
+            operation_result_lens,
             operation_result_failed_indicator,
             operation_error,
-        ) catch |err| {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: error during fetch operation {any}",
-                .{err},
-            ) catch {};
-
-            return ffi_common.toFfiResult(err);
-        };
+        );
     }
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+/// Get the size of the buffer needed to rebuild a single result entry's raw into -- cli results
+/// are per entry (one per input), so the (result, journal) pair here is one entry's slice of the
+/// packed buffers returned by ls_cli_fetch_operation.
+export fn ls_cli_get_reconstructed_result_raw_size(
+    operation_result: *[]u8,
+    operation_result_raw_journal: *[]u8,
+    raw_size: *usize,
+) callconv(.c) u8 {
+    raw_size.* = bytes.reconstructedRawLen(
+        operation_result_raw_journal.*,
+        operation_result.*.len,
+    ) catch {
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    };
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+/// Reconstructs a single result entry's raw from its (result, journal) pair into the caller
+/// provided (and owned) buf (sized via ls_cli_get_reconstructed_result_raw_size).
+export fn ls_cli_get_reconstructed_result_raw(
+    operation_result: *[]u8,
+    operation_result_raw_journal: *[]u8,
+    operation_result_raw: *[]u8,
+) callconv(.c) u8 {
+    bytes.reconstructRawInto(
+        operation_result_raw_journal.*,
+        operation_result.*,
+        operation_result_raw.*,
+    ) catch {
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    };
 
     return @backingInt(ffi_common.FfiResult.success);
 }
