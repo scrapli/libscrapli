@@ -179,25 +179,48 @@ const ProcessedBufRawJournalEntry = struct {
     len: usize,
 };
 
+const PendingRun = struct {
+    // true means this run is whitespace that will be *kept* (appended to processed) if the
+    // pending resolves as non-trailing; false means this run is journal-bound no matter what
+    // (carriage returns / ansi junk that arrived behind pending whitespace)
+    kept: bool,
+    len: usize,
+};
+
 /// A type that holds the "raw" and "processed" buffers (array list) for scrapli session objects.
 pub const ProcessedBuf = struct {
-    raw: std.ArrayList(u8),
-    raw_journal: std.ArrayList(ProcessedBufRawJournalEntry),
-    processed: std.ArrayList(u8),
+    raw: std.ArrayList(u8) = .empty,
+    raw_journal: std.ArrayList(ProcessedBufRawJournalEntry) = .empty,
+
+    pending: std.ArrayList(u8) = .empty,
+    pending_runs: std.ArrayList(PendingRun) = .empty,
+
+    processed: std.ArrayList(u8) = .empty,
+
+    // when set, carriage returns are journaled away (rather than kept in processed) at append
+    // time. off by default, probably only cli will use this, sessions opt in (via driver options).
+    normalize_line_feeds: bool = false,
+
+    // when set, whitespace (space/tab) runs that turn out to be *trailing* are journaled away
+    // rather than kept. we cant know if its "trailing" till we know what comes after it though, so
+    // we track it as "pending" -- along w/ any journal-bound content (carriage returns, ansi/ascii
+    // junk) that shows up behind them, since *those* entries positions/order depend on whether
+    // the pending whitespace ends up kept/journaled. off by default, same as normalize_line_feeds.
+    normalize_trailing_whitespace: bool = false,
 
     /// Initialize the ProcessedBuf object.
     pub fn init() ProcessedBuf {
-        return ProcessedBuf{
-            .raw = .empty,
-            .raw_journal = .empty,
-            .processed = .empty,
-        };
+        return ProcessedBuf{};
     }
 
     /// Deinitialize the Processedbuf object.
     pub fn deinit(self: *ProcessedBuf, allocator: std.mem.Allocator) void {
         self.raw.deinit(allocator);
         self.raw_journal.deinit(allocator);
+
+        self.pending.deinit(allocator);
+        self.pending_runs.deinit(allocator);
+
         self.processed.deinit(allocator);
     }
 
@@ -262,6 +285,11 @@ pub const ProcessedBuf = struct {
             allocator,
             cap,
         );
+
+        // pending has no fancy scratch capacity and wont ever be big so just clear w/out the
+        // extra steps
+        self.pending.clearRetainingCapacity();
+        self.pending_runs.clearRetainingCapacity();
     }
 
     fn resetBuf(
@@ -280,15 +308,59 @@ pub const ProcessedBuf = struct {
         list.clearRetainingCapacity();
     }
 
-    /// Append the given buf and store a journal of anything we trim/strip (ascii/ansii stuff).
-    /// Called "appendWithProcessing" because it does the ascii/ansi stripping (if applicable).
+    fn bufNeedsNormalization(
+        self: *ProcessedBuf,
+        buf: []u8,
+    ) bool {
+        if (self.normalize_line_feeds and
+            std.mem.indexOfScalar(u8, buf, ascii.control_chars.cr) != null)
+        {
+            return true;
+        }
+
+        if (self.normalize_trailing_whitespace and
+            (self.pending_runs.items.len > 0 or
+                std.mem.indexOfAny(u8, buf, " \t") != null))
+        {
+            return true;
+        }
+
+        if (self.normalize_trailing_whitespace and
+            self.processed.items.len == 0 and
+            buf.len > 0 and
+            buf[0] == ascii.control_chars.lf)
+        {
+            // a line feed arriving while processed is still empty is a *leading* line feed
+            // (almost certainly left over from the preceding input/prompt) which gets journaled
+            // away -- note we only need to check buf[0] here: a line feed deeper in the buf can
+            // only still be "leading" if everything in front of it was whitespace/carriage
+            // returns/junk, and any of those already force the processing path
+            return true;
+        }
+
+        return false;
+    }
+
+    /// Append the given buf and store a journal of anything we trim/strip (ascii/ansii stuff,
+    /// plus carriage returns when normalize_line_feeds is set). Called "appendWithProcessing"
+    /// because it does the ascii/ansi stripping (if applicable).
     pub fn appendWithProcessing(
         self: *ProcessedBuf,
         allocator: std.mem.Allocator,
         buf: []u8,
     ) !void {
-        if (!ascii.hasStrippableByte(buf)) {
+        const has_strippable = ascii.hasStrippableByte(buf);
+        const needs_normalization = self.bufNeedsNormalization(buf);
+
+        if (!has_strippable and !needs_normalization) {
             try self.processed.appendSlice(allocator, buf);
+
+            return;
+        }
+
+        if (!has_strippable) {
+            // nothing ansi/ascii to strip, only line feed and/or whitespace normalization
+            try self.appendProcessedNormalized(allocator, buf);
 
             return;
         }
@@ -297,29 +369,208 @@ pub const ProcessedBuf = struct {
             .haystack = buf,
         };
 
+        // the iterator compacts kept bytes in place at the front of buf as it goes, yielding
+        // junk runs -- i.pos is the position of the junk in the *compacted* output, so at yield
+        // time buf[0..i.pos] is final kept content. we consume kept segments as they finalize
+        // (rather than all at once at .done) so that journal entries -- both the iterator's junk
+        // *and* any carriage returns we journal out of the kept segments -- land at the live
+        // processed position, in raw order.
+        var kept_consumed: usize = 0;
+
         while (true) {
             switch (iter.next()) {
                 .item => |i| {
-                    // raw buf holds *only* the raw content, the "journal" (index?) thing holds
-                    // where these go to repopulate a full "raw" output
-                    try self.raw.appendSlice(allocator, i.content);
+                    try self.appendProcessedNormalized(allocator, buf[kept_consumed..i.pos]);
+                    kept_consumed = i.pos;
 
-                    try self.raw_journal.append(
-                        allocator,
-                        ProcessedBufRawJournalEntry{
-                            // have to increment the pos + the already processed len so its
-                            // absolute
-                            .pos = i.pos + self.processed.items.len,
-                            .len = i.content.len,
-                        },
-                    );
+                    // raw buf holds *only* the raw content, the "journal" (index kinda) thing holds
+                    // where these go to repopulate a full "raw" output. if theres pending
+                    // whitespace in front of this junk the junks journal position isnt knowable
+                    // yet (depends how the pending resolves), so it queues behind the pending --
+                    // note the pending copies the content, which matters because the iterators
+                    // yielded content is only valid until the next iteration
+                    if (self.pending_runs.items.len > 0) {
+                        try self.pushPending(allocator, i.content, false);
+                    } else {
+                        try self.appendRaw(allocator, i.content);
+                    }
                 },
                 .done => |n| {
-                    try self.processed.appendSlice(allocator, buf[0..n]);
+                    try self.appendProcessedNormalized(allocator, buf[kept_consumed..n]);
                     break;
                 },
             }
         }
+    }
+
+    /// Append kept bytes to processed, journaling away carriage returns (normalize_line_feeds)
+    /// and trailing whitespace (normalize_trailing_whitespace). Whitespace runs cant be resolved
+    /// until we see what follows them, so they (and any journal-bound content behind them) sit
+    /// in pending until a line feed (whitespace was trailing, journal it) or any other content
+    /// (whitespace was interior, keep it) shows up.
+    fn appendProcessedNormalized(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        buf: []const u8,
+    ) !void {
+        var idx: usize = 0;
+
+        while (idx < buf.len) {
+            const c = buf[idx];
+
+            if (self.normalize_trailing_whitespace and (c == ' ' or c == '\t')) {
+                var run_end = idx + 1;
+
+                while (run_end < buf.len and
+                    (buf[run_end] == ' ' or buf[run_end] == '\t')) : (run_end += 1)
+                {}
+
+                try self.pushPending(allocator, buf[idx..run_end], true);
+
+                idx = run_end;
+
+                continue;
+            }
+
+            if (self.normalize_line_feeds and c == ascii.control_chars.cr) {
+                var run_end = idx + 1;
+
+                while (run_end < buf.len and
+                    buf[run_end] == ascii.control_chars.cr) : (run_end += 1)
+                {}
+
+                if (self.pending_runs.items.len > 0) {
+                    // position/order of this carriage returns journal entry depends on how the
+                    // pending whitespace resolves, so queue it behind the pending
+                    try self.pushPending(allocator, buf[idx..run_end], false);
+                } else {
+                    try self.appendRaw(allocator, buf[idx..run_end]);
+                }
+
+                idx = run_end;
+
+                continue;
+            }
+
+            if (c == ascii.control_chars.lf and
+                (self.pending_runs.items.len > 0 or
+                    (self.normalize_trailing_whitespace and self.processed.items.len == 0)))
+            {
+                // a line feed resolves any pending whitespace as trailing (journal it) -- and if
+                // processed is (still) empty after that, this is a *leading* line feed (left over
+                // from the preceding input/prompt) so it gets journaled too rather than kept. we
+                // only land in this branch when one of those two things is true -- a boring
+                // interior line feed just flows through the plain content path below
+                if (self.pending_runs.items.len > 0) {
+                    try self.flushPending(allocator, false);
+                }
+
+                if (self.normalize_trailing_whitespace and self.processed.items.len == 0) {
+                    var run_end = idx + 1;
+
+                    while (run_end < buf.len and
+                        buf[run_end] == ascii.control_chars.lf) : (run_end += 1)
+                    {}
+
+                    try self.appendRaw(allocator, buf[idx..run_end]);
+
+                    idx = run_end;
+                } else {
+                    try self.processed.append(allocator, c);
+
+                    idx += 1;
+                }
+
+                continue;
+            }
+
+            // any other content resolves pending whitespace: a line feed means the pending
+            // whitespace was trailing (journal it), anything else means it was just normal and
+            // we should retain it
+            if (self.pending_runs.items.len > 0) {
+                try self.flushPending(allocator, true);
+            }
+
+            // scan ahead to the next byte that needs special handling so we can append plain
+            // content in slices rather than byte at a time
+            var run_end = idx + 1;
+
+            while (run_end < buf.len) : (run_end += 1) {
+                const rc = buf[run_end];
+
+                if ((self.normalize_trailing_whitespace and (rc == ' ' or rc == '\t')) or
+                    (self.normalize_line_feeds and rc == ascii.control_chars.cr))
+                {
+                    break;
+                }
+            }
+
+            try self.processed.appendSlice(allocator, buf[idx..run_end]);
+
+            idx = run_end;
+        }
+    }
+
+    /// Append content to the pending whitespace buffers -- kept indicates whether this content
+    /// gets appended to processed (whitespace that may end up interior) or journaled (carriage
+    /// returns / ansi junk) when the pending resolves. Merges into the previous run when the
+    /// kind matches.
+    fn pushPending(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        content: []const u8,
+        kept: bool,
+    ) !void {
+        if (content.len == 0) {
+            return;
+        }
+
+        try self.pending.appendSlice(allocator, content);
+
+        if (self.pending_runs.items.len > 0) {
+            const last = &self.pending_runs.items[self.pending_runs.items.len - 1];
+
+            if (last.kept == kept) {
+                last.len += content.len;
+
+                return;
+            }
+        }
+
+        try self.pending_runs.append(
+            allocator,
+            PendingRun{
+                .kept = kept,
+                .len = content.len,
+            },
+        );
+    }
+
+    /// Resolve the pending whitespace -- keep_whitespace true means the whitespace runs turned
+    /// out to be interior (append them to processed), false means they were trailing (journal
+    /// them). journal-bound runs (carriage returns/junk) are journaled either way, in raw order,
+    /// at the live processed position.
+    fn flushPending(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        keep_whitespace: bool,
+    ) !void {
+        var offset: usize = 0;
+
+        for (self.pending_runs.items) |run| {
+            const content = self.pending.items[offset..][0..run.len];
+
+            if (run.kept and keep_whitespace) {
+                try self.processed.appendSlice(allocator, content);
+            } else {
+                try self.appendRaw(allocator, content);
+            }
+
+            offset += run.len;
+        }
+
+        self.pending.clearRetainingCapacity();
+        self.pending_runs.clearRetainingCapacity();
     }
 
     /// Append bytes that are kept -- i.e. the "processed" bytes -- this path is (currently?) just
@@ -477,11 +728,44 @@ pub const ProcessedBuf = struct {
         return out;
     }
 
+    /// Settle any in-flight normalization state before dumping -- whitespace still pending at
+    /// dump time is trailing by definition (journal it), and, when normalizing trailing
+    /// whitespace, any whitespace/line feeds sitting at the very end of processed get demoted
+    /// into the journal too (the streaming rules keep interior line feeds, so a final trailing
+    /// "\n" -- or a run of whitespace/newlines exposed by prompt removal -- only becomes
+    /// journal-able once we know nothing else is coming).
+    fn finalizeNormalized(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+    ) !void {
+        try self.flushPending(allocator, false);
+
+        if (!self.normalize_trailing_whitespace) {
+            return;
+        }
+
+        var end = self.processed.items.len;
+
+        while (end > 0) : (end -= 1) {
+            const c = self.processed.items[end - 1];
+
+            if (c != ' ' and c != '\t' and c != '\n' and c != '\r') {
+                break;
+            }
+        }
+
+        if (end < self.processed.items.len) {
+            try self.rightTrimProcessed(allocator, end);
+        }
+    }
+
     /// Return the "raw" and "processed" buffers, caller owns memory.
     pub fn toOwnedSlices(
         self: *ProcessedBuf,
         allocator: std.mem.Allocator,
     ) ![2][]const u8 {
+        try self.finalizeNormalized(allocator);
+
         const journaled_raw = try self.rawToJournaledOwnedSlice(allocator);
         errdefer allocator.free(journaled_raw);
 
@@ -497,6 +781,8 @@ pub const ProcessedBuf = struct {
     /// returned memory) without consuming this ProcessedBuf, so the (almost certainly) Session
     /// can continue using this object..
     pub fn dupeOwnedSlices(self: *ProcessedBuf, allocator: std.mem.Allocator) ![2][]const u8 {
+        try self.finalizeNormalized(allocator);
+
         const journaled_raw = try self.rawToJournaledOwnedSlice(allocator);
         errdefer allocator.free(journaled_raw);
 
@@ -633,6 +919,475 @@ test "ProcessedBuf append journal multiple appends" {
         try std.testing.expectEqual(expected_journal[idx].pos, i.pos);
         try std.testing.expectEqual(expected_journal[idx].len, i.len);
     }
+}
+
+test "ProcessedBuf append journal normalize line feeds" {
+    const cases = [_]struct {
+        name: []const u8,
+        in_buf: []const u8,
+        expected_processed: []const u8,
+        expected_raw: []const u8,
+        expected_journal: []const ProcessedBufRawJournalEntry,
+    }{
+        .{
+            .name = "simple crlf",
+            .in_buf = "foo\r\nbar",
+            .expected_processed = "foo\nbar",
+            .expected_raw = "\r",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 3, .len = 1 },
+            },
+        },
+        .{
+            .name = "consecutive crs coalesce to one entry",
+            .in_buf = "foo\r\r\n",
+            .expected_processed = "foo\n",
+            .expected_raw = "\r\r",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 3, .len = 2 },
+            },
+        },
+        .{
+            .name = "junk then cr, same pos, raw order",
+            .in_buf = "foo\x1B[0m\r\nbar",
+            .expected_processed = "foo\nbar",
+            .expected_raw = "\x1B[0m\r",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 3, .len = 4 },
+                .{ .pos = 3, .len = 1 },
+            },
+        },
+        .{
+            .name = "cr then junk, same pos, raw order",
+            .in_buf = "foo\r\x1B[0mbar",
+            .expected_processed = "foobar",
+            .expected_raw = "\r\x1B[0m",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 3, .len = 1 },
+                .{ .pos = 3, .len = 4 },
+            },
+        },
+        .{
+            .name = "cr only buf",
+            .in_buf = "\r",
+            .expected_processed = "",
+            .expected_raw = "\r",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 0, .len = 1 },
+            },
+        },
+    };
+
+    for (cases) |case| {
+        var pb = ProcessedBuf.init();
+        pb.normalize_line_feeds = true;
+
+        defer pb.deinit(std.testing.allocator);
+
+        const in_buf = try std.testing.allocator.dupe(u8, case.in_buf);
+        defer std.testing.allocator.free(in_buf);
+
+        try pb.appendWithProcessing(std.testing.allocator, in_buf);
+
+        std.testing.expectEqualStrings(case.expected_processed, pb.processed.items) catch |err| {
+            std.debug.print("normalize line feeds case failed: {s}\n", .{case.name});
+
+            return err;
+        };
+        try std.testing.expectEqualStrings(case.expected_raw, pb.raw.items);
+
+        try std.testing.expectEqual(case.expected_journal.len, pb.raw_journal.items.len);
+
+        for (0.., pb.raw_journal.items) |idx, i| {
+            try std.testing.expectEqual(case.expected_journal[idx].pos, i.pos);
+            try std.testing.expectEqual(case.expected_journal[idx].len, i.len);
+        }
+
+        // and the whole point: the journal must reconstruct the true raw
+        const owned = try pb.dupeOwnedSlices(std.testing.allocator);
+        defer std.testing.allocator.free(owned[0]);
+        defer std.testing.allocator.free(owned[1]);
+
+        const reconstructed = try reconstructRaw(std.testing.allocator, owned[0], owned[1]);
+        defer std.testing.allocator.free(reconstructed);
+
+        std.testing.expectEqualStrings(case.in_buf, reconstructed) catch |err| {
+            std.debug.print("normalize line feeds round trip failed: {s}\n", .{case.name});
+
+            return err;
+        };
+    }
+}
+
+test "ProcessedBuf append journal normalize line feeds chunk boundary" {
+    // a cr at the end of one chunk and its lf at the start of the next -- the cr must journal
+    // at the right absolute position even though the appends are separate
+    var pb = ProcessedBuf.init();
+    pb.normalize_line_feeds = true;
+
+    defer pb.deinit(std.testing.allocator);
+
+    const chunk_one = try std.testing.allocator.dupe(u8, "foo\r");
+    defer std.testing.allocator.free(chunk_one);
+
+    const chunk_two = try std.testing.allocator.dupe(u8, "\nbar");
+    defer std.testing.allocator.free(chunk_two);
+
+    try pb.appendWithProcessing(std.testing.allocator, chunk_one);
+    try pb.appendWithProcessing(std.testing.allocator, chunk_two);
+
+    try std.testing.expectEqualStrings("foo\nbar", pb.processed.items);
+    try std.testing.expectEqualStrings("\r", pb.raw.items);
+
+    try std.testing.expectEqual(1, pb.raw_journal.items.len);
+    try std.testing.expectEqual(3, pb.raw_journal.items[0].pos);
+    try std.testing.expectEqual(1, pb.raw_journal.items[0].len);
+
+    const owned = try pb.dupeOwnedSlices(std.testing.allocator);
+    defer std.testing.allocator.free(owned[0]);
+    defer std.testing.allocator.free(owned[1]);
+
+    const reconstructed = try reconstructRaw(std.testing.allocator, owned[0], owned[1]);
+    defer std.testing.allocator.free(reconstructed);
+
+    try std.testing.expectEqualStrings("foo\r\nbar", reconstructed);
+}
+
+test "ProcessedBuf append journal normalize trailing whitespace" {
+    const cases = [_]struct {
+        name: []const u8,
+        in_buf: []const u8,
+        expected_processed: []const u8,
+        expected_raw: []const u8,
+        expected_journal: []const ProcessedBufRawJournalEntry,
+    }{
+        .{
+            .name = "interior whitespace kept",
+            .in_buf = "a \t b",
+            .expected_processed = "a \t b",
+            .expected_raw = "",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{},
+        },
+        .{
+            .name = "eol trailing whitespace journaled per line",
+            .in_buf = "line1 \t\nline2\t\nx",
+            .expected_processed = "line1\nline2\nx",
+            .expected_raw = " \t\t",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 5, .len = 2 },
+                .{ .pos = 11, .len = 1 },
+            },
+        },
+        .{
+            .name = "trailing whitespace at dump journaled",
+            .in_buf = "foo ",
+            .expected_processed = "foo",
+            .expected_raw = " ",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 3, .len = 1 },
+            },
+        },
+        .{
+            .name = "junk mid whitespace run, run kept",
+            .in_buf = "a \x1B[0m b",
+            .expected_processed = "a  b",
+            .expected_raw = "\x1B[0m",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 2, .len = 4 },
+            },
+        },
+        .{
+            .name = "junk mid whitespace run, run trailed",
+            .in_buf = "a \x1B[0m \nb",
+            .expected_processed = "a\nb",
+            .expected_raw = " \x1B[0m ",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 1, .len = 1 },
+                .{ .pos = 1, .len = 4 },
+                .{ .pos = 1, .len = 1 },
+            },
+        },
+        .{
+            .name = "cr interleaved in whitespace run is journaled, run preserved",
+            .in_buf = "a \r\t b",
+            .expected_processed = "a \t b",
+            .expected_raw = "\r",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 2, .len = 1 },
+            },
+        },
+        .{
+            .name = "crlf line ending w/ trailing whitespace",
+            .in_buf = "foo \r\nbar",
+            .expected_processed = "foo\nbar",
+            .expected_raw = " \r",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 3, .len = 1 },
+                .{ .pos = 3, .len = 1 },
+            },
+        },
+    };
+
+    for (cases) |case| {
+        var pb = ProcessedBuf.init();
+        pb.normalize_line_feeds = true;
+        pb.normalize_trailing_whitespace = true;
+
+        defer pb.deinit(std.testing.allocator);
+
+        const in_buf = try std.testing.allocator.dupe(u8, case.in_buf);
+        defer std.testing.allocator.free(in_buf);
+
+        try pb.appendWithProcessing(std.testing.allocator, in_buf);
+
+        // dump (which resolves any still-pending whitespace as trailing) *before* asserting so
+        // the buffers are in their final state -- this mirrors what record/fetch does
+        const owned = try pb.dupeOwnedSlices(std.testing.allocator);
+        defer std.testing.allocator.free(owned[0]);
+        defer std.testing.allocator.free(owned[1]);
+
+        std.testing.expectEqualStrings(case.expected_processed, pb.processed.items) catch |err| {
+            std.debug.print("normalize trailing whitespace case failed: {s}\n", .{case.name});
+
+            return err;
+        };
+        try std.testing.expectEqualStrings(case.expected_raw, pb.raw.items);
+
+        try std.testing.expectEqual(case.expected_journal.len, pb.raw_journal.items.len);
+
+        for (0.., pb.raw_journal.items) |idx, i| {
+            try std.testing.expectEqual(case.expected_journal[idx].pos, i.pos);
+            try std.testing.expectEqual(case.expected_journal[idx].len, i.len);
+        }
+
+        const reconstructed = try reconstructRaw(std.testing.allocator, owned[0], owned[1]);
+        defer std.testing.allocator.free(reconstructed);
+
+        std.testing.expectEqualStrings(case.in_buf, reconstructed) catch |err| {
+            std.debug.print("normalize trailing whitespace round trip failed: {s}\n", .{case.name});
+
+            return err;
+        };
+    }
+}
+
+test "ProcessedBuf append journal normalize trailing whitespace chunk boundaries" {
+    const cases = [_]struct {
+        name: []const u8,
+        chunks: []const []const u8,
+        expected_processed: []const u8,
+    }{
+        .{
+            .name = "pending resolves kept across chunks",
+            .chunks = &.{ "foo ", "bar" },
+            .expected_processed = "foo bar",
+        },
+        .{
+            .name = "pending resolves trailed across chunks",
+            .chunks = &.{ "foo ", "\nbar" },
+            .expected_processed = "foo\nbar",
+        },
+        .{
+            // note: the trailing \n itself also journals now (final suffix demote at dump)
+            .name = "pending grows across chunks then trails",
+            .chunks = &.{ "foo ", "\t", "\n" },
+            .expected_processed = "foo",
+        },
+        .{
+            .name = "junk chunk lands mid pending",
+            .chunks = &.{ "foo ", "\x1B[0m", " bar" },
+            .expected_processed = "foo  bar",
+        },
+        .{
+            .name = "cr chunk lands mid pending then trails",
+            .chunks = &.{ "foo ", "\r", "\nbar" },
+            .expected_processed = "foo\nbar",
+        },
+    };
+
+    for (cases) |case| {
+        var pb = ProcessedBuf.init();
+        pb.normalize_line_feeds = true;
+        pb.normalize_trailing_whitespace = true;
+
+        defer pb.deinit(std.testing.allocator);
+
+        var expected_raw_len: usize = 0;
+
+        for (case.chunks) |chunk| {
+            const in_buf = try std.testing.allocator.dupe(u8, chunk);
+            defer std.testing.allocator.free(in_buf);
+
+            try pb.appendWithProcessing(std.testing.allocator, in_buf);
+
+            expected_raw_len += chunk.len;
+        }
+
+        const owned = try pb.dupeOwnedSlices(std.testing.allocator);
+        defer std.testing.allocator.free(owned[0]);
+        defer std.testing.allocator.free(owned[1]);
+
+        std.testing.expectEqualStrings(case.expected_processed, pb.processed.items) catch |err| {
+            std.debug.print("chunk boundary case failed: {s}\n", .{case.name});
+
+            return err;
+        };
+
+        // round trip must equal the concatenation of every chunk exactly
+        const reconstructed = try reconstructRaw(std.testing.allocator, owned[0], owned[1]);
+        defer std.testing.allocator.free(reconstructed);
+
+        try std.testing.expectEqual(expected_raw_len, reconstructed.len);
+
+        var reconstructed_idx: usize = 0;
+
+        for (case.chunks) |chunk| {
+            try std.testing.expectEqualStrings(
+                chunk,
+                reconstructed[reconstructed_idx..][0..chunk.len],
+            );
+
+            reconstructed_idx += chunk.len;
+        }
+    }
+}
+
+test "ProcessedBuf append journal leading and final trailing normalization" {
+    const cases = [_]struct {
+        name: []const u8,
+        in_buf: []const u8,
+        expected_processed: []const u8,
+        expected_raw: []const u8,
+        expected_journal: []const ProcessedBufRawJournalEntry,
+    }{
+        .{
+            .name = "leading line feed journaled",
+            .in_buf = "\nfoo",
+            .expected_processed = "foo",
+            .expected_raw = "\n",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 0, .len = 1 },
+            },
+        },
+        .{
+            .name = "leading line feed run coalesces",
+            .in_buf = "\n\nfoo",
+            .expected_processed = "foo",
+            .expected_raw = "\n\n",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 0, .len = 2 },
+            },
+        },
+        .{
+            .name = "leading crlf journaled",
+            .in_buf = "\r\nfoo",
+            .expected_processed = "foo",
+            .expected_raw = "\r\n",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 0, .len = 1 },
+                .{ .pos = 0, .len = 1 },
+            },
+        },
+        .{
+            .name = "final trailing line feed demoted at dump",
+            .in_buf = "foo\n",
+            .expected_processed = "foo",
+            .expected_raw = "\n",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 3, .len = 1 },
+            },
+        },
+        .{
+            // the " " journals when the \n resolves it as trailing, then the \n itself demotes
+            // at dump -- the fold must keep raw order (" " before "\n")
+            .name = "trailing whitespace then line feed, order preserved",
+            .in_buf = "foo \n",
+            .expected_processed = "foo",
+            .expected_raw = " \n",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 3, .len = 2 },
+            },
+        },
+        .{
+            .name = "interior line feeds kept, only final trailing run demoted",
+            .in_buf = "foo\nbar\n\n",
+            .expected_processed = "foo\nbar",
+            .expected_raw = "\n\n",
+            .expected_journal = &[_]ProcessedBufRawJournalEntry{
+                .{ .pos = 7, .len = 2 },
+            },
+        },
+    };
+
+    for (cases) |case| {
+        var pb = ProcessedBuf.init();
+        pb.normalize_line_feeds = true;
+        pb.normalize_trailing_whitespace = true;
+
+        defer pb.deinit(std.testing.allocator);
+
+        const in_buf = try std.testing.allocator.dupe(u8, case.in_buf);
+        defer std.testing.allocator.free(in_buf);
+
+        try pb.appendWithProcessing(std.testing.allocator, in_buf);
+
+        const owned = try pb.dupeOwnedSlices(std.testing.allocator);
+        defer std.testing.allocator.free(owned[0]);
+        defer std.testing.allocator.free(owned[1]);
+
+        std.testing.expectEqualStrings(case.expected_processed, pb.processed.items) catch |err| {
+            std.debug.print("leading/final trailing case failed: {s}\n", .{case.name});
+
+            return err;
+        };
+        try std.testing.expectEqualStrings(case.expected_raw, pb.raw.items);
+
+        try std.testing.expectEqual(case.expected_journal.len, pb.raw_journal.items.len);
+
+        for (0.., pb.raw_journal.items) |idx, i| {
+            try std.testing.expectEqual(case.expected_journal[idx].pos, i.pos);
+            try std.testing.expectEqual(case.expected_journal[idx].len, i.len);
+        }
+
+        const reconstructed = try reconstructRaw(std.testing.allocator, owned[0], owned[1]);
+        defer std.testing.allocator.free(reconstructed);
+
+        std.testing.expectEqualStrings(case.in_buf, reconstructed) catch |err| {
+            std.debug.print("leading/final trailing round trip failed: {s}\n", .{case.name});
+
+            return err;
+        };
+    }
+}
+
+test "ProcessedBuf prompt removal then final trailing demote" {
+    // mimics the session flow: prompt gets demoted via rightTrimProcessed, which exposes a
+    // trailing line feed that then demotes at dump -- the demote-after-demote fold must keep
+    // raw order so reconstruction is exact
+    var pb = ProcessedBuf.init();
+    pb.normalize_line_feeds = true;
+    pb.normalize_trailing_whitespace = true;
+
+    defer pb.deinit(std.testing.allocator);
+
+    const in_buf = try std.testing.allocator.dupe(u8, "foo\nprompt>");
+    defer std.testing.allocator.free(in_buf);
+
+    try pb.appendWithProcessing(std.testing.allocator, in_buf);
+
+    // "remove" the trailing prompt like session does
+    try pb.rightTrimProcessed(std.testing.allocator, 4);
+
+    const owned = try pb.dupeOwnedSlices(std.testing.allocator);
+    defer std.testing.allocator.free(owned[0]);
+    defer std.testing.allocator.free(owned[1]);
+
+    try std.testing.expectEqualStrings("foo", pb.processed.items);
+
+    const reconstructed = try reconstructRaw(std.testing.allocator, owned[0], owned[1]);
+    defer std.testing.allocator.free(reconstructed);
+
+    try std.testing.expectEqualStrings("foo\nprompt>", reconstructed);
 }
 
 test "ProcessedBuf rightTrimFrom" {
