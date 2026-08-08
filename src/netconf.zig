@@ -144,15 +144,17 @@ pub const Driver = struct {
 
     session: session.Session,
 
-    server_capabilities: ?std.ArrayList(Capability),
-    negotiated_version: operation.Version,
-    session_id: ?u64,
+    server_capabilities: ?std.ArrayList(Capability) = .empty,
+    negotiated_version: operation.Version = .version_1_0,
+    session_id: ?u64 = null,
 
-    process_thread: ?std.Thread,
-    process_stop: std.atomic.Value(ProcessThreadState),
+    process_thread: ?std.Thread = null,
+    process_stop: std.atomic.Value(ProcessThreadState) = std.atomic.Value(ProcessThreadState).init(
+        ProcessThreadState.uninitialized,
+    ),
     process_thread_exited: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
-    message_id: u64,
+    message_id: u64 = 101,
 
     messages: std.HashMap(
         u64,
@@ -160,10 +162,10 @@ pub const Driver = struct {
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
-    messages_lock: std.Io.Mutex,
+    messages_lock: std.Io.Mutex = .init,
 
-    notifications: std.ArrayList([]const u8),
-    notifications_lock: std.Io.Mutex,
+    notifications: std.ArrayList([]const u8) = .empty,
+    notifications_lock: std.Io.Mutex = .init,
 
     subscriptions: std.HashMap(
         u64,
@@ -171,7 +173,7 @@ pub const Driver = struct {
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
-    subscriptions_lock: std.Io.Mutex,
+    subscriptions_lock: std.Io.Mutex = .init,
 
     last_error: errors.LastError = .{},
 
@@ -218,6 +220,10 @@ pub const Driver = struct {
             },
         }
 
+        // netconf *never* normalizes -- force these settings
+        o.session.normalize_line_feeds = false;
+        o.session.normalize_trailing_whitespace = false;
+
         var s = try session.Session.init(
             allocator,
             io,
@@ -249,30 +255,18 @@ pub const Driver = struct {
             .host = host,
             .options = o,
             .session = s,
-            .server_capabilities = .empty,
-            .negotiated_version = .version_1_0,
-            .session_id = null,
-            .process_thread = null,
-            .process_stop = std.atomic.Value(ProcessThreadState).init(
-                ProcessThreadState.uninitialized,
-            ),
-            .message_id = 101,
             .messages = std.HashMap(
                 u64,
                 [2][]const u8,
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
-            .messages_lock = std.Io.Mutex.init,
-            .notifications = .empty,
-            .notifications_lock = std.Io.Mutex.init,
             .subscriptions = std.HashMap(
                 u64,
                 std.ArrayList([]const u8),
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
-            .subscriptions_lock = std.Io.Mutex.init,
             .parsed_scratch = parsed_scratch,
         };
 
