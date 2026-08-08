@@ -3,12 +3,7 @@ const std = @import("std");
 const bytes = @import("bytes.zig");
 const operation = @import("cli-operation.zig");
 
-/// Holds options related to how a result should look.
-pub const GetResultOptions = struct {
-    delimiter: []const u8 = "\n",
-    normalize_line_feeds: bool = true,
-    normalize_trailing_whitespace: bool = true,
-};
+const result_join_delimiter = "\n";
 
 /// Holds result information for Cli opereations.
 pub const Result = struct {
@@ -189,31 +184,10 @@ pub const Result = struct {
         return secs_rounded;
     }
 
-    /// Gets the input length, used for ensuring we have properly sized buffers when passing a
-    /// result out of zig into the ffi layer.
-    pub fn getInputLen(
-        self: *Result,
-        options: GetResultOptions,
-    ) usize {
-        var out_size: usize = 0;
-
-        for (0.., self.inputs.items) |idx, input| {
-            out_size += input.len;
-
-            if (idx != self.inputs.items.len - 1) {
-                // not last result, add spacing for the delimiter
-                out_size += options.delimiter.len;
-            }
-        }
-
-        return out_size;
-    }
-
-    /// Gets the raw result length, used for ensuring we have properly sized buffers when passing a
-    /// result out of zig into the ffi layer.
+    /// Gets the raw result length -- the size of all *reconstructed* raw entries joined on
+    /// newlines. Used for sizing the buffer passed to getResultRawPreAllocated.
     pub fn getResultRawLen(
         self: *Result,
-        options: GetResultOptions,
     ) !usize {
         var out_size: usize = 0;
 
@@ -226,83 +200,107 @@ pub const Result = struct {
             );
 
             if (idx != self.results_raw_journal.items.len - 1) {
-                // not last result, add spacing for the delimiter
-                out_size += options.delimiter.len;
+                out_size += result_join_delimiter.len;
             }
         }
 
         return out_size;
     }
 
-    /// Returns all raw results joined on a options.delim string, caller owns joined string.
-    /// Note that this *reconstructs* the raw output from each entry's (journaled raw,
-    /// processed) pair -- raw is never retained anywhere, only rebuilt on demand.
+    /// Returns all raw results joined on newlines, caller owns joined string. Note that this
+    /// *reconstructs* the raw output from each entry's (journaled raw, processed) pair -- raw
+    /// is never retained anywhere, only rebuilt on demand.
     pub fn getResultRaw(
         self: *Result,
         allocator: std.mem.Allocator,
-        options: GetResultOptions,
     ) ![]const u8 {
         const out = try allocator.alloc(
             u8,
-            try self.getResultRawLen(
-                .{
-                    .delimiter = options.delimiter,
-                },
-            ),
+            try self.getResultRawLen(),
         );
         errdefer allocator.free(out);
 
-        try self.getResultRawPreAllocated(out, options);
+        try self.getResultRawPreAllocated(out);
 
         return out;
     }
 
-    /// Gets the result length, used for ensuring we have properly sized buffers when passing a
-    /// result out of zig into the ffi layer.
-    pub fn getResultLen(
+    /// Returns all raw results joined on newlines, but expects user to have already allocated
+    /// buf to the appropriate size (hint: use getResultRawLen). Reconstructs each entry's raw
+    /// from its (journaled raw, processed) pair.
+    pub fn getResultRawPreAllocated(
         self: *Result,
-        options: GetResultOptions,
-    ) usize {
-        return getJoinedLen(self.results.items, options);
+        out: []u8,
+    ) !void {
+        var cur: usize = 0;
+
+        for (0.., self.results_raw_journal.items) |idx, result_raw_journal| {
+            const entry_raw = try bytes.reconstructRaw(
+                self.allocator,
+                result_raw_journal,
+                self.results.items[idx],
+            );
+            defer self.allocator.free(entry_raw);
+
+            @memcpy(out[cur..][0..entry_raw.len], entry_raw);
+            cur += entry_raw.len;
+
+            if (idx != self.results_raw_journal.items.len - 1) {
+                for (result_join_delimiter) |delimiter_char| {
+                    out[cur] = delimiter_char;
+                    cur += 1;
+                }
+            }
+        }
     }
 
-    /// Returns all results joined on options.delim string, caller owns joined string.
+    /// Gets the result length -- all entries joined on newlines. Used for sizing the buffer
+    /// passed to getResultPreAllocated.
+    pub fn getResultLen(
+        self: *Result,
+    ) usize {
+        var out_size: usize = 0;
+
+        for (0.., self.results.items) |idx, result| {
+            out_size += result.len;
+
+            if (idx != self.results.items.len - 1) {
+                out_size += result_join_delimiter.len;
+            }
+        }
+
+        return out_size;
+    }
+
+    /// Returns all results joined on newlines, caller owns joined string.
     pub fn getResult(
         self: *Result,
         allocator: std.mem.Allocator,
-        options: GetResultOptions,
     ) ![]const u8 {
         const out = try allocator.alloc(
             u8,
-            self.getResultLen(
-                options,
-            ),
+            self.getResultLen(),
         );
 
-        try self.getResultPreAllocated(
-            out,
-            options,
-        );
+        self.getResultPreAllocated(out);
 
         return out;
     }
 
-    /// Returns all results joined on options.delim string, but expects user to have already
-    /// allocated buf to the appropriate size (hint: use getResultLen w/ the same options).
+    /// Returns all results joined on newlines, but expects user to have already allocated buf
+    /// to the appropriate size (hint: use getResultLen).
     pub fn getResultPreAllocated(
         self: *Result,
         out: []u8,
-        options: GetResultOptions,
-    ) !void {
-        if (out.len == 0) return;
-
+    ) void {
         var cur: usize = 0;
 
         for (0.., self.results.items) |idx, result| {
-            cur = renderResult(result, options, out, cur);
+            @memcpy(out[cur..][0..result.len], result);
+            cur += result.len;
 
             if (idx != self.results.items.len - 1) {
-                for (options.delimiter) |delimiter_char| {
+                for (result_join_delimiter) |delimiter_char| {
                     out[cur] = delimiter_char;
                     cur += 1;
                 }
@@ -339,16 +337,15 @@ pub const Result = struct {
         return out_size;
     }
 
-    /// Total size of all rendered results packed back-to-back (no delimiters) -- used for sizing
-    /// the ffi layer's packed result buffer.
+    /// Total size of all results packed back-to-back (no delimiters) -- used for sizing the ffi
+    /// layer's packed result buffer.
     pub fn getResultsPackedLen(
         self: *Result,
-        options: GetResultOptions,
     ) usize {
         var out_size: usize = 0;
 
         for (self.results.items) |result| {
-            out_size = renderResult(result, options, null, out_size);
+            out_size += result.len;
         }
 
         return out_size;
@@ -390,286 +387,62 @@ pub const Result = struct {
         }
     }
 
-    /// Packs all rendered results back-to-back into out (sized via getResultsPackedLen w/ the
-    /// same options), recording each entry's length into lens (sized to the result count) so the
-    /// caller can slice the packed buffer back apart.
+    /// Packs all results back-to-back into out (sized via getResultsPackedLen), recording each
+    /// entry's length into lens (sized to the result count) so the caller can slice the packed
+    /// buffer back apart.
     pub fn packResults(
         self: *Result,
         out: []u8,
         lens: []u64,
-        options: GetResultOptions,
     ) void {
         var cur: usize = 0;
 
         for (0.., self.results.items) |idx, result| {
-            const end = renderResult(result, options, out, cur);
+            @memcpy(out[cur..][0..result.len], result);
+            cur += result.len;
 
-            lens[idx] = @intCast(end - cur);
-            cur = end;
-        }
-    }
-
-    /// Returns all raw results joined on options.delim string, but expects user to have already
-    /// allocated buf to the appropriate size (hint: use getResultRawLen w/ the same options).
-    /// Reconstructs each entry's raw from its (journaled raw, processed) pair.
-    pub fn getResultRawPreAllocated(
-        self: *Result,
-        out: []u8,
-        options: GetResultOptions,
-    ) !void {
-        var cur: usize = 0;
-
-        for (0.., self.results_raw_journal.items) |idx, result_raw_journal| {
-            const entry_raw = try bytes.reconstructRaw(
-                self.allocator,
-                result_raw_journal,
-                self.results.items[idx],
-            );
-            defer self.allocator.free(entry_raw);
-
-            @memcpy(out[cur..][0..entry_raw.len], entry_raw);
-            cur += entry_raw.len;
-
-            if (idx != self.results_raw_journal.items.len - 1) {
-                for (options.delimiter) |delimiter_char| {
-                    out[cur] = delimiter_char;
-                    cur += 1;
-                }
-            }
+            lens[idx] = @intCast(result.len);
         }
     }
 };
 
-/// render means do line feed normalization (if set -- \r are removed) and trailing whitespace
-/// normalization (if set) -- no other changes, scrapli shouldnt be messing w/ output from a
-/// device in other situations (barring the ansi/ascii stuff that would already have happened).
-fn renderResult(
-    entry: []const u8,
-    options: GetResultOptions,
-    maybe_out: ?[]u8,
-    start: usize,
-) usize {
-    const trimmed = if (options.normalize_trailing_whitespace)
-        // trim leading newlines since if that exists its probably left over from the preceeding
-        // input/prompt, but as the setting is *trailing whitespace* make sure we are only trimming
-        // whitespace at the *end*
-        std.mem.trimStart(u8, std.mem.trimEnd(u8, entry, " \t\n\r"), "\n\r")
-    else
-        entry;
+test "getResult and getResultRaw join on newlines" {
+    var res = try Result.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        22,
+        operation.Kind.send_input,
+        null,
+    );
+    defer res.deinit();
 
-    var cur = start;
-    var idx: usize = 0;
-
-    while (idx < trimmed.len) {
-        const ch = trimmed[idx];
-
-        if (options.normalize_line_feeds and ch == '\r') {
-            // iterate past \r we are removing them
-            idx += 1;
-
-            continue;
-        }
-
-        if (options.normalize_trailing_whitespace and (ch == ' ' or ch == '\t')) {
-            // cur character is whitespace -- go run up ahead and see when whitespace stops
-            // and move our cursor to that position for the outer loop
-            var run_end = idx;
-
-            while (run_end < trimmed.len) : (run_end += 1) {
-                const run_ch = trimmed[run_end];
-
-                if (run_ch == ' ' or
-                    run_ch == '\t' or
-                    (options.normalize_line_feeds and run_ch == '\r'))
-                {
-                    continue;
-                }
-
-                break;
-            }
-
-            if (run_end == trimmed.len or trimmed[run_end] == '\n') {
-                // end of the line or end of the full result, so we are done checking for whitespace
-                // and can continue the *outer* loop while pushign the idx up past the whitespace we
-                // just ran past; this shouldnt ever get hit since we do the trim at the start of
-                // the func, but... just in case it can stay
-                idx = run_end;
-
-                continue;
-            }
-
-            // wasn't end of line, so write into the out buf (if provided -- it wont have been if
-            // caller is just fetching length), and increment the total size cursor
-            while (idx < run_end) : (idx += 1) {
-                const run_ch = trimmed[idx];
-
-                if (options.normalize_line_feeds and run_ch == '\r') {
-                    continue;
-                }
-
-                if (maybe_out) |out| {
-                    out[cur] = run_ch;
-                }
-
-                cur += 1;
-            }
-
-            continue;
-        }
-
-        if (maybe_out) |out| {
-            out[cur] = ch;
-        }
-
-        cur += 1;
-        idx += 1;
-    }
-
-    return cur;
-}
-
-fn getJoinedLen(
-    items: []const []const u8,
-    options: GetResultOptions,
-) usize {
-    var len: usize = 0;
-
-    for (0.., items) |idx, result| {
-        len = renderResult(result, options, null, len);
-
-        if (idx != items.len - 1) {
-            len += options.delimiter.len;
-        }
-    }
-
-    return len;
-}
-
-test "getJoinedLen" {
-    const cases = [_]struct {
-        items: []const []const u8,
-        options: GetResultOptions,
-        expected: usize,
-    }{
+    // empty journals -> raw == result for each entry
+    try res.record(
         .{
-            // nothing to change
-            .items = &.{ "foo", "bar" },
-            .options = .{},
-            .expected = 7,
-        },
-        .{
-            // trailing whitespace
-            .items = &.{ "foo ", "bar" },
-            .options = .{},
-            .expected = 7,
-        },
-        .{
-            // crlf
-            .items = &.{ "foo\x0D\x0A", "bar" },
-            .options = .{},
-            .expected = 7,
-        },
-        .{
-            // crlf
-            .items = &.{"\x0D\x0Afoo"},
-            .options = .{},
-            .expected = 3,
-        },
-        .{
-            // trailing space
-            .items = &.{"foo "},
-            .options = .{},
-            .expected = 3,
-        },
-    };
-
-    for (cases) |case| {
-        const actual = getJoinedLen(case.items, case.options);
-
-        try std.testing.expectEqual(case.expected, actual);
-    }
-}
-
-test "getResultPreservesWhitespace" {
-    // this test case was created to ensure that we dont ever remove any kind of whitespace inside
-    // the actual content we get from a device -- thats not something scrapli should do, it should
-    // just present whatever the device gave us. we *do* trim trailing whitespace and we also do
-    // line normalization and stuff but that shouldnt ever mess w/ content from the device we are
-    // talking to.
-    const cases = [_]struct {
-        name: []const u8,
-        entry: []const u8,
-        options: GetResultOptions,
-        expected: []const u8,
-    }{
-        .{
-            .name = "interior tab preserved",
-            .entry = "foo\tbar",
-            .options = .{},
-            .expected = "foo\tbar",
-        },
-        .{
-            .name = "interior mixed whitespace preserved",
-            .entry = "a \t b\r\n",
-            .options = .{},
-            .expected = "a \t b",
-        },
-        .{
-            .name = "tab aligned columns preserved, trailing ws still dropped",
-            .entry = "col1\t\tcol2  end \r\n",
-            .options = .{},
-            .expected = "col1\t\tcol2  end",
-        },
-        .{
-            .name = "cr interleaved in whitespace run is stripped, run preserved",
-            .entry = "a \r\t b",
-            .options = .{},
-            .expected = "a \t b",
-        },
-        .{
-            .name = "eol trailing whitespace dropped per line",
-            .entry = "line1 \t\nline2\t\n",
-            .options = .{},
-            .expected = "line1\nline2",
-        },
-        .{
-            .name = "no normalization passes everything through",
-            .entry = "a \t b\r\n",
-            .options = .{
-                .normalize_line_feeds = false,
-                .normalize_trailing_whitespace = false,
+            .rets = [2][]const u8{
+                try std.testing.allocator.dupe(u8, ""),
+                try std.testing.allocator.dupe(u8, "foo"),
             },
-            .expected = "a \t b\r\n",
         },
-    };
+    );
 
-    for (cases) |case| {
-        var res = try Result.init(
-            std.testing.allocator,
-            std.testing.io,
-            "localhost",
-            22,
-            operation.Kind.send_input,
-            null,
-        );
-        defer res.deinit();
-
-        try res.record(
-            .{
-                .rets = [2][]const u8{
-                    try std.testing.allocator.dupe(u8, case.entry),
-                    try std.testing.allocator.dupe(u8, case.entry),
-                },
+    try res.record(
+        .{
+            .rets = [2][]const u8{
+                try std.testing.allocator.dupe(u8, ""),
+                try std.testing.allocator.dupe(u8, "bar"),
             },
-        );
+        },
+    );
 
-        const actual = try res.getResult(std.testing.allocator, case.options);
-        defer std.testing.allocator.free(actual);
+    const actual = try res.getResult(std.testing.allocator);
+    defer std.testing.allocator.free(actual);
 
-        std.testing.expectEqualStrings(case.expected, actual) catch |err| {
-            std.debug.print("getResultPreservesWhitespace case failed: {s}\n", .{case.name});
+    try std.testing.expectEqualStrings("foo\nbar", actual);
 
-            return err;
-        };
-    }
+    const actual_raw = try res.getResultRaw(std.testing.allocator);
+    defer std.testing.allocator.free(actual_raw);
+
+    try std.testing.expectEqualStrings("foo\nbar", actual_raw);
 }
