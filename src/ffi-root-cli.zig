@@ -342,8 +342,8 @@ export fn ls_cli_get_reconstructed_result_raw_size(
     raw_size.* = bytes.reconstructedRawLen(
         operation_result_raw_journal.*,
         operation_result.*.len,
-    ) catch {
-        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
     };
 
     return @backingInt(ffi_common.FfiResult.success);
@@ -360,8 +360,8 @@ export fn ls_cli_get_reconstructed_result_raw(
         operation_result_raw_journal.*,
         operation_result.*,
         operation_result_raw.*,
-    ) catch {
-        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
     };
 
     return @backingInt(ffi_common.FfiResult.success);
