@@ -1733,29 +1733,6 @@ pub const Driver = struct {
             for (extra_namespaces) |namespace| {
                 try writer.bindNs(namespace[0], namespace[1]);
             }
-        } else if (options._extra_namespaces_ffi) |extra_namespaces_str| {
-            var extra_namespaces_iterator = std.mem.splitSequence(
-                u8,
-                extra_namespaces_str,
-                bytes.libscrapli_delimiter,
-            );
-
-            var idx: usize = 0;
-
-            while (extra_namespaces_iterator.next()) |extra_namespace| {
-                defer idx += 1;
-
-                var namespace_parts_iterator = std.mem.splitSequence(
-                    u8,
-                    extra_namespace,
-                    "::",
-                );
-
-                try writer.bindNs(
-                    namespace_parts_iterator.first(),
-                    namespace_parts_iterator.rest(),
-                );
-            }
         }
 
         try writer.embed(options.payload);

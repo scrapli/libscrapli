@@ -509,15 +509,15 @@ export fn ls_cli_send_inputs(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    // inputs delimited on the libscrapli delim... annoying but simple/dumb
-    inputs: [*c]const u8,
+    inputs: *[]u8,
+    input_lens: *[]u64,
     requested_mode: [*c]const u8,
     input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
     stop_on_indicated_failure: bool,
 ) callconv(.c) u8 {
-    if (inputs == null or requested_mode == null) {
+    if (requested_mode == null) {
         return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
@@ -526,7 +526,8 @@ export fn ls_cli_send_inputs(
     const options = ffi_args_to_options.sendInputsOptionsFromArgs(
         d.allocator,
         cancel,
-        inputs,
+        inputs.*,
+        input_lens.*,
         requested_mode,
         input_handling,
         retain_input,
@@ -781,20 +782,11 @@ test "ffi: ls_cli_send_inputs null arguments" {
     var op_id: u32 = 0;
     var cancel: bool = false;
 
-    try std.testing.expectEqual(
-        @backingInt(ffi_common.FfiResult.invalid_argument),
-        ls_cli_send_inputs(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            null,
-            "mode",
-            null,
-            false,
-            false,
-            false,
-        ),
-    );
+    var inputs_buf = "show version".*;
+    var inputs: []u8 = &inputs_buf;
+
+    var input_lens_buf = [_]u64{12};
+    var input_lens: []u64 = &input_lens_buf;
 
     try std.testing.expectEqual(
         @backingInt(ffi_common.FfiResult.invalid_argument),
@@ -802,7 +794,8 @@ test "ffi: ls_cli_send_inputs null arguments" {
             @ptrFromInt(0xDEADBEEF),
             &op_id,
             &cancel,
-            "inputs",
+            &inputs,
+            &input_lens,
             null,
             null,
             false,

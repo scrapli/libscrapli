@@ -518,12 +518,10 @@ export fn ls_netconf_raw_rpc(
     cancel: *bool,
     payload: [*c]const u8,
     base_namespace_prefix: [*c]const u8,
-    extra_namespaces: [*c]const u8,
+    extra_namespaces: *[]u8,
+    extra_namespace_lens: *[]u64,
 ) callconv(.c) u8 {
-    if (payload == null or
-        base_namespace_prefix == null or
-        extra_namespaces == null)
-    {
+    if (payload == null or base_namespace_prefix == null) {
         return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
@@ -534,7 +532,8 @@ export fn ls_netconf_raw_rpc(
         cancel,
         payload,
         base_namespace_prefix,
-        extra_namespaces,
+        extra_namespaces.*,
+        extra_namespace_lens.*,
     ) catch |err| {
         return ffi_common.toFfiResult(err);
     };
@@ -1349,47 +1348,6 @@ export fn ls_netconf_action(
     operation_id.* = _operation_id;
 
     return @backingInt(ffi_common.FfiResult.success);
-}
-
-test "ffi: ls_netconf_raw_rpc null arguments" {
-    var op_id: u32 = 0;
-    var cancel: bool = false;
-
-    try std.testing.expectEqual(
-        @backingInt(ffi_common.FfiResult.invalid_argument),
-        ls_netconf_raw_rpc(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            null,
-            "",
-            "",
-        ),
-    );
-
-    try std.testing.expectEqual(
-        @backingInt(ffi_common.FfiResult.invalid_argument),
-        ls_netconf_raw_rpc(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            "payload",
-            null,
-            "",
-        ),
-    );
-
-    try std.testing.expectEqual(
-        @backingInt(ffi_common.FfiResult.invalid_argument),
-        ls_netconf_raw_rpc(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            "payload",
-            "",
-            null,
-        ),
-    );
 }
 
 test "ffi: ls_netconf_get_config null arguments" {

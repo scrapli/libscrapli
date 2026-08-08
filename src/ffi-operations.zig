@@ -109,6 +109,27 @@ pub fn freeOwnedStrings(allocator: std.mem.Allocator, s: anytype) void {
             if (value) |v| {
                 allocator.free(v);
             }
+        } else if (field_type == []const []const u8) {
+            const value = @field(s, Info.field_names[idx]);
+
+            if (value.len > 0) {
+                for (value) |v| {
+                    allocator.free(v);
+                }
+
+                allocator.free(value);
+            }
+        } else if (field_type == ?[]const [2][]const u8) {
+            const value = @field(s, Info.field_names[idx]);
+
+            if (value) |v| {
+                for (v) |pair| {
+                    allocator.free(pair[0]);
+                    allocator.free(pair[1]);
+                }
+
+                allocator.free(v);
+            }
         }
     }
 }
