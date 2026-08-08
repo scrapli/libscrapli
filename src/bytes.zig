@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const ascii = @import("ascii.zig");
+const errors = @import("errors.zig");
 
 /// Convert all contents of buf to lower.
 pub fn toLower(buf: []u8) void {
@@ -207,7 +208,7 @@ fn readVarint(buf: []const u8, idx: *usize) !u64 {
 
     while (true) {
         if (idx.* >= buf.len) {
-            return error.CorruptJournal;
+            return errors.ScrapliError.Journal;
         }
 
         const b = buf[idx.*];
@@ -215,7 +216,7 @@ fn readVarint(buf: []const u8, idx: *usize) !u64 {
 
         if (shift == 63 and b > 1) {
             // 10th byte can only contribute a single bit for u64
-            return error.CorruptJournal;
+            return errors.ScrapliError.Journal;
         }
 
         v |= @as(u64, b & 0x7F) << @intCast(shift);
@@ -227,7 +228,7 @@ fn readVarint(buf: []const u8, idx: *usize) !u64 {
         shift += 7;
 
         if (shift > 63) {
-            return error.CorruptJournal;
+            return errors.ScrapliError.Journal;
         }
     }
 }
@@ -1723,7 +1724,7 @@ test "reconstructRaw corrupt journals" {
 
     for (cases) |case| {
         std.testing.expectError(
-            error.CorruptJournal,
+            errors.ScrapliError.Journal,
             reconstructRaw(std.testing.allocator, case.raw_journal, case.processed),
         ) catch |err| {
             std.debug.print("corrupt journal case failed: {s}\n", .{case.name});
@@ -1751,7 +1752,7 @@ pub fn reconstructedRawLen(
         const len: usize = @intCast(try readVarint(raw_journal, &idx));
 
         if (len > raw_journal.len - idx) {
-            return error.CorruptJournal;
+            return errors.ScrapliError.Journal;
         }
 
         idx += len;
@@ -1799,7 +1800,7 @@ pub fn reconstructRawInto(
             // below would overflow/read garbage on a corrupt journal. note that *out of order*
             // entries are unrepresentable with delta encoding, so thats one whole class of
             // corruption we no longer have to check for
-            return error.CorruptJournal;
+            return errors.ScrapliError.Journal;
         }
 
         pos += delta;
@@ -1807,13 +1808,13 @@ pub fn reconstructRawInto(
         const len: usize = @intCast(try readVarint(raw_journal, &raw_idx));
 
         if (len > raw_journal.len - raw_idx) {
-            return error.CorruptJournal;
+            return errors.ScrapliError.Journal;
         }
 
         const keep_len = pos - processed_idx;
 
         if (out_idx + keep_len + len > out.len) {
-            return error.LengthMismatch;
+            return errors.ScrapliError.Journal;
         }
 
         @memcpy(
@@ -1837,7 +1838,7 @@ pub fn reconstructRawInto(
     const tail_len = processed.len - processed_idx;
 
     if (out.len - out_idx != tail_len) {
-        return error.LengthMismatch;
+        return errors.ScrapliError.Journal;
     }
 
     @memcpy(out[out_idx..][0..tail_len], processed[processed_idx..]);

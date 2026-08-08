@@ -73,7 +73,7 @@ pub const Mode = struct {
             const compiled = re.pcre2Compile(pattern);
 
             if (compiled == null) {
-                return error.Regex;
+                return errors.ScrapliError.PatternError;
             }
 
             m.compiled_prompt_pattern = compiled;

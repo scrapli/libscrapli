@@ -21,8 +21,18 @@ pub const ScrapliError = error{
     Transport,
     Operation,
 
-    // for bounds checking mostly around the raw reconstruction bits
+    // for bounds checking (packed ffi args and the like)
     IndexError,
+
+    // for corrupt/truncated raw journals and journal/processed mismatches during raw
+    // reconstruction (see bytes.zig)
+    Journal,
+
+    // for pcre2 compile/match failures
+    PatternError,
+
+    // for c library calls (file ops etc.) that fail w/ only a return code to show for it
+    CError,
 };
 
 /// Wraps a critical error with additional logging info.

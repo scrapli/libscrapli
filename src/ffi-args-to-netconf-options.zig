@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const errors = @import("errors.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const operation = @import("netconf-operation.zig");
 
@@ -24,7 +25,7 @@ pub fn rawRpcOptionsFromArgs(
     if (extra_namespace_lens.len > 0) {
         if (extra_namespace_lens.len % 2 != 0) {
             // entries must come in prefix, namespace pairs
-            return error.LengthMismatch;
+            return errors.ScrapliError.IndexError;
         }
 
         const pairs = try allocator.alloc([2][]const u8, extra_namespace_lens.len / 2);
@@ -49,7 +50,7 @@ pub fn rawRpcOptionsFromArgs(
 
             if (l > extra_namespaces.len - cur) {
                 // lens claim more content than the packed buffer actually holds
-                return error.LengthMismatch;
+                return errors.ScrapliError.Journal;
             }
 
             pairs[idx / 2][idx % 2] = try allocator.dupe(u8, extra_namespaces[cur..][0..l]);

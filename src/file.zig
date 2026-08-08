@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const errors = @import("errors.zig");
+
 /// Conveinence function to set the given fd to be in non block.
 pub fn setNonBlocking(fd: std.posix.fd_t) !void {
     var flags = std.posix.system.fcntl(
@@ -8,7 +10,7 @@ pub fn setNonBlocking(fd: std.posix.fd_t) !void {
         @as(usize, 0),
     );
     if (flags == -1) {
-        return error.CError;
+        return errors.ScrapliError.CError;
     }
 
     // would have thought there would be a portable std.posix.O.NONBLOCK but
@@ -24,7 +26,7 @@ pub fn setNonBlocking(fd: std.posix.fd_t) !void {
         flags,
     );
     if (rc == -1) {
-        return error.CError;
+        return errors.ScrapliError.CError;
     }
 }
 

@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const errors = @import("errors.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const mode = @import("cli-mode.zig");
 const operation = @import("cli-operation.zig");
@@ -76,8 +77,7 @@ pub fn sendInputsOptionsFromArgs(
         const l: usize = @intCast(input_len);
 
         if (l > inputs.len - cur) {
-            // lens claim more content than the packed buffer actually holds
-            return error.LengthMismatch;
+            return errors.ScrapliError.IndexError;
         }
 
         owned_inputs[idx] = try allocator.dupe(u8, inputs[cur..][0..l]);
