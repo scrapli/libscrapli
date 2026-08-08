@@ -133,6 +133,9 @@ pub const Options = struct {
     // generally be >= scratch_initial_size.
     scratch_retain_max: u64 = default_scratch_retain_max,
 
+    normalize_line_feeds: bool = true,
+    normalize_trailing_whitespace: bool = true,
+
     fn init(
         allocator: std.mem.Allocator,
         opts: Options,
@@ -267,7 +270,10 @@ pub const Session = struct {
             .read_loop_buf = &[_]u8{},
             .prompt_pattern = prompt_pattern,
             .prompt_excludes = prompt_excludes,
-            .scratch = bytes.ProcessedBuf.init(),
+            .scratch = .{
+                .normalize_line_feeds = o.normalize_line_feeds,
+                .normalize_trailing_whitespace = o.normalize_trailing_whitespace,
+            },
         };
         errdefer s.deinit();
 
@@ -1055,6 +1061,23 @@ pub const Session = struct {
 
         const bufs = &self.scratch;
         try bufs.reset(self.allocator, self.options.scratch_retain_max);
+
+        // read_any is a raw window into the stream, *not* a complete operation result -- the
+        // normalization "leading"/"trailing" rules only make sense when an operation is a whole
+        // logical result, but a read_any op is an arbitrary slice of the stream (and callers,
+        // like readWithCallbacks, concatenate those slices!). left on, every fragment-boundary
+        // newline would get journaled away as "leading"/"trailing" and the concatenated output
+        // would collapse into one giant line. so: no normalization at all for read_any.
+        const normalize_line_feeds = bufs.normalize_line_feeds;
+        const normalize_trailing_whitespace = bufs.normalize_trailing_whitespace;
+
+        bufs.normalize_line_feeds = false;
+        bufs.normalize_trailing_whitespace = false;
+
+        defer {
+            bufs.normalize_line_feeds = normalize_line_feeds;
+            bufs.normalize_trailing_whitespace = normalize_trailing_whitespace;
+        }
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 

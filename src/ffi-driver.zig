@@ -45,8 +45,6 @@ pub const FfiDriver = struct {
         ffi_operations.OperationResult,
     ),
 
-    cli_get_results_options: result.GetResultOptions = .{},
-
     fn setPollFds(self: *FfiDriver) !void {
         switch (std.posix.errno(std.c.pipe(&self.poll_fds))) {
             .SUCCESS => return,
@@ -618,23 +616,23 @@ pub const FfiDriver = struct {
         return ret.?;
     }
 
-    /// A conveinence function to get result sizes for cli operations -- shimmed in so we can ensure
-    /// that we do *not* process line endings for read any operations. Note that all sizes are
+    /// A conveinence function to get result sizes for cli operations. Note that all sizes are
     /// "packed" sizes -- each buffer holds the per result entries back-to-back w/ *no* delimiters,
     /// the fetch call fills per entry length arrays the caller uses to slice things back apart.
     /// The raw size is the size of the packed raw *journals* -- raw itself is never stored (or
-    /// shipped over the ffi boundary), callers reconstruct on demand.
+    /// shipped over the ffi boundary), callers reconstruct on demand. No options anywhere --
+    /// normalization already happened at append time in the session's ProcessedBuf.
     pub fn getCliResultLens(
         self: *FfiDriver,
         r: *result.Result,
     ) ffi_operations.CliOperationSizes {
-        const get_options = self.getCliResultOptions(r);
+        _ = self;
 
         var sizes = ffi_operations.CliOperationSizes{
             .operation_count = r.results.items.len,
             .operation_input_size = r.getInputsPackedLen(),
             .operation_result_raw_size = r.getResultsRawJournalPackedLen(),
-            .operation_result_size = r.getResultsPackedLen(get_options),
+            .operation_result_size = r.getResultsPackedLen(),
             .operation_failure_indicator_size = 0,
         };
 
@@ -665,7 +663,7 @@ pub const FfiDriver = struct {
         operation_result_failed_indicator: *[]u8,
         operation_error: *[]u8,
     ) void {
-        const get_options = self.getCliResultOptions(r);
+        _ = self;
 
         if (r.splits_ns.items.len > 0) {
             operation_start_time.* = @intCast(r.start_time_ns);
@@ -679,7 +677,7 @@ pub const FfiDriver = struct {
 
         r.packInputs(operation_input.*, operation_input_lens.*);
         r.packResultsRawJournal(operation_result_raw.*, operation_result_raw_lens.*);
-        r.packResults(operation_result.*, operation_result_lens.*, get_options);
+        r.packResults(operation_result.*, operation_result_lens.*);
 
         if (r.result_failure_indicated) {
             @memcpy(
@@ -689,22 +687,6 @@ pub const FfiDriver = struct {
         }
 
         operation_error.* = "";
-    }
-
-    fn getCliResultOptions(
-        self: *FfiDriver,
-        r: *result.Result,
-    ) result.GetResultOptions {
-        // zlinter-disable require_exhaustive_enum_switch
-        return switch (r.operation_kind) {
-            // read any is bypassing "normal" things so we never want to process line ends
-            // or anything like that since that will almost certainly be unexpected for users
-            .read_any => .{
-                .normalize_line_feeds = false,
-                .normalize_trailing_whitespace = false,
-            },
-            else => self.cli_get_results_options,
-        };
     }
 };
 
