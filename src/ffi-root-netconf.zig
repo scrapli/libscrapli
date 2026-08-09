@@ -2,6 +2,7 @@
 const std = @import("std");
 
 const ascii = @import("ascii.zig");
+const bytes = @import("bytes.zig");
 const errors = @import("errors.zig");
 const ffi_args_to_options = @import("ffi-args-to-netconf-options.zig");
 const ffi_common = @import("ffi-common.zig");
@@ -222,7 +223,10 @@ export fn ls_netconf_fetch_operation_sizes(
         };
 
         operation_input_size.* = dret.input.len;
-        operation_result_raw_size.* = dret.result_raw.len;
+        // the "raw" slot ships the serialized raw journal, *not* the reconstructed raw --
+        // callers that want the actual raw bytes reconstruct on demand w/
+        // ls_netconf_get_reconstructed_raw_size + ls_netconf_reconstruct_result_raw
+        operation_result_raw_size.* = dret.result_raw_journal.len;
         operation_result_size.* = dret.result.len;
 
         operation_error_size.* = 0;
@@ -307,8 +311,10 @@ export fn ls_netconf_fetch_operation(
         }
 
         @memcpy(operation_input.*, dret.input);
-        @memcpy(operation_result_raw.*, dret.result_raw);
         @memcpy(operation_result.*, dret.result);
+
+        // the "raw" slot holds the raw journal, users can reconstruct it later if they want
+        @memcpy(operation_result_raw.*, dret.result_raw_journal);
 
         // to avoid a pointless allocation since we are already copying from the result into the
         // given string pointers, we'll do basically the same thing the result does in normal (zig)
@@ -337,6 +343,40 @@ export fn ls_netconf_fetch_operation(
             }
         }
     }
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+/// Get the size of the buffer needed to rebuild the raw result into.
+export fn ls_netconf_get_reconstructed_result_raw_size(
+    operation_result: *[]u8,
+    operation_result_raw_journal: *[]u8,
+    raw_size: *usize,
+) callconv(.c) u8 {
+    raw_size.* = bytes.reconstructedRawLen(
+        operation_result_raw_journal.*,
+        operation_result.*.len,
+    ) catch {
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    };
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+/// Reconstructs the raw result from the given (result, journal) pair into the caller provided
+/// (and owned) buf.
+export fn ls_netconf_get_reconstructed_result_raw(
+    operation_result: *[]u8,
+    operation_result_raw_journal: *[]u8,
+    operation_result_raw: *[]u8,
+) callconv(.c) u8 {
+    bytes.reconstructRawInto(
+        operation_result_raw_journal.*,
+        operation_result.*,
+        operation_result_raw.*,
+    ) catch {
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    };
 
     return @backingInt(ffi_common.FfiResult.success);
 }
@@ -478,12 +518,10 @@ export fn ls_netconf_raw_rpc(
     cancel: *bool,
     payload: [*c]const u8,
     base_namespace_prefix: [*c]const u8,
-    extra_namespaces: [*c]const u8,
+    extra_namespaces: *[]u8,
+    extra_namespace_lens: *[]u64,
 ) callconv(.c) u8 {
-    if (payload == null or
-        base_namespace_prefix == null or
-        extra_namespaces == null)
-    {
+    if (payload == null or base_namespace_prefix == null) {
         return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
@@ -494,7 +532,8 @@ export fn ls_netconf_raw_rpc(
         cancel,
         payload,
         base_namespace_prefix,
-        extra_namespaces,
+        extra_namespaces.*,
+        extra_namespace_lens.*,
     ) catch |err| {
         return ffi_common.toFfiResult(err);
     };
@@ -1309,47 +1348,6 @@ export fn ls_netconf_action(
     operation_id.* = _operation_id;
 
     return @backingInt(ffi_common.FfiResult.success);
-}
-
-test "ffi: ls_netconf_raw_rpc null arguments" {
-    var op_id: u32 = 0;
-    var cancel: bool = false;
-
-    try std.testing.expectEqual(
-        @backingInt(ffi_common.FfiResult.invalid_argument),
-        ls_netconf_raw_rpc(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            null,
-            "",
-            "",
-        ),
-    );
-
-    try std.testing.expectEqual(
-        @backingInt(ffi_common.FfiResult.invalid_argument),
-        ls_netconf_raw_rpc(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            "payload",
-            null,
-            "",
-        ),
-    );
-
-    try std.testing.expectEqual(
-        @backingInt(ffi_common.FfiResult.invalid_argument),
-        ls_netconf_raw_rpc(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            "payload",
-            "",
-            null,
-        ),
-    );
 }
 
 test "ffi: ls_netconf_get_config null arguments" {

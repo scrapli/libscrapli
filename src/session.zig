@@ -133,6 +133,9 @@ pub const Options = struct {
     // generally be >= scratch_initial_size.
     scratch_retain_max: u64 = default_scratch_retain_max,
 
+    normalize_line_feeds: bool = true,
+    normalize_trailing_whitespace: bool = true,
+
     fn init(
         allocator: std.mem.Allocator,
         opts: Options,
@@ -201,7 +204,7 @@ pub const Session = struct {
     read_stop: std.atomic.Value(ReadThreadState) = std.atomic.Value(ReadThreadState).init(
         ReadThreadState.uninitialized,
     ),
-    read_lock: std.Io.Mutex,
+    read_lock: std.Io.Mutex = .init,
     read_queue: queue.LinearFifo(u8),
     read_thread_errored: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     read_thread_error: ?anyerror = null,
@@ -261,20 +264,22 @@ pub const Session = struct {
             .options = o,
             .auth_options = auth_options,
             .transport = t,
-            .read_lock = std.Io.Mutex.init,
             .read_queue = queue.LinearFifo(u8).init(allocator),
             .read_into_buf = &[_]u8{},
             .read_loop_buf = &[_]u8{},
             .prompt_pattern = prompt_pattern,
             .prompt_excludes = prompt_excludes,
-            .scratch = bytes.ProcessedBuf.init(allocator),
+            .scratch = .{
+                .normalize_line_feeds = o.normalize_line_feeds,
+                .normalize_trailing_whitespace = o.normalize_trailing_whitespace,
+            },
         };
         errdefer s.deinit();
 
         s.read_into_buf = try allocator.alloc(u8, o.read_size);
         s.read_loop_buf = try allocator.alloc(u8, o.read_size);
 
-        try s.scratch.reserve(s.options.scratch_initial_size);
+        try s.scratch.reserve(allocator, s.options.scratch_initial_size);
 
         s.compiled_username_pattern = re.pcre2Compile(s.auth_options.username_pattern) orelse
             return errors.wrapCriticalError(
@@ -355,7 +360,7 @@ pub const Session = struct {
 
         self.transport.deinit();
         self.read_queue.deinit();
-        self.scratch.deinit();
+        self.scratch.deinit(self.allocator);
     }
 
     /// Opens the session object, starting the background read thread, and ensuring the underlying
@@ -570,7 +575,7 @@ pub const Session = struct {
         var cur_read_delay_ns: u64 = self.options.read_min_delay_ns;
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         var cur_check_start_idx: usize = 0;
 
@@ -688,7 +693,7 @@ pub const Session = struct {
                 cur_read_delay_ns = self.options.read_min_delay_ns;
             }
 
-            try bufs.appendSlice(buf[0..n]);
+            try bufs.appendWithProcessing(self.allocator, buf[0..n]);
 
             const searchable_buf = bytes.getBufSearchView(
                 bufs.processed.items[cur_check_start_idx..],
@@ -988,7 +993,7 @@ pub const Session = struct {
                 cur_read_delay_ns = self.options.read_min_delay_ns;
             }
 
-            try bufs.appendSlice(buf[0..n]);
+            try bufs.appendWithProcessing(self.allocator, buf[0..n]);
 
             // weve logged "raw" reads in the readloop, now that we have processed something
             // (ProcessedBuf handles ascii filtering on appendSlice) we can show the processed bits
@@ -1054,7 +1059,24 @@ pub const Session = struct {
         self.log.info("session.Session readAny requested", .{});
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
+
+        // read_any is a raw window into the stream, *not* a complete operation result -- the
+        // normalization "leading"/"trailing" rules only make sense when an operation is a whole
+        // logical result, but a read_any op is an arbitrary slice of the stream (and callers,
+        // like readWithCallbacks, concatenate those slices!). left on, every fragment-boundary
+        // newline would get journaled away as "leading"/"trailing" and the concatenated output
+        // would collapse into one giant line. so: no normalization at all for read_any.
+        const normalize_line_feeds = bufs.normalize_line_feeds;
+        const normalize_trailing_whitespace = bufs.normalize_trailing_whitespace;
+
+        bufs.normalize_line_feeds = false;
+        bufs.normalize_trailing_whitespace = false;
+
+        defer {
+            bufs.normalize_line_feeds = normalize_line_feeds;
+            bufs.normalize_trailing_whitespace = normalize_trailing_whitespace;
+        }
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
@@ -1082,7 +1104,7 @@ pub const Session = struct {
         try self.writeReturn();
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
@@ -1101,10 +1123,24 @@ pub const Session = struct {
         // use the match positions readTimeout already found rather than re-searching -- a
         // re-search could land on an earlier (i.e. prompt exclude filtered) match. defensively
         // clamp the end since readTimeout positions are relative to the processed buf
-        const found_prompt = bufs.processed.items[match_indexes.start..@min(
+        const matched_prompt = bufs.processed.items[match_indexes.start..@min(
             match_indexes.end,
             bufs.processed.items.len,
         )];
+
+        // the two consumers of the match want different trims:
+        //
+        // the *returned* prompt (the operation result) gets trailing whitespace fully trimmed --
+        // since thats probably what users would expect, just a hey "what is the prompt on the box
+        // rn", and they dont care about the whitepace.
+        //
+        // the *retained* prompt (used to compose "prompt + input" for the next op when
+        // retain_input is set) keeps trailing spaces/tabs -- thats real prompt content that
+        // becomes interior once the input echo lands after it (think "A:srl# enter candidate")
+        // -- but still drops newlines for the same nondeterminism reason. any of the prompt's
+        // trailing whitespace thats sitting *pending* in the buf (it usually is -- pending is
+        // exactly how whitespace waits to learn if its trailing) gets tacked on as well.
+        const found_prompt = std.mem.trimEnd(u8, matched_prompt, " \t\n\r");
 
         // the match is a view into the (reused) scratch buffer, and both consumers need their
         // own copy with their own allocator: the caller owns the returned prompt (operation
@@ -1113,15 +1149,17 @@ pub const Session = struct {
         const owned_found_prompt = try allocator.dupe(u8, found_prompt);
         errdefer allocator.free(owned_found_prompt);
 
-        // we want to ensure we are storing the last consumed prompt so that our send_input
-        // buf is always "correct" when "retain_input" is true
         self.last_consumed_prompt.clearRetainingCapacity();
         try self.last_consumed_prompt.appendSlice(
             self.allocator,
-            found_prompt,
+            matched_prompt,
         );
+        try bufs.appendPendingKeptTo(self.allocator, &self.last_consumed_prompt);
 
-        return [2][]const u8{ try allocator.dupe(u8, bufs.raw.items), owned_found_prompt };
+        // TODO probably just return the found prompt here instead?
+        // the "processed" side of a getPrompt result is only ever the prompt itself, so we just
+        // return an empty string for the raw side of things.
+        return [2][]const u8{ try allocator.dupe(u8, ""), owned_found_prompt };
     }
 
     fn innerSendInput(
@@ -1203,22 +1241,29 @@ pub const Session = struct {
             return;
         }
 
-        try bufs.appendSlice(self.last_consumed_prompt.items);
+        try bufs.appendWithProcessing(self.allocator, self.last_consumed_prompt.items);
         try self.last_consumed_prompt.resize(self.allocator, 0);
     }
 
     fn storeLastConsumedPrompt(
         self: *Session,
+        bufs: *bytes.ProcessedBuf,
         buf: []const u8,
     ) !void {
         try self.last_consumed_prompt.appendSlice(self.allocator, buf);
+
+        // the prompt's trailing whitespace (i.e. "A:srl# " <- that space) is generally *pending*
+        // in the buf at match time rather than in processed, but its part of the prompt as far
+        // as composing "prompt + input" for the next retained-input op goes, so grab it too
+        try bufs.appendPendingKeptTo(self.allocator, &self.last_consumed_prompt);
     }
 
     /// Sends the given input to the transport, reading until the input is written, then sending
-    /// return, then reading until the next prompt is read. It returns two buffers -- the "raw"
-    /// buffer, that is the unprocessed content that we read from the device, and the "processed"
-    /// buffer, that is the content that was processed -- i.e. had ascii/ansi control chars
-    /// removed to give only human readable text output.
+    /// return, then reading until the next prompt is read. It returns two buffers -- the
+    /// journaled "raw" buffer, from which the raw/unprocessed content read from the device can
+    /// be reconstructed on demand (see bytes.reconstructRaw), and the "processed" buffer, that
+    /// is the content that was processed -- i.e. had ascii/ansi control chars removed to give
+    /// only human readable text output.
     pub fn sendInput(
         self: *Session,
         allocator: std.mem.Allocator,
@@ -1230,7 +1275,7 @@ pub const Session = struct {
         const start_time = std.Io.Timestamp.now(self.io, .awake);
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         try self.prependLastConsumedPrompt(bufs);
 
@@ -1244,8 +1289,10 @@ pub const Session = struct {
         );
 
         if (!options.retain_input) {
-            // if we dont want to retain inputs, just resize the processed buffer to 0
-            try bufs.processed.resize(self.allocator, 0);
+            // if we dont want to retain inputs trim *everything* read so far (the input
+            // echo) out of the processed buf -- it lands in the raw journal so the raw
+            // output still contains it
+            try bufs.rightTrimProcessed(self.allocator, 0);
         }
 
         const check_args = bytes_check.CheckArgs{
@@ -1254,7 +1301,7 @@ pub const Session = struct {
             .excludes = self.prompt_excludes,
         };
 
-        var prompt_indexes = try self.readTimeout(
+        const prompt_indexes = try self.readTimeout(
             start_time,
             options.cancel,
             bytes_check.patternInBuf,
@@ -1264,17 +1311,17 @@ pub const Session = struct {
         );
 
         try self.storeLastConsumedPrompt(
+            bufs,
             bufs.processed.items[prompt_indexes.start..prompt_indexes.end],
         );
 
         if (!options.retain_trailing_prompt) {
-            // using the prompt indexes, replace that range holding the trailing prompt out
-            // of the processed buf
-            try bufs.processed.replaceRange(
+            // trim the trailing prompt (and anything after it, which should be nothing)
+            // out of the processed buf -- it lands in the raw journal so the raw output
+            // still contains it
+            try bufs.rightTrimProcessed(
                 self.allocator,
                 prompt_indexes.start,
-                prompt_indexes.len(),
-                "",
             );
         }
 
@@ -1339,7 +1386,7 @@ pub const Session = struct {
         };
 
         const bufs = &self.scratch;
-        try bufs.reset(self.options.scratch_retain_max);
+        try bufs.reset(self.allocator, self.options.scratch_retain_max);
 
         try self.prependLastConsumedPrompt(bufs);
 
@@ -1391,7 +1438,7 @@ pub const Session = struct {
             );
         }
 
-        var prompt_indexes = try self.readTimeout(
+        const prompt_indexes = try self.readTimeout(
             start_time,
             options.cancel,
             bytes_check.patternInBuf,
@@ -1401,17 +1448,17 @@ pub const Session = struct {
         );
 
         try self.storeLastConsumedPrompt(
+            bufs,
             bufs.processed.items[prompt_indexes.start..prompt_indexes.end],
         );
 
         if (!options.retain_trailing_prompt) {
-            // using the prompt indexes, replace that range holding the trailing prompt out
-            // of the processed buf
-            try bufs.processed.replaceRange(
+            // trim the trailing prompt (and anything after it, which should be nothing)
+            // out of the processed buf -- it lands in the raw journal so the raw output
+            // still contains it
+            try bufs.rightTrimProcessed(
                 self.allocator,
                 prompt_indexes.start,
-                prompt_indexes.len(),
-                "",
             );
         }
 

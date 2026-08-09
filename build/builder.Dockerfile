@@ -11,6 +11,8 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archive/*.deb
 
 RUN curl https://raw.githubusercontent.com/tristanisham/zvm/master/install.sh | bash
+RUN chmod +x /root/.zvm/self/zvm
+
 RUN case "${ZIG_VERSION:-}" in \
       ""|*dev*) version=master ;; \
       *)        version="$ZIG_VERSION" ;; \

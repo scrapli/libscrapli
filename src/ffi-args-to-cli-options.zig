@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const errors = @import("errors.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const mode = @import("cli-mode.zig");
 const operation = @import("cli-operation.zig");
@@ -41,25 +42,59 @@ pub fn sendInputOptionsFromArgs(
     return options;
 }
 
-/// Return SendInputsOptions from ffi provided arguments.
+/// Return SendInputsOptions from ffi provided arguments. The inputs arrive packed back-to-back
+/// w/ a lens array to slice them apart (same shape the fetch side uses for results) -- each
+/// input is duped into an owned slice-of-slices that freeOwnedStrings knows how to clean up.
 pub fn sendInputsOptionsFromArgs(
     allocator: std.mem.Allocator,
     cancel: *bool,
-    inputs: [*c]const u8,
+    inputs: []const u8,
+    input_lens: []const u64,
     requested_mode: [*c]const u8,
     input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
     stop_on_indicated_failure: bool,
 ) !operation.SendInputsOptions {
+    const owned_inputs = try allocator.alloc([]const u8, input_lens.len);
+
+    var owned_inputs_adopted: bool = false;
+    var owned_inputs_populated: usize = 0;
+
+    errdefer {
+        if (!owned_inputs_adopted) {
+            for (owned_inputs[0..owned_inputs_populated]) |owned_input| {
+                allocator.free(owned_input);
+            }
+
+            allocator.free(owned_inputs);
+        }
+    }
+
+    var cur: usize = 0;
+
+    for (0.., input_lens) |idx, input_len| {
+        const l: usize = @intCast(input_len);
+
+        if (l > inputs.len - cur) {
+            return errors.ScrapliError.IndexError;
+        }
+
+        owned_inputs[idx] = try allocator.dupe(u8, inputs[cur..][0..l]);
+        owned_inputs_populated += 1;
+
+        cur += l;
+    }
+
     var options = operation.SendInputsOptions{
         .cancel = cancel,
-        .inputs = &[_][]const u8{},
-        ._ffi_inputs = try allocator.dupe(u8, std.mem.span(inputs)),
+        .inputs = owned_inputs,
         .retain_input = retain_input,
         .retain_trailing_prompt = retain_trailing_prompt,
         .stop_on_indicated_failure = stop_on_indicated_failure,
     };
+
+    owned_inputs_adopted = true;
 
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 

@@ -1,15 +1,19 @@
 const std = @import("std");
 
+const errors = @import("errors.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const operation = @import("netconf-operation.zig");
 
-/// Builds RawRpcOptions from given ffi inputs.
+/// Builds RawRpcOptions from given ffi inputs. Extra namespaces arrive packed back-to-back w/
+/// a lens array to slice them apart, entries alternating prefix, namespace -- so lens.len must
+/// be even, two entries per pair.
 pub fn rawRpcOptionsFromArgs(
     allocator: std.mem.Allocator,
     cancel: *bool,
     payload: [*c]const u8,
     base_namespace_prefix: [*c]const u8,
-    extra_namespaces: [*c]const u8,
+    extra_namespaces: []const u8,
+    extra_namespace_lens: []const u64,
 ) !operation.RawRpcOptions {
     var options = operation.RawRpcOptions{
         .cancel = cancel,
@@ -18,9 +22,46 @@ pub fn rawRpcOptionsFromArgs(
 
     errdefer ffi_operations.freeOwnedStrings(allocator, options);
 
-    const spanned_extra_namespaces = std.mem.span(extra_namespaces);
-    if (spanned_extra_namespaces.len > 0) {
-        options._extra_namespaces_ffi = try allocator.dupe(u8, spanned_extra_namespaces);
+    if (extra_namespace_lens.len > 0) {
+        if (extra_namespace_lens.len % 2 != 0) {
+            // entries must come in prefix, namespace pairs
+            return errors.ScrapliError.IndexError;
+        }
+
+        const pairs = try allocator.alloc([2][]const u8, extra_namespace_lens.len / 2);
+
+        var pairs_adopted: bool = false;
+        var strings_populated: usize = 0;
+
+        errdefer {
+            if (!pairs_adopted) {
+                for (0..strings_populated) |idx| {
+                    allocator.free(pairs[idx / 2][idx % 2]);
+                }
+
+                allocator.free(pairs);
+            }
+        }
+
+        var cur: usize = 0;
+
+        for (0.., extra_namespace_lens) |idx, extra_namespace_len| {
+            const l: usize = @intCast(extra_namespace_len);
+
+            if (l > extra_namespaces.len - cur) {
+                // lens claim more content than the packed buffer actually holds
+                return errors.ScrapliError.Journal;
+            }
+
+            pairs[idx / 2][idx % 2] = try allocator.dupe(u8, extra_namespaces[cur..][0..l]);
+            strings_populated += 1;
+
+            cur += l;
+        }
+
+        options.extra_namespaces = pairs;
+
+        pairs_adopted = true;
     }
 
     const spanned_base_namespace_prefix = std.mem.span(base_namespace_prefix);

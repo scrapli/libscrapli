@@ -622,60 +622,26 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        if (options._ffi_inputs != null and options.inputs.len == 0) {
-            // annoying to have to do this for the ffi bits but this keeps the ffi able to very
-            // easily call this (rather than ranging over inputs and calling sendInput from the
-            // calling program) so we have consistent behavior
-            var ffi_inputs_iterator = std.mem.splitSequence(
-                u8,
-                options._ffi_inputs.?,
-                bytes.libscrapli_delimiter,
+        for (options.inputs) |input| {
+            try res.record(
+                .{
+                    .input = input,
+                    .rets = try self.session.sendInput(
+                        allocator,
+                        .{
+                            .cancel = options.cancel,
+                            .input = input,
+                            .requested_mode = options.requested_mode,
+                            .input_handling = options.input_handling,
+                            .retain_input = options.retain_input,
+                            .retain_trailing_prompt = options.retain_trailing_prompt,
+                        },
+                    ),
+                },
             );
 
-            while (ffi_inputs_iterator.next()) |input| {
-                try res.record(
-                    .{
-                        .input = input,
-                        .rets = try self.session.sendInput(
-                            allocator,
-                            .{
-                                .cancel = options.cancel,
-                                .input = input,
-                                .requested_mode = options.requested_mode,
-                                .input_handling = options.input_handling,
-                                .retain_input = options.retain_input,
-                                .retain_trailing_prompt = options.retain_trailing_prompt,
-                            },
-                        ),
-                    },
-                );
-
-                if (options.stop_on_indicated_failure and res.result_failure_indicated) {
-                    return res;
-                }
-            }
-        } else {
-            for (options.inputs) |input| {
-                try res.record(
-                    .{
-                        .input = input,
-                        .rets = try self.session.sendInput(
-                            allocator,
-                            .{
-                                .cancel = options.cancel,
-                                .input = input,
-                                .requested_mode = options.requested_mode,
-                                .input_handling = options.input_handling,
-                                .retain_input = options.retain_input,
-                                .retain_trailing_prompt = options.retain_trailing_prompt,
-                            },
-                        ),
-                    },
-                );
-
-                if (options.stop_on_indicated_failure and res.result_failure_indicated) {
-                    return res;
-                }
+            if (options.stop_on_indicated_failure and res.result_failure_indicated) {
+                return res;
             }
         }
 
@@ -887,8 +853,8 @@ pub const Driver = struct {
             try self.session.writeAndReturn(initial_input, false);
         }
 
-        var bufs = bytes.ProcessedBuf.init(allocator);
-        defer bufs.deinit();
+        var bufs = bytes.ProcessedBuf.init();
+        defer bufs.deinit(allocator);
 
         var triggered_callbacks: std.ArrayList([]const u8) = .empty;
         defer triggered_callbacks.deinit(allocator);
@@ -906,7 +872,7 @@ pub const Driver = struct {
         try res.record(
             .{
                 .input = options.initial_input orelse "",
-                .rets = try bufs.toOwnedSlices(),
+                .rets = try bufs.toOwnedSlices(allocator),
                 // this may be the only place we *dont* want to trim whitespace
                 // .trim_processed = false,
             },

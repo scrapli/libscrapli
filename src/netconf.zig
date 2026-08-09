@@ -144,15 +144,17 @@ pub const Driver = struct {
 
     session: session.Session,
 
-    server_capabilities: ?std.ArrayList(Capability),
-    negotiated_version: operation.Version,
-    session_id: ?u64,
+    server_capabilities: ?std.ArrayList(Capability) = .empty,
+    negotiated_version: operation.Version = .version_1_0,
+    session_id: ?u64 = null,
 
-    process_thread: ?std.Thread,
-    process_stop: std.atomic.Value(ProcessThreadState),
+    process_thread: ?std.Thread = null,
+    process_stop: std.atomic.Value(ProcessThreadState) = std.atomic.Value(ProcessThreadState).init(
+        ProcessThreadState.uninitialized,
+    ),
     process_thread_exited: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
-    message_id: u64,
+    message_id: u64 = 101,
 
     messages: std.HashMap(
         u64,
@@ -160,10 +162,10 @@ pub const Driver = struct {
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
-    messages_lock: std.Io.Mutex,
+    messages_lock: std.Io.Mutex = .init,
 
-    notifications: std.ArrayList([]const u8),
-    notifications_lock: std.Io.Mutex,
+    notifications: std.ArrayList([]const u8) = .empty,
+    notifications_lock: std.Io.Mutex = .init,
 
     subscriptions: std.HashMap(
         u64,
@@ -171,9 +173,15 @@ pub const Driver = struct {
         std.hash_map.AutoContext(u64),
         std.hash_map.default_max_load_percentage,
     ),
-    subscriptions_lock: std.Io.Mutex,
+    subscriptions_lock: std.Io.Mutex = .init,
 
     last_error: errors.LastError = .{},
+
+    // same concept as the session object -- a scratch buf (w/ same sizing caps/settings as
+    // session) for message processing. holds the parsed (de-framed) message content plus the
+    // journal of the framing we removed, so the raw message is reconstructable w/out ever
+    // being stored (see bytes.zig)
+    parsed_scratch: bytes.ProcessedBuf,
 
     /// Initialize a netconf object.
     pub fn init(
@@ -212,6 +220,10 @@ pub const Driver = struct {
             },
         }
 
+        // netconf *never* normalizes -- force these settings
+        o.session.normalize_line_feeds = false;
+        o.session.normalize_trailing_whitespace = false;
+
         var s = try session.Session.init(
             allocator,
             io,
@@ -226,6 +238,14 @@ pub const Driver = struct {
 
         s.options.operation_max_search_depth = default_initial_operation_max_search_depth;
 
+        var parsed_scratch = bytes.ProcessedBuf.init();
+        errdefer parsed_scratch.deinit(allocator);
+
+        try parsed_scratch.reserve(
+            allocator,
+            s.options.scratch_initial_size,
+        );
+
         const d = try allocator.create(Driver);
 
         d.* = Driver{
@@ -235,30 +255,19 @@ pub const Driver = struct {
             .host = host,
             .options = o,
             .session = s,
-            .server_capabilities = .empty,
-            .negotiated_version = .version_1_0,
-            .session_id = null,
-            .process_thread = null,
-            .process_stop = std.atomic.Value(ProcessThreadState).init(
-                ProcessThreadState.uninitialized,
-            ),
-            .message_id = 101,
             .messages = std.HashMap(
                 u64,
                 [2][]const u8,
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
-            .messages_lock = std.Io.Mutex.init,
-            .notifications = .empty,
-            .notifications_lock = std.Io.Mutex.init,
             .subscriptions = std.HashMap(
                 u64,
                 std.ArrayList([]const u8),
                 std.hash_map.AutoContext(u64),
                 std.hash_map.default_max_load_percentage,
             ).init(allocator),
-            .subscriptions_lock = std.Io.Mutex.init,
+            .parsed_scratch = parsed_scratch,
         };
 
         return d;
@@ -317,6 +326,8 @@ pub const Driver = struct {
         self.subscriptions.deinit();
 
         self.options.deinit(self.allocator);
+
+        self.parsed_scratch.deinit(self.allocator);
 
         self.allocator.destroy(self);
     }
@@ -961,6 +972,11 @@ pub const Driver = struct {
         var message_buf: std.ArrayList(u8) = .empty;
         defer message_buf.deinit(self.allocator);
 
+        try message_buf.ensureTotalCapacity(
+            self.allocator,
+            @intCast(self.session.options.scratch_initial_size),
+        );
+
         const message_complete_delim = switch (self.negotiated_version) {
             .version_1_0 => delimiter_version_1_0,
             .version_1_1 => delimiter_version_1_1,
@@ -972,9 +988,6 @@ pub const Driver = struct {
                     errors.ScrapliError.EOF => {
                         // the session read thread has errored/closed and there is nothing remaining
                         // in the read queue, try one last time to parse out any remaining message(s)
-                        const owned_buf = try message_buf.toOwnedSlice(self.allocator);
-                        defer self.allocator.free(owned_buf);
-
                         defer self.log.debug(
                             "netconf.Driver processLoop: message processing thread " ++
                                 " stopping, session read queue drained and read thread stopped",
@@ -986,11 +999,11 @@ pub const Driver = struct {
                             // didnt even have valid data anyway
                             .version_1_0 => {
                                 // zlinter-disable-next-line no_swallow_error
-                                self.processFoundMessageVersion1_0(owned_buf) catch {};
+                                self.processFoundMessageVersion1_0(message_buf.items) catch {};
                             },
                             .version_1_1 => {
                                 // zlinter-disable-next-line no_swallow_error
-                                self.processFoundMessageVersion1_1(owned_buf) catch {};
+                                self.processFoundMessageVersion1_1(message_buf.items) catch {};
                             },
                         }
 
@@ -1017,16 +1030,24 @@ pub const Driver = struct {
             if (found) {
                 self.log.info("netconf.Driver processLoop: found end of message", .{});
 
-                const owned_buf = try message_buf.toOwnedSlice(self.allocator);
-                defer self.allocator.free(owned_buf);
-
                 switch (self.negotiated_version) {
                     .version_1_0 => {
-                        try self.processFoundMessageVersion1_0(owned_buf);
+                        try self.processFoundMessageVersion1_0(message_buf.items);
                     },
                     .version_1_1 => {
-                        try self.processFoundMessageVersion1_1(owned_buf);
+                        try self.processFoundMessageVersion1_1(message_buf.items);
                     },
+                }
+
+                if (message_buf.capacity > self.session.options.scratch_retain_max) {
+                    message_buf.clearAndFree(self.allocator);
+
+                    try message_buf.ensureTotalCapacity(
+                        self.allocator,
+                        @intCast(self.session.options.scratch_retain_max),
+                    );
+                } else {
+                    message_buf.clearRetainingCapacity();
                 }
             }
         }
@@ -1271,12 +1292,10 @@ pub const Driver = struct {
         self: *Driver,
         buf: []const u8,
     ) !void {
-        // rather than deal w/ an arraylist and a bunch of allocations, we'll allocate a single
-        // scratch slice sized to the whole input -- the parsed (de-chunked) output is always
-        // smaller than the chunked input, and one scratch serves every message in the buf
-        // (parsed_idx resets per message).
-        const parsed_scratch = try self.allocator.alloc(u8, buf.len);
-        defer self.allocator.free(parsed_scratch);
+        try self.parsed_scratch.reset(
+            self.allocator,
+            self.session.options.scratch_retain_max,
+        );
 
         // remaining is re-sliced past each completed message rather than recursing per message
         // like this fn used to -- a drain buffer w/ many coalesced messages would grow the
@@ -1286,7 +1305,6 @@ pub const Driver = struct {
         while (remaining.len > 0) {
             const consumed = try self.processSingleFoundMessageVersion1_1(
                 remaining,
-                parsed_scratch,
             ) orelse return;
 
             remaining = remaining[consumed..];
@@ -1302,12 +1320,21 @@ pub const Driver = struct {
     fn processSingleFoundMessageVersion1_1(
         self: *Driver,
         buf: []const u8,
-        parsed_scratch: []u8,
     ) !?usize {
         const truncated_error = "netconf.Driver processFoundMessageVersion1_1: failed " ++
             "parsing netconf message, message truncated";
 
-        var parsed_idx: usize = 0;
+        try self.parsed_scratch.reset(
+            self.allocator,
+            self.session.options.scratch_retain_max,
+        );
+
+        // everything in buf that is *not* chunk content (leading whitespace, chunk size
+        // markers, the end of message marker) is framing -- which gets written into the "journal"
+        // of the raw bits so it can be reconstructed later if users want. removed_start tracks the
+        // start of the current run of framing stuff
+        var removed_start: usize = 0;
+
         var iter_idx: usize = 0;
 
         while (iter_idx < buf.len) {
@@ -1340,23 +1367,17 @@ pub const Driver = struct {
             }
 
             if (buf[iter_idx] == ascii.control_chars.hash_char) {
-                // now we've found two consecutive hash signs, indicating end of message; we
-                // can store the raw and processed bits in the messages map
-                const owned_raw = try self.allocator.dupe(u8, buf[0..iter_idx]);
-
-                const owned_parsed = self.allocator.dupe(
-                    u8,
-                    parsed_scratch[0..parsed_idx],
-                ) catch |err| {
-                    self.allocator.free(owned_raw);
-
-                    return err;
-                };
-
-                try self.storeMessageOrSubscription(
-                    owned_raw,
-                    owned_parsed,
+                // now we've found two consecutive hash signs, indicating end of message --
+                // stuff this into the raw "journal" then dump the processed/raw into the message
+                // map for users to get them later
+                try self.parsed_scratch.appendRaw(
+                    self.allocator,
+                    buf[removed_start..iter_idx],
                 );
+
+                const owned = try self.parsed_scratch.dupeOwnedSlices(self.allocator);
+
+                try self.storeMessageOrSubscription(owned[0], owned[1]);
 
                 return iter_idx + 1;
             }
@@ -1440,14 +1461,21 @@ pub const Driver = struct {
                 );
             }
 
-            @memcpy(
-                parsed_scratch[parsed_idx .. parsed_idx + chunk_size],
+            // the framing run (whitespace/hash/size/newlines) between the previous chunk
+            // (or message start) and this chunk's content
+            try self.parsed_scratch.appendRaw(
+                self.allocator,
+                buf[removed_start..iter_idx],
+            );
+
+            try self.parsed_scratch.appendProcessed(
+                self.allocator,
                 buf[iter_idx .. iter_idx + chunk_size],
             );
-            parsed_idx += chunk_size;
 
             // finally increment iter_idx past this chunk
             iter_idx += chunk_size;
+            removed_start = iter_idx;
         }
 
         // ran out of buffer without seeing the ## end of message marker -- an incomplete
@@ -1704,29 +1732,6 @@ pub const Driver = struct {
         if (options.extra_namespaces) |extra_namespaces| {
             for (extra_namespaces) |namespace| {
                 try writer.bindNs(namespace[0], namespace[1]);
-            }
-        } else if (options._extra_namespaces_ffi) |extra_namespaces_str| {
-            var extra_namespaces_iterator = std.mem.splitSequence(
-                u8,
-                extra_namespaces_str,
-                bytes.libscrapli_delimiter,
-            );
-
-            var idx: usize = 0;
-
-            while (extra_namespaces_iterator.next()) |extra_namespace| {
-                defer idx += 1;
-
-                var namespace_parts_iterator = std.mem.splitSequence(
-                    u8,
-                    extra_namespace,
-                    "::",
-                );
-
-                try writer.bindNs(
-                    namespace_parts_iterator.first(),
-                    namespace_parts_iterator.rest(),
-                );
             }
         }
 
@@ -2210,11 +2215,9 @@ pub const Driver = struct {
 
                     try res.record(
                         [2][]const u8{
-                            try allocator.print(
-                                \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
-                            ,
-                                .{self.message_id - 1},
-                            ),
+                            // an "empty" raw means no diff from the processed, which in this case
+                            // obv is true since we know we made a nice message to return
+                            try allocator.dupe(u8, ""),
                             try allocator.print(
                                 \\<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="{d}"><ok/></rpc-reply>
                             ,
@@ -3272,6 +3275,82 @@ test "processFoundMessageVersion1_1" {
 
         try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
     }
+}
+
+test "processFoundMessageVersion1_1 handle multi message" {
+    const message_one = "<rpc-reply xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"101\"><one/></rpc-reply>";
+    const message_two = "<rpc-reply xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"102\"><two/></rpc-reply>";
+
+    const input = "\n#" ++
+        std.fmt.comptimePrint("{d}", .{message_one.len}) ++
+        "\n" ++
+        message_one ++
+        "\n##\n" ++
+        "\n#" ++
+        std.fmt.comptimePrint("{d}", .{message_two.len}) ++
+        "\n" ++
+        message_two ++
+        "\n##\n";
+
+    const d = try Driver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        .{},
+    );
+
+    defer d.deinit();
+
+    d.negotiated_version = .version_1_1;
+
+    try d.processFoundMessageVersion1_1(input);
+
+    const first_kv = d.messages.fetchRemove(101);
+    defer d.allocator.free(first_kv.?.value[0]);
+    defer d.allocator.free(first_kv.?.value[1]);
+
+    try std.testing.expectEqualStrings(message_one, first_kv.?.value[1]);
+
+    const second_kv = d.messages.fetchRemove(102);
+    defer d.allocator.free(second_kv.?.value[0]);
+    defer d.allocator.free(second_kv.?.value[1]);
+
+    try std.testing.expectEqualStrings(message_two, second_kv.?.value[1]);
+
+    // the stored raw slot is the journal -- reconstructing against the parsed content must
+    // yield the exact framed bytes as they came off the wire (up to where the historical
+    // raw ended: not including the second end of message hash)
+    const first_expected_raw = "\n#" ++
+        std.fmt.comptimePrint("{d}", .{message_one.len}) ++
+        "\n" ++
+        message_one ++
+        "\n#";
+
+    const first_raw = try bytes.reconstructRaw(
+        std.testing.allocator,
+        first_kv.?.value[0],
+        first_kv.?.value[1],
+    );
+    defer std.testing.allocator.free(first_raw);
+
+    try std.testing.expectEqualStrings(first_expected_raw, first_raw);
+
+    // note the extra leading newline: message one's consumption stops at its second end
+    // of message hash, so the newline that followed it belongs to message two's framing
+    const second_expected_raw = "\n\n#" ++
+        std.fmt.comptimePrint("{d}", .{message_two.len}) ++
+        "\n" ++
+        message_two ++
+        "\n#";
+
+    const second_raw = try bytes.reconstructRaw(
+        std.testing.allocator,
+        second_kv.?.value[0],
+        second_kv.?.value[1],
+    );
+    defer std.testing.allocator.free(second_raw);
+
+    try std.testing.expectEqualStrings(second_expected_raw, second_raw);
 }
 
 test "processFoundMessageVersion1_1Truncated" {

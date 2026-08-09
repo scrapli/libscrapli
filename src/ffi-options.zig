@@ -32,8 +32,6 @@ pub const FFIOptions = extern struct {
     cli: extern struct {
         definition_str: [*c]const u8 = undefined,
         definition_str_len: usize = 0,
-        normalize_line_feeds: ?*bool = null,
-        normalize_trailing_whitespace: ?*bool = null,
     },
 
     netconf: extern struct {
@@ -64,6 +62,10 @@ pub const FFIOptions = extern struct {
         ) callconv(.c) void = null,
         scratch_initial_size: ?*u64 = null,
         scratch_retain_max: ?*u64 = null,
+
+        // note that these are explicilty overwritten/ignored when driver is netconf
+        normalize_line_feeds: ?*bool = null,
+        normalize_trailing_whitespace: ?*bool = null,
     },
 
     auth: extern struct {
@@ -240,6 +242,14 @@ pub const FFIOptions = extern struct {
 
         if (self.session.scratch_retain_max) |d| {
             o.scratch_retain_max = d.*;
+        }
+
+        if (self.session.normalize_line_feeds) |lf| {
+            o.normalize_line_feeds = lf.*;
+        }
+
+        if (self.session.normalize_trailing_whitespace) |ws| {
+            o.normalize_trailing_whitespace = ws.*;
         }
 
         return o;
@@ -520,9 +530,7 @@ fn ffiOptionsTopLevelToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) 
 }
 
 const ffi_options_cli_args_json_ish_placeholder =
-    \\    "definition_str": "{s}",
-    \\    "normalize_line_feeds": "{any}",
-    \\    "normalize_trailing_whitespace": "{any}"
+    \\    "definition_str": "{s}"
 ;
 
 fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
@@ -543,8 +551,6 @@ fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8
         ffi_options_cli_args_json_ish_placeholder,
         .{
             encoded,
-            optBool(o.cli.normalize_line_feeds),
-            optBool(o.cli.normalize_trailing_whitespace),
         },
     );
 }
@@ -575,7 +581,9 @@ const ffi_options_session_args_json_ish_placeholder =
     \\    "operation_max_search_depth": {any},
     \\    "scratch_initial_size": {any},
     \\    "scratch_retain_max": {any},
-    \\    "record_destination": "{s}"
+    \\    "record_destination": "{s}",
+    \\    "normalize_line_feeds": "{any}",
+    \\    "normalize_trailing_whitespace": "{any}"
 ;
 
 fn ffiOptionsSessionToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
@@ -591,6 +599,8 @@ fn ffiOptionsSessionToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) !
             optU64(o.session.scratch_initial_size),
             optU64(o.session.scratch_retain_max),
             cStr(o.session.record_destination, o.session.record_destination_len),
+            optBool(o.session.normalize_line_feeds),
+            optBool(o.session.normalize_trailing_whitespace),
         },
     );
 }

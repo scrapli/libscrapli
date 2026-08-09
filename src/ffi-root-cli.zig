@@ -1,6 +1,7 @@
 // zlinter-disable no_panic - ignoring as we do panic on things that *really* should not happen
 const std = @import("std");
 
+const bytes = @import("bytes.zig");
 const cli = @import("cli.zig");
 const errors = @import("errors.zig");
 const ffi_args_to_options = @import("ffi-args-to-cli-options.zig");
@@ -245,6 +246,7 @@ export fn ls_cli_fetch_operation_sizes(
         };
 
         const sizes = d.getCliResultLens(dret);
+
         operation_count.* = @intCast(sizes.operation_count);
         operation_input_size.* = sizes.operation_input_size;
         operation_result_raw_size.* = sizes.operation_result_raw_size;
@@ -263,8 +265,11 @@ export fn ls_cli_fetch_operation(
     operation_start_time: *u64,
     operation_splits: *[]u64,
     operation_input: *[]u8,
+    operation_input_lens: *[]u64,
     operation_result_raw: *[]u8,
+    operation_result_raw_lens: *[]u64,
     operation_result: *[]u8,
+    operation_result_lens: *[]u64,
     operation_result_failed_indicator: *[]u8,
     operation_error: *[]u8,
     operation_last_error: *[]u8,
@@ -313,23 +318,51 @@ export fn ls_cli_fetch_operation(
             operation_start_time,
             operation_splits,
             operation_input,
+            operation_input_lens,
             operation_result_raw,
+            operation_result_raw_lens,
             operation_result,
+            operation_result_lens,
             operation_result_failed_indicator,
             operation_error,
-        ) catch |err| {
-            // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
-            errors.wrapCriticalError(
-                errors.ScrapliError.Operation,
-                @src(),
-                d.getLogger(),
-                "ffi: error during fetch operation {any}",
-                .{err},
-            ) catch {};
-
-            return ffi_common.toFfiResult(err);
-        };
+        );
     }
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+/// Get the size of the buffer needed to rebuild a single result entry's raw into -- cli results
+/// are per entry (one per input), so the (result, journal) pair here is one entry's slice of the
+/// packed buffers returned by ls_cli_fetch_operation.
+export fn ls_cli_get_reconstructed_result_raw_size(
+    operation_result: *[]u8,
+    operation_result_raw_journal: *[]u8,
+    raw_size: *usize,
+) callconv(.c) u8 {
+    raw_size.* = bytes.reconstructedRawLen(
+        operation_result_raw_journal.*,
+        operation_result.*.len,
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+/// Reconstructs a single result entry's raw from its (result, journal) pair into the caller
+/// provided (and owned) buf (sized via ls_cli_get_reconstructed_result_raw_size).
+export fn ls_cli_get_reconstructed_result_raw(
+    operation_result: *[]u8,
+    operation_result_raw_journal: *[]u8,
+    operation_result_raw: *[]u8,
+) callconv(.c) u8 {
+    bytes.reconstructRawInto(
+        operation_result_raw_journal.*,
+        operation_result.*,
+        operation_result_raw.*,
+    ) catch |err| {
+        return ffi_common.toFfiResult(err);
+    };
 
     return @backingInt(ffi_common.FfiResult.success);
 }
@@ -476,15 +509,15 @@ export fn ls_cli_send_inputs(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
-    // inputs delimited on the libscrapli delim... annoying but simple/dumb
-    inputs: [*c]const u8,
+    inputs: *[]u8,
+    input_lens: *[]u64,
     requested_mode: [*c]const u8,
     input_handling: ?*u8,
     retain_input: bool,
     retain_trailing_prompt: bool,
     stop_on_indicated_failure: bool,
 ) callconv(.c) u8 {
-    if (inputs == null or requested_mode == null) {
+    if (requested_mode == null) {
         return @backingInt(ffi_common.FfiResult.invalid_argument);
     }
 
@@ -493,7 +526,8 @@ export fn ls_cli_send_inputs(
     const options = ffi_args_to_options.sendInputsOptionsFromArgs(
         d.allocator,
         cancel,
-        inputs,
+        inputs.*,
+        input_lens.*,
         requested_mode,
         input_handling,
         retain_input,
@@ -748,20 +782,11 @@ test "ffi: ls_cli_send_inputs null arguments" {
     var op_id: u32 = 0;
     var cancel: bool = false;
 
-    try std.testing.expectEqual(
-        @backingInt(ffi_common.FfiResult.invalid_argument),
-        ls_cli_send_inputs(
-            @ptrFromInt(0xDEADBEEF),
-            &op_id,
-            &cancel,
-            null,
-            "mode",
-            null,
-            false,
-            false,
-            false,
-        ),
-    );
+    var inputs_buf = "show version".*;
+    var inputs: []u8 = &inputs_buf;
+
+    var input_lens_buf = [_]u64{12};
+    var input_lens: []u64 = &input_lens_buf;
 
     try std.testing.expectEqual(
         @backingInt(ffi_common.FfiResult.invalid_argument),
@@ -769,7 +794,8 @@ test "ffi: ls_cli_send_inputs null arguments" {
             @ptrFromInt(0xDEADBEEF),
             &op_id,
             &cancel,
-            "inputs",
+            &inputs,
+            &input_lens,
             null,
             null,
             false,

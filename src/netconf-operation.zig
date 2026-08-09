@@ -204,12 +204,10 @@ pub const RawRpcOptions = struct {
     // non-prefixed namespace to be something device specific, see next field as well.
     base_namespace_prefix: ?[]const u8 = null,
     // list of prefix:namespace pairs being prefix/namespace, for things like nxos that
-    // wants to be annoying: https://github.com/scrapli/scrapligo/issues/67
+    // wants to be annoying: https://github.com/scrapli/scrapligo/issues/67. note: for "normal"
+    // zig callers this is borrowed; the ffi layer builds an owned copy (from its packed
+    // strings + lens args, alternating prefix, namespace) cleaned up via freeOwnedStrings
     extra_namespaces: ?[]const [2][]const u8 = null,
-    // a string delimited by "::" for prefix::namespace, and __libscrapli__ for additional
-    // namespaces... done in order to make passing in multiple namespaces via the ffi
-    // easier without having allocations/arraylists
-    _extra_namespaces_ffi: ?[]const u8 = null,
 };
 
 /// GetConfigOptions holds options for the get-config rpc.

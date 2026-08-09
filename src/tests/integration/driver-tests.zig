@@ -155,7 +155,7 @@ test "driver open" {
 
         defer helper.closeDriver(cli.Driver, d, std.testing.allocator);
 
-        const actual = try actual_res.getResult(std.testing.allocator, .{});
+        const actual = try actual_res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
         try helper.processFixutreTestStrResult(
@@ -259,7 +259,7 @@ test "driver get-prompt" {
         );
         defer res.deinit();
 
-        const actual = try res.getResult(std.testing.allocator, .{});
+        const actual = try res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
         try helper.processFixutreTestStrResult(
@@ -383,7 +383,7 @@ test "driver enter-mode" {
         );
         defer res.deinit();
 
-        const actual = try res.getResult(std.testing.allocator, .{});
+        const actual = try res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
         try helper.processFixutreTestStrResult(
@@ -539,7 +539,7 @@ test "driver send-input" {
         );
         defer res.deinit();
 
-        const actual = try res.getResult(std.testing.allocator, .{});
+        const actual = try res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
         try helper.processFixutreTestStrResult(
@@ -730,7 +730,7 @@ test "driver send-inputs" {
         );
         defer res.deinit();
 
-        const actual = try res.getResult(std.testing.allocator, .{});
+        const actual = try res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
         try helper.processFixutreTestStrResult(
@@ -916,7 +916,7 @@ test "driver send-prompted-input" {
         );
         defer res.deinit();
 
-        const actual = try res.getResult(std.testing.allocator, .{});
+        const actual = try res.getResult(std.testing.allocator);
         defer std.testing.allocator.free(actual);
 
         try helper.processFixutreTestStrResult(
