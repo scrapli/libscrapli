@@ -787,6 +787,28 @@ pub const ProcessedBuf = struct {
         return out;
     }
 
+    /// Appends any *pending* kept-candidate whitespace (see normalize_trailing_whitespace) onto
+    /// the given list. Used by the session when capturing a prompt: at prompt-match time the
+    /// prompt's trailing whitespace is still pending (we cant know its trailing until whatever
+    /// comes after it shows up), but that whitespace is very much part of the prompt as far as
+    /// composing "prompt + input" for retained inputs goes. Journal-bound pending runs
+    /// (carriage returns/ansi junk) are skipped -- they are never display content.
+    pub fn appendPendingKeptTo(
+        self: *ProcessedBuf,
+        allocator: std.mem.Allocator,
+        list: *std.ArrayList(u8),
+    ) !void {
+        var offset: usize = 0;
+
+        for (self.pending_runs.items) |run| {
+            if (run.kept) {
+                try list.appendSlice(allocator, self.pending.items[offset..][0..run.len]);
+            }
+
+            offset += run.len;
+        }
+    }
+
     /// Settle any in-flight normalization state before dumping -- whitespace still pending at
     /// dump time is trailing by definition (journal it), and, when normalizing trailing
     /// whitespace, any whitespace/line feeds sitting at the very end of processed get demoted

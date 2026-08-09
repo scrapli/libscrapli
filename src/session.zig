@@ -1124,10 +1124,24 @@ pub const Session = struct {
         // use the match positions readTimeout already found rather than re-searching -- a
         // re-search could land on an earlier (i.e. prompt exclude filtered) match. defensively
         // clamp the end since readTimeout positions are relative to the processed buf
-        const found_prompt = bufs.processed.items[match_indexes.start..@min(
+        const matched_prompt = bufs.processed.items[match_indexes.start..@min(
             match_indexes.end,
             bufs.processed.items.len,
         )];
+
+        // the two consumers of the match want different trims:
+        //
+        // the *returned* prompt (the operation result) gets trailing whitespace fully trimmed --
+        // since thats probably what users would expect, just a hey "what is the prompt on the box
+        // rn", and they dont care about the whitepace.
+        //
+        // the *retained* prompt (used to compose "prompt + input" for the next op when
+        // retain_input is set) keeps trailing spaces/tabs -- thats real prompt content that
+        // becomes interior once the input echo lands after it (think "A:srl# enter candidate")
+        // -- but still drops newlines for the same nondeterminism reason. any of the prompt's
+        // trailing whitespace thats sitting *pending* in the buf (it usually is -- pending is
+        // exactly how whitespace waits to learn if its trailing) gets tacked on as well.
+        const found_prompt = std.mem.trimEnd(u8, matched_prompt, " \t\n\r");
 
         // the match is a view into the (reused) scratch buffer, and both consumers need their
         // own copy with their own allocator: the caller owns the returned prompt (operation
@@ -1136,13 +1150,12 @@ pub const Session = struct {
         const owned_found_prompt = try allocator.dupe(u8, found_prompt);
         errdefer allocator.free(owned_found_prompt);
 
-        // we want to ensure we are storing the last consumed prompt so that our send_input
-        // buf is always "correct" when "retain_input" is true
         self.last_consumed_prompt.clearRetainingCapacity();
         try self.last_consumed_prompt.appendSlice(
             self.allocator,
-            found_prompt,
+            matched_prompt,
         );
+        try bufs.appendPendingKeptTo(self.allocator, &self.last_consumed_prompt);
 
         // TODO probably just return the found prompt here instead?
         // the "processed" side of a getPrompt result is only ever the prompt itself, so we just
@@ -1235,9 +1248,15 @@ pub const Session = struct {
 
     fn storeLastConsumedPrompt(
         self: *Session,
+        bufs: *bytes.ProcessedBuf,
         buf: []const u8,
     ) !void {
         try self.last_consumed_prompt.appendSlice(self.allocator, buf);
+
+        // the prompt's trailing whitespace (i.e. "A:srl# " <- that space) is generally *pending*
+        // in the buf at match time rather than in processed, but its part of the prompt as far
+        // as composing "prompt + input" for the next retained-input op goes, so grab it too
+        try bufs.appendPendingKeptTo(self.allocator, &self.last_consumed_prompt);
     }
 
     /// Sends the given input to the transport, reading until the input is written, then sending
@@ -1293,6 +1312,7 @@ pub const Session = struct {
         );
 
         try self.storeLastConsumedPrompt(
+            bufs,
             bufs.processed.items[prompt_indexes.start..prompt_indexes.end],
         );
 
@@ -1429,6 +1449,7 @@ pub const Session = struct {
         );
 
         try self.storeLastConsumedPrompt(
+            bufs,
             bufs.processed.items[prompt_indexes.start..prompt_indexes.end],
         );
 
