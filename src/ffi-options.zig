@@ -530,7 +530,7 @@ fn ffiOptionsTopLevelToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) 
 }
 
 const ffi_options_cli_args_json_ish_placeholder =
-    \\    "definition_str": "{s}",
+    \\    "definition_str": "{s}"
 ;
 
 fn ffiOptionsCLIToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u8 {
@@ -581,7 +581,7 @@ const ffi_options_session_args_json_ish_placeholder =
     \\    "operation_max_search_depth": {any},
     \\    "scratch_initial_size": {any},
     \\    "scratch_retain_max": {any},
-    \\    "record_destination": "{s}"
+    \\    "record_destination": "{s}",
     \\    "normalize_line_feeds": "{any}",
     \\    "normalize_trailing_whitespace": "{any}"
 ;
