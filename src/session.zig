@@ -204,7 +204,7 @@ pub const Session = struct {
     read_stop: std.atomic.Value(ReadThreadState) = std.atomic.Value(ReadThreadState).init(
         ReadThreadState.uninitialized,
     ),
-    read_lock: std.Io.Mutex,
+    read_lock: std.Io.Mutex = .init,
     read_queue: queue.LinearFifo(u8),
     read_thread_errored: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     read_thread_error: ?anyerror = null,
@@ -264,7 +264,6 @@ pub const Session = struct {
             .options = o,
             .auth_options = auth_options,
             .transport = t,
-            .read_lock = std.Io.Mutex.init,
             .read_queue = queue.LinearFifo(u8).init(allocator),
             .read_into_buf = &[_]u8{},
             .read_loop_buf = &[_]u8{},

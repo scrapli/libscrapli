@@ -166,13 +166,6 @@ pub fn getBufSearchView(
     return buf[buf.len - depth ..];
 }
 
-// journal entries serialize as varint(pos delta) | varint(len) | content. positions are
-// non-decreasing by construction, so each entry's pos is stored as the delta from the previous
-// entry's pos (the first entry deltas from zero) -- deltas and lens are almost always tiny (a
-// carriage return per line, a small whitespace run, etc.) so LEB128 varints keep the per entry
-// overhead at ~2-3 bytes instead of a fixed 16. a nice side effect of delta encoding: out of
-// order entries are unrepresentable, the decoder's position can only ever move forward.
-
 /// Returns the number of bytes v occupies as a LEB128 varint.
 fn varintLen(v: u64) usize {
     var n: usize = 1;
@@ -233,6 +226,11 @@ fn readVarint(buf: []const u8, idx: *usize) !u64 {
     }
 }
 
+/// journal entries serialize as varint(pos delta) | varint(len) | content.  pos is delta from the
+/// previous entry. originally these were just little endian usize/u64 but that ended up having a
+/// metric shit ton of overhead on cli where we do line normalization -- every line had 8+8+1 entry
+/// just to say "hey we removed a \r", so now its this fancy LEB128 encoding to keep the headers
+/// super tiny.
 const ProcessedBufRawJournalEntry = struct {
     pos: usize,
     len: usize,
