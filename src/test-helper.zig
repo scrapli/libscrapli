@@ -213,7 +213,7 @@ pub fn testStrResultRoughly(
     // the tests in actions (at least driver open for now) that call this can have extra newlines
     // and weird shit that cant be reproduced on darwin or linux locally it seems, so... just say
     // screw it and make sure that all of the expected stuff is in there
-    const match_indexes = bytes.roughlyContains(expected, actual);
+    const match_indexes = bytes.roughlyContains(actual, expected);
 
     if (match_indexes[0] == 0 and match_indexes[1] == 0) {
         displayDiff(

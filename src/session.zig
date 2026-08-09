@@ -1123,11 +1123,20 @@ pub const Session = struct {
 
         // use the match positions readTimeout already found rather than re-searching -- a
         // re-search could land on an earlier (i.e. prompt exclude filtered) match. defensively
-        // clamp the end since readTimeout positions are relative to the processed buf
-        const found_prompt = bufs.processed.items[match_indexes.start..@min(
-            match_indexes.end,
-            bufs.processed.items.len,
-        )];
+        // clamp the end since readTimeout positions are relative to the processed buf. also
+        // trim any trailing whitespace the prompt pattern may have greedily matched (patterns
+        // commonly end in `\s*$` so, depending on read chunk timing, a newline arriving after
+        // the prompt can land *inside* the match) -- w/out this the prompt is nondeterministic
+        // across timing and carries junk the old fetch-time render used to clean up, that probably
+        // should *not* be happening in general (though perhaps in netconf?)
+        const found_prompt = std.mem.trimEnd(
+            u8,
+            bufs.processed.items[match_indexes.start..@min(
+                match_indexes.end,
+                bufs.processed.items.len,
+            )],
+            " \t\n\r",
+        );
 
         // the match is a view into the (reused) scratch buffer, and both consumers need their
         // own copy with their own allocator: the caller owns the returned prompt (operation
