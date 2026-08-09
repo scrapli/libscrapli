@@ -14,7 +14,7 @@
 : Contact:     https://go.srlinux.dev/contact-sales            :
 ................................................................
 
-(user@host) Password:
+(user@host) Password:
 
 Using configuration file(s): []
 Welcome to the srlinux CLI.
