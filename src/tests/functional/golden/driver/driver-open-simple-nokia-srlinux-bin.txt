@@ -15,7 +15,6 @@
 ................................................................
 
 (user@host) Password:
-
 Using configuration file(s): []
 Welcome to the srlinux CLI.
 Type 'help' (and press <ENTER>) if you need any help using this.
