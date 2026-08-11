@@ -1171,6 +1171,8 @@ pub const Session = struct {
         redact_input: bool,
         bufs: *bytes.ProcessedBuf,
     ) !bytes_check.MatchPositions {
+        var mut_input_handling = input_handling;
+
         logging.traceWithSrc(
             self.log,
             @src(),
@@ -1189,6 +1191,12 @@ pub const Session = struct {
 
         try self.write(input, redact_input);
 
+        if (input.len == 0) {
+            // for whatever reason user sent nothing, we cant search for nothing, so ignore
+            // whatever they asked for and set input handling to ignore
+            mut_input_handling = .ignore;
+        }
+
         var match_indexes: bytes_check.MatchPositions = .{ .start = 0, .end = 0 };
 
         var search_depth = self.options.operation_max_search_depth;
@@ -1201,7 +1209,7 @@ pub const Session = struct {
             search_depth = input.len * 4;
         }
 
-        switch (input_handling) {
+        switch (mut_input_handling) {
             .exact => {
                 match_indexes = try self.readTimeout(
                     start_time,
@@ -1223,11 +1231,7 @@ pub const Session = struct {
                 );
             },
             .ignore => {
-                // ignore, not reading input; to not break our saftey rule above we return here
-                // when in "ignore" handling mode
-                try self.writeReturn();
-
-                return match_indexes;
+                // nothing to do, we'll drop out and hit return
             },
         }
 
