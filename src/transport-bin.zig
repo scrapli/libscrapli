@@ -772,22 +772,38 @@ fn openPtyChild(
     }
 }
 
+// note: term attrs are get/set via libc rather than std.posix -- current (at time of writing) zig
+// 0.17.x dev had some change where the structs were diff sizes (between c and zig -- and zig called
+// the syscall later) which caused illegal instruction things to happen.
+// https://github.com/scrapli/libscrapli/actions/runs/31497796806/job/93799786834
 fn setonlcr(fd: std.posix.fd_t) !void {
     // onlcr  (-onlcr)
     //     [Option Start] Map (do not map) NL to CR-NL on output.
-    var term = try std.posix.tcgetattr(fd);
+    var term: c.struct_termios = undefined;
 
-    term.oflag.ONLCR = false;
+    if (c.tcgetattr(fd, &term) != 0) {
+        return error.PtyError;
+    }
 
-    try std.posix.tcsetattr(fd, std.posix.TCSA.NOW, term);
+    term.c_oflag &= ~@as(@TypeOf(term.c_oflag), c.ONLCR);
+
+    if (c.tcsetattr(fd, c.TCSANOW, &term) != 0) {
+        return error.PtyError;
+    }
 }
 
 fn setnoecho(fd: std.posix.fd_t) !void {
-    var term = try std.posix.tcgetattr(fd);
+    var term: c.struct_termios = undefined;
 
-    term.lflag.ECHO = false;
+    if (c.tcgetattr(fd, &term) != 0) {
+        return error.PtyError;
+    }
 
-    try std.posix.tcsetattr(fd, std.posix.TCSA.NOW, term);
+    term.c_lflag &= ~@as(@TypeOf(term.c_lflag), c.ECHO);
+
+    if (c.tcsetattr(fd, c.TCSANOW, &term) != 0) {
+        return error.PtyError;
+    }
 }
 
 test "transportInit" {
