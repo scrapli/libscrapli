@@ -284,6 +284,10 @@ pub const Driver = struct {
         options: operation.CloseOptions,
     ) !*result.Result {
         self.log.info("cli.Driver close requested", .{});
+        self.log.debug(
+            "cli.Driver close: force '{any}'",
+            .{options.force},
+        );
 
         var res = try self.newResult(
             allocator,
@@ -291,8 +295,8 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        if (self.definition.on_close_callback != null or
-            self.definition.bound_on_close_callback != null)
+        if (!options.force and (self.definition.on_close_callback != null or
+            self.definition.bound_on_close_callback != null))
         {
             self.log.info("cli.Driver close: on close callback set, executing...", .{});
 

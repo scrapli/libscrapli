@@ -162,6 +162,7 @@ export fn ls_cli_close(
     d_ptr: *ffi_common.LsDriver,
     operation_id: *u32,
     cancel: *bool,
+    force: bool,
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
 
@@ -176,6 +177,7 @@ export fn ls_cli_close(
                 .cli = .{
                     .close = .{
                         .cancel = cancel,
+                        .force = force,
                     },
                 },
             },

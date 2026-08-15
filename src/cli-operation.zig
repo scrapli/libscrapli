@@ -37,6 +37,7 @@ pub const OpenOptions = struct {
 /// Holds options for closing a connection.
 pub const CloseOptions = struct {
     cancel: ?*bool = null,
+    force: bool = false,
 };
 
 /// Holds options for the ReadAny operation.
