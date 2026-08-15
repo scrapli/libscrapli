@@ -342,7 +342,7 @@ pub const FfiDriver = struct {
                 @panic("failed acquiring operation lock");
             };
 
-            if (ret_err != null) {
+            if (ret_err) |err| {
                 self.operation_results.put(
                     op.id,
                     ffi_operations.OperationResult{
@@ -350,7 +350,7 @@ pub const FfiDriver = struct {
                         .result = .{
                             .cli = null,
                         },
-                        .err = ret_err,
+                        .err = err,
                         .last_error = self.allocator.dupe(u8, rd.getLastError()) catch "",
                     },
                 ) catch {
@@ -359,6 +359,18 @@ pub const FfiDriver = struct {
                             "this should not happen",
                     );
                 };
+
+                switch (err) {
+                    // cancellation happens from the caller so they already know the op is over
+                    // so we go back to the top here so we dont send a wakeup poll that could
+                    // confuse things on the caller side
+                    errors.ScrapliError.Cancelled => {
+                        self.operation_lock.unlock(self.io);
+
+                        continue;
+                    },
+                    else => {},
+                }
             } else {
                 self.operation_results.put(
                     op.id,
@@ -474,7 +486,7 @@ pub const FfiDriver = struct {
                 @panic("ffi-driver.FfiDriver: failed acquiring operation lock");
             };
 
-            if (ret_err != null) {
+            if (ret_err) |err| {
                 self.operation_results.put(
                     op.id,
                     ffi_operations.OperationResult{
@@ -482,7 +494,7 @@ pub const FfiDriver = struct {
                         .result = .{
                             .netconf = null,
                         },
-                        .err = ret_err,
+                        .err = err,
                         .last_error = self.allocator.dupe(u8, rd.getLastError()) catch "",
                     },
                 ) catch {
@@ -491,6 +503,15 @@ pub const FfiDriver = struct {
                             "this should not happen",
                     );
                 };
+
+                switch (err) {
+                    errors.ScrapliError.Cancelled => {
+                        self.operation_lock.unlock(self.io);
+
+                        continue;
+                    },
+                    else => {},
+                }
             } else {
                 self.operation_results.put(
                     op.id,
