@@ -32,13 +32,12 @@ pub const FfiDriver = struct {
 
     poll_fds: [2]std.posix.fd_t = .{ -1, -1 },
 
-    operation_id_counter: u32,
-    operation_thread: ?std.Thread,
-    operation_ready: std.atomic.Value(bool),
-    operation_stop: std.atomic.Value(bool),
-    operation_lock: std.Io.Mutex,
-    operation_condition: std.Io.Condition,
-    operation_predicate: u32,
+    operation_id_counter: u32 = 0,
+    operation_thread: ?std.Thread = null,
+    operation_ready: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    operation_stop: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    operation_lock: std.Io.Mutex = std.Io.Mutex.init,
+    operation_condition: std.Io.Condition = std.Io.Condition.init,
     operation_queue: queue.LinearFifo(ffi_operations.OperationOptions),
     operation_results: std.AutoHashMap(
         u32,
@@ -84,13 +83,6 @@ pub const FfiDriver = struct {
             .real_driver = .{
                 .cli = real_driver,
             },
-            .operation_id_counter = 0,
-            .operation_thread = null,
-            .operation_ready = std.atomic.Value(bool).init(false),
-            .operation_stop = std.atomic.Value(bool).init(false),
-            .operation_lock = std.Io.Mutex.init,
-            .operation_condition = std.Io.Condition.init,
-            .operation_predicate = 0,
             .operation_queue = queue.LinearFifo(ffi_operations.OperationOptions).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
@@ -133,13 +125,6 @@ pub const FfiDriver = struct {
             .real_driver = .{
                 .netconf = real_driver,
             },
-            .operation_id_counter = 0,
-            .operation_thread = null,
-            .operation_ready = std.atomic.Value(bool).init(false),
-            .operation_stop = std.atomic.Value(bool).init(false),
-            .operation_lock = std.Io.Mutex.init,
-            .operation_condition = std.Io.Condition.init,
-            .operation_predicate = 0,
             .operation_queue = queue.LinearFifo(ffi_operations.OperationOptions).init(allocator),
             .operation_results = std.AutoHashMap(
                 u32,
