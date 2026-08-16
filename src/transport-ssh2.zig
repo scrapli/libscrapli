@@ -4,6 +4,7 @@ const c = @import("c");
 const ssh2 = @import("ssh2");
 
 const auth = @import("auth.zig");
+const cancellation = @import("cancellation.zig");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
@@ -873,7 +874,7 @@ pub const Transport = struct {
         }
 
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport initSession: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -1194,7 +1195,7 @@ pub const Transport = struct {
         session: *ssh2.LIBSSH2_SESSION,
     ) !bool {
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport isAuthenticated: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -1272,7 +1273,7 @@ pub const Transport = struct {
         defer self.allocator.free(private_key_passphrase_c);
 
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport handlePrivateKeyAuth: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -1386,7 +1387,7 @@ pub const Transport = struct {
         const key_content = auth_options.private_key_content.?;
 
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport handlePrivateKeyContentAuth: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -1488,7 +1489,7 @@ pub const Transport = struct {
         auth_options: auth.Options,
     ) !void {
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport handleKeyboardInteractiveAuth: " ++
                     "operation cancelled";
 
@@ -1571,7 +1572,7 @@ pub const Transport = struct {
         const resolved_password = try auth_options.resolveAuthValue(password);
 
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport handlePasswordAuth: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -1644,7 +1645,7 @@ pub const Transport = struct {
         session: *ssh2.LIBSSH2_SESSION,
     ) !?*ssh2.LIBSSH2_CHANNEL {
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport openChannel: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -1727,7 +1728,7 @@ pub const Transport = struct {
         defer self.allocator.free(_host);
 
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport openProxyChannel: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -1913,7 +1914,7 @@ pub const Transport = struct {
         channel: *ssh2.LIBSSH2_CHANNEL,
     ) !void {
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport requestPty: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -1983,7 +1984,7 @@ pub const Transport = struct {
         channel: *ssh2.LIBSSH2_CHANNEL,
     ) !void {
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport requestShell: operation cancelled";
 
                 self.last_error.set(last_error);

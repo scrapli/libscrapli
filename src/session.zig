@@ -4,6 +4,7 @@ const ascii = @import("ascii.zig");
 const auth = @import("auth.zig");
 const bytes = @import("bytes.zig");
 const bytes_check = @import("bytes-check.zig");
+const cancellation = @import("cancellation.zig");
 const errors = @import("errors.zig");
 const logging = @import("logging.zig");
 const operation = @import("cli-operation.zig");
@@ -596,7 +597,7 @@ pub const Session = struct {
         }
 
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "session.Session authenticate: operation cancelled";
 
                 self.last_error.set(last_error);
@@ -934,7 +935,7 @@ pub const Session = struct {
         const buf = self.read_into_buf;
 
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "session.Session readTimeout: operation cancelled";
 
                 self.last_error.set(last_error);

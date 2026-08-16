@@ -5,6 +5,7 @@ const xml = @import("xml");
 const ascii = @import("ascii.zig");
 const auth = @import("auth.zig");
 const bytes = @import("bytes.zig");
+const cancellation = @import("cancellation.zig");
 const errors = @import("errors.zig");
 const logging = @import("logging.zig");
 const operation = @import("netconf-operation.zig");
@@ -1517,7 +1518,7 @@ pub const Driver = struct {
         start_timestamp: std.Io.Timestamp,
         cancel: ?*bool,
     ) !void {
-        if (cancel != null and cancel.?.*) {
+        if (cancellation.cancelled(cancel)) {
             const last_error = "netconf.Driver processCancelAndTimeout: operation cancelled";
 
             self.last_error.set(last_error);

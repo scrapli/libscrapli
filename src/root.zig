@@ -3,6 +3,7 @@ pub const ascii = @import("ascii.zig");
 pub const auth = @import("auth.zig");
 pub const bytes = @import("bytes.zig");
 pub const bytes_check = @import("bytes-check.zig");
+pub const cancellation = @import("cancellation.zig");
 pub const cli = @import("cli.zig");
 pub const cli_mode = @import("cli-mode.zig");
 pub const cli_operation = @import("cli-operation.zig");

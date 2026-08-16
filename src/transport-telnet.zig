@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const bytes = @import("bytes.zig");
+const cancellation = @import("cancellation.zig");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
@@ -155,7 +156,7 @@ pub const Transport = struct {
         defer control_buf.deinit(self.allocator);
 
         while (true) {
-            if (cancel != null and cancel.?.*) {
+            if (cancellation.cancelled(cancel)) {
                 const last_error = "telnet.Transport handleControlChars: operation cancelled";
 
                 self.last_error.set(last_error);

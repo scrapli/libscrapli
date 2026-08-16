@@ -255,9 +255,13 @@ pub const FfiDriver = struct {
         }
     }
 
-    fn writePollWakeUp(self: *FfiDriver) !void {
-        const rc = std.c.write(self.poll_fds[1], "x", 1);
-        if (rc != 1) {
+    fn writePollWakeUp(self: *FfiDriver, operation_id: u32) !void {
+        var op_buf: [4]u8 = undefined;
+
+        std.mem.writeInt(u32, &op_buf, operation_id, .little);
+
+        const rc = std.c.write(self.poll_fds[1], &op_buf, 4);
+        if (rc != 4) {
             return errors.ScrapliError.Operation;
         }
     }
@@ -343,33 +347,37 @@ pub const FfiDriver = struct {
             };
 
             if (ret_err) |err| {
-                self.operation_results.put(
-                    op.id,
-                    ffi_operations.OperationResult{
-                        .done = true,
-                        .result = .{
-                            .cli = null,
-                        },
-                        .err = err,
-                        .last_error = self.allocator.dupe(u8, rd.getLastError()) catch "",
-                    },
-                ) catch {
-                    @panic(
-                        "ffi-driver.FfiDriver: failed storing operation result, " ++
-                            "this should not happen",
-                    );
-                };
-
                 switch (err) {
                     // cancellation happens from the caller so they already know the op is over
                     // so we go back to the top here so we dont send a wakeup poll that could
-                    // confuse things on the caller side
+                    // confuse things on the caller side; note that we also *drop* the result --
+                    // all it would show was "cancelled" anyway and the caller obviously already
+                    // knows that -- this ensures we never leak any results.
                     errors.ScrapliError.Cancelled => {
+                        _ = self.operation_results.remove(op.id);
+
                         self.operation_lock.unlock(self.io);
 
                         continue;
                     },
-                    else => {},
+                    else => {
+                        self.operation_results.put(
+                            op.id,
+                            ffi_operations.OperationResult{
+                                .done = true,
+                                .result = .{
+                                    .cli = null,
+                                },
+                                .err = err,
+                                .last_error = self.allocator.dupe(u8, rd.getLastError()) catch "",
+                            },
+                        ) catch {
+                            @panic(
+                                "ffi-driver.FfiDriver: failed storing operation result, " ++
+                                    "this should not happen",
+                            );
+                        };
+                    },
                 }
             } else {
                 self.operation_results.put(
@@ -391,7 +399,7 @@ pub const FfiDriver = struct {
 
             self.operation_lock.unlock(self.io);
 
-            self.writePollWakeUp() catch {
+            self.writePollWakeUp(op.id) catch {
                 @panic("ffi-driver.FfiDriver: failed writing to wakeup fd, cannot proceed");
             };
         }
@@ -487,30 +495,32 @@ pub const FfiDriver = struct {
             };
 
             if (ret_err) |err| {
-                self.operation_results.put(
-                    op.id,
-                    ffi_operations.OperationResult{
-                        .done = true,
-                        .result = .{
-                            .netconf = null,
-                        },
-                        .err = err,
-                        .last_error = self.allocator.dupe(u8, rd.getLastError()) catch "",
-                    },
-                ) catch {
-                    @panic(
-                        "ffi-driver.FfiDriver: failed storing operation result, " ++
-                            "this should not happen",
-                    );
-                };
-
                 switch (err) {
                     errors.ScrapliError.Cancelled => {
+                        _ = self.operation_results.remove(op.id);
+
                         self.operation_lock.unlock(self.io);
 
                         continue;
                     },
-                    else => {},
+                    else => {
+                        self.operation_results.put(
+                            op.id,
+                            ffi_operations.OperationResult{
+                                .done = true,
+                                .result = .{
+                                    .netconf = null,
+                                },
+                                .err = err,
+                                .last_error = self.allocator.dupe(u8, rd.getLastError()) catch "",
+                            },
+                        ) catch {
+                            @panic(
+                                "ffi-driver.FfiDriver: failed storing operation result, " ++
+                                    "this should not happen",
+                            );
+                        };
+                    },
                 }
             } else {
                 self.operation_results.put(
@@ -532,7 +542,7 @@ pub const FfiDriver = struct {
 
             self.operation_lock.unlock(self.io);
 
-            self.writePollWakeUp() catch {
+            self.writePollWakeUp(op.id) catch {
                 @panic("ffi-driver.FfiDriver: failed writing to wakeup fd, cannot proceed");
             };
         }
@@ -584,6 +594,38 @@ pub const FfiDriver = struct {
         return operation_id;
     }
 
+    // must be called while holding the op lock (should only ever be called in dequeueOperation).
+    // fixed size buffer because the only ops that should ever be "stale" like this are ops that
+    // were cancelled and the cancellation happened at *juuuuuust* the right time that the op
+    // actually finished while the cancel was being set and so it snuck on into the results map,
+    // so this is just a safety net to catch those and remove them so we dont leak.
+    fn dequeueStaleOperations(
+        self: *FfiDriver,
+        current_operation_id: u32,
+    ) void {
+        var stale_buf: [4]u32 = undefined;
+        var stale_n: usize = 0;
+
+        var it = self.operation_results.iterator();
+
+        while (it.next()) |entry| {
+            if (entry.key_ptr.* < current_operation_id and
+                entry.value_ptr.done and stale_n < stale_buf.len)
+            {
+                stale_buf[stale_n] = entry.key_ptr.*;
+                stale_n += 1;
+            }
+        }
+
+        for (stale_buf[0..stale_n]) |k| {
+            if (self.operation_results.fetchRemove(k)) |kv| {
+                var v = kv.value;
+
+                v.deinit(self.allocator);
+            }
+        }
+    }
+
     /// Dequeues the the given operation id from the operation queue if present, if remove is false
     /// only "get" it, don't "remove" it from the queue.
     pub fn dequeueOperation(
@@ -593,6 +635,8 @@ pub const FfiDriver = struct {
     ) !ffi_operations.OperationResult {
         try self.operation_lock.lock(self.io);
         defer self.operation_lock.unlock(self.io);
+
+        self.dequeueStaleOperations(operation_id);
 
         if (!self.operation_results.contains(operation_id)) {
             return errors.wrapCriticalError(

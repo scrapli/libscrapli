@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const cancellation = @import("cancellation.zig");
 const errors = @import("errors.zig");
 const logging = @import("logging.zig");
 
@@ -154,7 +155,7 @@ fn handleConnectStreamCancel(
     operation_timeout_ns: u64,
 ) errors.ScrapliError!void {
     while (true) {
-        if (cancel != null and cancel.?.*) {
+        if (cancellation.cancelled(cancel)) {
             return errors.ScrapliError.Cancelled;
         }
 
