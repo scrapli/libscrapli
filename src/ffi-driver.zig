@@ -32,12 +32,15 @@ pub const FfiDriver = struct {
 
     real_driver: RealDriver,
 
-    // Windows: CRT int fds backed by an anonymous pipe (see fdcompat.zig);
-    // POSIX: real pipe fds. Both keep the -1 sentinel + Python-side select().
+    // POSIX: real pipe fds (-1 sentinel). Windows: two loopback TCP
+    // sockets as raw SOCKET values — the read end is handed to Python
+    // where select()/recv() only accept WinSock sockets.
     poll_fds: if (builtin.target.os.tag == .windows)
-        [2]fdcompat.Fd
+        [2]usize
     else
-        [2]std.posix.fd_t = .{ -1, -1 },
+        [2]std.posix.fd_t =
+    // windows uses 0 as the invalid sentinel here (SOCKET never 0 once created)
+    if (builtin.target.os.tag == .windows) .{ 0, 0 } else .{ -1, -1 },
 
     operation_id_counter: u32 = 0,
     operation_thread: ?std.Thread = null,
@@ -53,12 +56,19 @@ pub const FfiDriver = struct {
 
     fn setPollFds(self: *FfiDriver) !void {
         if (builtin.target.os.tag == .windows) {
-            // Anonymous pipe via CreatePipe + _open_osfhandle; the CRT fds
-            // behave like POSIX pipe fds for both _write() here and
-            // select()/read on the Python side.
-            self.poll_fds = fdcompat.pipeToFds() catch {
+            // Loopback TCP pair: [0]=accepted end → Python select/recv;
+            // [1]=connector end → Zig send() writes the wakeup bytes.
+            self.poll_fds = fdcompat.tcpSocketPair() catch |err| {
+                self.getLogger().warn(
+                    "wake socketpair failed: {any}",
+                    .{@errorName(err)},
+                );
                 return errors.ScrapliError.Session;
             };
+            self.getLogger().info(
+                "wake socketpair ready: python_sock={d} zig_sock={d}",
+                .{ self.poll_fds[0], self.poll_fds[1] },
+            );
             return;
         }
         switch (std.posix.errno(std.c.pipe(&self.poll_fds))) {
@@ -194,18 +204,19 @@ pub const FfiDriver = struct {
         // the real drivers borrow the host buffer we own, so it must outlive their deinit
         self.allocator.free(self.host);
 
-        if (self.poll_fds[0] >= 0) {
-            if (builtin.target.os.tag == .windows) {
-                fdcompat.closeFd(self.poll_fds[0]);
-            } else {
+        if (builtin.target.os.tag == .windows) {
+            if (self.poll_fds[0] != 0) {
+                _ = fdcompat.ws2.closesocket(self.poll_fds[0]);
+            }
+            if (self.poll_fds[1] != 0) {
+                _ = fdcompat.ws2.closesocket(self.poll_fds[1]);
+            }
+        } else {
+            if (self.poll_fds[0] >= 0) {
                 _ = std.c.close(self.poll_fds[0]);
             }
-        }
 
-        if (self.poll_fds[1] >= 0) {
-            if (builtin.target.os.tag == .windows) {
-                fdcompat.closeFd(self.poll_fds[1]);
-            } else {
+            if (self.poll_fds[1] >= 0) {
                 _ = std.c.close(self.poll_fds[1]);
             }
         }
@@ -285,9 +296,12 @@ pub const FfiDriver = struct {
         std.mem.writeInt(u32, &op_buf, operation_id, .little);
 
         if (builtin.target.os.tag == .windows) {
-            // CRT _write on the pipe's write-end fd; returns bytes written.
-            const n = fdcompat.writeFd(self.poll_fds[1], op_buf[0..4]);
-            if (n != 4) {
+            // Wake the Python-side select() by sending one byte over the
+            // loopback pair; it recv()s a byte to consume the event.
+            const w = fdcompat.sockWrite(self.poll_fds[1], op_buf[0..1]) catch {
+                return errors.ScrapliError.Operation;
+            };
+            if (w != 1) {
                 return errors.ScrapliError.Operation;
             }
             return;

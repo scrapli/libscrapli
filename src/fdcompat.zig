@@ -146,7 +146,7 @@ pub const ws2 = struct {
     pub const IPPROTO_UDP: c_int = 17;
 
     extern "ws2_32" fn socket(af: c_int, typ: c_int, protocol: c_int) callconv(.c) SOCKET;
-    extern "ws2_32" fn closesocket(s: SOCKET) callconv(.c) c_int;
+    pub extern "ws2_32" fn closesocket(s: SOCKET) callconv(.c) c_int;
     extern "ws2_32" fn bind(s: SOCKET, name: *const sockaddr_in, namelen: c_int) callconv(.c) c_int;
     extern "ws2_32" fn listen(s: SOCKET, backlog: c_int) callconv(.c) c_int;
     extern "ws2_32" fn accept(s: SOCKET, addr: ?*sockaddr_in, addrlen: ?*c_int) callconv(.c) SOCKET;
