@@ -1,9 +1,34 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const errors = @import("errors.zig");
 
+// zig 0.17-dev's std.os.windows.ws2_32 lacks ioctlsocket; declare it directly.
+extern "ws2_32" fn ioctlsocket(s: usize, cmd: c_int, argp: *u32) callconv(.c) c_int;
+fn ws2_ioctlsocket_compat(s: usize, cmd: c_int, argp: *u32) c_int {
+    return ioctlsocket(s, cmd, argp);
+}
+
 /// Conveinence function to set the given fd to be in non block.
-pub fn setNonBlocking(fd: std.posix.fd_t) !void {
+/// Accepts whatever the platform's descriptor type is: POSIX int fd, or on
+/// Windows either a WinSock SOCKET (usize) or an OS HANDLE (pointer).
+pub fn setNonBlocking(fd: anytype) !void {
+    if (builtin.target.os.tag == .windows) {
+        // fcntl/F.GETFL doesn't exist on Windows; use ioctlsocket(FIONBIO),
+        // which covers the socket case exercised by ssh2/telnet transports.
+        // FIONBIO = 0x8004667E — exceeds c_int positive range, so bitcast.
+        const FIONBIO: c_int = @bitCast(@as(u32, 0x8004667E));
+        const sock: usize = switch (@typeInfo(@TypeOf(fd))) {
+            .int, .comptime_int => @intCast(fd),
+            .pointer => @intFromPtr(fd),
+            else => @compileError("setNonBlocking: expected int fd or HANDLE pointer"),
+        };
+        var mode: u32 = 1; // enable non-blocking
+        if (ws2_ioctlsocket_compat(sock, FIONBIO, &mode) == -1) {
+            return errors.ScrapliError.CError;
+        }
+        return;
+    }
     var flags = std.posix.system.fcntl(
         fd,
         std.posix.system.F.GETFL,

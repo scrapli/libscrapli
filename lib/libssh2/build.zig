@@ -41,25 +41,62 @@ pub fn build(b: *std.Build) void {
 
     ssh2_translate_c.addIncludePath(b.path("include"));
 
+    // Windows: add libscrapli's windows-compat stub headers (sys/uio.h etc.)
+    // Absolute paths because .cwd_relative resolves against the MAIN build
+    // root, not this sub-project's directory.
+    if (@import("builtin").target.os.tag == .windows) {
+        ssh2_translate_c.addIncludePath(.{
+            .cwd_relative = "D:\\ai\\ref\\libscrapli\\src\\windows-compat",
+        });
+    }
+
     ssh2_translate_c.defineCMacro("LIBSSH2_OPENSSL", "");
-    ssh2_translate_c.defineCMacro("HAVE_UNISTD_H", "");
+
+    // POSIX header detection macros. On Windows, skip the sys/* ones —
+    // letting libssh2.h include <sys/select.h> etc. drags mingw-w64's
+    // x86 intrinsic headers through zig translate-c which chokes on
+    // __builtin_elementwise_* builtins (44 AVX-512 errors). The stub
+    // sys/uio.h + sys/socket.h in windows-compat cover what libssh2.h
+    // unconditionally needs.
+    const is_windows_target = @import("builtin").target.os.tag == .windows;
+    if (!is_windows_target) {
+        ssh2_translate_c.defineCMacro("HAVE_UNISTD_H", "");
+        ssh2_translate_c.defineCMacro("HAVE_SYS_SELECT_H", "");
+        ssh2_translate_c.defineCMacro("HAVE_SYS_UIO_H", "");
+        ssh2_translate_c.defineCMacro("HAVE_SYS_SOCKET_H", "");
+        ssh2_translate_c.defineCMacro("HAVE_SYS_IOCTL_H", "");
+        ssh2_translate_c.defineCMacro("HAVE_SYS_TIME_H", "");
+        ssh2_translate_c.defineCMacro("HAVE_SYS_UN_H", "");
+        ssh2_translate_c.defineCMacro("HAVE_POLL", "");
+        ssh2_translate_c.defineCMacro("HAVE_SELECT", "");
+        ssh2_translate_c.defineCMacro("HAVE_SOCKET", "");
+    }
+    // Safe on all platforms:
     ssh2_translate_c.defineCMacro("HAVE_INTTYPES_H", "");
     ssh2_translate_c.defineCMacro("HAVE_STDLIB_H", "");
-    ssh2_translate_c.defineCMacro("HAVE_SYS_SELECT_H", "");
-    ssh2_translate_c.defineCMacro("HAVE_SYS_UIO_H", "");
-    ssh2_translate_c.defineCMacro("HAVE_SYS_SOCKET_H", "");
-    ssh2_translate_c.defineCMacro("HAVE_SYS_IOCTL_H", "");
-    ssh2_translate_c.defineCMacro("HAVE_SYS_TIME_H", "");
-    ssh2_translate_c.defineCMacro("HAVE_SYS_UN_H", "");
     ssh2_translate_c.defineCMacro("HAVE_LONGLONG", "");
     ssh2_translate_c.defineCMacro("HAVE_GETTIMEOFDAY", "");
     ssh2_translate_c.defineCMacro("HAVE_INET_ADDR", "");
-    ssh2_translate_c.defineCMacro("HAVE_POLL", "");
-    ssh2_translate_c.defineCMacro("HAVE_SELECT", "");
-    ssh2_translate_c.defineCMacro("HAVE_SOCKET", "");
     ssh2_translate_c.defineCMacro("HAVE_STRTOLL", "");
     ssh2_translate_c.defineCMacro("HAVE_SNPRINTF", "");
     ssh2_translate_c.defineCMacro("HAVE_O_NONBLOCK", "");
+
+    if (is_windows_target) {
+        // Workaround: zig translate-c chokes on its bundled mingw-w64
+        // AVX-512/XOP intrinsic headers (__builtin_elementwise_* builtins
+        // unknown). All of those sub-headers are guarded by __IMMINTRIN_H /
+        // __X86INTRIN_H, so pre-defining these two guards turns the whole
+        // SIMD chain into no-op includes.
+        ssh2_translate_c.defineCMacro("__IMMINTRIN_H", "");
+        ssh2_translate_c.defineCMacro("__X86INTRIN_H", "");
+        // Suppress mingw secure-template inline functions (wcscat_s etc.)
+        // which translate-c converts into unused top-level constants
+        // (compile error under zig 0.17-dev).
+        ssh2_translate_c.defineCMacro("__CRT__NO_INLINE", "1");
+        ssh2_translate_c.defineCMacro("__STDC_WANT_SECURE_LIB__", "0");
+        // Kill BOS fortify overload bodies (see main build.zig rationale).
+        ssh2_translate_c.defineCMacro("__MINGW_FORTIFY_LEVEL", "0");
+    }
 
     const lib_mod = b.createModule(
         .{
@@ -127,24 +164,40 @@ pub fn build(b: *std.Build) void {
     );
 
     lib_mod.addCMacro("LIBSSH2_OPENSSL", "");
+    // POSIX feature detection. Windows (zig mingw headers) lacks poll.h,
+    // sys/un.h, sys/select.h, sys/time.h — libssh2 falls back to select()
+    // via winsock when HAVE_POLL/HAVE_SYS_* are absent, which is exactly
+    // how its official Win32 builds are configured.
+    if (!is_windows_target) {
+        lib_mod.addCMacro("HAVE_UNISTD_H", "");
+        lib_mod.addCMacro("HAVE_SYS_SELECT_H", "");
+        lib_mod.addCMacro("HAVE_SYS_UIO_H", "");
+        lib_mod.addCMacro("HAVE_SYS_SOCKET_H", "");
+        lib_mod.addCMacro("HAVE_SYS_IOCTL_H", "");
+        lib_mod.addCMacro("HAVE_SYS_TIME_H", "");
+        lib_mod.addCMacro("HAVE_SYS_UN_H", "");
+        lib_mod.addCMacro("HAVE_POLL", "");
+        lib_mod.addCMacro("HAVE_SELECT", "");
+        lib_mod.addCMacro("HAVE_SOCKET", "");
+        // POSIX non-blocking via fcntl(O_NONBLOCK)
+        lib_mod.addCMacro("HAVE_O_NONBLOCK", "");
+    } else {
+        // Windows: keep only what MinGW actually provides.
+        lib_mod.addCMacro("HAVE_SELECT", "");   // winsock select()
+        lib_mod.addCMacro("HAVE_SOCKET", "");   // winsock socket()
+        lib_mod.addCMacro("HAVE_IOCTLSOCKET", ""); // ioctlsocket(FIONBIO)
+        // NOTE: HAVE_O_NONBLOCK deliberately omitted — it selects the
+        // fcntl() branch in session.c which doesn't exist on Windows.
+    }
+    // Safe on all platforms:
     lib_mod.addCMacro("HAVE_UNISTD_H", "");
     lib_mod.addCMacro("HAVE_INTTYPES_H", "");
     lib_mod.addCMacro("HAVE_STDLIB_H", "");
-    lib_mod.addCMacro("HAVE_SYS_SELECT_H", "");
-    lib_mod.addCMacro("HAVE_SYS_UIO_H", "");
-    lib_mod.addCMacro("HAVE_SYS_SOCKET_H", "");
-    lib_mod.addCMacro("HAVE_SYS_IOCTL_H", "");
-    lib_mod.addCMacro("HAVE_SYS_TIME_H", "");
-    lib_mod.addCMacro("HAVE_SYS_UN_H", "");
     lib_mod.addCMacro("HAVE_LONGLONG", "");
     lib_mod.addCMacro("HAVE_GETTIMEOFDAY", "");
     lib_mod.addCMacro("HAVE_INET_ADDR", "");
-    lib_mod.addCMacro("HAVE_POLL", "");
-    lib_mod.addCMacro("HAVE_SELECT", "");
-    lib_mod.addCMacro("HAVE_SOCKET", "");
     lib_mod.addCMacro("HAVE_STRTOLL", "");
     lib_mod.addCMacro("HAVE_SNPRINTF", "");
-    lib_mod.addCMacro("HAVE_O_NONBLOCK", "");
 
     _ = ssh2_translate_c.addModule("ssh2");
 

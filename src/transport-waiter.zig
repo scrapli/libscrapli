@@ -54,6 +54,38 @@ pub const Waiter: type = switch (builtin.target.os.tag) {
             try self.w.unblock();
         }
     },
+    .windows => struct {
+        w: @import("transport-waiter-windows.zig").WindowsWaiter,
+
+        /// Initializes the waiter.
+        pub fn init() !Waiter {
+            return Waiter{
+                .w = try @import("transport-waiter-windows.zig").WindowsWaiter.init(),
+            };
+        }
+
+        /// Deinitializes the waiter.
+        pub fn deinit(self: *Waiter) void {
+            self.w.deinit();
+        }
+
+        /// Waits for the fd to become readable. Accepts either a WinSock
+        /// SOCKET (usize) or an OS HANDLE (pointer), normalizing both into
+        /// the uintptr_t SOCKET representation wepoll expects.
+        pub fn wait(self: *Waiter, fd: anytype) !void {
+            const sock: usize = switch (@typeInfo(@TypeOf(fd))) {
+                .int, .comptime_int => @intCast(fd),
+                .pointer => @intFromPtr(fd),
+                else => @compileError("wait(fd): expected int fd or HANDLE pointer"),
+            };
+            return self.w.wait(sock);
+        }
+
+        /// Unblocks the waiter.
+        pub fn unblock(self: *Waiter) !void {
+            try self.w.unblock();
+        }
+    },
     else => @compileError("unsupported platform"),
 };
 

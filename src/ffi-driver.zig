@@ -1,8 +1,10 @@
 // zlinter-disable no_panic - ignoring as we do panic on things that *really* should not happen
 const std = @import("std");
+const builtin = @import("builtin");
 
 const cli = @import("cli.zig");
 const errors = @import("errors.zig");
+const fdcompat = @import("fdcompat.zig");
 const ffi_operations = @import("ffi-operations.zig");
 const logging = @import("logging.zig");
 const netconf = @import("netconf.zig");
@@ -30,7 +32,12 @@ pub const FfiDriver = struct {
 
     real_driver: RealDriver,
 
-    poll_fds: [2]std.posix.fd_t = .{ -1, -1 },
+    // Windows: CRT int fds backed by an anonymous pipe (see fdcompat.zig);
+    // POSIX: real pipe fds. Both keep the -1 sentinel + Python-side select().
+    poll_fds: if (builtin.target.os.tag == .windows)
+        [2]fdcompat.Fd
+    else
+        [2]std.posix.fd_t = .{ -1, -1 },
 
     operation_id_counter: u32 = 0,
     operation_thread: ?std.Thread = null,
@@ -45,6 +52,15 @@ pub const FfiDriver = struct {
     ),
 
     fn setPollFds(self: *FfiDriver) !void {
+        if (builtin.target.os.tag == .windows) {
+            // Anonymous pipe via CreatePipe + _open_osfhandle; the CRT fds
+            // behave like POSIX pipe fds for both _write() here and
+            // select()/read on the Python side.
+            self.poll_fds = fdcompat.pipeToFds() catch {
+                return errors.ScrapliError.Session;
+            };
+            return;
+        }
         switch (std.posix.errno(std.c.pipe(&self.poll_fds))) {
             .SUCCESS => return,
             .INVAL => unreachable, // Invalid parameters to pipe()
@@ -179,11 +195,19 @@ pub const FfiDriver = struct {
         self.allocator.free(self.host);
 
         if (self.poll_fds[0] >= 0) {
-            _ = std.c.close(self.poll_fds[0]);
+            if (builtin.target.os.tag == .windows) {
+                fdcompat.closeFd(self.poll_fds[0]);
+            } else {
+                _ = std.c.close(self.poll_fds[0]);
+            }
         }
 
         if (self.poll_fds[1] >= 0) {
-            _ = std.c.close(self.poll_fds[1]);
+            if (builtin.target.os.tag == .windows) {
+                fdcompat.closeFd(self.poll_fds[1]);
+            } else {
+                _ = std.c.close(self.poll_fds[1]);
+            }
         }
 
         self.allocator.destroy(self);
@@ -260,6 +284,14 @@ pub const FfiDriver = struct {
 
         std.mem.writeInt(u32, &op_buf, operation_id, .little);
 
+        if (builtin.target.os.tag == .windows) {
+            // CRT _write on the pipe's write-end fd; returns bytes written.
+            const n = fdcompat.writeFd(self.poll_fds[1], op_buf[0..4]);
+            if (n != 4) {
+                return errors.ScrapliError.Operation;
+            }
+            return;
+        }
         const rc = std.c.write(self.poll_fds[1], &op_buf, 4);
         if (rc != 4) {
             return errors.ScrapliError.Operation;

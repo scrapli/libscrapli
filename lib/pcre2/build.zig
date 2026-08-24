@@ -13,14 +13,20 @@ pub fn build(b: *std.Build) !void {
     // super janky, but lets us be decoupled from upstream (because even if we used upstream as
     // a dep and then tried to tweak it we would still be hosed if/until they update zig versions
     // and stuff).
-    _ = try std.process.run(
-        b.allocator,
-        b.graph.io,
-        .{
-            .cwd = .{ .path = b.fmt("{f}", .{b.root}) },
-            .argv = &[_][]const u8{"./generate.sh"},
-        },
-    );
+    //
+    // Windows: skip generate.sh — it's a POSIX shell script that just clones
+    // the PCRE2 repo. On Windows there is no /bin/sh; the caller should have
+    // already cloned the pcre2/ subdirectory manually.
+    if (@import("builtin").target.os.tag != .windows) {
+        _ = try std.process.run(
+            b.allocator,
+            b.graph.io,
+            .{
+                .cwd = .{ .path = b.fmt("{f}", .{b.root}) },
+                .argv = &[_][]const u8{"./generate.sh"},
+            },
+        );
+    }
 
     const linkage = b.option(
         std.lang.LinkMode,

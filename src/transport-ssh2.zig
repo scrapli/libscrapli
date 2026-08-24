@@ -1,7 +1,9 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const c = @import("c");
 const ssh2 = @import("ssh2");
+const fdcompat = @import("fdcompat.zig");
 
 const auth = @import("auth.zig");
 const cancellation = @import("cancellation.zig");
@@ -288,11 +290,21 @@ const ProxyWrapper = struct {
         self.stop();
 
         if (self.remote_fd >= 0) {
-            _ = std.c.close(self.remote_fd);
+            if (builtin.target.os.tag == .windows) {
+                // remote_fd/local_fd are CRT fds on Windows (fdcompat);
+                // std.c.close there takes a HANDLE, so use CRT _close.
+                fdcompat.closeFd(self.remote_fd);
+            } else {
+                _ = std.c.close(self.remote_fd);
+            }
         }
 
         if (self.local_fd >= 0) {
-            _ = std.c.close(self.local_fd);
+            if (builtin.target.os.tag == .windows) {
+                fdcompat.closeFd(self.local_fd);
+            } else {
+                _ = std.c.close(self.local_fd);
+            }
         }
 
         self.allocator.destroy(self);
@@ -342,7 +354,16 @@ const ProxyWrapper = struct {
     ) !void {
         var buf: [4096]u8 = undefined;
 
-        const n = try std.posix.read(self.remote_fd, &buf);
+        const n = blk: {
+            if (builtin.target.os.tag == .windows) {
+                // remote_fd is a CRT fd (see fdcompat.zig); std.posix.read
+                // on Windows expects a HANDLE, so use the CRT wrapper.
+                const r = fdcompat.readFd(self.remote_fd, &buf);
+                if (r < 0) return errors.ScrapliError.Transport;
+                break :blk @as(usize, @intCast(r));
+            }
+            break :blk try std.posix.read(self.remote_fd, &buf);
+        };
 
         if (n == 0) {
             return errors.ScrapliError.EOF;
@@ -405,6 +426,16 @@ const ProxyWrapper = struct {
         const total: usize = @intCast(n);
 
         while (wrote < total) {
+            if (builtin.target.os.tag == .windows) {
+                // remote_fd is a CRT fd on Windows; std.c.write there takes
+                // a HANDLE, so use the CRT wrapper (returns -1 on error).
+                const w = fdcompat.writeFd(self.remote_fd, buf[wrote..total]);
+                if (w < 0) {
+                    return error.WouldBlock; // treat transiently, matches EAGAIN path
+                }
+                wrote += @intCast(w);
+                continue;
+            }
             const rc = std.c.write(
                 self.remote_fd,
                 buf[wrote..total].ptr,
@@ -904,9 +935,16 @@ pub const Transport = struct {
                 );
             }
 
+            const handshake_sock: ssh2.libssh2_socket_t = if (builtin.target.os.tag == .windows)
+                // Windows: std.posix.socket_t is a HANDLE pointer; libssh2
+                // wants the WinSock SOCKET value (uintptr_t).
+                @intFromPtr(self.socket.?)
+            else
+                self.socket.?;
+
             const rc = ssh2.libssh2_session_handshake(
                 self.initial_session,
-                self.socket.?,
+                handshake_sock,
             );
 
             if (rc == 0) {
@@ -1835,14 +1873,35 @@ pub const Transport = struct {
         // we have to create a socket pair/pipe so we can give libssh2 a real socket -- we then
         // run this little proxy loop around it to read/write to/from the pipe and then to the
         // final (proxy-jump-d) session.
-        var fds: [2]c_int = .{ 0, 0 };
-        const sockrc = c.socketpair(c.AF_UNIX, c.SOCK_STREAM, 0, &fds);
-        if (sockrc != 0) {
-            return error.ErrorCreatingSocketPair;
-        }
+        //
+        // Windows: AF_UNIX socketpair doesn't exist; fdcompat.tcpSocketPair()
+        // emulates it with two connected loopback TCP sockets. The libssh2
+        // end must be a raw WinSock SOCKET (libssh2 calls select/ioctlsocket
+        // on it); the ProxyWrapper end becomes a CRT fd so the existing
+        // _read/_write pipe code works unchanged.
+        var local_fd: c_int = 0;
+        var remote_fd: c_int = 0;
+        var win_local_sock: usize = 0;
 
-        const local_fd = fds[0];
-        const remote_fd = fds[1];
+        if (builtin.target.os.tag == .windows) {
+            const pair = fdcompat.tcpSocketPair() catch {
+                return error.ErrorCreatingSocketPair;
+            };
+            win_local_sock = pair[0]; // raw SOCKET → libssh2 proxy session
+            remote_fd = fdcompat.sockToFd(pair[1]); // CRT fd → ProxyWrapper
+            local_fd = -1; // unused on this path
+            if (remote_fd < 0) {
+                return error.ErrorCreatingSocketPair;
+            }
+        } else {
+            var fds: [2]c_int = .{ 0, 0 };
+            const sockrc = c.socketpair(c.AF_UNIX, c.SOCK_STREAM, 0, &fds);
+            if (sockrc != 0) {
+                return error.ErrorCreatingSocketPair;
+            }
+            local_fd = fds[0];
+            remote_fd = fds[1];
+        }
 
         self.proxy_wrapper.?.local_fd = local_fd;
         self.proxy_wrapper.?.remote_fd = remote_fd;
@@ -1851,7 +1910,11 @@ pub const Transport = struct {
         // the proxy loop for initial session establishment while still being able to not be stuck
         // in a blocking read -- this way we can "stop" the proxy behavior (of reading forever) once
         // establishment is done, then move on to our "normal" flow of reading/writing
-        try file.setNonBlocking(local_fd);
+        if (builtin.target.os.tag == .windows) {
+            try file.setNonBlocking(win_local_sock);
+        } else {
+            try file.setNonBlocking(local_fd);
+        }
         try file.setNonBlocking(remote_fd);
 
         const proxy_wrapper = self.proxy_wrapper.?;
@@ -1860,7 +1923,15 @@ pub const Transport = struct {
         try proxy_wrapper.run(initial_channel, remote_fd);
         errdefer proxy_wrapper.stop();
 
-        const handshake_rc = ssh2.libssh2_session_handshake(self.proxy_session, local_fd);
+        // Proxy session handshake runs over our socketpair/loopback pair:
+        // POSIX passes the CRT fd, Windows passes the raw SOCKET value.
+        const handshake_rc = ssh2.libssh2_session_handshake(
+            self.proxy_session,
+            if (builtin.target.os.tag == .windows)
+                win_local_sock
+            else
+                @intCast(local_fd),
+        );
         if (handshake_rc != 0) {
             const last_error = "ssh2.Transport openProxyChannel: failed libssh2 session handshake";
 

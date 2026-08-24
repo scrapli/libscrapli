@@ -1,8 +1,10 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const bytes = @import("bytes.zig");
 const cancellation = @import("cancellation.zig");
 const errors = @import("errors.zig");
+const fdcompat = @import("fdcompat.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
 const transport_socket = @import("transport-socket.zig");
@@ -189,19 +191,29 @@ pub const Transport = struct {
 
             var control_char_buf: [1]u8 = undefined;
 
-            const n = std.posix.read(self.socket.?, &control_char_buf) catch |err| switch (err) {
-                error.WouldBlock => {
-                    // zlinter-disable-next-line no_swallow_error - best effort backoff
-                    self.io.sleep(
-                        .{
-                            .nanoseconds = default_eagain_delay_ns,
-                        },
-                        .awake,
-                    ) catch {};
+            const n = blk: {
+                if (builtin.target.os.tag == .windows) {
+                    // std.posix.read is @compileError on Windows; route via
+                    // WinSock recv with POSIX-ish error mapping.
+                    break :blk fdcompat.sockRead(@intFromPtr(self.socket.?), &control_char_buf) catch |e| switch (e) {
+                        error.WouldBlock => return error.WouldBlock,
+                        error.Transport => return errors.ScrapliError.Transport,
+                    };
+                }
+                break :blk std.posix.read(self.socket.?, &control_char_buf) catch |err| switch (err) {
+                    error.WouldBlock => {
+                        // zlinter-disable-next-line no_swallow_error - best effort backoff
+                        self.io.sleep(
+                            .{
+                                .nanoseconds = default_eagain_delay_ns,
+                            },
+                            .awake,
+                        ) catch {};
 
-                    continue;
-                },
-                else => return err,
+                        continue;
+                    },
+                    else => return err,
+                };
             };
             if (n == 0) {
                 const last_error = "telnet.Transport handleControlChars: peer closed connection " ++
@@ -347,6 +359,34 @@ pub const Transport = struct {
 
         var written: usize = 0;
         while (written < buf.len) {
+            if (builtin.target.os.tag == .windows) {
+                const n = fdcompat.sockWrite(@intFromPtr(self.socket.?), buf[written..]) catch |e| switch (e) {
+                    error.WouldBlock => {
+                        // kernel buffer full — back off briefly and retry
+                        // zlinter-disable-next-line no_swallow_error - best effort backoff
+                        self.io.sleep(
+                            .{
+                                .nanoseconds = default_eagain_delay_ns,
+                            },
+                            .awake,
+                        ) catch {};
+                        continue;
+                    },
+                    error.Transport => {
+                        const last_error = "telnet.Transport write: writing to stream failed";
+                        self.last_error.set(last_error);
+                        return errors.wrapCriticalError(
+                            errors.ScrapliError.Transport,
+                            @src(),
+                            self.log,
+                            last_error,
+                            .{},
+                        );
+                    },
+                };
+                written += n;
+                continue;
+            }
             const rc = std.posix.system.write(
                 self.socket.?,
                 buf[written..].ptr,
@@ -422,18 +462,26 @@ pub const Transport = struct {
                 return 0;
             }
 
-            const n = std.posix.read(self.socket.?, buf) catch |err| {
-                const last_error = "telnet.Transport read: failed reading from stream";
+            const n = blk: {
+                if (builtin.target.os.tag == .windows) {
+                    break :blk fdcompat.sockRead(@intFromPtr(self.socket.?), buf) catch |e| switch (e) {
+                        error.WouldBlock => return errors.ScrapliError.Transport,
+                        error.Transport => return errors.ScrapliError.Transport,
+                    };
+                }
+                break :blk std.posix.read(self.socket.?, buf) catch |err| {
+                    const last_error = "telnet.Transport read: failed reading from stream";
 
-                self.last_error.set(last_error);
+                    self.last_error.set(last_error);
 
-                return errors.wrapWarnError(
-                    err,
-                    @src(),
-                    self.log,
-                    last_error,
-                    .{},
-                );
+                    return errors.wrapWarnError(
+                        err,
+                        @src(),
+                        self.log,
+                        last_error,
+                        .{},
+                    );
+                };
             };
 
             if (n == 0) {

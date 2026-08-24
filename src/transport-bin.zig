@@ -1,6 +1,8 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const c = @import("c");
+const fdcompat = @import("fdcompat.zig");
 
 const auth = @import("auth.zig");
 const errors = @import("errors.zig");
@@ -462,7 +464,13 @@ pub const Transport = struct {
             );
         };
 
-        self.fd = pty.fd;
+        if (builtin.target.os.tag == .windows) {
+            // Unreachable at runtime (openPty fails fast above); kept for
+            // type-compat since posix fd_t is HANDLE here vs c_int there.
+            self.fd = @ptrFromInt(@as(usize, @intCast(@as(u32, @bitCast(pty.fd)))));
+        } else {
+            self.fd = pty.fd;
+        }
         self.pid = pty.pid;
     }
 
@@ -477,36 +485,40 @@ pub const Transport = struct {
         self.fd = null;
 
         if (self.pid) |pid| {
-            // kill the child too
-            _ = std.c.kill(pid, std.posix.SIG.TERM);
+            // kill the child too. POSIX-only: on Windows the bin transport
+            // never opens (openPty fails fast), so this branch is inert but
+            // still must compile — hence the comptime guard.
+            if (builtin.target.os.tag != .windows) {
+                _ = std.c.kill(pid, std.posix.SIG.TERM);
 
-            var status: c_int = 0;
-            var attempts: usize = 0;
+                var status: c_int = 0;
+                var attempts: usize = 0;
 
-            var reaped = false;
+                var reaped = false;
 
-            while (attempts < 50) : (attempts += 1) {
-                if (std.c.waitpid(pid, &status, std.posix.W.NOHANG) != 0) {
-                    // > 0 means we reaped it, < 0 means error (e.g. echild because something
-                    // else already reaped it) -- either way there is nothing left to wait on
-                    reaped = true;
+                while (attempts < 50) : (attempts += 1) {
+                    if (std.c.waitpid(pid, &status, std.posix.W.NOHANG) != 0) {
+                        // > 0 means we reaped it, < 0 means error (e.g. echild because something
+                        // else already reaped it) -- either way there is nothing left to wait on
+                        reaped = true;
 
-                    break;
+                        break;
+                    }
+
+                    // zlinter-disable-next-line no_swallow_error - best effort backoff
+                    self.io.sleep(
+                        .{
+                            .nanoseconds = 10 * std.time.ns_per_ms,
+                        },
+                        .awake,
+                    ) catch {};
                 }
 
-                // zlinter-disable-next-line no_swallow_error - best effort backoff
-                self.io.sleep(
-                    .{
-                        .nanoseconds = 10 * std.time.ns_per_ms,
-                    },
-                    .awake,
-                ) catch {};
-            }
-
-            if (!reaped) {
-                // still running after ~500ms of being asked nicely
-                _ = std.c.kill(pid, std.posix.SIG.KILL);
-                _ = std.c.waitpid(pid, &status, 0);
+                if (!reaped) {
+                    // still running after ~500ms of being asked nicely
+                    _ = std.c.kill(pid, std.posix.SIG.KILL);
+                    _ = std.c.waitpid(pid, &status, 0);
+                }
             }
 
             self.pid = null;
@@ -589,14 +601,21 @@ pub const Transport = struct {
             return 0;
         }
 
-        const n = std.posix.read(self.fd.?, buf) catch |err| {
-            return errors.wrapWarnError(
-                err,
-                @src(),
-                self.log,
-                "bin.Transport read: failed reading from fd",
-                .{},
-            );
+        const n = blk: {
+            if (builtin.target.os.tag == .windows) {
+                // Unreachable at runtime (openPty fails fast), but must
+                // compile: read the master pty HANDLE via ReadFile.
+                break :blk fdcompat.readFile(self.fd.?, buf);
+            }
+            break :blk std.posix.read(self.fd.?, buf) catch |err| {
+                return errors.wrapWarnError(
+                    err,
+                    @src(),
+                    self.log,
+                    "bin.Transport read: failed reading from fd",
+                    .{},
+                );
+            };
         };
 
         return n;
@@ -617,6 +636,13 @@ fn openPty(
     term_height: u16,
     netconf: bool,
 ) !PtyHandle {
+    // The bin transport drives a local program through a POSIX pty
+    // (/dev/ptmx + fork/exec). Windows has no pty; a full ConPTY port is
+    // out of scope, so fail fast here instead of dragging the POSIX-only
+    // pty code (and its std.c.open reference) into Windows compilation.
+    if (builtin.target.os.tag == .windows) {
+        return error.PtyUnsupportedOnWindows;
+    }
     const master_handle = std.posix.system.open(
         "/dev/ptmx",
         .{

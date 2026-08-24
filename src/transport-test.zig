@@ -1,6 +1,8 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const errors = @import("errors.zig");
+const fdcompat = @import("fdcompat.zig");
 const file = @import("file.zig");
 
 /// Holds test transport options.
@@ -116,6 +118,11 @@ pub const Transport = struct {
 
     /// Read from the transport object.
     pub fn read(self: *Transport, buf: []u8) !usize {
+        if (builtin.target.os.tag == .windows) {
+            // std.posix.read is @compileError on Windows; the test
+            // transport's fd is a file HANDLE, so use ReadFile directly.
+            return fdcompat.readFile(self.fd.?, buf);
+        }
         const n = std.posix.read(self.fd.?, buf) catch |err| {
             switch (err) {
                 error.WouldBlock => return 0,

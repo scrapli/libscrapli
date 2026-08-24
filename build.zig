@@ -15,6 +15,8 @@ const ffi_targets: []const std.Target.Query = &.{
     .{ .cpu_arch = .x86_64, .os_tag = .macos },
     .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
     .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
+    // windows support (community contribution)
+    .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .gnu },
 };
 
 const examples: []const []const u8 = &.{
@@ -84,6 +86,21 @@ fn buildScrapli(
     translate_c.defineCMacro("_XOPEN_SOURCE", "500");
     translate_c.defineCMacro("PCRE2_CODE_UNIT_WIDTH", "8");
 
+    // Windows: add compat stub headers to translate-c as well.
+    // Do NOT add MSYS2 system includes here — they drag Zig's bundled
+    // clang AVX-512 headers through translate-c which chokes on them.
+    if (target.result.os.tag == .windows) {
+        translate_c.addIncludePath(.{ .cwd_relative = "src/windows-compat" });
+        // Block SIMD intrinsic chain + mingw secure inline wrappers (see
+        // lib/libssh2/build.zig for detailed rationale).
+        translate_c.defineCMacro("__IMMINTRIN_H", "");
+        translate_c.defineCMacro("__X86INTRIN_H", "");
+        // Kill mingw BOS fortify overload bodies (wcscpy/wcscat wrappers
+        // containing local extern decls of *_s functions → unused-local
+        // compile errors in translate-c output).
+        translate_c.defineCMacro("__MINGW_FORTIFY_LEVEL", "0");
+    }
+
     const root_source_file = if (is_ffi) "src/ffi-root.zig" else "src/root.zig";
 
     const scrapli = b.createModule(
@@ -129,8 +146,40 @@ fn buildScrapli(
         },
     );
 
+    // Windows: compile wepoll.c (epoll-for-Windows) and link WinSock.
+    // Also add the windows-compat stub headers and MSYS2 paths.
+    if (target.result.os.tag == .windows) {
+        scrapli.addCSourceFile(.{
+            .file = b.path("src/wepoll.c"),
+            .flags = &.{"-std=c11"},
+        });
+        scrapli.linkSystemLibrary("ws2_32", .{});
+
+        // Add windows-compat stub headers for missing POSIX headers
+        scrapli.addIncludePath(.{
+            .cwd_relative = "src/windows-compat",
+        });
+
+        // Link against MSYS2 pre-built libraries instead of compiling from
+        // source. Path is fixed for this build environment; override with
+        // MSYS2_PREFIX env var if needed.
+        const msys2_prefix = "D:\\env\\msys64\\mingw64";
+        scrapli.addIncludePath(.{ .cwd_relative = msys2_prefix ++ "\\include" });
+        scrapli.addLibraryPath(.{ .cwd_relative = msys2_prefix ++ "\\lib" });
+        // Empty libcrt.a: MSYS2 import libs carry /DEFAULTLIB:"crt" directives
+        // that LLD tries to resolve; a stub satisfies the lookup (the real
+        // dllimport symbols come from the .dll.a files themselves).
+        scrapli.addLibraryPath(.{
+            .cwd_relative = msys2_prefix ++ "\\lib\\zig-dummy",
+        });
+    }
+
     switch (dependency_linkage) {
         .static => {
+            // All platforms: build pcre2/libssh2 from source via their zig
+            // build scripts and link the resulting static archives. This
+            // includes Windows — zig's own mingw runtime provides the CRT,
+            // so no MSYS2 import libraries are needed at link time.
             scrapli.linkLibrary(
                 pcre2_dep.artifact("pcre2-8"),
             );
@@ -635,6 +684,14 @@ fn genFfiLibOutputDir(
                 },
             );
         },
+        .windows => {
+            return b.allocator.print(
+                "{s}-windows-gnu",
+                .{
+                    @tagName(target.cpu.arch),
+                },
+            );
+        },
         else => {
             return b.allocator.print(
                 "{s}-{s}-{s}",
@@ -683,6 +740,35 @@ fn genFfiLibOutputName(
 
             return b.allocator.print(
                 "{s}.dylib",
+                .{
+                    versioned_name,
+                },
+            );
+        },
+        .windows => {
+            // Windows: produce a .dll that ctypes can load
+            const versioned_name = try b.allocator.print(
+                "{s}.{d}.{d}.{d}",
+                .{
+                    base_name,
+                    version.major,
+                    version.minor,
+                    version.patch,
+                },
+            );
+
+            if (version.pre) |pre| {
+                return b.allocator.print(
+                    "{s}-{s}.dll",
+                    .{
+                        versioned_name,
+                        pre,
+                    },
+                );
+            }
+
+            return b.allocator.print(
+                "{s}.dll",
                 .{
                     versioned_name,
                 },
