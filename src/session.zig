@@ -11,6 +11,7 @@ const operation = @import("cli-operation.zig");
 const queue = @import("queue.zig");
 const re = @import("re.zig");
 const transport = @import("transport.zig");
+const transport_test = @import("transport-test.zig");
 
 const default_return_char: []const u8 = "\n";
 
@@ -995,7 +996,6 @@ pub const Session = struct {
             }
 
             try bufs.appendWithProcessing(self.allocator, buf[0..n]);
-
             // weve logged "raw" reads in the readloop, now that we have processed something
             // (ProcessedBuf handles ascii filtering on appendSlice) we can show the processed bits
             logging.traceWithSrc(
@@ -1549,4 +1549,118 @@ test "optionsInitAllocationFailures" {
         optionsInitForAllocFailures,
         .{},
     );
+}
+
+test "session readTimeout" {
+    const cases = [_]struct {
+        name: []const u8,
+        transport_opts: transport_test.Options,
+        check_args: bytes_check.CheckArgs,
+        expected_err: ?anyerror = null,
+        expected: bytes_check.MatchPositions = .{
+            .start = 0,
+            .end = 0,
+        },
+        expected_processed: ?[]const u8 = null,
+    }{
+        .{
+            .name = "simple",
+            .transport_opts = .{
+                .content = "fooer",
+            },
+            .check_args = .{
+                .actual = "fooer",
+            },
+            .expected = .{
+                .start = 0,
+                .end = 5,
+            },
+        },
+        .{
+            .name = "eof",
+            .transport_opts = .{
+                .content = "fooer",
+                .eof_at = 3,
+            },
+            .check_args = .{
+                .actual = "fooerzzzzz",
+            },
+            .expected_err = errors.ScrapliError.EOF,
+        },
+        .{
+            .name = "timeout",
+            .transport_opts = .{
+                .content = "fooer",
+                .pause_at = &[_]transport_test.Pause{
+                    .{
+                        .pos = 3,
+                        .ns = 2_000_000_000,
+                    },
+                },
+            },
+            .check_args = .{
+                .actual = "fooerzzzzz",
+            },
+            .expected_err = errors.ScrapliError.TimeoutExceeded,
+        },
+    };
+
+    for (cases) |case| {
+        var s = try Session.init(
+            std.testing.allocator,
+            std.testing.io,
+            logging.Logger{
+                .allocator = std.testing.allocator,
+            },
+            ">",
+            null,
+            .{
+                .read_size = 1,
+                .operation_timeout_ns = 1_000_000_000,
+            },
+            .{
+                // doesnt exist for our test but we do need to "open" the session to get the read
+                // thread kicked off, so just skip the auth bits
+                .bypass_in_session_auth = true,
+            },
+            .{
+                .test_ = case.transport_opts,
+            },
+        );
+
+        defer s.deinit();
+
+        _ = try s.open(std.testing.allocator, "dummy", 22, null);
+
+        var bufs: bytes.ProcessedBuf = .{};
+        defer bufs.deinit(std.testing.allocator);
+
+        const ret = s.readTimeout(
+            .now(std.testing.io, .awake),
+            null,
+            bytes_check.exactInBuf,
+            case.check_args,
+            &bufs,
+            case.transport_opts.content.?.len,
+        );
+
+        if (case.expected_err) |e| {
+            try std.testing.expectError(e, ret);
+
+            if (case.expected_processed) |expected| {
+                try std.testing.expectEqualStrings(expected, bufs.processed.items);
+            }
+
+            continue;
+        }
+
+        const actual = try ret;
+
+        try std.testing.expectEqual(case.expected.start, actual.start);
+        try std.testing.expectEqual(case.expected.end, actual.end);
+
+        if (case.expected_processed) |expected| {
+            try std.testing.expectEqualStrings(expected, bufs.processed.items);
+        }
+    }
 }

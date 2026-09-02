@@ -16,7 +16,7 @@ pub fn getStream(
 ) !std.Io.net.Stream {
     var lookup_buf: [16]std.Io.net.HostName.LookupResult = undefined;
     var lookup_queue = std.Io.Queue(std.Io.net.HostName.LookupResult).init(&lookup_buf);
-    var canonical_name_buf: [255]u8 = undefined;
+    var canonical_name_buf: [254]u8 = undefined;
 
     try io.vtable.netLookup(
         io.userdata,
