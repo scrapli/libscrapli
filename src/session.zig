@@ -1556,12 +1556,21 @@ test "session readTimeout" {
         name: []const u8,
         transport_opts: transport_test.Options,
         check_args: bytes_check.CheckArgs,
+        timeout_ns: u64 = 1_000_000_000,
+        search_depth: ?u64 = null,
+        cancel: bool = false,
+        min_elapsed_ns: u64 = 0,
         expected_err: ?anyerror = null,
         expected: bytes_check.MatchPositions = .{
             .start = 0,
             .end = 0,
         },
         expected_processed: ?[]const u8 = null,
+        second_check_args: ?bytes_check.CheckArgs = null,
+        second_expected: bytes_check.MatchPositions = .{
+            .start = 0,
+            .end = 0,
+        },
     }{
         .{
             .name = "simple",
@@ -1575,6 +1584,7 @@ test "session readTimeout" {
                 .start = 0,
                 .end = 5,
             },
+            .expected_processed = "fooer",
         },
         .{
             .name = "eof",
@@ -1586,6 +1596,7 @@ test "session readTimeout" {
                 .actual = "fooerzzzzz",
             },
             .expected_err = errors.ScrapliError.EOF,
+            .expected_processed = "foo",
         },
         .{
             .name = "timeout",
@@ -1594,14 +1605,85 @@ test "session readTimeout" {
                 .pause_at = &[_]transport_test.Pause{
                     .{
                         .pos = 3,
-                        .ns = 2_000_000_000,
+                        .ns = 1_000_000_000,
                     },
                 },
             },
             .check_args = .{
                 .actual = "fooerzzzzz",
             },
+            .timeout_ns = 250_000_000,
             .expected_err = errors.ScrapliError.TimeoutExceeded,
+            .expected_processed = "foo",
+        },
+        .{
+            .name = "prior match ignored",
+            .transport_opts = .{
+                .content = "foo>bar>",
+            },
+            .check_args = .{
+                .actual = ">",
+            },
+            .expected = .{
+                .start = 3,
+                .end = 4,
+            },
+            .second_check_args = .{
+                .actual = ">",
+            },
+            .second_expected = .{
+                .start = 7,
+                .end = 8,
+            },
+            .expected_processed = "foo>bar>",
+        },
+        .{
+            .name = "search depth",
+            .transport_opts = .{
+                .content = "zzzz>",
+            },
+            .check_args = .{
+                .actual = ">",
+            },
+            .search_depth = 1,
+            .expected = .{
+                .start = 4,
+                .end = 5,
+            },
+            .expected_processed = "zzzz>",
+        },
+        .{
+            .name = "cancelled",
+            .transport_opts = .{
+                .content = "fooer",
+            },
+            .check_args = .{
+                .actual = "zzzzz",
+            },
+            .cancel = true,
+            .expected_err = errors.ScrapliError.Cancelled,
+        },
+        .{
+            // match cannot be reported before its bytes actually arrive
+            .name = "pause then match",
+            .transport_opts = .{
+                .content = "foo>",
+                .pause_at = &[_]transport_test.Pause{
+                    .{
+                        .pos = 3,
+                        .ns = 50_000_000,
+                    },
+                },
+            },
+            .check_args = .{
+                .actual = ">",
+            },
+            .expected = .{
+                .start = 3,
+                .end = 4,
+            },
+            .min_elapsed_ns = 50_000_000,
+            .expected_processed = "foo>",
         },
     };
 
@@ -1616,7 +1698,7 @@ test "session readTimeout" {
             null,
             .{
                 .read_size = 1,
-                .operation_timeout_ns = 1_000_000_000,
+                .operation_timeout_ns = case.timeout_ns,
             },
             .{
                 // doesnt exist for our test but we do need to "open" the session to get the read
@@ -1635,13 +1717,17 @@ test "session readTimeout" {
         var bufs: bytes.ProcessedBuf = .{};
         defer bufs.deinit(std.testing.allocator);
 
+        var cancel_flag: bool = case.cancel;
+
+        const start_timestamp: std.Io.Timestamp = .now(std.testing.io, .awake);
+
         const ret = s.readTimeout(
-            .now(std.testing.io, .awake),
-            null,
+            start_timestamp,
+            &cancel_flag,
             bytes_check.exactInBuf,
             case.check_args,
             &bufs,
-            case.transport_opts.content.?.len,
+            case.search_depth orelse case.transport_opts.content.?.len,
         );
 
         if (case.expected_err) |e| {
@@ -1658,6 +1744,27 @@ test "session readTimeout" {
 
         try std.testing.expectEqual(case.expected.start, actual.start);
         try std.testing.expectEqual(case.expected.end, actual.end);
+
+        if (case.min_elapsed_ns != 0) {
+            try std.testing.expect(
+                start_timestamp.untilNow(std.testing.io, .awake).nanoseconds >=
+                    case.min_elapsed_ns,
+            );
+        }
+
+        if (case.second_check_args) |second_check_args| {
+            const second = try s.readTimeout(
+                .now(std.testing.io, .awake),
+                null,
+                bytes_check.exactInBuf,
+                second_check_args,
+                &bufs,
+                case.transport_opts.content.?.len,
+            );
+
+            try std.testing.expectEqual(case.second_expected.start, second.start);
+            try std.testing.expectEqual(case.second_expected.end, second.end);
+        }
 
         if (case.expected_processed) |expected| {
             try std.testing.expectEqualStrings(expected, bufs.processed.items);
