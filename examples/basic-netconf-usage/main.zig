@@ -2,7 +2,6 @@ const std = @import("std");
 
 const scrapli = @import("scrapli");
 const netconf = scrapli.netconf;
-const strings = scrapli.strings;
 
 const banner = "********************";
 

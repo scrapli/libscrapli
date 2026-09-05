@@ -89,8 +89,10 @@ const Recorder = struct {
                 .f => {
                     // when just given a file path we'll "own" that lifecycle and close/cleanup
                     // as well as ensure we strip asci/ansi bits (so the file is easy to read etc.
-                    // and especially for tests!); otherwise we'll leave it to the user
-                    try self.recorder.?.interface.flush();
+                    // and especially for tests!); otherwise we'll leave it to the user. we'll
+                    // do this best effort to not have dangling file handles and to not cause chaos
+                    // for scrapli generally just based on the recorder having a bad time
+                    self.recorder.?.interface.flush() catch {};
                     self.recorder.?.file.close(io);
                     self.recorder = null;
 
@@ -248,38 +250,43 @@ pub const Session = struct {
     ) !Session {
         logging.traceWithSrc(log, @src(), "session.Session init requested", .{});
 
-        var o = try Options.init(allocator, options);
-        errdefer o.deinit(allocator);
+        var s = init_session: {
+            var owned_options = try Options.init(allocator, options);
+            errdefer owned_options.deinit(allocator);
 
-        var t = try transport.Transport.init(
-            allocator,
-            io,
-            log,
-            transport_options,
-        );
-        errdefer t.deinit();
+            var owned_auth_options = try auth.Options.init(allocator, auth_options);
+            errdefer owned_auth_options.deinit(allocator);
 
-        var s = Session{
-            .allocator = allocator,
-            .io = io,
-            .log = log,
-            .options = o,
-            .auth_options = auth_options,
-            .transport = t,
-            .read_queue = queue.LinearFifo(u8).init(allocator),
-            .read_into_buf = &[_]u8{},
-            .read_loop_buf = &[_]u8{},
-            .prompt_pattern = prompt_pattern,
-            .prompt_excludes = prompt_excludes,
-            .scratch = .{
-                .normalize_line_feeds = o.normalize_line_feeds,
-                .normalize_trailing_whitespace = o.normalize_trailing_whitespace,
-            },
+            var owned_transport = try transport.Transport.init(
+                allocator,
+                io,
+                log,
+                transport_options,
+            );
+            errdefer owned_transport.deinit();
+
+            break :init_session Session{
+                .allocator = allocator,
+                .io = io,
+                .log = log,
+                .options = owned_options,
+                .auth_options = owned_auth_options,
+                .transport = owned_transport,
+                .read_queue = queue.LinearFifo(u8).init(allocator),
+                .read_into_buf = &[_]u8{},
+                .read_loop_buf = &[_]u8{},
+                .prompt_pattern = prompt_pattern,
+                .prompt_excludes = prompt_excludes,
+                .scratch = .{
+                    .normalize_line_feeds = owned_options.normalize_line_feeds,
+                    .normalize_trailing_whitespace = owned_options.normalize_trailing_whitespace,
+                },
+            };
         };
         errdefer s.deinit();
 
-        s.read_into_buf = try allocator.alloc(u8, o.read_size);
-        s.read_loop_buf = try allocator.alloc(u8, o.read_size);
+        s.read_into_buf = try allocator.alloc(u8, s.options.read_size);
+        s.read_loop_buf = try allocator.alloc(u8, s.options.read_size);
 
         try s.scratch.reserve(allocator, s.options.scratch_initial_size);
 
@@ -360,6 +367,8 @@ pub const Session = struct {
             re.pcre2Free(compiled_pattern);
         }
 
+        self.auth_options.deinit(self.allocator);
+        self.options.deinit(self.allocator);
         self.transport.deinit();
         self.read_queue.deinit();
         self.scratch.deinit(self.allocator);
@@ -458,7 +467,12 @@ pub const Session = struct {
             self.read_thread = null;
         }
 
-        try self.recorder.close(self.io);
+        self.recorder.close(self.io) catch |err| {
+            self.log.warn(
+                "session.Session close recorder close failed, error '{any}', ignoring...",
+                .{err},
+            );
+        };
 
         self.transport.close();
 
@@ -1407,25 +1421,25 @@ pub const Session = struct {
         const response_check_f: bytes_check.CheckF =
             if (compiled_pattern) |_| &bytes_check.anyPatternInBuf else &bytes_check.exactInBuf;
 
-        var check_args = bytes_check.CheckArgs{
+        var response_check_args = bytes_check.CheckArgs{
             .actual = options.prompt_exact,
             .excludes = self.prompt_excludes,
         };
 
         if (compiled_pattern) |cp| {
-            check_args.patterns = &[_]?*re.pcre2CompiledPattern{
+            response_check_args.patterns = &[_]?*re.pcre2CompiledPattern{
                 self.compiled_prompt_pattern,
                 cp,
             };
         } else {
-            check_args.pattern = self.compiled_prompt_pattern;
+            response_check_args.pattern = self.compiled_prompt_pattern;
         }
 
         _ = try self.readTimeout(
             start_time,
             options.cancel,
             response_check_f,
-            check_args,
+            response_check_args,
             bufs,
             self.options.operation_max_search_depth,
         );
@@ -1443,11 +1457,16 @@ pub const Session = struct {
             );
         }
 
+        const final_prompt_check_args = bytes_check.CheckArgs{
+            .pattern = self.compiled_prompt_pattern,
+            .excludes = self.prompt_excludes,
+        };
+
         const prompt_indexes = try self.readTimeout(
             start_time,
             options.cancel,
             bytes_check.patternInBuf,
-            check_args,
+            final_prompt_check_args,
             bufs,
             self.options.operation_max_search_depth,
         );
