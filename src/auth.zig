@@ -1,6 +1,5 @@
 const std = @import("std");
 
-const bytes = @import("bytes.zig");
 const errors = @import("errors.zig");
 const re = @import("re.zig");
 
