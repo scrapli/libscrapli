@@ -40,6 +40,12 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      # TODO: temp cuz why is actions having weird complaints about caches all the sudden?
+      - name: clear zig cache
+        run: |
+          rm -rf "${ZIG_LOCAL_CACHE_DIR}"
+          rm -rf "${ZIG_GLOBAL_CACHE_DIR}"
+
       - name: setup tmate session
         uses: mxschmitt/action-tmate@v3
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_unit }}
