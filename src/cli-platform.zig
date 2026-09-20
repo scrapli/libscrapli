@@ -7,7 +7,6 @@ const file = @import("file.zig");
 const mode = @import("cli-mode.zig");
 const operation = @import("cli-operation.zig");
 const result = @import("cli-result.zig");
-const strings = @import("strings.zig");
 
 /// OnXCallback is a type of a on open/close callback.
 pub const OnXCallback = *const fn (
@@ -444,28 +443,17 @@ pub const YamlDefinition = struct {
         io: std.Io,
         source: YamlSource,
     ) !Definition {
-        var definition_string = switch (source) {
-            .string => strings.MaybeHeapString{
-                .allocator = null,
-                .string = source.string,
-            },
-            .file => strings.MaybeHeapString{
-                .allocator = allocator,
-                .string = try file.readFromPath(
-                    allocator,
-                    io,
-                    source.file,
-                ),
-            },
-        };
-        defer definition_string.deinit();
-
-        var raw_definition: yaml.Yaml = .{
-            .source = definition_string.string,
-        };
-
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
+
+        const definition_string = switch (source) {
+            .string => |s| s,
+            .file => |p| try file.readFromPath(arena.allocator(), io, p),
+        };
+
+        var raw_definition: yaml.Yaml = .{
+            .source = definition_string,
+        };
 
         try raw_definition.load(arena.allocator());
         const parsed_definition = try raw_definition.parse(

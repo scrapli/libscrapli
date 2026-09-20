@@ -6,7 +6,6 @@ const auth = @import("auth.zig");
 const errors = @import("errors.zig");
 const file = @import("file.zig");
 const logging = @import("logging.zig");
-const strings = @import("strings.zig");
 const transport_waiter = @import("transport-waiter.zig");
 
 extern fn setsid() callconv(.c) i32;
@@ -111,8 +110,6 @@ pub const Transport = struct {
     fd: ?std.posix.fd_t = null,
     pid: ?std.c.pid_t = null,
 
-    open_args: std.ArrayList(strings.MaybeHeapString),
-
     last_error: errors.LastError = .{},
 
     /// Initializes the transport.
@@ -136,7 +133,6 @@ pub const Transport = struct {
             .log = log,
             .options = o,
             .waiter = w,
-            .open_args = .empty,
         };
     }
 
@@ -144,11 +140,6 @@ pub const Transport = struct {
     pub fn deinit(self: *Transport) void {
         logging.traceWithSrc(self.log, @src(), "bin.Transport deinitializing", .{});
 
-        for (self.open_args.items) |*arg| {
-            arg.deinit();
-        }
-
-        self.open_args.deinit(self.allocator);
         self.options.deinit(self.allocator);
         self.waiter.deinit();
     }
@@ -160,6 +151,8 @@ pub const Transport = struct {
 
     fn buildArgs(
         self: *Transport,
+        allocator: std.mem.Allocator,
+        open_args: *std.ArrayList([]const u8),
         host: []const u8,
         port: u16,
         auth_options: auth.Options,
@@ -173,208 +166,142 @@ pub const Transport = struct {
             );
 
             while (override_args_iterator.next()) |arg| {
-                try self.open_args.append(
-                    self.allocator,
-                    strings.MaybeHeapString{
-                        .allocator = null,
-                        .string = arg,
-                    },
+                try open_args.append(
+                    allocator,
+                    arg,
                 );
             }
 
             return;
         }
 
-        try self.open_args.append(
-            self.allocator,
-            strings.MaybeHeapString{
-                .allocator = null,
-                .string = self.options.bin,
-            },
+        try open_args.append(
+            allocator,
+            self.options.bin,
         );
 
-        try self.open_args.append(
-            self.allocator,
-            strings.MaybeHeapString{
-                .allocator = null,
-                .string = host,
-            },
+        try open_args.append(
+            allocator,
+            host,
         );
 
-        try self.open_args.append(
-            self.allocator,
-            strings.MaybeHeapString{
-                .allocator = null,
-                .string = "-p",
-            },
+        try open_args.append(
+            allocator,
+            "-p",
         );
 
-        try self.open_args.append(
-            self.allocator,
-            strings.MaybeHeapString{
-                .allocator = self.allocator,
-                .string = try self.allocator.print(
-                    "{d}",
-                    .{port},
-                ),
-            },
+        try open_args.append(
+            allocator,
+            try allocator.print(
+                "{d}",
+                .{port},
+            ),
         );
 
         if (operation_timeout_ns != 0) {
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "-o",
-                },
+            try open_args.append(
+                allocator,
+                "-o",
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = self.allocator,
-                    .string = try self.allocator.print(
-                        "ConnectTimeout={d}",
-                        .{operation_timeout_ns / std.time.ns_per_s},
-                    ),
-                },
+            try open_args.append(
+                allocator,
+                try allocator.print(
+                    "ConnectTimeout={d}",
+                    .{operation_timeout_ns / std.time.ns_per_s},
+                ),
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "-o",
-                },
+            try open_args.append(
+                allocator,
+                "-o",
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = self.allocator,
-                    .string = try self.allocator.print(
-                        "ServerAliveInterval={d}",
-                        .{operation_timeout_ns / std.time.ns_per_s},
-                    ),
-                },
+            try open_args.append(
+                allocator,
+                try allocator.print(
+                    "ServerAliveInterval={d}",
+                    .{operation_timeout_ns / std.time.ns_per_s},
+                ),
             );
         }
 
         if (auth_options.username) |username| {
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "-l",
-                },
+            try open_args.append(
+                allocator,
+                "-l",
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = username,
-                },
+            try open_args.append(
+                allocator,
+                username,
             );
         }
 
         if (auth_options.private_key_path) |private_key_path| {
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "-i",
-                },
+            try open_args.append(
+                allocator,
+                "-i",
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = private_key_path,
-                },
+            try open_args.append(
+                allocator,
+                private_key_path,
             );
         }
 
         if (self.options.ssh_config_path) |ssh_config_path| {
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "-F",
-                },
+            try open_args.append(
+                allocator,
+                "-F",
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = ssh_config_path,
-                },
+            try open_args.append(
+                allocator,
+                ssh_config_path,
             );
         }
 
-        try self.open_args.append(
-            self.allocator,
-            strings.MaybeHeapString{
-                .allocator = null,
-                .string = "-o",
-            },
+        try open_args.append(
+            allocator,
+            "-o",
         );
 
         if (self.options.enable_strict_key) {
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "StrictHostKeyChecking=yes",
-                },
+            try open_args.append(
+                allocator,
+                "StrictHostKeyChecking=yes",
             );
         } else {
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "StrictHostKeyChecking=no",
-                },
+            try open_args.append(
+                allocator,
+                "StrictHostKeyChecking=no",
             );
 
             // if not strict checking, just /dev/null em too
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "-o",
-                },
+            try open_args.append(
+                allocator,
+                "-o",
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "UserKnownHostsFile=/dev/null",
-                },
+            try open_args.append(
+                allocator,
+                "UserKnownHostsFile=/dev/null",
             );
         }
 
         if (self.options.known_hosts_path) |known_hosts_path| {
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "-o",
-                },
+            try open_args.append(
+                allocator,
+                "-o",
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = self.allocator,
-                    .string = try self.allocator.print(
-                        "UserKnownHostsFile={s}",
-                        .{known_hosts_path},
-                    ),
-                },
+            try open_args.append(
+                allocator,
+                try allocator.print(
+                    "UserKnownHostsFile={s}",
+                    .{known_hosts_path},
+                ),
             );
         }
 
@@ -387,32 +314,23 @@ pub const Transport = struct {
                 );
 
                 while (extra_args_iterator.next()) |arg| {
-                    try self.open_args.append(
-                        self.allocator,
-                        strings.MaybeHeapString{
-                            .allocator = null,
-                            .string = arg,
-                        },
+                    try open_args.append(
+                        allocator,
+                        arg,
                     );
                 }
             }
         }
 
         if (self.options.netconf) {
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "-s",
-                },
+            try open_args.append(
+                allocator,
+                "-s",
             );
 
-            try self.open_args.append(
-                self.allocator,
-                strings.MaybeHeapString{
-                    .allocator = null,
-                    .string = "netconf",
-                },
+            try open_args.append(
+                allocator,
+                "netconf",
             );
         }
     }
@@ -428,23 +346,28 @@ pub const Transport = struct {
         self.log.info("bin.Transport open requested", .{});
         self.log.debug("bin.Transport open: host '{s}', port '{d}'", .{ host, port });
 
-        try self.buildArgs(host, port, auth_options, operation_timeout_ns);
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
 
-        const open_args = try self.allocator.alloc([]const u8, self.open_args.items.len);
-        defer self.allocator.free(open_args);
+        var open_args: std.ArrayList([]const u8) = .empty;
 
-        for (self.open_args.items, 0..) |arg, idx| {
-            open_args[idx] = arg.string;
-        }
+        try self.buildArgs(
+            arena.allocator(),
+            &open_args,
+            host,
+            port,
+            auth_options,
+            operation_timeout_ns,
+        );
 
-        const joined_open_args = try std.mem.join(self.allocator, " ", open_args);
+        const joined_open_args = try std.mem.join(self.allocator, " ", open_args.items);
         defer self.allocator.free(joined_open_args);
 
         self.log.debug("bin.Transport open: using args '{s}'", .{joined_open_args});
 
         const pty = openPty(
             self.allocator,
-            open_args,
+            open_args.items,
             self.options.term_width,
             self.options.term_height,
             self.options.netconf,

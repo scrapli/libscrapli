@@ -23,7 +23,6 @@ pub const once = @import("once.zig");
 pub const queue = @import("queue.zig");
 pub const re = @import("re.zig");
 pub const session = @import("session.zig");
-pub const strings = @import("strings.zig");
 pub const test_helper = @import("test-helper.zig");
 pub const transport = @import("transport.zig");
 pub const transport_bin = @import("transport-bin.zig");
