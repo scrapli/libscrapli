@@ -53,7 +53,6 @@ pub const ClientCapabilitiesCallback = union(enum) {
     },
 };
 
-// zlinter-disable require_doc_comment
 const default_netconf_port = 830;
 
 pub const delimiter_version_1_0 = "]]>]]>";
@@ -74,7 +73,6 @@ pub const notification_prefix = "<notification";
 const default_message_poll_interval_ns: u64 = 1_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
-// zlinter-enable require_doc_comment
 
 /// Options holds available options for the netconf driver.
 pub const Options = struct {
@@ -999,11 +997,11 @@ pub const Driver = struct {
                             // we'll just squash any errors we get from processing as we maybe
                             // didnt even have valid data anyway
                             .version_1_0 => {
-                                // zlinter-disable-next-line no_swallow_error
+                                // zlint-disable suppressed-errors
                                 self.processFoundMessageVersion1_0(message_buf.items) catch {};
                             },
                             .version_1_1 => {
-                                // zlinter-disable-next-line no_swallow_error
+                                // zlint-disable suppressed-errors
                                 self.processFoundMessageVersion1_1(message_buf.items) catch {};
                             },
                         }
@@ -1254,7 +1252,6 @@ pub const Driver = struct {
         }
     }
 
-    // zlinter-disable-next-line function_naming - 1_0 is clearer for reading
     fn processFoundMessageVersion1_0(
         self: *Driver,
         buf: []const u8,
@@ -1288,7 +1285,6 @@ pub const Driver = struct {
         }
     }
 
-    // zlinter-disable-next-line function_naming - 1_1 is clearer for reading
     fn processFoundMessageVersion1_1(
         self: *Driver,
         buf: []const u8,

@@ -2,7 +2,6 @@ const std = @import("std");
 
 const errors = @import("errors.zig");
 const file = @import("file.zig");
-const transport_waiter = @import("transport-waiter.zig");
 
 pub const Pause = struct {
     pos: usize,
@@ -101,7 +100,7 @@ pub const Transport = struct {
         }
 
         if (self.options.f == null) {
-            // zlinter-disable-next-line no_panic - should never happen
+            // panicking because only intesting anyway
             @panic("must set file for test transport!");
         }
 

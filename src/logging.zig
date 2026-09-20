@@ -1,3 +1,4 @@
+// zlint-disable no-print
 const std = @import("std");
 
 /// LogLevel is an enum holding the supported log levels for libscrapli.

@@ -494,7 +494,7 @@ pub const Transport = struct {
                     break;
                 }
 
-                // zlinter-disable-next-line no_swallow_error - best effort backoff
+                // zlint-disable suppressed-errors -- best effort backoff
                 self.io.sleep(
                     .{
                         .nanoseconds = 10 * std.time.ns_per_ms,
@@ -541,6 +541,7 @@ pub const Transport = struct {
             switch (std.posix.errno(rc)) {
                 .SUCCESS => written += @intCast(rc),
                 std.posix.E.AGAIN => {
+                    // zlint-disable suppressed-errors -- best effort backoff
                     self.io.sleep(
                         .{
                             .nanoseconds = default_eagain_delay_ns,
@@ -755,7 +756,7 @@ fn openPtyChild(
             return error.PtyError;
         }
     } else {
-        // zlinter-disable-next-line no_swallow_error - handled in parent process
+        // zlint-disable suppressed-errors -- handled in parent
         setnoecho(slave_handle) catch {};
     }
 
@@ -779,6 +780,7 @@ fn openPtyChild(
 fn setonlcr(fd: std.posix.fd_t) !void {
     // onlcr  (-onlcr)
     //     [Option Start] Map (do not map) NL to CR-NL on output.
+    // SAFETY: c struct, filling it in the c way
     var term: c.struct_termios = undefined;
 
     if (c.tcgetattr(fd, &term) != 0) {
@@ -793,6 +795,7 @@ fn setonlcr(fd: std.posix.fd_t) !void {
 }
 
 fn setnoecho(fd: std.posix.fd_t) !void {
+    // SAFETY: c struct, filling it in the c way
     var term: c.struct_termios = undefined;
 
     if (c.tcgetattr(fd, &term) != 0) {

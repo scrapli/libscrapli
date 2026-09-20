@@ -92,6 +92,7 @@ const Recorder = struct {
                     // and especially for tests!); otherwise we'll leave it to the user. we'll
                     // do this best effort to not have dangling file handles and to not cause chaos
                     // for scrapli generally just based on the recorder having a bad time
+                    // zlint-disable suppressed-errors
                     self.recorder.?.interface.flush() catch {};
                     self.recorder.?.file.close(io);
                     self.recorder = null;
@@ -607,7 +608,7 @@ pub const Session = struct {
             // exit; users should always be defering/calling deinit anyway but... this feels like
             // a nice extra layer of sanity
             self.read_stop.store(ReadThreadState.stop, std.lang.AtomicOrder.unordered);
-            // zlinter-disable-next-line no_swallow_error - best effort
+            // zlint-disable suppressed-errors -- best effort
             self.transport.prepareClose() catch {};
         }
 

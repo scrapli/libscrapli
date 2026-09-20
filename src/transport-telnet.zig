@@ -191,7 +191,7 @@ pub const Transport = struct {
 
             const n = std.posix.read(self.socket.?, &control_char_buf) catch |err| switch (err) {
                 error.WouldBlock => {
-                    // zlinter-disable-next-line no_swallow_error - best effort backoff
+                    // zlint-disable suppressed-errors -- best effort backoff
                     self.io.sleep(
                         .{
                             .nanoseconds = default_eagain_delay_ns,
@@ -358,7 +358,7 @@ pub const Transport = struct {
                     // the socket is deliberately nonblocking, so eagain just means the kernel
                     // buffer is full (i.e. a payload bigger than the buffer) -- back off briefly
                     // and keep writing rather than failing a healthy session
-                    // zlinter-disable-next-line no_swallow_error - best effort backoff
+                    // zlint-disable suppressed-errors -- best effort backoff
                     self.io.sleep(
                         .{
                             .nanoseconds = default_eagain_delay_ns,

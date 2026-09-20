@@ -18,7 +18,6 @@ fn libssh2Initialize() c_int {
     return ssh2.libssh2_init(0);
 }
 
-// zlinter-disable no_global_vars
 var libssh2_init_once: once.Once(libssh2Initialize) = .{};
 
 fn libssh2ChannelOpenSession(session: ?*ssh2.LIBSSH2_SESSION) ?*ssh2.LIBSSH2_CHANNEL {
@@ -115,7 +114,7 @@ fn libssh2DisconnectSession(
                 break;
             }
 
-            // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
+            // zlint-disable suppressed-errors - only for backoff, not ideal but ok...
             io.sleep(
                 .{
                     .nanoseconds = default_eagain_delay_ns,
@@ -154,7 +153,7 @@ fn libssh2FreeSession(
                 break;
             }
 
-            // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
+            // zlint-disable suppressed-errors - only for backoff, not ideal but ok...
             io.sleep(
                 .{
                     .nanoseconds = default_eagain_delay_ns,
@@ -193,7 +192,7 @@ fn libssh2CloseChannel(
                 break;
             }
 
-            // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
+            // zlint-disable suppressed-errors - only for backoff, not ideal but ok...
             io.sleep(
                 .{
                     .nanoseconds = default_eagain_delay_ns,
@@ -232,7 +231,7 @@ fn libssh2FreeChannel(
                 break;
             }
 
-            // zlinter-disable-next-line no_swallow_error - only for backoff, not ideal but ok...
+            // zlint-disable suppressed-errors - only for backoff, not ideal but ok...
             io.sleep(
                 .{
                     .nanoseconds = default_eagain_delay_ns,
@@ -1096,15 +1095,14 @@ pub const Transport = struct {
         self.log.debug("ssh2.Transport authenticate requested", .{});
 
         if (auth_options.private_key_content != null) {
+            // zlint-disable suppressed-errors -- because we try w/ other methods after this
             self.handlePrivateKeyContentAuth(
                 cancel,
                 start_time,
                 operation_timeout_ns,
                 session,
                 auth_options,
-            ) catch {
-                // we can still try to auth with a password if the user provided it, so we continue
-            };
+            ) catch {};
 
             if (try self.isAuthenticated(
                 cancel,
@@ -1115,15 +1113,14 @@ pub const Transport = struct {
                 return;
             }
         } else if (auth_options.private_key_path != null) {
+            // zlint-disable suppressed-errors -- because we try w/ other methods after this
             self.handlePrivateKeyAuth(
                 cancel,
                 start_time,
                 operation_timeout_ns,
                 session,
                 auth_options,
-            ) catch {
-                // we can still try to auth with a password if the user provided it, so we continue
-            };
+            ) catch {};
 
             if (try self.isAuthenticated(
                 cancel,
@@ -1136,6 +1133,7 @@ pub const Transport = struct {
         }
 
         if (auth_options.username != null and auth_options.password != null) {
+            // zlint-disable suppressed-errors -- because we try w/ other methods after this
             self.handlePasswordAuth(
                 cancel,
                 start_time,
@@ -1143,8 +1141,7 @@ pub const Transport = struct {
                 session,
                 auth_options,
             ) catch {
-                // password auth failed but we can still try kbdinteractive, in the future we could
-                // /should check auth list before doing this but for now this is ok
+                // in the future we could/should check auth list before doing this
             };
 
             if (try self.isAuthenticated(
@@ -2053,7 +2050,7 @@ pub const Transport = struct {
     pub fn close(self: *Transport) void {
         self.log.info("ssh2.Transport close requested", .{});
 
-        // zlinter-disable-next-line no_swallow_error - standard lock should "never" fail
+        // zlint-disable suppressed-errors -- standard lock should "never" fail
         self.session_lock.lock(self.io) catch {
             // going to just ignore it and let it rip since we are tearing this thing
             // down anyway and this seems like it should generally not error out...?

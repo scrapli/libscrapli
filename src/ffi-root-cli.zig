@@ -1,4 +1,4 @@
-// zlinter-disable no_panic - ignoring as we do panic on things that *really* should not happen
+// zlint-disable suppressed-errors
 const std = @import("std");
 
 const bytes = @import("bytes.zig");
