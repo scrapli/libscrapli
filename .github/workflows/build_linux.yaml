@@ -21,7 +21,7 @@ jobs:
           echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
 
       - name: setup zig
-        uses: mlugg/setup-zig@v2
+        uses: https://codeberg.org/mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
 
@@ -49,7 +49,7 @@ jobs:
           echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
 
       - name: setup zig
-        uses: mlugg/setup-zig@v2
+        uses: https://codeberg.org/mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
 
