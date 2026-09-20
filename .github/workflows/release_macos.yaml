@@ -26,10 +26,8 @@ jobs:
         run: |
           bash ./build/release_setup.sh ${{ inputs.release_tag }}
 
-      - name: setup zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: ${{ env.ZIG_VERSION }}
+      - name: setup zig/ci bits
+        uses: ./.github/actions/setup
 
       - name: build shared object
         run: |
@@ -61,10 +59,8 @@ jobs:
         run: |
           bash ./build/release_setup.sh ${{ inputs.release_tag }}
 
-      - name: setup zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: ${{ env.ZIG_VERSION }}
+      - name: setup zig/ci bits
+        uses: ./.github/actions/setup
 
       - name: build shared object
         run: |

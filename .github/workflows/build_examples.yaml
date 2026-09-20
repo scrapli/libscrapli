@@ -15,15 +15,8 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: load env vars for workflow run
-        run: |
-          source .github/vars.env
-          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
-
-      - name: setup zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: ${{ env.ZIG_VERSION }}
+      - name: setup zig/ci bits
+        uses: ./.github/actions/setup
 
       - name: build the examples
         run: |

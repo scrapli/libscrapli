@@ -19,15 +19,8 @@ jobs:
         run: |
           brew install coreutils
 
-      - name: load env vars for workflow run
-        run: |
-          source .github/vars.env
-          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
-
-      - name: setup zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: ${{ env.ZIG_VERSION }}
+      - name: setup zig/ci bits
+        uses: ./.github/actions/setup
 
       - name: build the static library
         run: |
@@ -46,15 +39,8 @@ jobs:
         run: |
           brew install coreutils pcre2 libssh2
 
-      - name: load env vars for workflow run
-        run: |
-          source .github/vars.env
-          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
-
-      - name: setup zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: ${{ env.ZIG_VERSION }}
+      - name: setup zig/ci bits
+        uses: ./.github/actions/setup
 
       - name: build the dynamic library
         run: |

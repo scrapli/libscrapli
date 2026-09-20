@@ -1,0 +1,25 @@
+---
+name: setup
+description: common setup bits
+
+runs:
+  using: composite
+  steps:
+    - name: load zig version
+      shell: bash
+      run: |
+        source .github/vars.env
+        echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
+
+    - name: setup zig
+      uses: mlugg/setup-zig@v2
+      with:
+        version: ${{ env.ZIG_VERSION }}
+
+    # 9/20/26 - for some reason w/out doing this we are failing to find built pcre headers or
+    # something? dunno. this seems to sort it.
+    - name: clear zig cache
+      shell: bash
+      run: |
+        rm -rf "$ZIG_LOCAL_CACHE_DIR"
+        rm -rf "$ZIG_GLOBAL_CACHE_DIR"
