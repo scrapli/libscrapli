@@ -51,7 +51,7 @@ fmt:
 
 ## Lint all zig files
 lint:
-	zig build lint
+	zlint -V src/*.zig
 
 ##@ Testing
 ## Run unit tests
