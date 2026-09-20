@@ -21,7 +21,7 @@ jobs:
           echo "ZLINT_VERSION=$ZLINT_VERSION" >> "$GITHUB_ENV"
 
       - name: setup zig
-        uses: https://codeberg.org/mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
 

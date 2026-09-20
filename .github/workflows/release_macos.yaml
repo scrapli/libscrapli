@@ -27,7 +27,7 @@ jobs:
           bash ./build/release_setup.sh ${{ inputs.release_tag }}
 
       - name: setup zig
-        uses: https://codeberg.org/mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
 
@@ -62,7 +62,7 @@ jobs:
           bash ./build/release_setup.sh ${{ inputs.release_tag }}
 
       - name: setup zig
-        uses: https://codeberg.org/mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
 
