@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const errors = @import("errors.zig");
-const hashmaps = @import("hashmaps.zig");
 const re = @import("re.zig");
 
 /// Simple const used to signify an "unknown" mode.
@@ -313,155 +312,104 @@ pub fn determineMode(
 test "determineMode" {
     const cases = [_]struct {
         name: []const u8,
-        modes: std.StringHashMapUnmanaged(*Mode),
+        modes: []const Options,
         current_prompt: []const u8,
         expected: []const u8,
         expect_fail: bool,
     }{
         .{
             .name = "simple-pattern",
-            .modes = try hashmaps.inlineInitStringHashMap(
-                std.testing.allocator,
-                *Mode,
-                &[_][]const u8{
-                    "exec",
-                    "privileged_exec",
-                    "configuration",
+            .modes = &.{
+                .{
+                    .name = "exec",
+                    .prompt_pattern = "^.*>",
                 },
-                &[_]*Mode{
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "exec",
-                            .prompt_pattern = "^.*>",
-                        },
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "privileged_exec",
-                            .prompt_pattern = "^.*#",
-                        },
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "configuration",
-                            .prompt_pattern = "^.*(config)#",
-                        },
-                    ),
+                .{
+                    .name = "privileged_exec",
+                    .prompt_pattern = "^.*#",
                 },
-            ),
+                .{
+                    .name = "configuration",
+                    .prompt_pattern = "^.*(config)#",
+                },
+            },
             .current_prompt = "router>",
             .expected = "exec",
             .expect_fail = false,
         },
         .{
             .name = "simple-exact",
-            .modes = try hashmaps.inlineInitStringHashMap(
-                std.testing.allocator,
-                *Mode,
-                &[_][]const u8{
-                    "exec",
-                    "privileged_exec",
-                    "configuration",
+            .modes = &.{
+                .{
+                    .name = "exec",
+                    .prompt_pattern = "^.*>",
                 },
-                &[_]*Mode{
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "exec",
-                            .prompt_pattern = "^.*>",
-                        },
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "privileged_exec",
-                            .prompt_exact = "router#",
-                        },
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "configuration",
-                            .prompt_pattern = "^.*(config)#",
-                        },
-                    ),
+                .{
+                    .name = "privileged_exec",
+                    .prompt_exact = "router#",
                 },
-            ),
+                .{
+                    .name = "configuration",
+                    .prompt_pattern = "^.*(config)#",
+                },
+            },
             .current_prompt = "router#",
             .expected = "privileged_exec",
             .expect_fail = false,
         },
         .{
             .name = "check-exclusion",
-            .modes = try hashmaps.inlineInitStringHashMap(
-                std.testing.allocator,
-                *Mode,
-                &[_][]const u8{
-                    "exec",
-                    "privileged_exec",
-                    "configuration",
-                    "tclsh",
+            .modes = &.{
+                .{
+                    .name = "exec",
+                    .prompt_pattern = "^.*>",
                 },
-                &[_]*Mode{
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "exec",
-                            .prompt_pattern = "^.*>",
-                        },
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "privileged_exec",
-                            .prompt_pattern = "^.*#",
-                            .prompt_excludes = &[_][]const u8{
-                                "tcl)",
-                            },
-                        },
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "configuration",
-                            .prompt_pattern = "^.*(config)#",
-                        },
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "tclsh",
-                            .prompt_pattern = "^.*\\(tcl\\)#",
-                        },
-                    ),
+                .{
+                    .name = "privileged_exec",
+                    .prompt_pattern = "^.*#",
+                    .prompt_excludes = &[_][]const u8{
+                        "tcl)",
+                    },
                 },
-            ),
+                .{
+                    .name = "configuration",
+                    .prompt_pattern = "^.*(config)#",
+                },
+                .{
+                    .name = "tclsh",
+                    .prompt_pattern = "^.*\\(tcl\\)#",
+                },
+            },
             .current_prompt = "router(tcl)#",
             .expected = "tclsh",
             .expect_fail = false,
         },
     };
 
-    defer {
-        for (cases) |case| {
-            var modes = case.modes;
+    for (cases) |case| {
+        var modes_map: std.StringHashMapUnmanaged(*Mode) = .empty;
+        errdefer modes_map.deinit(std.testing.allocator);
 
-            var modes_iterator = modes.valueIterator();
+        defer {
+            var modes_iterator = modes_map.valueIterator();
 
             while (modes_iterator.next()) |m| {
                 m.*.deinit();
             }
 
-            modes.deinit(std.testing.allocator);
+            modes_map.deinit(std.testing.allocator);
         }
-    }
 
-    for (cases) |case| {
+        for (case.modes) |m| {
+            try modes_map.put(
+                std.testing.allocator,
+                m.name,
+                try Mode.init(std.testing.allocator, m),
+            );
+        }
+
         const actual = try determineMode(
-            case.modes,
+            modes_map,
             case.current_prompt,
         );
 
@@ -613,7 +561,7 @@ test "getPathToMode" {
 
     const cases = [_]struct {
         name: []const u8,
-        modes: std.StringHashMapUnmanaged(*Mode),
+        modes: []const Options,
         current_mode_name: []const u8,
         requested_mode_name: []const u8,
         expected: []const []const u8,
@@ -621,29 +569,11 @@ test "getPathToMode" {
     }{
         .{
             .name = "simple",
-            .modes = try hashmaps.inlineInitStringHashMap(
-                std.testing.allocator,
-                *Mode,
-                &[_][]const u8{
-                    "exec",
-                    "privileged_exec",
-                    "configuration",
-                },
-                &[_]*Mode{
-                    try Mode.init(
-                        std.testing.allocator,
-                        exec_mode_options,
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        privileged_exec_mode_options,
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        config_mode_options,
-                    ),
-                },
-            ),
+            .modes = &.{
+                exec_mode_options,
+                privileged_exec_mode_options,
+                config_mode_options,
+            },
             .current_mode_name = "exec",
             .requested_mode_name = "configuration",
             .expected = &[_][]const u8{
@@ -655,29 +585,11 @@ test "getPathToMode" {
         },
         .{
             .name = "simple-backwards",
-            .modes = try hashmaps.inlineInitStringHashMap(
-                std.testing.allocator,
-                *Mode,
-                &[_][]const u8{
-                    "exec",
-                    "privileged_exec",
-                    "configuration",
-                },
-                &[_]*Mode{
-                    try Mode.init(
-                        std.testing.allocator,
-                        exec_mode_options,
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        privileged_exec_mode_options,
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        config_mode_options,
-                    ),
-                },
-            ),
+            .modes = &.{
+                exec_mode_options,
+                privileged_exec_mode_options,
+                config_mode_options,
+            },
             .current_mode_name = "configuration",
             .requested_mode_name = "exec",
             .expected = &[_][]const u8{
@@ -689,29 +601,11 @@ test "getPathToMode" {
         },
         .{
             .name = "simple-short",
-            .modes = try hashmaps.inlineInitStringHashMap(
-                std.testing.allocator,
-                *Mode,
-                &[_][]const u8{
-                    "exec",
-                    "privileged_exec",
-                    "configuration",
-                },
-                &[_]*Mode{
-                    try Mode.init(
-                        std.testing.allocator,
-                        exec_mode_options,
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        privileged_exec_mode_options,
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        config_mode_options,
-                    ),
-                },
-            ),
+            .modes = &.{
+                exec_mode_options,
+                privileged_exec_mode_options,
+                config_mode_options,
+            },
             .current_mode_name = "exec",
             .requested_mode_name = "privileged_exec",
             .expected = &[_][]const u8{
@@ -722,68 +616,46 @@ test "getPathToMode" {
         },
         .{
             .name = "more steps",
-            .modes = try hashmaps.inlineInitStringHashMap(
-                std.testing.allocator,
-                *Mode,
-                &[_][]const u8{
-                    "privileged_exec",
-                    "configuration",
-                    "shell",
-                    "sudo",
+            .modes = &.{
+                privileged_exec_mode_options,
+                config_mode_options,
+                .{
+                    .name = "shell",
+                    .prompt_pattern = "^shell#",
+                    .accessible_modes = &[_]AccessibleMode{
+                        .{
+                            .name = "privileged_exec",
+                            .instructions = &[_]Operation{
+                                .{
+                                    .send_input = .{
+                                        .send_input = .{
+                                            .input = "quit",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
                 },
-                &[_]*Mode{
-                    try Mode.init(
-                        std.testing.allocator,
-                        privileged_exec_mode_options,
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        config_mode_options,
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
+                .{
+                    .name = "sudo",
+                    .prompt_pattern = "^shell(root)#",
+                    .accessible_modes = &[_]AccessibleMode{
                         .{
                             .name = "shell",
-                            .prompt_pattern = "^shell#",
-                            .accessible_modes = &[_]AccessibleMode{
+                            .instructions = &[_]Operation{
                                 .{
-                                    .name = "privileged_exec",
-                                    .instructions = &[_]Operation{
-                                        .{
-                                            .send_input = .{
-                                                .send_input = .{
-                                                    .input = "quit",
-                                                },
-                                            },
+                                    .send_input = .{
+                                        .send_input = .{
+                                            .input = "quit",
                                         },
                                     },
                                 },
                             },
                         },
-                    ),
-                    try Mode.init(
-                        std.testing.allocator,
-                        .{
-                            .name = "sudo",
-                            .prompt_pattern = "^shell(root)#",
-                            .accessible_modes = &[_]AccessibleMode{
-                                .{
-                                    .name = "shell",
-                                    .instructions = &[_]Operation{
-                                        .{
-                                            .send_input = .{
-                                                .send_input = .{
-                                                    .input = "quit",
-                                                },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    ),
+                    },
                 },
-            ),
+            },
             .current_mode_name = "sudo",
             .requested_mode_name = "configuration",
             .expected = &[_][]const u8{
@@ -796,27 +668,34 @@ test "getPathToMode" {
         },
     };
 
-    defer {
-        for (cases) |case| {
-            var modes = case.modes;
+    for (cases) |case| {
+        var modes_map: std.StringHashMapUnmanaged(*Mode) = .empty;
+        errdefer modes_map.deinit(std.testing.allocator);
 
-            var modes_iterator = modes.valueIterator();
+        defer {
+            var modes_iterator = modes_map.valueIterator();
 
             while (modes_iterator.next()) |m| {
                 m.*.deinit();
             }
 
-            modes.deinit(std.testing.allocator);
+            modes_map.deinit(std.testing.allocator);
         }
-    }
 
-    for (cases) |case| {
+        for (case.modes) |m| {
+            try modes_map.put(
+                std.testing.allocator,
+                m.name,
+                try Mode.init(std.testing.allocator, m),
+            );
+        }
+
         var visited = std.StringHashMap(bool).init(std.testing.allocator);
         defer visited.deinit();
 
         var actual = try getPathToMode(
             std.testing.allocator,
-            case.modes,
+            modes_map,
             case.current_mode_name,
             case.requested_mode_name,
             &visited,

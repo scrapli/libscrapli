@@ -1,3 +1,4 @@
+// zlint-disable no-print
 const std = @import("std");
 const builtin = @import("builtin");
 
