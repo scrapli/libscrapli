@@ -12,8 +12,8 @@
             .path = "lib/libssh2",
         },
         .yaml = .{
-            .url = "https://github.com/wrench1997/zig-yaml/archive/3875cce.tar.gz",
-            .hash = "zig_yaml-0.2.0-C1161hauAgBFlcbx-fkUitRmFXBeN1WjpiWU6S3dkyUR",
+            .url = "https://codeberg.org/kubkon/zig-yaml/archive/a25449d19e.tar.gz",
+            .hash = "zig_yaml-0.3.0-C1161tLdAgCLYH9x26T05DBISJt8TmgJ4CUkriZ-ThST",
         },
         .xml = .{
             .url = "https://github.com/carlmontanari/zig-xml/archive/13934ee.tar.gz",

@@ -22,8 +22,7 @@ const examples: []const []const u8 = &.{
     "basic-netconf-usage",
 };
 
-/// libscraplis build instructions -- builds the shared libraries, examples, tests, checker,
-/// linter, and a "main" exe if requested.
+/// libscraplis build bits.
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
