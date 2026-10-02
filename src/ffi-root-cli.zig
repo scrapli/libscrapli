@@ -671,6 +671,42 @@ export fn ls_cli_read_any(
     return @backingInt(ffi_common.FfiResult.success);
 }
 
+export fn ls_cli_execute_on_open_callback(
+    d_ptr: *ffi_common.LsDriver,
+    operation_id: *u32,
+    cancel: *bool,
+) callconv(.c) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+
+    const _operation_id = d.queueOperation(
+        ffi_operations.OperationOptions{
+            .id = 0,
+            .operation = .{
+                .cli = .{
+                    .execute_on_open_callback = .{
+                        .cancel = cancel,
+                    },
+                },
+            },
+        },
+    ) catch |err| {
+        // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
+        errors.wrapCriticalError(
+            errors.ScrapliError.Operation,
+            @src(),
+            d.getLogger(),
+            "ffi: error during queue executePlatformCallback (onOpen) {any}",
+            .{err},
+        ) catch {};
+
+        return ffi_common.toFfiResult(err);
+    };
+
+    operation_id.* = _operation_id;
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
 export fn ls_cli_read_callback_should_execute(
     buf: [*c]const u8,
     name: [*c]const u8,

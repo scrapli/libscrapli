@@ -213,81 +213,83 @@ pub const Driver = struct {
         );
     }
 
-    pub fn executePlatformCallback(
+    /// Executes the on open callback for the configured platform (if present).
+    pub fn executePlatformOnOpenCallback(
         self: *Driver,
         allocator: std.mem.Allocator,
-        options: union(enum) {
-            onOpen: operation.OpenOptions,
-            onClose: operation.CloseOptions,
-        },
+        options: operation.OpenOptions,
     ) !?*result.Result {
-        switch (options) {
-            .onOpen => |opts| {
-                if (self.definition.on_open_callback != null or
-                    self.definition.bound_on_open_callback != null)
-                {
-                    var res = try self.newResult(
+        if (self.definition.on_open_callback != null or
+            self.definition.bound_on_open_callback != null)
+        {
+            var res = try self.newResult(
+                allocator,
+                operation.Kind.open,
+            );
+            errdefer res.deinit();
+
+            self.log.info("cli.Driver open: on open callback set, executing...", .{});
+
+            if (self.definition.on_open_callback) |cb| {
+                try res.recordExtend(
+                    try cb(
+                        self,
                         allocator,
-                        operation.Kind.open,
-                    );
-                    errdefer res.deinit();
-
-                    self.log.info("cli.Driver open: on open callback set, executing...", .{});
-
-                    if (self.definition.on_open_callback) |cb| {
-                        try res.recordExtend(
-                            try cb(
-                                self,
-                                allocator,
-                                opts.cancel,
-                            ),
-                        );
-                    } else {
-                        try res.recordExtend(
-                            try self.definition.bound_on_open_callback.?.callback(
-                                allocator,
-                                self,
-                                opts.cancel,
-                            ),
-                        );
-                    }
-
-                    return res;
-                }
-            },
-            .onClose => |opts| {
-                if (!opts.force and (self.definition.on_close_callback != null or
-                    self.definition.bound_on_close_callback != null))
-                {
-                    var res = try self.newResult(
+                        options.cancel,
+                    ),
+                );
+            } else {
+                try res.recordExtend(
+                    try self.definition.bound_on_open_callback.?.callback(
                         allocator,
-                        operation.Kind.close,
-                    );
-                    errdefer res.deinit();
+                        self,
+                        options.cancel,
+                    ),
+                );
+            }
 
-                    self.log.info("cli.Driver close: on close callback set, executing...", .{});
+            return res;
+        }
 
-                    if (self.definition.on_close_callback) |cb| {
-                        try res.recordExtend(
-                            try cb(
-                                self,
-                                allocator,
-                                opts.cancel,
-                            ),
-                        );
-                    } else {
-                        try res.recordExtend(
-                            try self.definition.bound_on_close_callback.?.callback(
-                                allocator,
-                                self,
-                                opts.cancel,
-                            ),
-                        );
-                    }
+        return null;
+    }
 
-                    return res;
-                }
-            },
+    /// Executes the on close callback for the configured platform (if present).
+    pub fn executePlatformOnCloseCallback(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: operation.CloseOptions,
+    ) !?*result.Result {
+        if (!options.force and (self.definition.on_close_callback != null or
+            self.definition.bound_on_close_callback != null))
+        {
+            var res = try self.newResult(
+                allocator,
+                operation.Kind.close,
+            );
+            errdefer res.deinit();
+
+            self.log.info("cli.Driver close: on close callback set, executing...", .{});
+
+            if (self.definition.on_close_callback) |cb| {
+                try res.recordExtend(
+                    try cb(
+                        self,
+                        allocator,
+                        options.cancel,
+                    ),
+                );
+            } else {
+                try res.recordExtend(
+                    try self.definition.bound_on_close_callback.?.callback(
+                        allocator,
+                        self,
+                        options.cancel,
+                    ),
+                );
+            }
+
+            return res;
         }
 
         return null;
@@ -330,11 +332,9 @@ pub const Driver = struct {
             ),
         );
 
-        const maybe_callback_res = try self.executePlatformCallback(
+        const maybe_callback_res = try self.executePlatformOnOpenCallback(
             allocator,
-            .{
-                .onOpen = options,
-            },
+            options,
         );
         if (maybe_callback_res) |cb_res| {
             try res.recordExtend(cb_res);
@@ -361,11 +361,9 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        const maybe_callback_res = try self.executePlatformCallback(
+        const maybe_callback_res = try self.executePlatformOnCloseCallback(
             allocator,
-            .{
-                .onClose = options,
-            },
+            options,
         );
         if (maybe_callback_res) |cb_res| {
             try res.recordExtend(cb_res);

@@ -332,6 +332,7 @@ pub const FfiDriver = struct {
                         .send_inputs => "sendInputs",
                         .send_prompted_input => "sendPromptedInput",
                         .read_any => "readAny",
+                        .execute_on_open_callback => "executePlatformOnOpenCallback",
                     };
 
                     if (@field(@TypeOf(rd.*), method_name)(rd, self.allocator, o)) |ret| {
