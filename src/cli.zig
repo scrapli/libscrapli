@@ -213,6 +213,86 @@ pub const Driver = struct {
         );
     }
 
+    pub fn executePlatformCallback(
+        self: *Driver,
+        allocator: std.mem.Allocator,
+        options: union(enum) {
+            onOpen: operation.OpenOptions,
+            onClose: operation.CloseOptions,
+        },
+    ) !?*result.Result {
+        switch (options) {
+            .onOpen => |opts| {
+                if (self.definition.on_open_callback != null or
+                    self.definition.bound_on_open_callback != null)
+                {
+                    var res = try self.newResult(
+                        allocator,
+                        operation.Kind.open,
+                    );
+                    errdefer res.deinit();
+
+                    self.log.info("cli.Driver open: on open callback set, executing...", .{});
+
+                    if (self.definition.on_open_callback) |cb| {
+                        try res.recordExtend(
+                            try cb(
+                                self,
+                                allocator,
+                                opts.cancel,
+                            ),
+                        );
+                    } else {
+                        try res.recordExtend(
+                            try self.definition.bound_on_open_callback.?.callback(
+                                allocator,
+                                self,
+                                opts.cancel,
+                            ),
+                        );
+                    }
+
+                    return res;
+                }
+            },
+            .onClose => |opts| {
+                if (!opts.force and (self.definition.on_close_callback != null or
+                    self.definition.bound_on_close_callback != null))
+                {
+                    var res = try self.newResult(
+                        allocator,
+                        operation.Kind.close,
+                    );
+                    errdefer res.deinit();
+
+                    self.log.info("cli.Driver close: on close callback set, executing...", .{});
+
+                    if (self.definition.on_close_callback) |cb| {
+                        try res.recordExtend(
+                            try cb(
+                                self,
+                                allocator,
+                                opts.cancel,
+                            ),
+                        );
+                    } else {
+                        try res.recordExtend(
+                            try self.definition.bound_on_close_callback.?.callback(
+                                allocator,
+                                self,
+                                opts.cancel,
+                            ),
+                        );
+                    }
+
+                    return res;
+                }
+            },
+        }
+
+        return null;
+    }
+
     /// Open the cli connection.
     pub fn open(
         self: *Driver,
@@ -250,28 +330,14 @@ pub const Driver = struct {
             ),
         );
 
-        if (self.definition.on_open_callback != null or
-            self.definition.bound_on_open_callback != null)
-        {
-            self.log.info("cli.Driver open: on open callback set, executing...", .{});
-
-            if (self.definition.on_open_callback) |cb| {
-                try res.recordExtend(
-                    try cb(
-                        self,
-                        allocator,
-                        options.cancel,
-                    ),
-                );
-            } else {
-                try res.recordExtend(
-                    try self.definition.bound_on_open_callback.?.callback(
-                        allocator,
-                        self,
-                        options.cancel,
-                    ),
-                );
-            }
+        const maybe_callback_res = try self.executePlatformCallback(
+            allocator,
+            .{
+                .onOpen = options,
+            },
+        );
+        if (maybe_callback_res) |cb_res| {
+            try res.recordExtend(cb_res);
         }
 
         return res;
@@ -295,28 +361,14 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        if (!options.force and (self.definition.on_close_callback != null or
-            self.definition.bound_on_close_callback != null))
-        {
-            self.log.info("cli.Driver close: on close callback set, executing...", .{});
-
-            if (self.definition.on_close_callback) |cb| {
-                try res.recordExtend(
-                    try cb(
-                        self,
-                        allocator,
-                        options.cancel,
-                    ),
-                );
-            } else {
-                try res.recordExtend(
-                    try self.definition.bound_on_close_callback.?.callback(
-                        allocator,
-                        self,
-                        options.cancel,
-                    ),
-                );
-            }
+        const maybe_callback_res = try self.executePlatformCallback(
+            allocator,
+            .{
+                .onClose = options,
+            },
+        );
+        if (maybe_callback_res) |cb_res| {
+            try res.recordExtend(cb_res);
         }
 
         try self.session.close();
