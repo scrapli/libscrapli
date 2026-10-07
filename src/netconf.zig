@@ -14,12 +14,6 @@ const session = @import("session.zig");
 const test_helper = @import("test-helper.zig");
 const transport = @import("transport.zig");
 
-const ProcessThreadState = enum(u8) {
-    uninitialized,
-    run,
-    stop,
-};
-
 /// Capability is a struct that holds information about an advertised capability from the netconf
 /// server.
 pub const Capability = struct {
@@ -147,12 +141,6 @@ pub const Driver = struct {
     negotiated_version: operation.Version = .version_1_0,
     session_id: ?u64 = null,
 
-    process_thread: ?std.Thread = null,
-    process_stop: std.atomic.Value(ProcessThreadState) = std.atomic.Value(ProcessThreadState).init(
-        ProcessThreadState.uninitialized,
-    ),
-    process_thread_exited: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-
     message_id: u64 = 101,
 
     messages: std.HashMap(
@@ -175,6 +163,8 @@ pub const Driver = struct {
     subscriptions_lock: std.Io.Mutex = .init,
 
     last_error: errors.LastError = .{},
+
+    message_buf: std.ArrayList(u8) = .empty,
 
     // same concept as the session object -- a scratch buf (w/ same sizing caps/settings as
     // session) for message processing. holds the parsed (de-framed) message content plus the
@@ -223,51 +213,57 @@ pub const Driver = struct {
         o.session.normalize_line_feeds = false;
         o.session.normalize_trailing_whitespace = false;
 
-        var s = try session.Session.init(
-            allocator,
-            io,
-            log,
-            delimiter_version_1_0,
-            null,
-            o.session,
-            o.auth,
-            o.transport,
-        );
-        errdefer s.deinit();
+        const d = init_driver: {
+            var owned_session = try session.Session.init(
+                allocator,
+                io,
+                log,
+                delimiter_version_1_0,
+                null,
+                o.session,
+                o.auth,
+                o.transport,
+            );
+            errdefer owned_session.deinit();
 
-        s.options.operation_max_search_depth = default_initial_operation_max_search_depth;
+            owned_session.options.operation_max_search_depth = default_initial_operation_max_search_depth;
 
-        var parsed_scratch = bytes.ProcessedBuf.init();
-        errdefer parsed_scratch.deinit(allocator);
+            const d = try allocator.create(Driver);
+            d.* = Driver{
+                .allocator = allocator,
+                .io = io,
+                .log = log,
+                .host = host,
+                .options = o,
+                .session = owned_session,
+                .messages = std.HashMap(
+                    u64,
+                    [2][]const u8,
+                    std.hash_map.AutoContext(u64),
+                    std.hash_map.default_max_load_percentage,
+                ).init(allocator),
+                .subscriptions = std.HashMap(
+                    u64,
+                    std.ArrayList([]const u8),
+                    std.hash_map.AutoContext(u64),
+                    std.hash_map.default_max_load_percentage,
+                ).init(allocator),
+                .parsed_scratch = .init(),
+            };
 
-        try parsed_scratch.reserve(
-            allocator,
-            s.options.scratch_initial_size,
-        );
-
-        const d = try allocator.create(Driver);
-
-        d.* = Driver{
-            .allocator = allocator,
-            .io = io,
-            .log = log,
-            .host = host,
-            .options = o,
-            .session = s,
-            .messages = std.HashMap(
-                u64,
-                [2][]const u8,
-                std.hash_map.AutoContext(u64),
-                std.hash_map.default_max_load_percentage,
-            ).init(allocator),
-            .subscriptions = std.HashMap(
-                u64,
-                std.ArrayList([]const u8),
-                std.hash_map.AutoContext(u64),
-                std.hash_map.default_max_load_percentage,
-            ).init(allocator),
-            .parsed_scratch = parsed_scratch,
+            break :init_driver d;
         };
+        errdefer d.deinit();
+
+        try d.message_buf.ensureTotalCapacity(
+            allocator,
+            @intCast(d.session.options.read_size),
+        );
+
+        try d.parsed_scratch.reserve(
+            allocator,
+            d.session.options.scratch_initial_size,
+        );
 
         return d;
     }
@@ -275,15 +271,6 @@ pub const Driver = struct {
     /// Deinitialize the netconf object -- nukes any stored messages (notifiations/subscriptions).
     pub fn deinit(self: *Driver) void {
         logging.traceWithSrc(self.log, @src(), "netconf.Driver object deinitializing", .{});
-
-        if (self.process_stop.load(std.lang.AtomicOrder.acquire) == ProcessThreadState.run) {
-            // same as session, for ignoring errors on close and just gracefully freeing things
-            // zlint-disable suppressed-errors
-            const ret = self.close(self.allocator, .{ .force = true }) catch null;
-            if (ret) |r| {
-                r.deinit();
-            }
-        }
 
         self.session.deinit();
 
@@ -325,6 +312,8 @@ pub const Driver = struct {
         self.subscriptions.deinit();
 
         self.options.deinit(self.allocator);
+
+        self.message_buf.deinit(self.allocator);
 
         self.parsed_scratch.deinit(self.allocator);
 
@@ -486,44 +475,16 @@ pub const Driver = struct {
         try self.determineVersion();
         try self.sendClientCapabilities(cap_buf);
 
-        self.process_stop.store(
-            ProcessThreadState.run,
-            std.lang.AtomicOrder.unordered,
+        // on an open after a close shit could get weird, this ensures we are in a clean spot
+        self.message_buf.clearRetainingCapacity();
+        try self.session.installReadLoopCallback(
+            .{
+                .ctx = self,
+                .f = Driver.processReadCallback,
+            },
         );
-
-        self.process_thread = std.Thread.spawn(
-            .{},
-            Driver.processLoop,
-            .{self},
-        ) catch |err| {
-            const last_error = "netconf.Driver open: failed spawning message processing thread";
-
-            self.last_error.set(last_error);
-
-            return errors.wrapCriticalError(
-                err,
-                @src(),
-                self.log,
-                last_error,
-                .{},
-            );
-        };
 
         return res;
-    }
-
-    fn closeJoinProcessThread(self: *Driver) !void {
-        self.process_stop.store(
-            ProcessThreadState.stop,
-            std.lang.AtomicOrder.unordered,
-        );
-
-        if (self.process_thread) |t| {
-            t.join();
-            self.process_thread = null;
-        }
-
-        try self.session.close();
     }
 
     /// Close the netconf connection.
@@ -539,7 +500,7 @@ pub const Driver = struct {
         );
 
         if (options.force) {
-            try self.closeJoinProcessThread();
+            try self.session.close();
 
             return self.newResult(allocator, "", operation.Kind.close);
         }
@@ -562,7 +523,7 @@ pub const Driver = struct {
         };
         errdefer res.deinit();
 
-        try self.closeJoinProcessThread();
+        try self.session.close();
 
         return res;
     }
@@ -589,12 +550,31 @@ pub const Driver = struct {
 
         var found_cap_start = false;
 
+        var cur_read_delay_ns: u64 = self.session.options.read_min_delay_ns;
+
         while (true) {
             try self.processCancelAndTimeout(start_timestamp, options.cancel);
 
             const n = try self.session.read(read_cap_buf);
 
             if (n == 0) {
+                self.io.sleep(
+                    .{
+                        .nanoseconds = cur_read_delay_ns,
+                    },
+                    .awake,
+                ) catch |err| {
+                    self.log.warn(
+                        "netconf.Driver receiveServerCapabilities: sleep error '{}', ignoring",
+                        .{err},
+                    );
+                };
+
+                cur_read_delay_ns = session.Session.getReadBackoff(
+                    cur_read_delay_ns,
+                    self.session.options.read_max_delay_ns,
+                );
+
                 continue;
             }
 
@@ -944,117 +924,51 @@ pub const Driver = struct {
         try self.session.writeAndReturn(caps, false);
     }
 
-    fn processLoop(
-        self: *Driver,
-    ) void {
-        // publish the exited flag however the inner loop ends (clean stop, eof, or error) --
-        // the inner fn's own defers (including the eof drain) run before this does, preserving
-        // the "dont signal exited until remaining messages are processed" ordering
-        defer self.process_thread_exited.store(true, std.lang.AtomicOrder.release);
-
-        self.processLoopInner() catch |err| {
-            self.log.critical(
-                "netconf.Driver processLoop: message processing thread exiting on error {}",
-                .{err},
-            );
-        };
-    }
-
-    fn processLoopInner(
-        self: *Driver,
+    fn processReadCallback(
+        ctx: *anyopaque,
+        buf: []const u8,
     ) !void {
-        self.log.info("netconf.Driver mssage processing thread started", .{});
-
-        const buf = try self.allocator.alloc(u8, self.session.options.read_size);
-        defer self.allocator.free(buf);
-
-        var message_buf: std.ArrayList(u8) = .empty;
-        defer message_buf.deinit(self.allocator);
-
-        try message_buf.ensureTotalCapacity(
-            self.allocator,
-            @intCast(self.session.options.scratch_initial_size),
-        );
+        const self: *Driver = @ptrCast(@alignCast(ctx));
 
         const message_complete_delim = switch (self.negotiated_version) {
             .version_1_0 => delimiter_version_1_0,
             .version_1_1 => delimiter_version_1_1,
         };
 
-        while (self.process_stop.load(std.lang.AtomicOrder.acquire) != ProcessThreadState.stop) {
-            const n = self.session.read(buf) catch |err| {
-                switch (err) {
-                    errors.ScrapliError.EOF => {
-                        // the session read thread has errored/closed and there is nothing remaining
-                        // in the read queue, try one last time to parse out any remaining message(s)
-                        defer self.log.debug(
-                            "netconf.Driver processLoop: message processing thread " ++
-                                " stopping, session read queue drained and read thread stopped",
-                            .{},
-                        );
+        try self.message_buf.appendSlice(self.allocator, buf);
 
-                        switch (self.negotiated_version) {
-                            // we'll just squash any errors we get from processing as we maybe
-                            // didnt even have valid data anyway
-                            .version_1_0 => {
-                                // zlint-disable suppressed-errors
-                                self.processFoundMessageVersion1_0(message_buf.items) catch {};
-                            },
-                            .version_1_1 => {
-                                // zlint-disable suppressed-errors
-                                self.processFoundMessageVersion1_1(message_buf.items) catch {};
-                            },
-                        }
+        const found = try Driver.processReadCallbackBufContainsCompleteDelim(
+            buf.len,
+            self.message_buf,
+            message_complete_delim,
+        );
 
-                        return;
-                    },
-                    else => {
-                        return err;
-                    },
-                }
-            };
+        if (found) {
+            self.log.info("netconf.Driver processReadCallback: found end of message", .{});
 
-            if (n == 0) {
-                continue;
+            switch (self.negotiated_version) {
+                .version_1_0 => {
+                    try self.processFoundMessageVersion1_0(self.message_buf.items);
+                },
+                .version_1_1 => {
+                    try self.processFoundMessageVersion1_1(self.message_buf.items);
+                },
             }
 
-            try message_buf.appendSlice(self.allocator, buf[0..n]);
+            if (self.message_buf.capacity > self.session.options.scratch_retain_max) {
+                self.message_buf.clearAndFree(self.allocator);
 
-            const found = try Driver.processLoopBufContainsCompleteDelim(
-                n,
-                message_buf,
-                message_complete_delim,
-            );
-
-            if (found) {
-                self.log.info("netconf.Driver processLoop: found end of message", .{});
-
-                switch (self.negotiated_version) {
-                    .version_1_0 => {
-                        try self.processFoundMessageVersion1_0(message_buf.items);
-                    },
-                    .version_1_1 => {
-                        try self.processFoundMessageVersion1_1(message_buf.items);
-                    },
-                }
-
-                if (message_buf.capacity > self.session.options.scratch_retain_max) {
-                    message_buf.clearAndFree(self.allocator);
-
-                    try message_buf.ensureTotalCapacity(
-                        self.allocator,
-                        @intCast(self.session.options.scratch_retain_max),
-                    );
-                } else {
-                    message_buf.clearRetainingCapacity();
-                }
+                try self.message_buf.ensureTotalCapacity(
+                    self.allocator,
+                    @intCast(self.session.options.scratch_retain_max),
+                );
+            } else {
+                self.message_buf.clearRetainingCapacity();
             }
         }
-
-        self.log.info("netconf.Driver message processing thread stopped", .{});
     }
 
-    fn processLoopBufContainsCompleteDelim(
+    fn processReadCallbackBufContainsCompleteDelim(
         read_n: usize,
         message_buf: std.ArrayList(u8),
         message_complete_delim: []const u8,
@@ -3003,7 +2917,11 @@ pub const Driver = struct {
                 return v;
             }
 
-            if (self.process_thread_exited.load(std.lang.AtomicOrder.acquire)) {
+            if (self.session.read_thread_errored.load(std.lang.AtomicOrder.acquire)) {
+                if (self.session.read_thread_error) |err| {
+                    return err;
+                }
+
                 return errors.ScrapliError.EOF;
             }
 
@@ -4742,7 +4660,7 @@ test "builActionElem" {
     }
 }
 
-test "processLoopBufContainsCompleteDelim" {
+test "processReadCallbackBufContainsCompleteDelim" {
     const cases = [_]struct {
         name: []const u8,
         content: []const u8,
@@ -4773,7 +4691,7 @@ test "processLoopBufContainsCompleteDelim" {
 
         try message_buf.appendSlice(std.testing.allocator, case.content);
 
-        const actual = try Driver.processLoopBufContainsCompleteDelim(
+        const actual = try Driver.processReadCallbackBufContainsCompleteDelim(
             case.read_n,
             message_buf,
             delimiter_version_1_1,

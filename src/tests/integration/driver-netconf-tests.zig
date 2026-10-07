@@ -861,3 +861,119 @@ test "driver-netconf get-schema" {
         );
     }
 }
+
+// slog grenade for testing some fairly big changes in nc processing around #35 and #36.
+test "driver-netconf read loop callback live path" {
+    // the test transport does not pace reads like a real server does (a real server waits for our
+    // rpc before replying), so normally the read thread has slurped the entire fixture into the
+    // session read queue before the netconf driver installs its read loop callback -- meaning
+    // only the "drain the queue into the callback" path is exercised. here we hold the transport
+    // right after the server hello until open has returned (and so the callback is installed), so
+    // that everything after it (the rpc replies) must be delivered via the callback from the read
+    // loop itself. note this is a hold rather than a timed pause because with a read size of 1
+    // open is slow (so many regex checks) and can easily outlast a pause.
+    const test_name = "lock";
+    const case_name = "simple";
+
+    if (helper.isRecording()) {
+        // replays the "lock" fixture/golden, nothing to record
+        return;
+    }
+
+    const fixture_filename = try helper.fixturePath(
+        std.testing.allocator,
+        "netconf",
+        test_name,
+        case_name,
+    );
+    defer std.testing.allocator.free(fixture_filename);
+
+    const golden_filename = try helper.goldenPath(
+        std.testing.allocator,
+        "netconf",
+        test_name,
+        case_name,
+    );
+    defer std.testing.allocator.free(golden_filename);
+
+    const fixture = try scrapli.file.readFromPath(
+        std.testing.allocator,
+        std.testing.io,
+        fixture_filename,
+    );
+    defer std.testing.allocator.free(fixture);
+
+    // the first 1.0 delimiter in the fixture is the end of the server hello
+    const hello_delim_index = std.mem.find(
+        u8,
+        fixture,
+        netconf.delimiter_version_1_0,
+    ) orelse return error.TestUnexpectedResult;
+
+    const hold_pos = hello_delim_index + netconf.delimiter_version_1_0.len;
+
+    // there must be something left to read after the hold or the test proves nothing
+    try std.testing.expect(hold_pos < fixture.len);
+
+    const d = try netconf.Driver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "dummy",
+        .{
+            .port = 23830,
+            .auth = .{
+                .username = "root",
+                .password = "password",
+            },
+            .session = .{
+                .read_size = 1,
+                .operation_timeout_ns = std.time.ns_per_min,
+            },
+            .transport = .{
+                .test_ = .{
+                    .f = fixture_filename,
+                    .hold_at = hold_pos,
+                },
+            },
+        },
+    );
+    defer d.deinit();
+
+    // see makeReplayTestDriver
+    d.session.options.operation_max_search_depth = 32;
+
+    const open_res = try d.open(std.testing.allocator, .{});
+    defer open_res.deinit();
+
+    const test_transport = &d.session.transport.implementation.test_;
+
+    // open has returned, so the callback is installed. the transport must still be parked at the
+    // hold, i.e. nothing past the server hello has been read yet, so none of the rpc replies
+    // can have gone through the install-time drain of the read queue. (the read thread is
+    // sleeping in the hold, so peeking at its position here is fine)
+    try std.testing.expectEqual(hold_pos, test_transport.cur_pos);
+
+    test_transport.releaseHold();
+
+    const actual_res = try d.lock(
+        std.testing.allocator,
+        .{
+            .target = .candidate,
+        },
+    );
+    defer actual_res.deinit();
+
+    defer helper.closeDriver(netconf.Driver, d, std.testing.allocator);
+
+    try std.testing.expect(!actual_res.result_failure_indicated);
+
+    // and the reply really was read after the hold was released
+    try std.testing.expect(test_transport.cur_pos > hold_pos);
+
+    try helper.processFixutreTestStrResult(
+        test_name,
+        case_name,
+        golden_filename,
+        actual_res.result,
+    );
+}

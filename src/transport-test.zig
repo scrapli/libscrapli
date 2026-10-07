@@ -17,6 +17,11 @@ pub const Options = struct {
 
     eof_at: ?usize = null,
 
+    // hold reads at this position until `Transport.releaseHold` is called (or the transport is
+    // closing). unlike pause_at this is not time based, so a test can deterministically keep
+    // content from being read until it has done whatever it needs to do first.
+    hold_at: ?usize = null,
+
     fn init(allocator: std.mem.Allocator, opts: Options) !Options {
         var o = opts;
 
@@ -63,6 +68,8 @@ pub const Transport = struct {
     options: Options,
 
     closing: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+    hold_released: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
     fd: ?std.posix.fd_t = null,
 
@@ -142,6 +149,11 @@ pub const Transport = struct {
         }
     }
 
+    /// Releases the hold set via the `hold_at` option, letting reads continue past it.
+    pub fn releaseHold(self: *Transport) void {
+        self.hold_released.store(true, std.lang.AtomicOrder.release);
+    }
+
     /// Write to the transport object. A noop for the test transport.
     pub fn write(self: *Transport, buf: []const u8) !void {
         _ = self;
@@ -187,6 +199,19 @@ pub const Transport = struct {
         if (self.options.eof_at) |eof_pos| {
             if (eof_pos == self.cur_pos) {
                 return errors.ScrapliError.EOF;
+            }
+        }
+
+        if (self.options.hold_at) |hold_pos| {
+            while (hold_pos == self.cur_pos and
+                !self.hold_released.load(std.lang.AtomicOrder.acquire))
+            {
+                // same poor mans sleepy+atomic check as the pause below
+                try self.io.sleep(.fromMilliseconds(1), .awake);
+
+                if (self.closing.load(std.lang.AtomicOrder.acquire)) {
+                    return 0;
+                }
             }
         }
 
