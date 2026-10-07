@@ -400,6 +400,36 @@ export fn ls_netconf_get_session_id(
     return @backingInt(ffi_common.FfiResult.operation);
 }
 
+export fn ls_netconf_get_capabilities_size(
+    d_ptr: *ffi_common.LsDriver,
+    size: *u64,
+) callconv(.c) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+
+    const rd = getRealNetconfDriver(d) orelse {
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    };
+
+    size.* = rd.getCapabilitiesLen();
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
+export fn ls_netconf_get_capabilities(
+    d_ptr: *ffi_common.LsDriver,
+    capabilities: *[]u8,
+) callconv(.c) u8 {
+    const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+
+    const rd = getRealNetconfDriver(d) orelse {
+        return @backingInt(ffi_common.FfiResult.invalid_argument);
+    };
+
+    rd.getCapabilitiesPreallocated(capabilities.*);
+
+    return @backingInt(ffi_common.FfiResult.success);
+}
+
 export fn ls_netconf_next_notification_message_size(
     d_ptr: *ffi_common.LsDriver,
     size: *u64,

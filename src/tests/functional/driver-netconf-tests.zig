@@ -92,9 +92,9 @@ fn getDriver(
 }
 
 const AllocatorlessCapability = struct {
-    namespace: []const u8,
     name: []const u8,
     revision: []const u8,
+    raw: []const u8,
 };
 
 fn compareAllocatorlessCapability(
@@ -103,11 +103,6 @@ fn compareAllocatorlessCapability(
     b: AllocatorlessCapability,
 ) bool {
     _ = context;
-
-    const ns_order = std.mem.order(u8, a.namespace, b.namespace);
-    if (ns_order != .eq) {
-        return ns_order == .lt;
-    }
 
     const name_order = std.mem.order(u8, a.name, b.name);
     if (name_order != .eq) {
@@ -215,7 +210,7 @@ test "driver-netconf open" {
         // for open, we'll just check/assert the capabilities because if we check that we know
         // that the open/auth worked of course, and also cap parcing is good, if those are null
         // we obviously failed
-        if (d.server_capabilities == null) {
+        if (d.server_capabilities.items.len == 0) {
             return error.NoCapabilitiesRecorded;
         }
 
@@ -223,15 +218,15 @@ test "driver-netconf open" {
         // so that we can easily serialize it to dump to disk and compare to golden
         var yamlable_capabilities = try std.testing.allocator.alloc(
             AllocatorlessCapability,
-            d.server_capabilities.?.items.len,
+            d.server_capabilities.items.len,
         );
         defer std.testing.allocator.free(yamlable_capabilities);
 
-        for (0.., d.server_capabilities.?.items) |idx, cap| {
+        for (0.., d.server_capabilities.items) |idx, cap| {
             yamlable_capabilities[idx] = AllocatorlessCapability{
-                .namespace = cap.namespace,
                 .name = cap.name,
                 .revision = cap.revision,
+                .raw = cap.raw,
             };
         }
 
