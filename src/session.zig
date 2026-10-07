@@ -191,6 +191,14 @@ pub const Options = struct {
     }
 };
 
+pub const ReadLoopCallback = struct {
+    ctx: *anyopaque,
+    f: *const fn (
+        ctx: *anyopaque,
+        buf: []const u8,
+    ) anyerror!void,
+};
+
 /// Session is the thing that wraps the transport and provides some logic for taking data from the
 /// transport and storing it until a user requests that data. It also provides conveinence wrappers
 /// for things like sending a return character, handling possible "in session" authentication,
@@ -237,6 +245,11 @@ pub const Session = struct {
     // reusable scratch buffers for building operation output; owned by the session and reset
     // at the start of each op so we dont reallocate every time
     scratch: bytes.ProcessedBuf,
+
+    // hopefully/probably only for netconf -- this lets netconf driver bypass the read buf while
+    // giving it the benefit of only waking when/if there is new data (via the waiter in the
+    // transports). "installed" via the install readLoopCallback fn.
+    read_loop_callback: ?ReadLoopCallback = null,
 
     /// Initializes the session object.
     pub fn init(
@@ -477,8 +490,33 @@ pub const Session = struct {
 
         self.transport.close();
 
+        self.read_loop_callback = null;
+
         if (prepare_close_err) |err| {
             return err;
+        }
+    }
+
+    pub fn installReadLoopCallback(
+        self: *Session,
+        cb: ReadLoopCallback,
+    ) !void {
+        try self.read_lock.lock(self.io);
+        defer self.read_lock.unlock(self.io);
+
+        self.read_loop_callback = cb;
+
+        // have to drain anything in the read queue into the callback if there is anything...
+        if (self.read_queue.readableLength() == 0) {
+            return;
+        }
+
+        const buf = self.read_into_buf;
+
+        while (self.read_queue.readableLength() > 0) {
+            const n = self.read_queue.read(buf);
+
+            try cb.f(cb.ctx, buf[0..n]);
         }
     }
 
@@ -506,13 +544,6 @@ pub const Session = struct {
                 continue;
             }
 
-            {
-                try self.read_lock.lock(self.io);
-                defer self.read_lock.unlock(self.io);
-
-                try self.read_queue.write(buf[0..n]);
-            }
-
             // log all the reads w/ ascii unprintables shown
             logging.traceWithSrc(
                 self.log,
@@ -522,6 +553,15 @@ pub const Session = struct {
             );
 
             try self.recorder.write(buf[0..n]);
+
+            try self.read_lock.lock(self.io);
+            defer self.read_lock.unlock(self.io);
+
+            if (self.read_loop_callback) |cb| {
+                try cb.f(cb.ctx, buf[0..n]);
+            } else {
+                try self.read_queue.write(buf[0..n]);
+            }
         }
 
         self.log.info("session.Session read thread stopped", .{});
@@ -906,7 +946,7 @@ pub const Session = struct {
         }
     }
 
-    fn getReadBackoff(
+    pub fn getReadBackoff(
         cur_val: u64,
         max_val: u64,
     ) u64 {
