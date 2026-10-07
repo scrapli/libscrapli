@@ -46,6 +46,32 @@ var threaded: std.Io.Threaded = .init_single_threaded;
 
 fn initThreaded() void {
     threaded = .init(std.heap.c_allocator, .{});
+
+    if (std.posix.Sigaction == void) {
+        return;
+    }
+
+    // any posix box we set this SA_ONSTACK guy on because w/out it the goroutines little itty bit
+    // stack will get hosed w/ the big io/pipe signal frame, which messes up the goroutine's stack.
+    // this alt stack thing is only relevant to go but doesnt affect zig or python so just do it.
+    // always. see #37.
+    if (@hasField(std.posix.SIG, "IO")) {
+        setSignalHandlerOnStack(.IO);
+    }
+
+    if (@hasField(std.posix.SIG, "PIPE")) {
+        setSignalHandlerOnStack(.PIPE);
+    }
+}
+
+fn setSignalHandlerOnStack(sig: std.posix.SIG) void {
+    var act: std.posix.Sigaction = undefined;
+
+    std.posix.sigaction(sig, null, &act);
+
+    act.flags |= std.posix.SA.ONSTACK;
+
+    std.posix.sigaction(sig, &act, null);
 }
 
 // zlinter-disable no_global_vars
