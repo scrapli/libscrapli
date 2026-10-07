@@ -13,6 +13,9 @@ const last_login_pattern = "^last login.*$";
 const netconf_timestamp_pattern = "\\d{4}-\\d{2}-\\d{2}T\\d+:\\d+:\\d+.\\d+Z";
 const netconf_session_id_pattern = "<session-id>\\d+</session-id>";
 const netconf_password_pattern = "<password>.*</password>";
+// yang-library content-id (rfc8525) / module-set-id (rfc7895) can be willy nilly
+const netconf_yang_library_id_pattern = "(?<=content-id=|module-set-id=)[^&\\s]+";
+const netconf_yang_library_id_replacement = "NORMALIZED";
 
 /// Args holds process args for testing.
 // zlinter-disable no_global_vars
@@ -34,7 +37,7 @@ pub fn parseCustomFlag(
     return default;
 }
 
-const normalize_funcs = [6]*const fn (
+const normalize_funcs = [7]*const fn (
     allocator: std.mem.Allocator,
     haystack: []const u8,
 ) anyerror![]const u8{
@@ -44,6 +47,7 @@ const normalize_funcs = [6]*const fn (
     normalizeLastLogin,
     normalizeNetconfSessionId,
     normalizeNetconfPassword,
+    normalizeNetconfYangLibraryId,
 };
 
 fn processCommon(
@@ -468,6 +472,51 @@ fn normalizeNetconfSessionId(
                 haystack,
                 haystack[match_indexes[0]..match_indexes[1]],
                 "",
+                out,
+            );
+
+            return out;
+        }
+    }
+
+    const out = try allocator.alloc(u8, haystack.len);
+    @memcpy(out, haystack);
+
+    return out;
+}
+
+fn normalizeNetconfYangLibraryId(
+    allocator: std.mem.Allocator,
+    haystack: []const u8,
+) anyerror![]const u8 {
+    if (haystack.len != 0 and
+        (std.mem.find(u8, haystack, "content-id=") != null or
+            std.mem.find(u8, haystack, "module-set-id=") != null))
+    {
+        const compiled_netconf_yang_library_id_pattern = re.pcre2Compile(
+            netconf_yang_library_id_pattern,
+        );
+        defer re.pcre2Free(compiled_netconf_yang_library_id_pattern.?);
+
+        const match_indexes = try re.pcre2FindIndex(
+            compiled_netconf_yang_library_id_pattern.?,
+            haystack,
+        );
+        if (!(match_indexes[0] == 0 and match_indexes[1] == 0)) {
+            const replace_size = std.mem.replacementSize(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                netconf_yang_library_id_replacement,
+            );
+
+            const out = try allocator.alloc(u8, replace_size);
+
+            _ = std.mem.replace(
+                u8,
+                haystack,
+                haystack[match_indexes[0]..match_indexes[1]],
+                netconf_yang_library_id_replacement,
                 out,
             );
 

@@ -39,7 +39,7 @@
   raw: urn:ietf:params:netconf:capability:with-operational-defaults:1.0
 - name: urn:ietf:params:netconf:capability:yang-library:1.1
   revision: 2019-01-04
-  raw: urn:ietf:params:netconf:capability:yang-library:1.1?revision=2019-01-04&content-id=1lcdbi1x0yk1
+  raw: urn:ietf:params:netconf:capability:yang-library:1.1?revision=2019-01-04&content-id=NORMALIZED
 - name: urn:ietf:params:xml:ns:netconf:base:1.0
   revision: 2011-06-01
   raw: urn:ietf:params:xml:ns:netconf:base:1.0?module=ietf-netconf&revision=2011-06-01&features=candidate,confirmed-commit,rollback-on-error,validate,startup,url&deviations=ietf-srl-deviations
