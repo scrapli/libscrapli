@@ -65,7 +65,7 @@ const message_id_attribute_prefix = "message-id=\"";
 pub const subscription_id_attribute_prefix = "<subscription-id>";
 pub const notification_prefix = "<notification";
 
-const default_message_poll_interval_ns: u64 = 1_000_000;
+const default_message_poll_interval_ns: u64 = 50_000_000;
 const default_initial_operation_max_search_depth: u64 = 256;
 const default_post_open_operation_max_search_depth: u64 = 32;
 
@@ -162,6 +162,9 @@ pub const Driver = struct {
         std.hash_map.default_max_load_percentage,
     ),
     subscriptions_lock: std.Io.Mutex = .init,
+
+    message_ready_lock: std.Io.Mutex = std.Io.Mutex.init,
+    message_ready_condition: std.Io.Condition = std.Io.Condition.init,
 
     last_error: errors.LastError = .{},
 
@@ -1165,11 +1168,21 @@ pub const Driver = struct {
                 .{id_info.found_id},
             );
 
-            try self.messages_lock.lock(self.io);
-            defer self.messages_lock.unlock(self.io);
+            {
+                try self.messages_lock.lock(self.io);
+                defer self.messages_lock.unlock(self.io);
 
-            // message id will be unique, clobber away
-            try self.messages.put(id_info.found_id, [2][]const u8{ raw_buf, processed_buf });
+                // message id will be unique, clobber away
+                try self.messages.put(id_info.found_id, [2][]const u8{ raw_buf, processed_buf });
+            }
+
+            self.message_ready_lock.lock(self.io) catch {
+                // even if this somehow fails (it really shouldn't right?) the message is
+                // stored and worst case we sleep the poll interval before we fetch it.
+            };
+            defer self.message_ready_lock.unlock(self.io);
+
+            self.message_ready_condition.signal(self.io);
         }
     }
 
@@ -2910,6 +2923,9 @@ pub const Driver = struct {
             try self.session.writeReturn();
         }
 
+        try self.message_ready_lock.lock(self.io);
+        defer self.message_ready_lock.unlock(self.io);
+
         while (true) {
             try self.processCancelAndTimeout(start_timestamp, cancel);
 
@@ -2932,16 +2948,23 @@ pub const Driver = struct {
                 return errors.ScrapliError.EOF;
             }
 
-            self.io.sleep(
+            // only downside to this is session read thread erroring isnt noticed until this
+            // is released. worth it imo because like... 100ms on the failure path... prolly fine.
+            // maybe if it is important to somebody in the future we can have session have a
+            // condition it can broadcast to so we can catch it faster. for now... meh.
+            self.message_ready_condition.waitTimeout(
+                self.io,
+                &self.message_ready_lock,
                 .{
-                    .nanoseconds = self.options.message_poll_interval_ns,
+                    .duration = .{
+                        .raw = .fromNanoseconds(self.options.message_poll_interval_ns),
+                        .clock = .awake,
+                    },
                 },
-                .awake,
-            ) catch |err| {
-                self.log.warn(
-                    "netconf.Driver sendRpc: sleep error '{}', ignoring",
-                    .{err},
-                );
+            ) catch {
+                // nothing to do, this is just the poll timeout, the next loop
+                // iteration will process if we were cancelled or timedout or are
+                // just keepin on keepin on.
             };
         }
     }
