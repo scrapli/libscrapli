@@ -1179,6 +1179,7 @@ pub const Driver = struct {
             self.message_ready_lock.lock(self.io) catch {
                 // even if this somehow fails (it really shouldn't right?) the message is
                 // stored and worst case we sleep the poll interval before we fetch it.
+                return;
             };
             defer self.message_ready_lock.unlock(self.io);
 
@@ -2923,6 +2924,15 @@ pub const Driver = struct {
             try self.session.writeReturn();
         }
 
+        return self.waitForMessage(start_timestamp, cancel, message_id);
+    }
+
+    fn waitForMessage(
+        self: *Driver,
+        start_timestamp: std.Io.Timestamp,
+        cancel: ?*bool,
+        message_id: u64,
+    ) ![2][]const u8 {
         try self.message_ready_lock.lock(self.io);
         defer self.message_ready_lock.unlock(self.io);
 
@@ -2931,7 +2941,7 @@ pub const Driver = struct {
 
             if (try self.getMessage(message_id)) |v| {
                 self.log.debug(
-                    "netconf.Driver sendRpc message id {d} found, returning",
+                    "netconf.Driver waitForMessage message id {d} found, returning",
                     .{
                         message_id,
                     },
@@ -3143,6 +3153,213 @@ test "processFoundMessageVersion1_0" {
 
         try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
     }
+}
+
+const WaitForMessageFeeder = struct {
+    d: *Driver,
+    count: u64,
+    received: *std.atomic.Value(u64),
+    failed: *std.atomic.Value(bool),
+
+    // acts as the session read thread -- stores message i only once the waiter has consumed
+    // message i-1, so every iteration requires the waiter to park on the condition and be woken
+    // by the signal (the poll interval is far too long to rescue it).
+    fn run(self: WaitForMessageFeeder) void {
+        var i: u64 = 1;
+
+        while (i <= self.count) : (i += 1) {
+            while (self.received.load(std.lang.AtomicOrder.acquire) != i - 1) {
+                std.atomic.spinLoopHint();
+            }
+
+            var buf: [256]u8 = undefined;
+
+            const input = std.fmt.bufPrint(
+                &buf,
+                "<rpc-reply xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" " ++
+                    "message-id=\"{d}\"><ok/></rpc-reply>]]>]]>",
+                .{i},
+            ) catch {
+                self.failed.store(true, std.lang.AtomicOrder.release);
+                return;
+            };
+
+            self.d.processFoundMessageVersion1_0(input) catch {
+                self.failed.store(true, std.lang.AtomicOrder.release);
+                return;
+            };
+        }
+    }
+};
+
+// ping-pong between a fake read thread storing messages and waitForMessage consuming them. the
+// poll interval is set far longer than the operation timeout so the *only* way an iteration
+// completes in time is via the condition signal -- if signalling ever stops working this fails
+// with TimeoutExceeded rather than being papered over by the poll. note that the check->park
+// window in waitForMessage is sub-microsecond, so a signal sent *without* holding
+// message_ready_lock (a lost wakeup) is unlikely to be caught here; the lock discipline in
+// storeMessageOrSubscription is what closes that, this just guards the happy path.
+test "waitForMessageSignalWakesWaiter" {
+    const count: u64 = 250;
+
+    const d = try Driver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        .{
+            .session = .{
+                .operation_timeout_ns = 1_000_000_000,
+            },
+            .message_poll_interval_ns = 5_000_000_000,
+        },
+    );
+    defer d.deinit();
+
+    d.negotiated_version = .version_1_0;
+
+    var received = std.atomic.Value(u64).init(0);
+    var failed = std.atomic.Value(bool).init(false);
+
+    const feeder = try std.Thread.spawn(
+        .{},
+        WaitForMessageFeeder.run,
+        .{
+            WaitForMessageFeeder{
+                .d = d,
+                .count = count,
+                .received = &received,
+                .failed = &failed,
+            },
+        },
+    );
+    defer feeder.join();
+
+    var i: u64 = 1;
+
+    while (i <= count) : (i += 1) {
+        const start_timestamp = std.Io.Timestamp.now(std.testing.io, .awake);
+
+        const v = try d.waitForMessage(start_timestamp, null, i);
+
+        std.testing.allocator.free(v[0]);
+        std.testing.allocator.free(v[1]);
+
+        received.store(i, std.lang.AtomicOrder.release);
+    }
+
+    try std.testing.expect(!failed.load(std.lang.AtomicOrder.acquire));
+}
+
+// a message stored before the waiter ever looks must be returned without waiting at all.
+test "waitForMessageAlreadyStored" {
+    const d = try Driver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        .{
+            .session = .{
+                .operation_timeout_ns = 1_000_000_000,
+            },
+            .message_poll_interval_ns = 5_000_000_000,
+        },
+    );
+    defer d.deinit();
+
+    d.negotiated_version = .version_1_0;
+
+    try d.processFoundMessageVersion1_0(
+        "<rpc-reply xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" " ++
+            "message-id=\"101\"><ok/></rpc-reply>]]>]]>",
+    );
+
+    const start_timestamp = std.Io.Timestamp.now(std.testing.io, .awake);
+
+    const v = try d.waitForMessage(start_timestamp, null, 101);
+    defer std.testing.allocator.free(v[0]);
+    defer std.testing.allocator.free(v[1]);
+
+    try std.testing.expect(std.mem.find(u8, v[1], "<ok/>") != null);
+}
+
+// no message ever arrives; the operation timeout must still fire, bounded by the poll interval.
+test "waitForMessageTimeout" {
+    const d = try Driver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        .{
+            .session = .{
+                .operation_timeout_ns = 50_000_000,
+            },
+            .message_poll_interval_ns = 10_000_000,
+        },
+    );
+    defer d.deinit();
+
+    const start_timestamp = std.Io.Timestamp.now(std.testing.io, .awake);
+
+    try std.testing.expectError(
+        errors.ScrapliError.TimeoutExceeded,
+        d.waitForMessage(start_timestamp, null, 101),
+    );
+
+    // sanity check that we didnt blow way past the timeout (i.e. poll interval is honored)
+    try std.testing.expect(
+        start_timestamp.untilNow(std.testing.io, .awake).nanoseconds < 500_000_000,
+    );
+}
+
+const WaitForMessageCanceller = struct {
+    io: std.Io,
+    cancel: *bool,
+
+    fn run(self: WaitForMessageCanceller) void {
+        std.Io.sleep(self.io, .fromNanoseconds(20_000_000), .awake) catch {};
+
+        @atomicStore(bool, self.cancel, true, std.lang.AtomicOrder.release);
+    }
+};
+
+// no message ever arrives and the operation timeout is disabled; cancellation from another thread
+// must still get us out, bounded by the poll interval.
+test "waitForMessageCancel" {
+    const d = try Driver.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        .{
+            .session = .{
+                .operation_timeout_ns = 0,
+            },
+            .message_poll_interval_ns = 10_000_000,
+        },
+    );
+    defer d.deinit();
+
+    var cancel: bool = false;
+
+    const canceller = try std.Thread.spawn(
+        .{},
+        WaitForMessageCanceller.run,
+        .{
+            WaitForMessageCanceller{
+                .io = std.testing.io,
+                .cancel = &cancel,
+            },
+        },
+    );
+    defer canceller.join();
+
+    const start_timestamp = std.Io.Timestamp.now(std.testing.io, .awake);
+
+    try std.testing.expectError(
+        errors.ScrapliError.Cancelled,
+        d.waitForMessage(start_timestamp, &cancel, 101),
+    );
+
+    try std.testing.expect(
+        start_timestamp.untilNow(std.testing.io, .awake).nanoseconds < 500_000_000,
+    );
 }
 
 test "processFoundMessageVersion1_1" {
