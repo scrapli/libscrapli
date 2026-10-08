@@ -18,16 +18,17 @@ const transport = @import("transport.zig");
 /// server.
 pub const Capability = struct {
     allocator: std.mem.Allocator,
-    namespace: []const u8,
     name: []const u8,
     revision: []const u8,
+    raw: []const u8,
 
     fn deinit(self: *Capability) void {
-        self.allocator.free(self.namespace);
-        self.allocator.free(self.name);
-        self.allocator.free(self.revision);
+        // raw is the main thing, then name/revision are views into that slice.
+        self.allocator.free(self.raw);
     }
 };
+
+const capability_join_delimiter = "\n";
 
 /// Defines possible callbacks for crafting client capabilities in response to the server's
 /// hello message. This exists as a taggged union to more easily support native zig users with
@@ -137,7 +138,7 @@ pub const Driver = struct {
 
     session: session.Session,
 
-    server_capabilities: ?std.ArrayList(Capability) = .empty,
+    server_capabilities: std.ArrayList(Capability) = .empty,
     negotiated_version: operation.Version = .version_1_0,
     session_id: ?u64 = null,
 
@@ -274,14 +275,11 @@ pub const Driver = struct {
 
         self.session.deinit();
 
-        if (self.server_capabilities) |caps| {
-            for (caps.items) |cap| {
-                var mut_cap = cap;
-                mut_cap.deinit();
-            }
-
-            self.server_capabilities.?.deinit(self.allocator);
+        for (self.server_capabilities.items) |*cap| {
+            cap.deinit();
         }
+
+        self.server_capabilities.deinit(self.allocator);
 
         // free any messages that were never fetched
         var messages_iterator = self.messages.valueIterator();
@@ -675,53 +673,41 @@ pub const Driver = struct {
                         continue;
                     }
 
-                    var found_capability = Capability{
-                        .allocator = self.allocator,
-                        .name = "",
-                        .namespace = try self.allocator.dupe(u8, element_name.ns),
-                        .revision = "",
-                    };
+                    const raw = try self.allocator.dupe(
+                        u8,
+                        std.mem.trim(
+                            u8,
+                            try xml_reader.readElementText(),
+                            " \t\r\n",
+                        ),
+                    );
+                    errdefer self.allocator.free(raw);
 
-                    while (true) {
-                        const inner_node = try xml_reader.read();
-                        switch (inner_node) {
-                            .text => {
-                                const text_content = try xml_reader.text();
+                    var name: []const u8 = raw;
 
-                                if (std.mem.startsWith(
-                                    u8,
-                                    text_content,
-                                    "http",
-                                ) or
-                                    std.mem.startsWith(
-                                        u8,
-                                        text_content,
-                                        "urn",
-                                    ))
-                                {
-                                    found_capability.name = try self.allocator.dupe(
-                                        u8,
-                                        text_content,
-                                    );
-                                } else if (std.mem.startsWith(
-                                    u8,
-                                    text_content,
-                                    "revision",
-                                )) {
-                                    found_capability.revision = try self.allocator.dupe(
-                                        u8,
-                                        text_content[9..],
-                                    );
-                                }
-                            },
-                            .element_end => {
-                                break;
-                            },
-                            else => {},
+                    var revision: []const u8 = "";
+
+                    if (std.mem.indexOfScalar(u8, raw, '?')) |q| {
+                        name = raw[0..q];
+
+                        var params = std.mem.splitScalar(u8, raw[q + 1 ..], '&');
+
+                        while (params.next()) |p| {
+                            if (std.mem.startsWith(u8, p, "revision=")) {
+                                revision = p["revision=".len..];
+                            }
                         }
                     }
 
-                    try self.server_capabilities.?.append(self.allocator, found_capability);
+                    try self.server_capabilities.append(
+                        self.allocator,
+                        .{
+                            .allocator = self.allocator,
+                            .raw = raw,
+                            .name = name,
+                            .revision = revision,
+                        },
+                    );
                 },
                 else => {},
             }
@@ -731,34 +717,13 @@ pub const Driver = struct {
     /// Check if the server has reported the given capability.
     pub fn hasCapability(
         self: *Driver,
-        namespace: ?[]const u8,
         name: []const u8,
         revision: ?[]const u8,
     ) !bool {
         self.log.info("netconf.Driver hasCapability requested", .{});
         self.log.debug("netconf.Driver hasCapability: name '{s}'", .{name});
 
-        const server_capabilities = self.server_capabilities orelse {
-            const last_error = "netconf.Driver hasCapability: requested but capabilities unset";
-
-            self.last_error.set(last_error);
-
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Driver,
-                @src(),
-                self.log,
-                last_error,
-                .{},
-            );
-        };
-
-        for (server_capabilities.items) |cap| {
-            if (namespace) |ns| {
-                if (!std.mem.eql(u8, ns, cap.namespace)) {
-                    continue;
-                }
-            }
-
+        for (self.server_capabilities.items) |cap| {
             if (!std.mem.eql(u8, name, cap.name)) {
                 continue;
             }
@@ -775,18 +740,60 @@ pub const Driver = struct {
         return false;
     }
 
+    /// returns the size of all capabilities joined on newlines. mostly/probably only for ffi
+    /// callers.
+    pub fn getCapabilitiesLen(
+        self: *Driver,
+    ) usize {
+        var out_size: usize = 0;
+
+        for (0.., self.server_capabilities.items) |idx, cap| {
+            out_size += cap.raw.len;
+
+            if (idx != self.server_capabilities.items.len - 1) {
+                out_size += capability_join_delimiter.len;
+            }
+        }
+
+        return out_size;
+    }
+
+    /// fills the given buf w/ the joined server capabilities. get buf size by calling
+    /// `getCapabilitiesLen` first. like `getCapabilitiesLen` probably only for ffi callers.
+    /// unsafe if you dont provide the correctly sized buf... again, probably should only ever
+    /// be called py py/go ffi things that we know will do the right thing so its probably fine,
+    /// but ya know... dont fuck it up!
+    pub fn getCapabilitiesPreallocated(
+        self: *Driver,
+        out: []u8,
+    ) void {
+        var cur: usize = 0;
+
+        for (0.., self.server_capabilities.items) |idx, cap| {
+            @memcpy(out[cur..][0..cap.raw.len], cap.raw);
+            cur += cap.raw.len;
+
+            if (idx != self.server_capabilities.items.len - 1) {
+                @memcpy(
+                    out[cur..][0..capability_join_delimiter.len],
+                    capability_join_delimiter,
+                );
+
+                cur += capability_join_delimiter.len;
+            }
+        }
+    }
+
     fn determineVersion(
         self: *Driver,
     ) !void {
         self.log.info("netconf.Driver determineVersion requested", .{});
 
         const has_version_1_0 = try self.hasCapability(
-            null,
             version_1_0_capability_name,
             null,
         );
         const has_version_1_1 = try self.hasCapability(
-            null,
             version_1_1_capability_name,
             null,
         );
@@ -893,7 +900,7 @@ pub const Driver = struct {
                 .z => |cb| {
                     try writer.embed(
                         try cb(
-                            self.server_capabilities.?,
+                            self.server_capabilities,
                             self.negotiated_version,
                         ),
                     );
