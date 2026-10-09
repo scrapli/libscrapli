@@ -437,7 +437,8 @@ pub const Transport = struct {
             };
 
             if (n == 0) {
-                return n;
+                // see also bin transport, same story.
+                return errors.ScrapliError.EOF;
             }
 
             // servers can (prolly wont? shouldnt?) renegotiate telnet options at any time, so

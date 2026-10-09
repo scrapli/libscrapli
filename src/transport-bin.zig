@@ -516,13 +516,18 @@ pub const Transport = struct {
         }
 
         const n = std.posix.read(self.fd.?, buf) catch |err| {
-            return errors.wrapWarnError(
-                err,
-                @src(),
-                self.log,
-                "bin.Transport read: failed reading from fd",
-                .{},
-            );
+            switch (err) {
+                // linux pty read after the child exits returns EIO, which is just eof
+                // same as the comment below basically just the linux side of it instead.
+                error.InputOutput => return errors.ScrapliError.EOF,
+                else => return errors.wrapWarnError(
+                    err,
+                    @src(),
+                    self.log,
+                    "bin.Transport read: failed reading from fd",
+                    .{},
+                ),
+            }
         };
 
         if (n == 0) {
