@@ -25,6 +25,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: load zig version
+        shell: bash
+        run: |
+          source .github/vars.env
+          echo "ZIG_VERSION=$ZIG_VERSION" >> "$GITHUB_ENV"
+
       - name: set release version
         run: |
           RELEASE_TAG=${{ github.ref_name }}
@@ -34,7 +40,10 @@ jobs:
 
       - name: build builder image
         run: |
-          docker build -f build/builder.Dockerfile build/ -t ghcr.io/scrapli/libscrapli/builder:${{ env.RELEASE_VERSION }}
+          docker build \
+            -f build/builder.Dockerfile build/ \
+            -t ghcr.io/scrapli/libscrapli/builder:${{ env.RELEASE_VERSION }} \
+            --build-arg ZIG_VERSION="$ZIG_VERSION"
 
       - name: tag and push builder image to ghcr
         run: |
