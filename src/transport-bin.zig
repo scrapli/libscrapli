@@ -525,6 +525,14 @@ pub const Transport = struct {
             );
         };
 
+        if (n == 0) {
+            // the waiter woke us up for a read but then we got nothing. i think this only happens
+            // on darwin because i geuss reading from a closed pty child on linux returns EIO but
+            // on darwin we just can read and get 0s back. in any case, reading 0 after the waiter
+            // says we are readable means eof, so... return an eof.
+            return errors.ScrapliError.EOF;
+        }
+
         return n;
     }
 
