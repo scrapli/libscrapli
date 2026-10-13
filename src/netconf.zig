@@ -1498,6 +1498,46 @@ pub const Driver = struct {
         try writer.bindNs("", base_capability_name);
     }
 
+    /// Returns true if the root element of the payload is a `config` or `url` element -- the two
+    /// elements rfc 6241 permits in edit-config (and rfc 8526 in edit-data). When true the user has
+    /// supplied the wrapper element themselves and the payload is embedded as-is rather than
+    /// being wrapped in a generated `<config>` element.
+    fn payloadHasRootWrapper(payload: []const u8) bool {
+        var rest = std.mem.trimStart(u8, payload, &std.ascii.whitespace);
+
+        // skip declaration / processing instructions or comments
+        while (true) {
+            if (std.mem.startsWith(u8, rest, "<?")) {
+                const end = std.mem.indexOf(u8, rest, "?>") orelse return false;
+
+                rest = rest[end + 2 ..];
+            } else if (std.mem.startsWith(u8, rest, "<!--")) {
+                const end = std.mem.indexOf(u8, rest, "-->") orelse return false;
+
+                rest = rest[end + 3 ..];
+            } else {
+                break;
+            }
+
+            rest = std.mem.trimStart(u8, rest, &std.ascii.whitespace);
+        }
+
+        if (!std.mem.startsWith(u8, rest, "<")) {
+            return false;
+        }
+
+        rest = rest[1..];
+
+        const name_end = std.mem.indexOfAny(u8, rest, " \t\r\n>/") orelse rest.len;
+
+        var name = rest[0..name_end];
+
+        if (std.mem.lastIndexOfScalar(u8, name, ':')) |idx| {
+            name = name[idx + 1 ..];
+        }
+
+        return std.mem.eql(u8, name, "config") or std.mem.eql(u8, name, "url");
+    }
     fn addFilterElem(
         writer: *xml.Writer,
         filter: []const u8,
@@ -1802,9 +1842,13 @@ pub const Driver = struct {
             try writer.elementEnd();
         }
 
-        try writer.elementStartNs(base_capability_name, "config");
-        try writer.embed(options.config);
-        try writer.elementEnd();
+        if (Driver.payloadHasRootWrapper(options.config)) {
+            try writer.embed(options.config);
+        } else {
+            try writer.elementStartNs(base_capability_name, "config");
+            try writer.embed(options.config);
+            try writer.elementEnd();
+        }
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -2642,9 +2686,13 @@ pub const Driver = struct {
             try writer.elementEnd();
         }
 
-        try writer.elementStart("config");
-        try writer.embed(options.edit_content);
-        try writer.elementEnd();
+        if (Driver.payloadHasRootWrapper(options.edit_content)) {
+            try writer.embed(options.edit_content);
+        } else {
+            try writer.elementStart("config");
+            try writer.embed(options.edit_content);
+            try writer.elementEnd();
+        }
 
         try writer.elementEnd();
         try writer.elementEnd();
@@ -3846,6 +3894,82 @@ test "buildGetConfigElem" {
     }
 }
 
+test "payloadHasRootWrapper" {
+    const cases = [_]struct {
+        payload: []const u8,
+        expected: bool,
+    }{
+        .{
+            .payload = "<config><foo/></config>",
+            .expected = true,
+        },
+        .{
+            .payload = "<config/>",
+            .expected = true,
+        },
+        .{
+            .payload = "<config xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><foo/></config>",
+            .expected = true,
+        },
+        .{
+            .payload = "<nc:config xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><foo/></nc:config>",
+            .expected = true,
+        },
+        .{
+            .payload = "\n\t  <config><foo/></config>",
+            .expected = true,
+        },
+        .{
+            .payload = "<?xml version=\"1.0\"?><config><foo/></config>",
+            .expected = true,
+        },
+        .{
+            .payload = "<!-- comment --> <config><foo/></config>",
+            .expected = true,
+        },
+        .{
+            .payload = "<url>file:///foo.xml</url>",
+            .expected = true,
+        },
+        .{
+            .payload = "<configuration><foo/></configuration>",
+            .expected = false,
+        },
+        .{
+            .payload = "<config-text><foo/></config-text>",
+            .expected = false,
+        },
+        .{
+            .payload = "<interfaces><interface><config><foo/></config></interface></interfaces>",
+            .expected = false,
+        },
+        .{
+            .payload = "<top><config/></top>",
+            .expected = false,
+        },
+        .{
+            .payload = "",
+            .expected = false,
+        },
+        .{
+            .payload = "   ",
+            .expected = false,
+        },
+        .{
+            .payload = "not xml",
+            .expected = false,
+        },
+        .{
+            .payload = "<?xml version=\"1.0\"?>",
+            .expected = false,
+        },
+    };
+
+    for (cases) |case| {
+        try std.testing.expectEqual(case.expected, Driver.payloadHasRootWrapper(case.payload));
+    }
+}
+
 test "builEditConfigElem" {
     const test_name = "builEditConfigElem";
 
@@ -3931,6 +4055,77 @@ test "builEditConfigElem" {
             \\#343
             \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><error-option>continue-on-error</error-option><config><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></config></edit-config></rpc>
             \\##
+            ,
+        },
+        .{
+            .name = "user-supplied-config-elem",
+            .version = .version_1_0,
+            .driver_options = .{},
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<config xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><top xmlns=\"http://example.com/schema/1.2/config\"><interface nc:operation=\"delete\"><name>Ethernet0/0</name></interface></top></config>",
+                .target = operation.DatastoreType.running,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><config xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0"><top xmlns="http://example.com/schema/1.2/config"><interface nc:operation="delete"><name>Ethernet0/0</name></interface></top></config></edit-config></rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "user-supplied-prefixed-config-elem-with-leading-whitespace",
+            .version = .version_1_0,
+            .driver_options = .{},
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "\n  <nc:config xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><top xmlns=\"http://example.com/schema/1.2/config\"><interface><name>Ethernet0/0</name></interface></top></nc:config>",
+                .target = operation.DatastoreType.running,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target>
+            \\  <nc:config xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0"><top xmlns="http://example.com/schema/1.2/config"><interface><name>Ethernet0/0</name></interface></top></nc:config></edit-config></rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "user-supplied-url-elem",
+            .version = .version_1_0,
+            .driver_options = .{},
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<url>file:///config.xml</url>",
+                .target = operation.DatastoreType.running,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><url>file:///config.xml</url></edit-config></rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "nested-config-elem-still-wrapped",
+            .version = .version_1_0,
+            .driver_options = .{},
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<interfaces xmlns=\"http://openconfig.net/yang/interfaces\"><interface><name>Ethernet0/0</name><config><name>Ethernet0/0</name></config></interface></interfaces>",
+                .target = operation.DatastoreType.running,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><config><interfaces xmlns="http://openconfig.net/yang/interfaces"><interface><name>Ethernet0/0</name><config><name>Ethernet0/0</name></config></interface></interfaces></config></edit-config></rpc>
+            \\]]>]]>
+            ,
+        },
+        .{
+            .name = "configuration-elem-still-wrapped",
+            .version = .version_1_0,
+            .driver_options = .{},
+            .options = operation.EditConfigOptions{
+                .cancel = null,
+                .config = "<configuration><system><host-name>foo</host-name></system></configuration>",
+                .target = operation.DatastoreType.running,
+            },
+            .expected =
+            \\<?xml version="1.0" encoding="UTF-8"?><rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><edit-config><target><running></running></target><config><configuration><system><host-name>foo</host-name></system></configuration></config></edit-config></rpc>
+            \\]]>]]>
             ,
         },
     };
