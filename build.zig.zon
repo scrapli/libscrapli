@@ -16,7 +16,7 @@
             .hash = "zig_yaml-0.3.0-C1161t7dAgBbT4lTTKVyJd5z6FB9OZHjxeKyZrw8FfPD",
         },
         .xml = .{
-            .url = "https://github.com/carlmontanari/zig-xml/archive/13934ee.tar.gz",
+            .url = "https://github.com/ianprime0509/zig-xml/archive/57fc1c0.tar.gz",
             .hash = "xml-0.2.0-ZTbP35N4AgCLKY1YU0TFz0pRvLiGWnEWAoO6Ugjk-RRE",
         },
     },
