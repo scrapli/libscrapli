@@ -119,6 +119,61 @@ test "driver-netconf get-config" {
     }
 }
 
+test "driver-netconf get-config junos-rfc-compliant" {
+    // junos w/ `system services netconf rfc-compliant` does not set a default namespace and
+    // instead prefixes *every* netconf element (hello, capabilities, session-id, rpc-reply, ok,
+    // rpc-error...) w/ `nc:`. this exercises the whole open path (hello extraction, capability
+    // parsing, session id, version negotiation) plus a prefixed reply end-to-end.
+    const test_name = "get-config";
+    const case_name = "junos-rfc-compliant";
+
+    const record = helper.isRecording();
+
+    const fixture_filename = try helper.fixturePath(
+        std.testing.allocator,
+        "netconf",
+        test_name,
+        case_name,
+    );
+    defer std.testing.allocator.free(fixture_filename);
+
+    const golden_filename = try helper.goldenPath(
+        std.testing.allocator,
+        "netconf",
+        test_name,
+        case_name,
+    );
+    defer std.testing.allocator.free(golden_filename);
+
+    const d = try initTestDriver(record, fixture_filename);
+    defer d.deinit();
+
+    const open_res = try d.open(std.testing.allocator, .{});
+    defer open_res.deinit();
+
+    // the hello was prefixed, make sure we still pulled everything out of it
+    try std.testing.expectEqual(@as(?u64, 22748), d.session_id);
+    try std.testing.expectEqual(scrapli.netconf_operation.Version.version_1_0, d.negotiated_version);
+    try std.testing.expect(try d.hasCapability("urn:ietf:params:netconf:base:1.0", null));
+    try std.testing.expect(try d.hasCapability("urn:ietf:params:xml:ns:yang:ietf-netconf", "2011-06-01"));
+    try std.testing.expect(try d.hasCapability("http://xml.juniper.net/netconf/junos/1.0", null));
+    try std.testing.expect(!try d.hasCapability("urn:ietf:params:netconf:base:1.1", null));
+
+    const actual_res = try d.getConfig(std.testing.allocator, .{});
+    defer actual_res.deinit();
+
+    defer helper.closeDriver(netconf.Driver, d, std.testing.allocator);
+
+    try std.testing.expect(!actual_res.result_failure_indicated);
+
+    try helper.processFixutreTestStrResult(
+        test_name,
+        case_name,
+        golden_filename,
+        actual_res.result,
+    );
+}
+
 test "driver-netconf edit-config" {
     const test_name = "edit-config";
 
