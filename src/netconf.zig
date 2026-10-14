@@ -688,8 +688,7 @@ pub const Driver = struct {
 
                     var revision: []const u8 = "";
 
-                    // TODO replace all the deprecated indexOf stuff w/ find.
-                    if (std.mem.indexOfScalar(u8, raw, '?')) |q| {
+                    if (std.mem.findScalar(u8, raw, '?')) |q| {
                         name = raw[0..q];
 
                         var params = std.mem.splitScalar(u8, raw[q + 1 ..], '&');
@@ -1513,11 +1512,11 @@ pub const Driver = struct {
         // skip declaration / processing instructions or comments
         while (true) {
             if (std.mem.startsWith(u8, rest, "<?")) {
-                const end = std.mem.indexOf(u8, rest, "?>") orelse return null;
+                const end = std.mem.find(u8, rest, "?>") orelse return null;
 
                 rest = rest[end + 2 ..];
             } else if (std.mem.startsWith(u8, rest, "<!--")) {
-                const end = std.mem.indexOf(u8, rest, "-->") orelse return null;
+                const end = std.mem.find(u8, rest, "-->") orelse return null;
 
                 rest = rest[end + 3 ..];
             } else {
@@ -1533,7 +1532,7 @@ pub const Driver = struct {
 
         rest = rest[1..];
 
-        const name_end = std.mem.indexOfAny(u8, rest, " \t\r\n>/") orelse rest.len;
+        const name_end = std.mem.findAny(u8, rest, " \t\r\n>/") orelse rest.len;
 
         var name = rest[0..name_end];
         const namespaced_name = rest[0..name_end];
