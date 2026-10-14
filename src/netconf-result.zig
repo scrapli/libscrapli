@@ -168,13 +168,37 @@ pub const Result = struct {
         self.allocator.destroy(self);
     }
 
-    /// Safe mem.ql at index for rpc error parsing checks.
+    /// Safe mem.eql at index for rpc error parsing checks.
     fn matchAt(haystack: []const u8, idx: usize, needle: []const u8) bool {
         if (idx + needle.len > haystack.len) {
             return false;
         }
 
         return std.mem.eql(u8, haystack[idx .. idx + needle.len], needle);
+    }
+
+    /// matchAt, but with an optional namespace prefix ahead of the local name.
+    fn matchTagAt(
+        haystack: []const u8,
+        idx: usize,
+        prefix: []const u8,
+        needle: []const u8,
+    ) bool {
+        return matchAt(haystack, idx, prefix) and matchAt(haystack, idx + prefix.len, needle);
+    }
+
+    /// Returns the namespace prefix used on rpc-error elements -- looking from end of the content
+    /// back so we can easily find it.
+    fn rpcErrorPrefix(ret: []const u8) []const u8 {
+        const end_name_idx = std.mem.findLast(u8, ret, rpc_error_tag ++ ">") orelse return "";
+
+        const lt = std.mem.findScalarLast(u8, ret[0..end_name_idx], '<') orelse return "";
+
+        if (ret[lt + 1] != '/') {
+            return "";
+        }
+
+        return ret[lt + 2 .. end_name_idx];
     }
 
     fn parseRpcErrors(
@@ -184,6 +208,10 @@ pub const Result = struct {
         // we dont want to regex and we dont want to load a full document, so we'll do a single
         // forward pass through to find all errors, once we see a "rpc-error" open tag we will start
         // "looking" for the severity to know which bucket to dump the error in.
+        const prefix = rpcErrorPrefix(ret);
+        const error_tag_len = prefix.len + rpc_error_tag.len;
+        const severity_tag_len = prefix.len + rpc_error_severity_tag.len;
+
         var iter_idx: usize = 0;
         var message_start_idx: ?usize = null;
         var message_severity_start_idx: ?usize = null;
@@ -196,15 +224,15 @@ pub const Result = struct {
             }
 
             // check if the message is ending
-            if (matchAt(ret, iter_idx + 2, rpc_reply_tag)) {
+            if (matchTagAt(ret, iter_idx + 2, prefix, rpc_reply_tag)) {
                 return;
             }
 
             // we havent found an error message yet, see if this tag is an error message starting
             if (message_start_idx == null) {
-                if (matchAt(ret, iter_idx + 1, rpc_error_tag)) {
+                if (matchTagAt(ret, iter_idx + 1, prefix, rpc_error_tag)) {
                     message_start_idx = iter_idx;
-                    iter_idx = iter_idx + 2 + rpc_error_tag.len;
+                    iter_idx = iter_idx + 2 + error_tag_len;
                 } else {
                     iter_idx += 1;
                 }
@@ -214,8 +242,8 @@ pub const Result = struct {
 
             // next we can check if the message is ending, so jump ahead 2 (to include the closing
             // "/" char when checking
-            if (matchAt(ret, iter_idx + 2, rpc_error_tag)) {
-                const message_end_idx = @min(iter_idx + rpc_error_tag.len + 3, ret.len);
+            if (matchTagAt(ret, iter_idx + 2, prefix, rpc_error_tag)) {
+                const message_end_idx = @min(iter_idx + error_tag_len + 3, ret.len);
 
                 // default to error if we failed to parse the severity from the message
                 var sev: []const u8 = rpc_error_severity_error;
@@ -246,16 +274,16 @@ pub const Result = struct {
                 message_severity_start_idx = null;
                 message_severity_end_idx = null;
 
-                iter_idx += 2 + rpc_error_tag.len;
+                iter_idx += 2 + error_tag_len;
 
                 continue;
             }
 
             // otherwise we just need to find the severity element
-            if (matchAt(ret, iter_idx + 1, rpc_error_severity_tag)) {
-                message_severity_start_idx = iter_idx + 2 + rpc_error_severity_tag.len;
+            if (matchTagAt(ret, iter_idx + 1, prefix, rpc_error_severity_tag)) {
+                message_severity_start_idx = iter_idx + 2 + severity_tag_len;
 
-                iter_idx = iter_idx + 2 + rpc_error_severity_tag.len;
+                iter_idx = iter_idx + 2 + severity_tag_len;
 
                 while (iter_idx < ret.len) {
                     if (ret[iter_idx] != ascii.control_chars.open_element_char) {
@@ -264,7 +292,7 @@ pub const Result = struct {
                         continue;
                     }
 
-                    if (matchAt(ret, iter_idx + 2, rpc_error_severity_tag)) {
+                    if (matchTagAt(ret, iter_idx + 2, prefix, rpc_error_severity_tag)) {
                         message_severity_end_idx = iter_idx;
 
                         break;
@@ -511,12 +539,130 @@ test "parseRpcErrors" {
                 ,
             },
         },
+        // junos w/ rfc-compliant mode prefixes every netconf element w/ nc:
+        .{
+            .name = "junos-rfc-compliant-prefixed-single-error",
+            .result = try Result.init(
+                std.testing.allocator,
+                std.testing.io,
+                "1.2.3.4",
+                830,
+                .version_1_0,
+                operation.default_rpc_error_tag,
+                "",
+                operation.Kind.get,
+            ),
+            .input =
+            \\<nc:rpc-reply xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:junos="http://xml.juniper.net/junos/23.4R0/junos" message-id="101">
+            \\<nc:rpc-error>
+            \\<nc:error-type>protocol</nc:error-type>
+            \\<nc:error-tag>operation-failed</nc:error-tag>
+            \\<nc:error-severity>error</nc:error-severity>
+            \\<nc:error-message>syntax error</nc:error-message>
+            \\<nc:error-info>
+            \\<nc:bad-element>interfaces</nc:bad-element>
+            \\</nc:error-info>
+            \\</nc:rpc-error>
+            \\</nc:rpc-reply>
+            ,
+            .expected_warnings = &[_][]const u8{},
+            .expected_errors = &[_][]const u8{
+                \\<nc:rpc-error>
+                \\<nc:error-type>protocol</nc:error-type>
+                \\<nc:error-tag>operation-failed</nc:error-tag>
+                \\<nc:error-severity>error</nc:error-severity>
+                \\<nc:error-message>syntax error</nc:error-message>
+                \\<nc:error-info>
+                \\<nc:bad-element>interfaces</nc:bad-element>
+                \\</nc:error-info>
+                \\</nc:rpc-error>
+                ,
+            },
+        },
+        .{
+            .name = "junos-rfc-compliant-prefixed-single-warning",
+            .result = try Result.init(
+                std.testing.allocator,
+                std.testing.io,
+                "1.2.3.4",
+                830,
+                .version_1_0,
+                operation.default_rpc_error_tag,
+                "",
+                operation.Kind.get,
+            ),
+            .input =
+            \\<nc:rpc-reply xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><nc:rpc-error><nc:error-severity>warning</nc:error-severity><nc:error-message>statement has no contents; ignored</nc:error-message></nc:rpc-error></nc:rpc-reply>
+            ,
+            .expected_warnings = &[_][]const u8{
+                \\<nc:rpc-error><nc:error-severity>warning</nc:error-severity><nc:error-message>statement has no contents; ignored</nc:error-message></nc:rpc-error>
+                ,
+            },
+            .expected_errors = &[_][]const u8{},
+        },
+        .{
+            .name = "junos-rfc-compliant-prefixed-multiple-mixed",
+            .result = try Result.init(
+                std.testing.allocator,
+                std.testing.io,
+                "1.2.3.4",
+                830,
+                .version_1_0,
+                operation.default_rpc_error_tag,
+                "",
+                operation.Kind.get,
+            ),
+            .input =
+            \\<nc:rpc-reply xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+            \\<nc:rpc-error><nc:error-severity>warning</nc:error-severity><nc:error-message>first</nc:error-message></nc:rpc-error>
+            \\<nc:rpc-error><nc:error-severity>error</nc:error-severity><nc:error-message>second</nc:error-message></nc:rpc-error>
+            \\<nc:rpc-error><nc:error-severity>error</nc:error-severity><nc:error-message>third</nc:error-message></nc:rpc-error>
+            \\</nc:rpc-reply>
+            ,
+            .expected_warnings = &[_][]const u8{
+                \\<nc:rpc-error><nc:error-severity>warning</nc:error-severity><nc:error-message>first</nc:error-message></nc:rpc-error>
+                ,
+            },
+            .expected_errors = &[_][]const u8{
+                \\<nc:rpc-error><nc:error-severity>error</nc:error-severity><nc:error-message>second</nc:error-message></nc:rpc-error>
+                ,
+                \\<nc:rpc-error><nc:error-severity>error</nc:error-severity><nc:error-message>third</nc:error-message></nc:rpc-error>
+                ,
+            },
+        },
+        // no severity element at all -> must default to error, prefixed or not
+        .{
+            .name = "junos-rfc-compliant-prefixed-no-severity",
+            .result = try Result.init(
+                std.testing.allocator,
+                std.testing.io,
+                "1.2.3.4",
+                830,
+                .version_1_0,
+                operation.default_rpc_error_tag,
+                "",
+                operation.Kind.get,
+            ),
+            .input =
+            \\<nc:rpc-reply xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101"><nc:rpc-error><nc:error-message>oops</nc:error-message></nc:rpc-error></nc:rpc-reply>
+            ,
+            .expected_warnings = &[_][]const u8{},
+            .expected_errors = &[_][]const u8{
+                \\<nc:rpc-error><nc:error-message>oops</nc:error-message></nc:rpc-error>
+                ,
+            },
+        },
     };
 
     for (cases) |case| {
         defer case.result.deinit();
 
         try case.result.parseRpcErrors(case.input);
+
+        // length checks first, otherwise an empty actual list vs a non-empty expected list passes
+        // silently through the index-by-actual loops below
+        try std.testing.expectEqual(case.expected_errors.len, case.result.result_error_messages.items.len);
+        try std.testing.expectEqual(case.expected_warnings.len, case.result.result_warning_messages.items.len);
 
         for (0.., case.result.result_error_messages.items) |idx, actual| {
             try std.testing.expectEqualStrings(case.expected_errors[idx], actual);

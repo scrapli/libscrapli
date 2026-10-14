@@ -236,7 +236,7 @@ fn shouldRunTest(
 }
 
 fn matchesFilter(name: []const u8, filter: []const u8) bool {
-    return std.mem.indexOf(u8, name, filter) != null;
+    return std.mem.find(u8, name, filter) != null;
 }
 
 const Printer = struct {
@@ -402,7 +402,7 @@ const Env = struct {
 fn isUnnamed(t: std.builtin.TestFn) bool {
     const marker = ".test_";
     const test_name = t.name;
-    const index = std.mem.indexOf(u8, test_name, marker) orelse return false;
+    const index = std.mem.find(u8, test_name, marker) orelse return false;
     _ = std.fmt.parseInt(u32, test_name[index + marker.len ..], 10) catch return false;
     return true;
 }

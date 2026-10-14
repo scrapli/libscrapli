@@ -1,0 +1,2 @@
+
+<nc:rpc-reply xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:junos="http://xml.juniper.net/junos/23.4R0/junos" message-id="101"><nc:data><configuration xmlns="http://xml.juniper.net/xnm/1.1/xnm" junos:commit-seconds="1728925200" junos:commit-localtime="2024-10-14 10:00:00 PDT" junos:commit-user="root"><system><host-name>junos-rfc-compliant</host-name></system><interfaces><interface><name>ge-0/0/0</name><description>uplink</description></interface></interfaces></configuration></nc:data></nc:rpc-reply>

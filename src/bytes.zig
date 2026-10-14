@@ -370,14 +370,14 @@ pub const ProcessedBuf = struct {
         buf: []u8,
     ) bool {
         if (self.normalize_line_feeds and
-            std.mem.indexOfScalar(u8, buf, ascii.control_chars.cr) != null)
+            std.mem.findScalar(u8, buf, ascii.control_chars.cr) != null)
         {
             return true;
         }
 
         if (self.normalize_trailing_whitespace and
             (self.pending_runs.items.len > 0 or
-                std.mem.indexOfAny(u8, buf, " \t") != null))
+                std.mem.findAny(u8, buf, " \t") != null))
         {
             return true;
         }
