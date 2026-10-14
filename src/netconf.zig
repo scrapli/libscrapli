@@ -386,91 +386,104 @@ pub const Driver = struct {
             ),
         );
 
-        // SAFETY: undefined now but will always be set before use (below) or we will have
-        // errored out.
-        var cap_buf: []u8 = undefined;
-
         switch (self.session.transport.implementation) {
             .bin, .test_ => {
-                // bin will have already consumed the caps, anything else we will need
-                // to read the caps off the channel! (and by anything else == ssh2)
-                // bin will need to clean up the open buf though so we only send a valid
-                // xml doc to processServerCapabilities!
-                // note that this all applies to the test transport as well (reading from file)
-                const cap_start_index = std.mem.find(
-                    u8,
-                    res.result,
-                    "<hello ",
-                ) orelse {
-                    const last_error = "netconf.Driver open: could not find start of " ++
-                        "server capabilities";
-
-                    self.last_error.set(last_error);
-
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Driver,
-                        @src(),
-                        self.log,
-                        last_error,
-                        .{},
-                    );
-                };
-
-                // session will have read up to (and consumed) the prompt (]]>]]> at this point),
-                // so we just need find the end of the server hello/capabilities.
-                const cap_end_index = std.mem.find(
-                    u8,
-                    res.result,
-                    "/hello>",
-                ) orelse {
-                    const last_error = "netconf.Driver open: could not find end of server " ++
-                        "capabilities";
-
-                    self.last_error.set(last_error);
-
-                    return errors.wrapCriticalError(
-                        errors.ScrapliError.Driver,
-                        @src(),
-                        self.log,
-                        last_error,
-                        .{},
-                    );
-                };
-
-                cap_buf = try allocator.dupe(
-                    u8,
-                    res.result[cap_start_index .. cap_end_index + "/hello>".len],
-                );
+                // bin test will already have the caps in the open result
             },
             else => {
-                cap_buf = try self.receiveServerCapabilities(
+                const received = try self.receiveServerCapabilities(
                     allocator,
                     options,
                     start_timestamp,
                 );
+                defer allocator.free(received);
 
                 const combined_result = try allocator.print(
                     "{s}\n{s}",
                     .{
                         res.result,
-                        cap_buf,
+                        received,
                     },
                 );
-
                 allocator.free(res.result);
                 res.result = combined_result;
             },
         }
+
+        // next we clean up the buf so we have a valid xml doc to send to process caps.
+        // we have to get the qualified hello tag since some boxes can namespace that (i.e. junos
+        // in rfc compliant mode).
+        const qualified_hello_tag_info = Driver.findServerHelloQualifiedTag(
+            res.result,
+        ) orelse {
+            const last_error = "netconf.Driver open: could not find qualified hello " ++
+                "tag in server capabilities";
+
+            self.last_error.set(last_error);
+
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Driver,
+                @src(),
+                self.log,
+                last_error,
+                .{},
+            );
+        };
+
+        var search_from: usize = 0;
+
+        const cap_start_index = while (true) {
+            const idx = std.mem.findPos(
+                u8,
+                res.result[0..qualified_hello_tag_info.end_index],
+                search_from,
+                qualified_hello_tag_info.qualified_tag,
+            ) orelse {
+                const last_error = "netconf.Driver open: could not find start of server " ++
+                    "capabilities";
+
+                self.last_error.set(last_error);
+
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Driver,
+                    @src(),
+                    self.log,
+                    last_error,
+                    .{},
+                );
+            };
+
+            search_from = idx + 1;
+
+            if (idx == 0 or res.result[idx - 1] != '<') {
+                // previous char must be opening of tag, so if it isnt... we didnt find start.
+                continue;
+            }
+
+            const after = idx + qualified_hello_tag_info.qualified_tag.len;
+
+            if (after >= res.result.len) {
+                continue;
+            }
+
+            switch (res.result[after]) {
+                // if the char after is a whitespace or closing > or / we are good to go
+                ' ', '\t', '\r', '\n', '>', '/' => break idx - 1,
+                else => continue,
+            }
+        };
+
+        const cap_buf = try allocator.dupe(
+            u8,
+            res.result[cap_start_index..qualified_hello_tag_info.end_index],
+        );
+        defer allocator.free(cap_buf);
 
         // netconf uses a super small search depth since we only need to find a 2 or 6 char delim,
         // but that can be problematic for the "open" (for in channel auth) as we can miss password
         // or passphrase prompts, so the "initial" depth is much deeper, then post in channel auth
         // we set it to a shallower search
         self.session.options.operation_max_search_depth = default_post_open_operation_max_search_depth;
-
-        // receive caps for non bin transport can obvoiusly fail, so we'll wait to defer the free
-        // till down here otherwise we may try to free something that was not allocated
-        defer allocator.free(cap_buf);
 
         try self.processServerCapabilities(cap_buf);
         try self.determineVersion();
@@ -529,6 +542,35 @@ pub const Driver = struct {
         return res;
     }
 
+    // junos rfc compliant (maybe others) namespaces hellos (really, everything) so we cant just
+    // find index of hello. and we have additional complication of having possible ssh banner stuff
+    // (because bin transport) etc, so we have a lil helper to look *backwards* (since thats easier
+    // because we know for sure we already read up to the ]]>]]> delim) to find what the hello tag
+    // should look like. with that info we can do all the cap parsing easily.
+    fn findServerHelloQualifiedTag(
+        buf: []const u8,
+    ) ?struct {
+        qualified_tag: []const u8,
+        end_index: usize,
+    } {
+        const end_tag_idx = std.mem.findLast(u8, buf, "hello>") orelse return null;
+
+        const last_tag_opening_idx = std.mem.findScalarLast(
+            u8,
+            buf[0..end_tag_idx],
+            '<',
+        ) orelse return null;
+
+        if ((buf[last_tag_opening_idx + 1] != '/')) {
+            return null;
+        }
+
+        return .{
+            .qualified_tag = buf[last_tag_opening_idx + 2 .. end_tag_idx + "hello".len],
+            .end_index = end_tag_idx + "hello>".len,
+        };
+    }
+
     fn receiveServerCapabilities(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -537,19 +579,11 @@ pub const Driver = struct {
     ) ![]u8 {
         self.log.info("netconf.Driver receiveServerCapabilities requested", .{});
 
-        var cap_buf: std.ArrayList([]u8) = .empty;
-        defer {
-            for (cap_buf.items) |cap| {
-                allocator.free(cap);
-            }
-
-            cap_buf.deinit(self.allocator);
-        }
+        var cap_buf: std.ArrayList(u8) = .empty;
+        defer cap_buf.deinit(allocator);
 
         var read_cap_buf = try allocator.alloc(u8, 1_024);
         defer allocator.free(read_cap_buf);
-
-        var found_cap_start = false;
 
         var cur_read_delay_ns: u64 = self.session.options.read_min_delay_ns;
 
@@ -579,57 +613,21 @@ pub const Driver = struct {
                 continue;
             }
 
-            if (!found_cap_start) {
-                // search only the bytes this read actually produced -- the rest of the buffer is
-                // undefined on the first read and stale bytes from prior reads after that
-                const cap_start_index = std.mem.find(
-                    u8,
-                    read_cap_buf[0..n],
-                    "<hello ",
-                );
-                if (cap_start_index != null) {
-                    found_cap_start = true;
-                } else {
-                    continue;
-                }
-            }
+            try cap_buf.appendSlice(allocator, read_cap_buf[0..n]);
 
-            var end_copy_index: usize = n;
+            // this is dark magic! "saturating subtraction"! til :D
+            const tail = cap_buf.items[cap_buf.items.len -| (n + delimiter_version_1_0.len - 1)..];
 
-            const cap_end_index = std.mem.find(
+            if (std.mem.find(
                 u8,
-                read_cap_buf[0..n],
+                tail,
                 delimiter_version_1_0,
-            );
-            if (cap_end_index) |idx| {
-                end_copy_index = idx;
+            ) != null) {
+                break;
             }
-
-            try cap_buf.append(
-                self.allocator,
-                try allocator.dupe(u8, read_cap_buf[0..end_copy_index]),
-            );
-
-            if (cap_end_index == null) {
-                continue;
-            }
-
-            var caps_len: usize = 0;
-
-            for (cap_buf.items[0..]) |cap| {
-                caps_len += cap.len;
-            }
-
-            const final_cap_buf = try allocator.alloc(u8, caps_len);
-
-            var cur_idx: usize = 0;
-            for (cap_buf.items[0..]) |cap| {
-                @memcpy(final_cap_buf[cur_idx .. cur_idx + cap.len], cap);
-                cur_idx += cap.len;
-            }
-
-            return final_cap_buf;
         }
+
+        return try cap_buf.toOwnedSlice(allocator);
     }
 
     fn processServerCapabilities(
@@ -690,6 +688,7 @@ pub const Driver = struct {
 
                     var revision: []const u8 = "";
 
+                    // TODO replace all the deprecated indexOf stuff w/ find.
                     if (std.mem.indexOfScalar(u8, raw, '?')) |q| {
                         name = raw[0..q];
 
@@ -1498,21 +1497,27 @@ pub const Driver = struct {
         try writer.bindNs("", base_capability_name);
     }
 
-    /// Returns true if the root element of the payload is a `config` or `url` element -- the two
-    /// elements rfc 6241 permits in edit-config (and rfc 8526 in edit-data). When true the user has
-    /// supplied the wrapper element themselves and the payload is embedded as-is rather than
-    /// being wrapped in a generated `<config>` element.
-    fn payloadHasRootWrapper(payload: []const u8) bool {
+    /// Returns true if the root element of the payload is in the valid tag names list. For example
+    /// `config` or `url` element -- the two elements rfc 6241 permits in edit-config (and rfc
+    /// 8526 in edit-data). When true the user has upplied the wrapper element themselves and the
+    /// payload is embedded as-is rather than being wrapped in a generated `<config>` element.
+    fn findRootElement(
+        payload: []const u8,
+        options: struct {
+            valid_tag_names: []const []const u8,
+            want_namespaced_tag: bool = false,
+        },
+    ) ?[]const u8 {
         var rest = std.mem.trimStart(u8, payload, &std.ascii.whitespace);
 
         // skip declaration / processing instructions or comments
         while (true) {
             if (std.mem.startsWith(u8, rest, "<?")) {
-                const end = std.mem.indexOf(u8, rest, "?>") orelse return false;
+                const end = std.mem.indexOf(u8, rest, "?>") orelse return null;
 
                 rest = rest[end + 2 ..];
             } else if (std.mem.startsWith(u8, rest, "<!--")) {
-                const end = std.mem.indexOf(u8, rest, "-->") orelse return false;
+                const end = std.mem.indexOf(u8, rest, "-->") orelse return null;
 
                 rest = rest[end + 3 ..];
             } else {
@@ -1523,7 +1528,7 @@ pub const Driver = struct {
         }
 
         if (!std.mem.startsWith(u8, rest, "<")) {
-            return false;
+            return null;
         }
 
         rest = rest[1..];
@@ -1531,13 +1536,25 @@ pub const Driver = struct {
         const name_end = std.mem.indexOfAny(u8, rest, " \t\r\n>/") orelse rest.len;
 
         var name = rest[0..name_end];
+        const namespaced_name = rest[0..name_end];
 
         if (std.mem.lastIndexOfScalar(u8, name, ':')) |idx| {
             name = name[idx + 1 ..];
         }
 
-        return std.mem.eql(u8, name, "config") or std.mem.eql(u8, name, "url");
+        for (options.valid_tag_names) |valid_tag_name| {
+            if (std.mem.eql(u8, name, valid_tag_name)) {
+                if (options.want_namespaced_tag) {
+                    return namespaced_name;
+                }
+
+                return name;
+            }
+        }
+
+        return null;
     }
+
     fn addFilterElem(
         writer: *xml.Writer,
         filter: []const u8,
@@ -1842,7 +1859,15 @@ pub const Driver = struct {
             try writer.elementEnd();
         }
 
-        if (Driver.payloadHasRootWrapper(options.config)) {
+        if (Driver.findRootElement(
+            options.config,
+            .{
+                .valid_tag_names = &.{
+                    "config",
+                    "url",
+                },
+            },
+        ) != null) {
             try writer.embed(options.config);
         } else {
             try writer.elementStartNs(base_capability_name, "config");
@@ -1858,6 +1883,9 @@ pub const Driver = struct {
     }
 
     /// Execute an EditConfig rpc.
+    /// Note: options.config may include the actual "<config></config>" tags or only the content
+    /// that should be placed inside the config tags. See `Driver.payloadHasRootWrapper` for
+    /// context.
     pub fn editConfig(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -2686,7 +2714,15 @@ pub const Driver = struct {
             try writer.elementEnd();
         }
 
-        if (Driver.payloadHasRootWrapper(options.edit_content)) {
+        if (Driver.findRootElement(
+            options.edit_content,
+            .{
+                .valid_tag_names = &.{
+                    "config",
+                    "url",
+                },
+            },
+        ) != null) {
             try writer.embed(options.edit_content);
         } else {
             try writer.elementStart("config");
@@ -2702,6 +2738,9 @@ pub const Driver = struct {
     }
 
     /// Execute an EditData rpc.
+    /// Note: options.edit_content may include the actual "<config></config>" tags or only the
+    /// content that should be placed inside the config tags. See `Driver.payloadHasRootWrapper` for
+    /// context.
     pub fn editData(
         self: *Driver,
         allocator: std.mem.Allocator,
@@ -3200,6 +3239,73 @@ test "processFoundMessageVersion1_0" {
         defer d.allocator.free(actual_kv.?.value[1]);
 
         try std.testing.expectEqualStrings(case.expected, actual_kv.?.value[1]);
+    }
+}
+
+test "findServerHelloQualifiedTag" {
+    const cases = [_]struct {
+        name: []const u8,
+        buf: []const u8,
+        expected_qualified_tag: ?[]const u8,
+        expected_end_index: usize = 0,
+    }{
+        .{
+            .name = "unprefixed",
+            .buf = "<hello xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><capabilities><capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello>",
+            .expected_qualified_tag = "hello",
+            .expected_end_index = 149,
+        },
+        .{
+            .name = "junos-rfc-compliant-prefixed",
+            .buf = "<nc:hello xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><nc:capabilities><nc:capability>urn:ietf:params:netconf:base:1.0</nc:capability></nc:capabilities></nc:hello>",
+            .expected_qualified_tag = "nc:hello",
+            .expected_end_index = 170,
+        },
+        .{
+            .name = "leading-banner-and-decl",
+            .buf = "Warning: Permanently added 'host' (ED25519) to the list of known hosts.\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<hello xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"></hello>",
+            .expected_qualified_tag = "hello",
+            .expected_end_index = 174,
+        },
+        .{
+            .name = "trailing-delimiter-and-noise",
+            .buf = "<hello xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"></hello>\n]]>]]>\n",
+            .expected_qualified_tag = "hello",
+            .expected_end_index = 63,
+        },
+        .{
+            .name = "no-hello",
+            .buf = "<rpc-reply><ok/></rpc-reply>",
+            .expected_qualified_tag = null,
+        },
+        .{
+            .name = "open-tag-only-no-close",
+            .buf = "<hello xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><capabilities>",
+            .expected_qualified_tag = null,
+        },
+        .{
+            .name = "attributeless-open-tag-no-close",
+            .buf = "<hello><capabilities></capabilities>",
+            .expected_qualified_tag = null,
+        },
+        .{
+            .name = "empty",
+            .buf = "",
+            .expected_qualified_tag = null,
+        },
+    };
+
+    for (cases) |case| {
+        const actual = Driver.findServerHelloQualifiedTag(case.buf);
+
+        if (case.expected_qualified_tag) |expected_qualified_tag| {
+            try std.testing.expectEqualStrings(expected_qualified_tag, actual.?.qualified_tag);
+            try std.testing.expectEqual(case.expected_end_index, actual.?.end_index);
+            // the slice we hand back must end exactly on the closing tag
+            try std.testing.expect(std.mem.endsWith(u8, case.buf[0..actual.?.end_index], "hello>"));
+        } else {
+            try std.testing.expect(actual == null);
+        }
     }
 }
 
@@ -3894,79 +4000,128 @@ test "buildGetConfigElem" {
     }
 }
 
-test "payloadHasRootWrapper" {
+test "findRootElement" {
     const cases = [_]struct {
         payload: []const u8,
-        expected: bool,
+        options: struct {
+            valid_tag_names: []const []const u8 = &[_][]const u8{
+                "config",
+                "url",
+            },
+            want_namespaced_tag: bool = false,
+        } = .{},
+        expected: ?[]const u8 = "config",
     }{
         .{
             .payload = "<config><foo/></config>",
-            .expected = true,
         },
         .{
             .payload = "<config/>",
-            .expected = true,
         },
         .{
             .payload = "<config xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><foo/></config>",
-            .expected = true,
         },
         .{
             .payload = "<nc:config xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><foo/></nc:config>",
-            .expected = true,
         },
         .{
             .payload = "\n\t  <config><foo/></config>",
-            .expected = true,
         },
         .{
             .payload = "<?xml version=\"1.0\"?><config><foo/></config>",
-            .expected = true,
         },
         .{
             .payload = "<!-- comment --> <config><foo/></config>",
-            .expected = true,
         },
         .{
             .payload = "<url>file:///foo.xml</url>",
-            .expected = true,
+            .expected = "url",
         },
         .{
             .payload = "<configuration><foo/></configuration>",
-            .expected = false,
+            .expected = null,
         },
         .{
             .payload = "<config-text><foo/></config-text>",
-            .expected = false,
+            .expected = null,
         },
         .{
             .payload = "<interfaces><interface><config><foo/></config></interface></interfaces>",
-            .expected = false,
+            .expected = null,
         },
         .{
             .payload = "<top><config/></top>",
-            .expected = false,
+            .expected = null,
         },
         .{
             .payload = "",
-            .expected = false,
+            .expected = null,
         },
         .{
             .payload = "   ",
-            .expected = false,
+            .expected = null,
         },
         .{
             .payload = "not xml",
-            .expected = false,
+            .expected = null,
         },
         .{
             .payload = "<?xml version=\"1.0\"?>",
-            .expected = false,
+            .expected = null,
+        },
+        // the server hello use case
+        .{
+            .payload = "<nc:hello xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">",
+            .options = .{
+                .valid_tag_names = &[_][]const u8{},
+            },
+            .expected = null,
+        },
+        .{
+            .payload = "<nc:hello xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">",
+            .options = .{
+                .valid_tag_names = &[_][]const u8{
+                    "hello",
+                },
+            },
+            .expected = "hello",
+        },
+        .{
+            .payload = "<nc:hello xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">",
+            .options = .{
+                .valid_tag_names = &[_][]const u8{
+                    "hello",
+                },
+                .want_namespaced_tag = true,
+            },
+            .expected = "nc:hello",
         },
     };
 
     for (cases) |case| {
-        try std.testing.expectEqual(case.expected, Driver.payloadHasRootWrapper(case.payload));
+        if (case.expected) |expected| {
+            try std.testing.expectEqualStrings(
+                expected,
+                Driver.findRootElement(
+                    case.payload,
+                    .{
+                        .valid_tag_names = case.options.valid_tag_names,
+                        .want_namespaced_tag = case.options.want_namespaced_tag,
+                    },
+                ).?,
+            );
+        } else {
+            try std.testing.expectEqual(
+                case.expected,
+                Driver.findRootElement(
+                    case.payload,
+                    .{
+                        .valid_tag_names = case.options.valid_tag_names,
+                        .want_namespaced_tag = case.options.want_namespaced_tag,
+                    },
+                ),
+            );
+        }
     }
 }
 
