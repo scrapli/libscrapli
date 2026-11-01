@@ -64,6 +64,15 @@ pub const Options = struct {
                     // here but in this particular case we'll just warn
                     log.warn("auth private_key_content set, but is ignored for bin transport", .{});
                 }
+
+                if (self.auth.certificateIgnored(true)) |why| {
+                    log.warn("{s}", .{why});
+                }
+            },
+            .ssh2 => {
+                if (self.auth.certificateIgnored(false)) |why| {
+                    log.warn("{s}", .{why});
+                }
             },
             else => {},
         }

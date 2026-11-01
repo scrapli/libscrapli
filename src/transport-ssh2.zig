@@ -1269,6 +1269,14 @@ pub const Transport = struct {
         );
         defer self.allocator.free(private_key_passphrase_c);
 
+        // an openssh user certificate, if given, goes where the public key would: libssh2 then
+        // presents the certificate (the key type is read from it) and signs with the private key
+        const certificate_path_c: ?[:0]u8 = if (auth_options.certificate_path) |certificate_path|
+            try self.allocator.dupeSentinel(u8, certificate_path, 0)
+        else
+            null;
+        defer if (certificate_path_c) |certificate_path| self.allocator.free(certificate_path);
+
         while (true) {
             if (cancellation.cancelled(cancel)) {
                 const last_error = "ssh2.Transport handlePrivateKeyAuth: operation cancelled";
@@ -1313,7 +1321,8 @@ pub const Transport = struct {
                 // don't need to null terminate because we pass len
                 @ptrCast(@constCast(username)),
                 @intCast(username.len),
-                null, // would be public key if not using openssl as libssh2 crypto engine
+                // the certificate; otherwise the public key is derived by the openssl backend
+                if (certificate_path_c) |certificate_path| certificate_path.ptr else null,
                 private_key_path_c.ptr,
                 private_key_passphrase_c.ptr,
             );
@@ -1382,6 +1391,13 @@ pub const Transport = struct {
         defer self.allocator.free(private_key_passphrase_c);
 
         const key_content = auth_options.private_key_content.?;
+        // as for handlePrivateKeyAuth: a certificate, if given, is passed as the public key data;
+        // libssh2 trims only trailing whitespace from it, and leading whitespace would be taken
+        // as part of the key type, so it is trimmed here
+        const certificate_content: ?[]const u8 = if (auth_options.certificate_content) |certificate|
+            std.mem.trimStart(u8, certificate, " \t\r\n")
+        else
+            null;
 
         while (true) {
             if (cancellation.cancelled(cancel)) {
@@ -1424,8 +1440,12 @@ pub const Transport = struct {
                 session,
                 @ptrCast(@constCast(username)),
                 username.len,
-                null, // public key data (derived by openssl backend)
-                0,
+                // the certificate; otherwise the public key is derived by the openssl backend
+                if (certificate_content) |certificate|
+                    (if (certificate.len > 0) @ptrCast(@constCast(certificate)) else null)
+                else
+                    null,
+                if (certificate_content) |certificate| certificate.len else 0,
                 @ptrCast(@constCast(key_content)),
                 key_content.len,
                 private_key_passphrase_c.ptr,

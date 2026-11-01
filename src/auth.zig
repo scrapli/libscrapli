@@ -93,6 +93,11 @@ pub const Options = struct {
     private_key_path: ?[]const u8 = null,
     private_key_passphrase: ?[]const u8 = null,
     private_key_content: ?[]const u8 = null,
+    // an openssh user certificate for the private key -- passed to libssh2 as the public key so
+    // the certificate is presented when authenticating (ssh2 transport), or as `CertificateFile`
+    // for the bin transport (path only)
+    certificate_path: ?[]const u8 = null,
+    certificate_content: ?[]const u8 = null,
     lookups: LookupItems = .{},
     // when true, regardless of the transport, do the in session auth bits -- that means we check
     // for user/password/passphrase and finally for expected prompt. normally this would be skipped
@@ -123,6 +128,8 @@ pub const Options = struct {
         o.private_key_path = null;
         o.private_key_passphrase = null;
         o.private_key_content = null;
+        o.certificate_path = null;
+        o.certificate_content = null;
         o.lookups = .{};
         o.username_pattern = default_username_pattern;
         o.password_pattern = default_password_pattern;
@@ -150,6 +157,14 @@ pub const Options = struct {
             o.private_key_content = try allocator.dupe(u8, private_key_content);
         }
 
+        if (opts.certificate_path) |certificate_path| {
+            o.certificate_path = try allocator.dupe(u8, certificate_path);
+        }
+
+        if (opts.certificate_content) |certificate_content| {
+            o.certificate_content = try allocator.dupe(u8, certificate_content);
+        }
+
         o.lookups = try opts.lookups.cloneOwned(allocator);
 
         if (opts.username_pattern.ptr != default_username_pattern.ptr) {
@@ -165,6 +180,50 @@ pub const Options = struct {
         }
 
         return o;
+    }
+
+    /// Why a certificate given in these options will not be presented when authenticating, or
+    /// null if it will be (or none is given). The ssh2 transport presents certificate_content
+    /// with private_key_content and certificate_path with private_key_path (the content form is
+    /// used when both key forms are given); the bin transport passes certificate_path only, as
+    /// `CertificateFile`, alongside private_key_path.
+    pub fn certificateIgnored(self: Options, bin: bool) ?[]const u8 {
+        if (self.certificate_path == null and self.certificate_content == null) {
+            return null;
+        }
+
+        if (bin) {
+            if (self.certificate_content != null) {
+                return "auth certificate_content set, but is ignored for bin transport";
+            }
+
+            if (self.private_key_path == null) {
+                return "auth certificate_path set without private_key_path, ssh will pair it " ++
+                    "with its default identities";
+            }
+
+            return null;
+        }
+
+        if (self.private_key_content != null) {
+            if (self.certificate_content == null) {
+                return "auth certificate_path set, but private_key_content is used and is " ++
+                    "only paired with certificate_content";
+            }
+
+            return null;
+        }
+
+        if (self.private_key_path != null) {
+            if (self.certificate_path == null) {
+                return "auth certificate_content set, but private_key_path is used and is " ++
+                    "only paired with certificate_path";
+            }
+
+            return null;
+        }
+
+        return "auth certificate set without a private key, it is ignored";
     }
 
     /// Deinitialize the auth options.
@@ -187,6 +246,14 @@ pub const Options = struct {
 
         if (self.private_key_content) |private_key_content| {
             allocator.free(private_key_content);
+        }
+
+        if (self.certificate_path) |certificate_path| {
+            allocator.free(certificate_path);
+        }
+
+        if (self.certificate_content) |certificate_content| {
+            allocator.free(certificate_content);
         }
 
         var lookups = self.lookups;
@@ -256,6 +323,8 @@ fn optionsInitForAllocFailures(allocator: std.mem.Allocator) !void {
             .private_key_path = "/some/key",
             .private_key_passphrase = "passphrase",
             .private_key_content = "key-content",
+            .certificate_path = "/some/key-cert.pub",
+            .certificate_content = "cert-content",
             .lookups = LookupItems.init(&[_]LookupKeyValue{
                 .{ .key = lookup_default_key, .value = "enable-password" },
             }),
@@ -266,6 +335,36 @@ fn optionsInitForAllocFailures(allocator: std.mem.Allocator) !void {
     );
 
     o.deinit(allocator);
+}
+
+test "optionsCertificateIgnored" {
+    const cases = [_]struct {
+        name: []const u8,
+        o: Options,
+        bin: bool,
+        ignored: bool,
+    }{
+        .{ .name = "no certificate", .o = .{ .private_key_path = "k" }, .bin = false, .ignored = false },
+        .{ .name = "content with content", .o = .{ .private_key_content = "k", .certificate_content = "c" }, .bin = false, .ignored = false },
+        .{ .name = "path with path", .o = .{ .private_key_path = "k", .certificate_path = "c" }, .bin = false, .ignored = false },
+        .{ .name = "path with content", .o = .{ .private_key_content = "k", .certificate_path = "c" }, .bin = false, .ignored = true },
+        .{ .name = "content with path", .o = .{ .private_key_path = "k", .certificate_content = "c" }, .bin = false, .ignored = true },
+        .{ .name = "path with both keys", .o = .{ .private_key_path = "k", .private_key_content = "k", .certificate_path = "c" }, .bin = false, .ignored = true },
+        .{ .name = "no key", .o = .{ .certificate_path = "c" }, .bin = false, .ignored = true },
+        .{ .name = "bin path with path", .o = .{ .private_key_path = "k", .certificate_path = "c" }, .bin = true, .ignored = false },
+        .{ .name = "bin content", .o = .{ .private_key_path = "k", .certificate_content = "c" }, .bin = true, .ignored = true },
+        .{ .name = "bin path without key path", .o = .{ .certificate_path = "c" }, .bin = true, .ignored = true },
+    };
+
+    for (cases) |case| {
+        const why = case.o.certificateIgnored(case.bin);
+
+        std.testing.expectEqual(case.ignored, why != null) catch |err| {
+            std.debug.print("case: {s}\n", .{case.name});
+
+            return err;
+        };
+    }
 }
 
 test "optionsInitAllocationFailures" {
