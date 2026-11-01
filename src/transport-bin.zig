@@ -243,12 +243,34 @@ pub const Transport = struct {
         if (auth_options.private_key_path) |private_key_path| {
             try open_args.append(
                 allocator,
-                "-i",
+                "-o",
             );
+
+            const option = argFileOption(
+                allocator,
+                .identity_file,
+                private_key_path,
+            ) catch |err| {
+                switch (err) {
+                    error.OutOfMemory => {
+                        self.last_error.set(
+                            "bin.Transport buildArgs: private_key_path failed allocation",
+                        );
+                    },
+                    else => {
+                        self.last_error.set(
+                            "bin.Transport buildArgs: private_key_path contains a line break" ++
+                                " and can't be passed to ssh",
+                        );
+                    },
+                }
+
+                return err;
+            };
 
             try open_args.append(
                 allocator,
-                private_key_path,
+                option,
             );
         }
 
@@ -258,10 +280,24 @@ pub const Transport = struct {
                 "-o",
             );
 
-            const option = certificateFileOption(allocator, certificate_path) catch |err| {
-                self.last_error.set(
-                    "bin.Transport buildArgs: certificate_path can't be passed to ssh",
-                );
+            const option = argFileOption(
+                allocator,
+                .certificate_file,
+                certificate_path,
+            ) catch |err| {
+                switch (err) {
+                    error.OutOfMemory => {
+                        self.last_error.set(
+                            "bin.Transport buildArgs: certificate_path failed allocation",
+                        );
+                    },
+                    else => {
+                        self.last_error.set(
+                            "bin.Transport buildArgs: certificate_path contains a line break" ++
+                                " and can't be passed to ssh",
+                        );
+                    },
+                }
 
                 return err;
             };
@@ -767,11 +803,20 @@ fn setnoecho(fd: std.posix.fd_t) !void {
     }
 }
 
-/// The `CertificateFile=...` value of an `-o` option for `path`. ssh reads an `-o` value as a
-/// config line -- split on whitespace unless double quoted, backslash escapes inside quotes,
-/// and `%` tokens expanded -- so the path is double quoted, `"` and `\\` escaped and `%`
-/// doubled. A path with a line break can't be passed this way and is an error.
-fn certificateFileOption(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
+const ArgFileType = enum {
+    certificate_file,
+    identity_file,
+};
+
+/// The `CertificateFile=...` or `IdentityFile=...` value of an `-o` option for `path`. ssh reads
+/// an `-o` value as a config line -- split on whitespace unless double quoted, backslash escapes
+/// inside quotes, and `%` tokens expanded -- so the path is double quoted, `"` and `\\` escaped
+/// and `%` doubled. A path with a line break can't be passed this way and is an error.
+fn argFileOption(
+    allocator: std.mem.Allocator,
+    fileType: ArgFileType,
+    path: []const u8,
+) ![]const u8 {
     if (std.mem.indexOfAny(u8, path, "\r\n") != null) {
         return errors.ScrapliError.Transport;
     }
@@ -779,7 +824,10 @@ fn certificateFileOption(allocator: std.mem.Allocator, path: []const u8) ![]cons
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
-    try out.appendSlice(allocator, "CertificateFile=\"");
+    switch (fileType) {
+        .certificate_file => try out.appendSlice(allocator, "CertificateFile=\""),
+        .identity_file => try out.appendSlice(allocator, "IdentityFile=\""),
+    }
 
     for (path) |char| {
         switch (char) {
@@ -797,20 +845,41 @@ fn certificateFileOption(allocator: std.mem.Allocator, path: []const u8) ![]cons
     return out.toOwnedSlice(allocator);
 }
 
-test "certificateFileOption" {
+test "argFileOption" {
     const cases = [_]struct {
+        argFileType: ArgFileType = .certificate_file,
         path: []const u8,
         expected: []const u8,
     }{
-        .{ .path = "/home/user/.ssh/id_ed25519-cert.pub", .expected = "CertificateFile=\"/home/user/.ssh/id_ed25519-cert.pub\"" },
-        .{ .path = "/tmp/a b/key-cert.pub", .expected = "CertificateFile=\"/tmp/a b/key-cert.pub\"" },
-        .{ .path = "/tmp/q\"uote", .expected = "CertificateFile=\"/tmp/q\\\"uote\"" },
-        .{ .path = "/tmp/back\\slash", .expected = "CertificateFile=\"/tmp/back\\\\slash\"" },
-        .{ .path = "/tmp/50%cert", .expected = "CertificateFile=\"/tmp/50%%cert\"" },
+        .{
+            .path = "/home/user/.ssh/id_ed25519-cert.pub",
+            .expected = "CertificateFile=\"/home/user/.ssh/id_ed25519-cert.pub\"",
+        },
+        .{
+            .path = "/tmp/a b/key-cert.pub",
+            .expected = "CertificateFile=\"/tmp/a b/key-cert.pub\"",
+        },
+        .{
+            .path = "/tmp/q\"uote",
+            .expected = "CertificateFile=\"/tmp/q\\\"uote\"",
+        },
+        .{
+            .path = "/tmp/back\\slash",
+            .expected = "CertificateFile=\"/tmp/back\\\\slash\"",
+        },
+        .{
+            .path = "/tmp/50%cert",
+            .expected = "CertificateFile=\"/tmp/50%%cert\"",
+        },
+        .{
+            .argFileType = .identity_file,
+            .path = "/tmp/50%cert",
+            .expected = "IdentityFile=\"/tmp/50%%cert\"",
+        },
     };
 
     for (cases) |case| {
-        const actual = try certificateFileOption(std.testing.allocator, case.path);
+        const actual = try argFileOption(std.testing.allocator, case.argFileType, case.path);
         defer std.testing.allocator.free(actual);
 
         try std.testing.expectEqualStrings(case.expected, actual);
@@ -818,20 +887,20 @@ test "certificateFileOption" {
 
     try std.testing.expectError(
         errors.ScrapliError.Transport,
-        certificateFileOption(std.testing.allocator, "/tmp/new\nline"),
+        argFileOption(std.testing.allocator, .certificate_file, "/tmp/new\nline"),
     );
 }
 
-test "certificateFileOptionAllocationFailures" {
+test "argFileOptionAllocationFailures" {
     try std.testing.checkAllAllocationFailures(
         std.testing.allocator,
-        certificateFileOptionForAllocFailures,
+        argFileOptionForAllocFailures,
         .{},
     );
 }
 
-fn certificateFileOptionForAllocFailures(allocator: std.mem.Allocator) !void {
-    const option = try certificateFileOption(allocator, "/tmp/a \"b\" 50%");
+fn argFileOptionForAllocFailures(allocator: std.mem.Allocator) !void {
+    const option = try argFileOption(allocator, .certificate_file, "/tmp/a \"b\" 50%");
     allocator.free(option);
 }
 
