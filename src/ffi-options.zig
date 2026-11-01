@@ -79,6 +79,10 @@ pub const FFIOptions = extern struct {
         private_key_passphrase_len: usize = 0,
         private_key_content: [*c]const u8 = undefined,
         private_key_content_len: usize = 0,
+        certificate_path: [*c]const u8 = undefined,
+        certificate_path_len: usize = 0,
+        certificate_content: [*c]const u8 = undefined,
+        certificate_content_len: usize = 0,
         lookups: extern struct {
             keys: [*c][*c]const u8 = undefined,
             key_lens: [*c]u16 = undefined,
@@ -157,6 +161,14 @@ pub const FFIOptions = extern struct {
 
         if (self.auth.private_key_content_len > 0) {
             o.private_key_content = self.auth.private_key_content[0..self.auth.private_key_content_len];
+        }
+
+        if (self.auth.certificate_path_len > 0) {
+            o.certificate_path = self.auth.certificate_path[0..self.auth.certificate_path_len];
+        }
+
+        if (self.auth.certificate_content_len > 0) {
+            o.certificate_content = self.auth.certificate_content[0..self.auth.certificate_content_len];
         }
 
         for (0..self.auth.lookups.count) |idx| {
@@ -611,6 +623,8 @@ const ffi_options_auth_args_json_ish_placeholder =
     \\    "private_key_path": "{s}",
     \\    "private_key_passphrase": "{s}",
     \\    "private_key_content": "{s}",
+    \\    "certificate_path": "{s}",
+    \\    "certificate_content": "{s}",
     \\    "force_in_session_auth": {any},
     \\    "bypass_in_session_auth": {any},
     \\    "username_pattern": "{s}",
@@ -628,6 +642,8 @@ fn ffiOptionsAuthToJSON(allocator: std.mem.Allocator, o: *const FFIOptions) ![]u
             cStr(o.auth.private_key_path, o.auth.private_key_path_len),
             redactedStr(o.auth.private_key_passphrase_len),
             redactedStr(o.auth.private_key_content_len),
+            cStr(o.auth.certificate_path, o.auth.certificate_path_len),
+            redactedStr(o.auth.certificate_content_len),
             optBool(o.auth.force_in_session_auth),
             optBool(o.auth.bypass_in_session_auth),
             cStr(o.auth.username_pattern, o.auth.username_pattern_len),
