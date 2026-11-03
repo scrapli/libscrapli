@@ -263,6 +263,14 @@ const ProxyWrapper = struct {
     stop_flag: std.atomic.Value(bool),
     pipe_to_channel_thread: ?std.Thread = null,
     channel_to_pipe_thread: ?std.Thread = null,
+    // bytes already taken from one side but not yet accepted by the other; kept so that a
+    // would-block on the destination never drops data
+    to_channel_buf: [4096]u8 = undefined,
+    to_channel_start: usize = 0,
+    to_channel_end: usize = 0,
+    to_pipe_buf: [4096]u8 = undefined,
+    to_pipe_start: usize = 0,
+    to_pipe_end: usize = 0,
 
     /// Initializes the ssh2 transport proxy wrapper.
     pub fn init(
@@ -336,20 +344,28 @@ const ProxyWrapper = struct {
         self.channel_to_pipe_thread = null;
     }
 
+    /// Forwards one chunk the proxied session wrote into the socketpair to the jump host channel.
+    /// Returns error.WouldBlock if nothing could be forwarded; bytes the channel did not accept
+    /// yet are kept (see hasPendingToChannel) and sent first on the next call.
     fn pipeToChannel(
         self: *ProxyWrapper,
     ) !void {
-        var buf: [4096]u8 = undefined;
+        if (self.to_channel_start == self.to_channel_end) {
+            const n = try std.posix.read(self.remote_fd, &self.to_channel_buf);
 
-        const n = try std.posix.read(self.remote_fd, &buf);
+            if (n == 0) {
+                return errors.ScrapliError.EOF;
+            }
 
-        if (n == 0) {
-            return errors.ScrapliError.EOF;
+            self.to_channel_start = 0;
+            self.to_channel_end = n;
         }
 
-        const rc = ssh2.libssh2_channel_write_ex(self.channel, 0, buf[0..n].ptr, n);
+        const pending = self.to_channel_buf[self.to_channel_start..self.to_channel_end];
 
-        if (rc == ssh2.LIBSSH2_ERROR_EAGAIN) {
+        const rc = ssh2.libssh2_channel_write_ex(self.channel, 0, pending.ptr, pending.len);
+
+        if (rc == ssh2.LIBSSH2_ERROR_EAGAIN or rc == 0) {
             return error.WouldBlock;
         } else if (rc < 0) {
             return errors.wrapCriticalError(
@@ -357,9 +373,19 @@ const ProxyWrapper = struct {
                 @src(),
                 self.log,
                 "write failed, return code: {d}",
-                .{n},
+                .{rc},
             );
         }
+
+        self.to_channel_start += @intCast(rc);
+    }
+
+    fn hasPendingToChannel(self: *ProxyWrapper) bool {
+        return self.to_channel_start != self.to_channel_end;
+    }
+
+    fn hasPendingToPipe(self: *ProxyWrapper) bool {
+        return self.to_pipe_start != self.to_pipe_end;
     }
 
     fn copyPipeToChannel(self: *ProxyWrapper) !void {
@@ -380,34 +406,42 @@ const ProxyWrapper = struct {
         }
     }
 
+    /// Forwards one chunk read from the jump host channel into the socketpair. Returns
+    /// error.WouldBlock if the channel has no data or the socketpair is full; bytes the
+    /// socketpair did not accept yet are kept (see hasPendingToPipe) and written first on the
+    /// next call.
     fn channelToPipe(
         self: *ProxyWrapper,
     ) !void {
-        var buf: [4096]u8 = undefined;
-
-        const n = ssh2.libssh2_channel_read(self.channel, buf[0..].ptr, 4096);
-        if (n == 0) {
-            return errors.ScrapliError.EOF;
-        } else if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
-            return error.WouldBlock;
-        } else if (n < 0) {
-            return errors.wrapCriticalError(
-                errors.ScrapliError.Transport,
-                @src(),
-                self.log,
-                "write failed, return code: {d}",
-                .{n},
+        if (self.to_pipe_start == self.to_pipe_end) {
+            const n = ssh2.libssh2_channel_read(
+                self.channel,
+                self.to_pipe_buf[0..].ptr,
+                self.to_pipe_buf.len,
             );
+            if (n == 0) {
+                return errors.ScrapliError.EOF;
+            } else if (n == ssh2.LIBSSH2_ERROR_EAGAIN) {
+                return error.WouldBlock;
+            } else if (n < 0) {
+                return errors.wrapCriticalError(
+                    errors.ScrapliError.Transport,
+                    @src(),
+                    self.log,
+                    "read failed, return code: {d}",
+                    .{n},
+                );
+            }
+
+            self.to_pipe_start = 0;
+            self.to_pipe_end = @intCast(n);
         }
 
-        var wrote: usize = 0;
-        const total: usize = @intCast(n);
-
-        while (wrote < total) {
+        while (self.to_pipe_start < self.to_pipe_end) {
             const rc = std.c.write(
                 self.remote_fd,
-                buf[wrote..total].ptr,
-                total - wrote,
+                self.to_pipe_buf[self.to_pipe_start..self.to_pipe_end].ptr,
+                self.to_pipe_end - self.to_pipe_start,
             );
 
             if (rc < 0) {
@@ -429,7 +463,7 @@ const ProxyWrapper = struct {
                 return error.WouldBlock;
             }
 
-            wrote += wrote_n;
+            self.to_pipe_start += wrote_n;
         }
     }
 
@@ -2303,6 +2337,12 @@ pub const Transport = struct {
                 self.proxy_wrapper.?.channelToPipe() catch |err| {
                     switch (err) {
                         error.WouldBlock => {
+                            // socketpair full: the proxied session read drains it, so dont
+                            // wait on the socket (that may stay quiet) with data still pending
+                            if (self.proxy_wrapper.?.hasPendingToPipe()) {
+                                continue;
+                            }
+
                             try self.waiter.wait(self.socket.?);
 
                             return 0;
