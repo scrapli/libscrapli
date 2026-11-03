@@ -2230,6 +2230,10 @@ pub const Transport = struct {
         }
 
         try self.flushProxyPipe();
+
+        // writing to the jump host channel lets libssh2 read from the socket too; anything it
+        // buffered that way is invisible to a reader blocked on the socket, so wake it up
+        try self.waiter.unblock();
     }
 
     /// Forwards everything the proxied session has written into the socketpair to the jump host
