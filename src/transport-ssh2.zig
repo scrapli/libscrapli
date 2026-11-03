@@ -2213,6 +2213,9 @@ pub const Transport = struct {
             self.session_lock.unlock(self.io);
 
             if (n == ssh2.LIBSSH2_ERROR_EAGAIN or n == 0) {
+                // the socketpair may be full, drain it so libssh2 can make progress
+                try self.flushProxyPipe();
+
                 try self.io.sleep(
                     .{
                         .nanoseconds = default_eagain_delay_ns,
@@ -2238,15 +2241,34 @@ pub const Transport = struct {
             written += @intCast(n);
         }
 
-        if (self.proxy_wrapper) |pw| {
-            while (true) {
-                pw.pipeToChannel() catch |err| switch (err) {
-                    error.WouldBlock => continue,
-                    else => return err,
-                };
+        try self.flushProxyPipe();
+    }
 
-                break;
-            }
+    /// Forwards everything the proxied session has written into the socketpair to the jump host
+    /// channel. Returns once the socketpair is empty -- regardless of whether this or the read
+    /// thread (readProxied pumps too) forwarded it.
+    fn flushProxyPipe(self: *Transport) !void {
+        const pw = self.proxy_wrapper.?;
+
+        while (true) {
+            pw.pipeToChannel() catch |err| switch (err) {
+                error.WouldBlock => {
+                    if (!pw.hasPendingToChannel()) {
+                        return;
+                    }
+
+                    // jump host channel not accepting data right now, retry shortly
+                    try self.io.sleep(
+                        .{
+                            .nanoseconds = default_eagain_delay_ns,
+                        },
+                        .awake,
+                    );
+
+                    continue;
+                },
+                else => return err,
+            };
         }
     }
 
