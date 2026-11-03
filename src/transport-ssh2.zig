@@ -2159,6 +2159,11 @@ pub const Transport = struct {
     fn writeProxied(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport writeProxied requested", .{});
 
+        // nothing to write means libssh2 puts nothing into the socketpair either
+        if (buf.len == 0) {
+            return;
+        }
+
         var written: usize = 0;
 
         while (written < buf.len) {
