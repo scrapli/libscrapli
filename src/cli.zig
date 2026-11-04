@@ -562,7 +562,7 @@ pub const Driver = struct {
                             // no "response" (usually "enable"/escalation type password), so we will
                             // log it and just try a send input rather than "prompted" input
                             self.log.warn(
-                                "cli.Driver enterMode: prompted input requested to change to  " ++
+                                "cli.Driver enterMode: prompted input requested to change to " ++
                                     "mode '{s}', but no response found, trying standard send input",
                                 .{options.requested_mode},
                             );

@@ -831,7 +831,7 @@ pub const Session = struct {
                         auth_password_prompt_seen_count += 1;
 
                         if (auth_password_prompt_seen_count > 2) {
-                            const last_error = "session.Session authenticate: password prompt  " ++
+                            const last_error = "session.Session authenticate: password prompt " ++
                                 "seen multiple times, assuming authentication failed";
 
                             self.last_error.set(last_error);
