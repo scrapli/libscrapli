@@ -3,7 +3,7 @@
     // set in ci
     .version = "0.0.0",
     .fingerprint = 0xb0e01d3de97bbf58,
-    .minimum_zig_version = "0.17.0",
+    .minimum_zig_version = "0.17.1",
     .dependencies = .{
         .pcre2 = .{
             .path = "lib/pcre2",
