@@ -638,6 +638,7 @@ fn openPty(
         std.mem.span(s_name),
         .{
             .ACCMODE = .RDWR,
+            .NOCTTY = true,
         },
     );
     if (slave_handle == -1) {
