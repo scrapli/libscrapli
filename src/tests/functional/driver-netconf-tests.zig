@@ -15,7 +15,7 @@ fn getDriver(
     key: ?[]const u8,
     passphrase: ?[]const u8,
 ) !*netconf.Driver {
-    // on darwin we'll be targetting localhost, on linux we'll target the ip exposed via clab/docker
+    // on darwin we'll be targeting localhost, on linux we'll target the ip exposed via clab/docker
     var host: []const u8 = "";
 
     var options = netconf.Options{};
@@ -321,6 +321,79 @@ test "driver-netconf get-config" {
         // netconf output needs to get tested/asserted better at some point, for now
         // we'll just ignore errors here
     }
+}
+
+test "driver-netconf proxy-jump large rpc" {
+    // pushes an rpc well past the default (2MiB) ssh channel window through the jump host, so
+    // the proxied write has to wait on window adjusts that only show up via the jump channel --
+    // the case where writeProxied has to wake the reader to pump them into the socketpair. note
+    // that writes have no timeout, so if this regresses the test hangs rather than fails.
+    const padding_len = 4 * 1024 * 1024;
+
+    // on darwin we go via the forwarded port, on linux straight at the clab ip
+    var jump_host: []const u8 = "172.20.20.19";
+    var jump_port: u16 = 22;
+
+    if (os == .macos) {
+        jump_host = "localhost";
+        jump_port = 24022;
+    }
+
+    var d = try netconf.Driver.init(
+        std.testing.allocator,
+        std.testing.io,
+        jump_host,
+        .{
+            .port = jump_port,
+            .auth = .{
+                .username = "scrapli-pw",
+                .password = "scrapli-123-pw",
+            },
+            .session = .{
+                .operation_timeout_ns = std.time.ns_per_min,
+            },
+            .transport = .{
+                .ssh2 = .{
+                    .proxy_jump_options = .{
+                        // always the clab address since this is resolved from the jump host
+                        .host = "172.20.20.18",
+                        .port = 830,
+                        .username = "root",
+                        .password = "password",
+                    },
+                },
+            },
+        },
+    );
+    defer d.deinit();
+
+    const open_res = try d.open(std.testing.allocator, .{});
+    defer open_res.deinit();
+
+    defer {
+        const close_ret = d.close(std.testing.allocator, .{}) catch unreachable;
+        close_ret.deinit();
+    }
+
+    // padding goes in an xml comment so the server has to read all of it but otherwise ignores
+    // it, leaving a plain get-config
+    const padding = try std.testing.allocator.alloc(u8, padding_len);
+    defer std.testing.allocator.free(padding);
+
+    @memset(padding, 'x');
+
+    const payload = try std.testing.allocator.print(
+        "<!-- {s} --><get-config><source><running/></source></get-config>",
+        .{padding},
+    );
+    defer std.testing.allocator.free(payload);
+
+    const actual_res = try d.rawRpc(std.testing.allocator, .{ .payload = payload });
+    defer actual_res.deinit();
+
+    // the point is the write making it through and a reply coming back; dont care if the
+    // reply is an rpc-error
+    try std.testing.expect(actual_res.result.len > 0);
 }
 
 // edit config

@@ -14,6 +14,11 @@ const transport_waiter = @import("transport-waiter.zig");
 
 const default_eagain_delay_ns: u64 = 100_000;
 
+// max timeout for writing on the proxy jump case; this means *fully stalled* so just a slow server
+// that responds slowly but consistently w/in the timeout isnt going to trip this. think this
+// case really only happened w/ srl in a test (`test "driver-netconf proxy-jump large rpc"`).
+const proxied_write_stall_timeout_ns: u64 = 30_000_000_000;
+
 fn libssh2Initialize() c_int {
     return ssh2.libssh2_init(0);
 }
@@ -386,7 +391,7 @@ const ProxyWrapper = struct {
         while (!self.stop_flag.load(std.lang.AtomicOrder.unordered)) {
             var progressed = false;
 
-            if (self.channelToPipe()) |_| {
+            if (self.channelToPipe()) {
                 progressed = true;
             } else |err| switch (err) {
                 error.WouldBlock => {},
@@ -394,7 +399,7 @@ const ProxyWrapper = struct {
                 else => return err,
             }
 
-            if (self.pipeToChannel()) |_| {
+            if (self.pipeToChannel()) {
                 progressed = true;
             } else |err| switch (err) {
                 error.WouldBlock => {},
@@ -2187,6 +2192,7 @@ pub const Transport = struct {
         }
 
         var written: usize = 0;
+        var last_progress = std.Io.Timestamp.now(self.io, .awake);
 
         while (written < buf.len) {
             const remaining = buf[written..];
@@ -2201,8 +2207,14 @@ pub const Transport = struct {
             self.session_lock.unlock(self.io);
 
             if (n == ssh2.LIBSSH2_ERROR_EAGAIN or n == 0) {
-                // the socketpair may be full, drain it so libssh2 can make progress
-                try self.flushProxyPipe();
+                // the socketpair may be full, drain it so libssh2 can make progress; if that
+                // touched the jump channel libssh2 may have read (and buffered) stuff off the
+                // socket the reader is waiting on, so wake it up
+                if (try self.flushProxyPipe(&last_progress)) {
+                    try self.waiter.unblock();
+                }
+
+                try self.checkProxiedWriteStall(last_progress);
 
                 try self.io.sleep(
                     .{
@@ -2227,20 +2239,23 @@ pub const Transport = struct {
             }
 
             written += @intCast(n);
+            last_progress = std.Io.Timestamp.now(self.io, .awake);
         }
 
-        try self.flushProxyPipe();
-
-        // writing to the jump host channel lets libssh2 read from the socket too; anything it
-        // buffered that way is invisible to a reader blocked on the socket, so wake it up
-        try self.waiter.unblock();
+        // same deal as above
+        if (try self.flushProxyPipe(&last_progress)) {
+            try self.waiter.unblock();
+        }
     }
 
     /// Forwards everything the proxied session has written into the socketpair to the jump host
     /// channel. Returns once the socketpair is empty -- regardless of whether this or the read
-    /// thread (readProxied pumps too) forwarded it.
-    fn flushProxyPipe(self: *Transport) !void {
+    /// thread (readProxied pumps too) forwarded it. Returns true if this call wrote (or tried to
+    /// write) to the jump channel, since that also has libssh2 read from the socket.
+    fn flushProxyPipe(self: *Transport, last_progress: *std.Io.Timestamp) !bool {
         const pw = self.proxy_wrapper.?;
+
+        var touched_channel = false;
 
         while (true) {
             try self.session_lock.lock(self.io);
@@ -2253,8 +2268,13 @@ pub const Transport = struct {
                 switch (err) {
                     error.WouldBlock => {
                         if (!pending) {
-                            return;
+                            return touched_channel;
                         }
+
+                        // pending means we got as far as the jump channel write
+                        touched_channel = true;
+
+                        try self.checkProxiedWriteStall(last_progress.*);
 
                         // jump host channel not accepting data right now, retry shortly
                         try self.io.sleep(
@@ -2271,7 +2291,28 @@ pub const Transport = struct {
             };
 
             self.session_lock.unlock(self.io);
+
+            touched_channel = true;
+            last_progress.* = std.Io.Timestamp.now(self.io, .awake);
         }
+    }
+
+    fn checkProxiedWriteStall(self: *Transport, last_progress: std.Io.Timestamp) !void {
+        if (last_progress.untilNow(self.io, .awake).nanoseconds < proxied_write_stall_timeout_ns) {
+            return;
+        }
+
+        const last_error = "ssh2.Transport writeProxied: no write progress, giving up";
+
+        self.last_error.set(last_error);
+
+        return errors.wrapCriticalError(
+            errors.ScrapliError.TimeoutExceeded,
+            @src(),
+            self.log,
+            last_error,
+            .{},
+        );
     }
 
     /// Writes content to the transport session -- dispatches to the appropriate write method based
