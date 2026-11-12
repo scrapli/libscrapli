@@ -370,6 +370,17 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
+        if (self.session.read_thread == null) {
+            self.log.debug(
+                "cli.Driver close: skipping on-close, session never opened",
+                .{},
+            );
+
+            try self.session.close();
+
+            return res;
+        }
+
         const maybe_callback_res = try self.executePlatformOnCloseCallback(
             allocator,
             options,
