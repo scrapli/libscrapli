@@ -699,6 +699,13 @@ pub const Transport = struct {
             if (self.proxy_wrapper) |pw| {
                 pw.stop();
             }
+
+            self.close();
+
+            if (self.proxy_wrapper) |pw| {
+                pw.deinit();
+                self.proxy_wrapper = null;
+            }
         }
 
         try self.initSocket(cancel, start_time, operation_timeout_ns, host, port);
@@ -2320,6 +2327,20 @@ pub const Transport = struct {
     pub fn write(self: *Transport, buf: []const u8) !void {
         self.log.debug("ssh2.Transport write requested", .{});
 
+        if (self.socket == null) {
+            const last_error = "ssh2.Transport write: write attempted, but transport not opened";
+
+            self.last_error.set(last_error);
+
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                last_error,
+                .{},
+            );
+        }
+
         if (self.options.proxy_jump_options == null) {
             return self.writeStandard(buf);
         } else {
@@ -2452,6 +2473,20 @@ pub const Transport = struct {
     /// on being a "normal" or a proxied connection.
     pub fn read(self: *Transport, buf: []u8) !usize {
         self.log.trace("ssh2.Transport read requested", .{});
+
+        if (self.socket == null) {
+            const last_error = "ssh2.Transport read: read attempted, but transport not opened";
+
+            self.last_error.set(last_error);
+
+            return errors.wrapCriticalError(
+                errors.ScrapliError.Transport,
+                @src(),
+                self.log,
+                last_error,
+                .{},
+            );
+        }
 
         if (self.options.proxy_jump_options == null) {
             return self.readStandard(buf);
