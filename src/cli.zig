@@ -370,7 +370,7 @@ pub const Driver = struct {
         );
         errdefer res.deinit();
 
-        if (self.session.read_thread == null) {
+        if (!self.session.isOpen()) {
             self.log.debug(
                 "cli.Driver close: skipping on-close, session never opened",
                 .{},

@@ -522,9 +522,10 @@ pub const Driver = struct {
             .{options.force},
         );
 
-        if (options.force or self.session.read_thread == null) {
+        if (options.force or !self.session.isOpen()) {
             self.log.debug(
-                "cli.Driver close: skipping closeSession, session never opened or force is true",
+                "netconf.Driver close: skipping closeSession, " ++
+                    "session never opened or force is true",
                 .{},
             );
 

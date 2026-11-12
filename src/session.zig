@@ -388,6 +388,13 @@ pub const Session = struct {
         self.scratch.deinit(self.allocator);
     }
 
+    /// Returns true if the session is open -- indicated by if the read thread is up and running.
+    pub fn isOpen(
+        self: *Session,
+    ) bool {
+        return self.read_thread != null;
+    }
+
     /// Opens the session object, starting the background read thread, and ensuring the underlying
     /// transport is opened, authenticated, and ready to accept reads/writes.
     pub fn open(
@@ -399,7 +406,7 @@ pub const Session = struct {
     ) ![2][]const u8 {
         self.log.info("session.Session open requested", .{});
 
-        if (self.read_thread != null) {
+        if (self.isOpen()) {
             self.log.critical("session.Session open requested but session already opened", .{});
 
             return errors.ScrapliError.Session;
