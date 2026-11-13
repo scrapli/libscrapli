@@ -183,8 +183,14 @@ export fn ls_netconf_fetch_operation_sizes(
     operation_rpc_errors_size: *usize,
     operation_error_size: *usize,
     operation_last_error_size: *usize,
+    operation_error_code: *u8,
 ) callconv(.c) u8 {
     const d: *ffi_driver.FfiDriver = @ptrCast(@alignCast(d_ptr));
+
+    // the return code reports whether *fetching* worked, the error code reports whether the
+    // *operation* worked -- callers check the latter to know which kind of error the
+    // operation hit w/out having to parse the error name
+    operation_error_code.* = @backingInt(ffi_common.FfiResult.success);
 
     const ret = d.dequeueOperation(operation_id, false) catch |err| {
         // zlinter-disable-next-line no_swallow_error - returning status code for ffi ops
@@ -205,6 +211,7 @@ export fn ls_netconf_fetch_operation_sizes(
         operation_result_size.* = 0;
         operation_error_size.* = err_name.len;
         operation_last_error_size.* = ret.last_error.len;
+        operation_error_code.* = ffi_common.toFfiResult(ret.err.?);
     } else {
         const dret = switch (ret.result) {
             .netconf => |r| r.?,
@@ -1406,4 +1413,69 @@ test "ffi: ls_netconf_get_subscription_id null result" {
         @backingInt(ffi_common.FfiResult.invalid_argument),
         ls_netconf_get_subscription_id(null, &sub_id),
     );
+}
+
+test "ffi: ls_netconf_fetch_operation_sizes failed operation error code" {
+    const cases = [_]struct {
+        name: []const u8,
+        err: anyerror,
+        expected: ffi_common.FfiResult,
+    }{
+        .{ .name = "session", .err = errors.ScrapliError.Session, .expected = .session },
+        .{ .name = "transport", .err = errors.ScrapliError.Transport, .expected = .transport },
+        .{ .name = "timeout", .err = errors.ScrapliError.TimeoutExceeded, .expected = .timeout },
+        .{ .name = "eof", .err = errors.ScrapliError.EOF, .expected = .eof },
+        .{ .name = "unmapped", .err = error.ConnectionRefused, .expected = .unknown },
+    };
+
+    for (cases) |case| {
+        const d = try ffi_driver.FfiDriver.initNetconf(
+            std.testing.allocator,
+            std.testing.io,
+            "dummy",
+            .{},
+        );
+        defer d.deinit();
+
+        const operation_id: u32 = 1;
+
+        try d.operation_results.put(
+            operation_id,
+            ffi_operations.OperationResult{
+                .done = true,
+                .result = .{ .netconf = null },
+                .err = case.err,
+                .last_error = try std.testing.allocator.dupe(u8, "boom"),
+            },
+        );
+
+        var operation_input_size: usize = 0;
+        var operation_result_raw_size: usize = 0;
+        var operation_result_size: usize = 0;
+        var operation_rpc_warnings_size: usize = 0;
+        var operation_rpc_errors_size: usize = 0;
+        var operation_error_size: usize = 0;
+        var operation_last_error_size: usize = 0;
+        var operation_error_code: u8 = 0;
+
+        const ret = ls_netconf_fetch_operation_sizes(
+            @ptrCast(d),
+            operation_id,
+            &operation_input_size,
+            &operation_result_raw_size,
+            &operation_result_size,
+            &operation_rpc_warnings_size,
+            &operation_rpc_errors_size,
+            &operation_error_size,
+            &operation_last_error_size,
+            &operation_error_code,
+        );
+
+        errdefer std.debug.print("case '{s}' failed\n", .{case.name});
+
+        try std.testing.expectEqual(@backingInt(ffi_common.FfiResult.success), ret);
+        try std.testing.expectEqual(@backingInt(case.expected), operation_error_code);
+        try std.testing.expectEqual(@errorName(case.err).len, operation_error_size);
+        try std.testing.expectEqual("boom".len, operation_last_error_size);
+    }
 }
