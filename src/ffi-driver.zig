@@ -44,9 +44,11 @@ pub const FfiDriver = struct {
         ffi_operations.OperationResult,
     ),
 
-    fn setPollFds(self: *FfiDriver) !void {
-        switch (std.posix.errno(std.c.pipe(&self.poll_fds))) {
-            .SUCCESS => return,
+    fn setPollFds() ![2]std.posix.fd_t {
+        var fds: [2]std.posix.fd_t = .{ -1, -1 };
+
+        switch (std.posix.errno(std.c.pipe(&fds))) {
+            .SUCCESS => return fds,
             .INVAL => unreachable, // Invalid parameters to pipe()
             .FAULT => unreachable, // Invalid fds pointer
             .NFILE => return error.SystemFdQuotaExceeded,
@@ -74,6 +76,12 @@ pub const FfiDriver = struct {
 
         errdefer real_driver.deinit();
 
+        const poll_fds = try setPollFds();
+        errdefer {
+            _ = std.c.close(poll_fds[0]);
+            _ = std.c.close(poll_fds[1]);
+        }
+
         const ffi_driver = try allocator.create(FfiDriver);
 
         ffi_driver.* = FfiDriver{
@@ -88,11 +96,8 @@ pub const FfiDriver = struct {
                 u32,
                 ffi_operations.OperationResult,
             ).init(allocator),
+            .poll_fds = poll_fds,
         };
-
-        errdefer ffi_driver.deinit();
-
-        try ffi_driver.setPollFds();
 
         return ffi_driver;
     }
@@ -116,6 +121,12 @@ pub const FfiDriver = struct {
 
         errdefer real_driver.deinit();
 
+        const poll_fds = try setPollFds();
+        errdefer {
+            _ = std.c.close(poll_fds[0]);
+            _ = std.c.close(poll_fds[1]);
+        }
+
         const ffi_driver = try allocator.create(FfiDriver);
 
         ffi_driver.* = FfiDriver{
@@ -130,11 +141,8 @@ pub const FfiDriver = struct {
                 u32,
                 ffi_operations.OperationResult,
             ).init(allocator),
+            .poll_fds = poll_fds,
         };
-
-        errdefer ffi_driver.deinit();
-
-        try ffi_driver.setPollFds();
 
         return ffi_driver;
     }
@@ -915,4 +923,104 @@ test "ffiDriverDeinitWithoutOpen" {
     const d = try ffiDriverInitForTests(&definition);
 
     d.deinit();
+}
+
+// returns the lowest currently unused fd number -- the kernel always hands out the lowest free fd,
+// so this tells us where the next open/pipe/epoll_create/etc. will land.
+fn lowestFreeFdForTests() !std.posix.fd_t {
+    const fd = std.posix.system.open("/dev/null", .{ .ACCMODE = .RDONLY });
+    if (fd == -1) {
+        return error.OpenFailed;
+    }
+
+    _ = std.c.close(fd);
+
+    return fd;
+}
+
+// repro for #50 -- when fds are exhausted the real driver can initialize fine (it is happy w/ the
+// fds it needs) but the subsequent pipe() in createPollFds fails w/ EMFILE. FfiDriver.init should
+// just return the error (and the testing allocator asserts nothing leaked), it must not panic.
+//
+// to force exactly that failure we:
+//   1. measure how many fds a real driver init consumes (init it then deinit it),
+//   2. drop RLIMIT_NOFILE (soft) so that the real driver's fds fit but there is nothing left for
+//      the poll fds pipe.
+//
+// generated w/ opus to repro issue locally.
+fn ffiDriverInitPollFdExhaustionForTests(
+    comptime kind: std.meta.Tag(RealDriver),
+    options: switch (kind) {
+        .cli => cli.Options,
+        .netconf => netconf.Options,
+    },
+) !void {
+    const real_driver_type = switch (kind) {
+        .cli => cli.Driver,
+        .netconf => netconf.Driver,
+    };
+
+    const fd_before_driver_init = try lowestFreeFdForTests();
+
+    const probe_driver = try real_driver_type.init(
+        std.testing.allocator,
+        std.testing.io,
+        "localhost",
+        options,
+    );
+
+    const fd_after_driver_init = try lowestFreeFdForTests();
+
+    probe_driver.deinit();
+
+    // sanity -- probe driver should have given back everything it took
+    try std.testing.expectEqual(fd_before_driver_init, try lowestFreeFdForTests());
+
+    const original_limits = try std.posix.getrlimit(.NOFILE);
+    defer std.posix.setrlimit(.NOFILE, original_limits) catch {};
+
+    // the real driver gets fds [fd_before_driver_init, fd_after_driver_init), the very next fd
+    // (the first half of the poll fds pipe) is >= the soft limit -> EMFILE
+    try std.posix.setrlimit(
+        .NOFILE,
+        .{
+            .cur = @intCast(fd_after_driver_init),
+            .max = original_limits.max,
+        },
+    );
+
+    const init_fn = switch (kind) {
+        .cli => FfiDriver.init,
+        .netconf => FfiDriver.initNetconf,
+    };
+
+    try std.testing.expectError(
+        error.ProcessFdQuotaExceeded,
+        init_fn(
+            std.testing.allocator,
+            std.testing.io,
+            "localhost",
+            options,
+        ),
+    );
+}
+
+test "ffiDriverInitFailsGracefullyOnPollFdExhaustion" {
+    var definition = platform.Definition{
+        .prompt_pattern = "^.*[>#$]\\s?+$",
+        .default_mode = "cli",
+    };
+
+    try ffiDriverInitPollFdExhaustionForTests(
+        .cli,
+        .{
+            .definition = .{
+                .definition = &definition,
+            },
+        },
+    );
+}
+
+test "ffiDriverInitNetconfFailsGracefullyOnPollFdExhaustion" {
+    try ffiDriverInitPollFdExhaustionForTests(.netconf, .{});
 }
