@@ -13,7 +13,7 @@ extern fn setsid() callconv(.c) i32;
 // no explicit path, let the shell find it for us -- obv users can just override this anyway if they
 // have some unique requirement.
 const default_ssh_bin: []const u8 = "ssh";
-const default_term_height: u16 = 255;
+const default_term_height: u16 = 254;
 const default_term_width: u16 = 80;
 const default_eagain_delay_ns: u64 = 100_000;
 

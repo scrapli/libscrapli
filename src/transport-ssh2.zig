@@ -710,6 +710,7 @@ pub const Transport = struct {
 
         try self.initSocket(cancel, start_time, operation_timeout_ns, host, port);
         try self.initSession(cancel, start_time, operation_timeout_ns);
+        self.logHostKey();
         try self.initKnownHost(host, port);
 
         if (auth_options.username != null and auth_options.password != null) {
@@ -2467,6 +2468,53 @@ pub const Transport = struct {
 
             return @intCast(n);
         }
+    }
+
+    fn logHostKey(self: *Transport) void {
+        var hostkey_len: usize = 0;
+        var hostkey_type: c_int = 0;
+
+        const hostkey_ptr = ssh2.libssh2_session_hostkey(
+            self.initial_session,
+            &hostkey_len,
+            &hostkey_type,
+        );
+
+        if (hostkey_ptr == null or hostkey_len == 0) {
+            return;
+        }
+
+        const key_bytes = @as([*]const u8, @ptrCast(hostkey_ptr))[0..hostkey_len];
+
+        const digest_size = std.crypto.hash.sha2.Sha256.digest_length;
+        const b64_buf_size = comptime std.base64.standard_no_pad.Encoder.calcSize(digest_size);
+
+        var sha256_digest: [digest_size]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(key_bytes, &sha256_digest, .{});
+
+        var b64_buf: [b64_buf_size]u8 = undefined;
+        const fingerprint = std.base64.standard_no_pad.Encoder.encode(
+            &b64_buf,
+            &sha256_digest,
+        );
+
+        const key_type_str = switch (hostkey_type) {
+            ssh2.LIBSSH2_HOSTKEY_TYPE_RSA => "ssh-rsa",
+            ssh2.LIBSSH2_HOSTKEY_TYPE_DSS => "ssh-dss",
+            ssh2.LIBSSH2_HOSTKEY_TYPE_ECDSA_256 => "ecdsa-sha2-nistp256",
+            ssh2.LIBSSH2_HOSTKEY_TYPE_ECDSA_384 => "ecdsa-sha2-nistp384",
+            ssh2.LIBSSH2_HOSTKEY_TYPE_ECDSA_521 => "ecdsa-sha2-nistp521",
+            ssh2.LIBSSH2_HOSTKEY_TYPE_ED25519 => "ssh-ed25519",
+            else => "unknown",
+        };
+
+        self.log.debug(
+            "ssh2.Transport: server host key: {s} SHA256:{s}",
+            .{
+                key_type_str,
+                fingerprint,
+            },
+        );
     }
 
     /// Reads content from the transport session -- dispatches to the appropriate write method based
