@@ -36,6 +36,23 @@ pub const ScrapliError = error{
     CError,
 };
 
+test "scrapli error names not changed unintentionally" {
+    // the ffi returns errors to scrapli and scrapligo via @errorName, they use the error names to translate responses to native errors
+    // renaming an error is a breaking change unless accomdated with a change in the libs
+    const expected = [_]struct { err: ScrapliError, name: []const u8 }{
+        .{ .err = ScrapliError.EOF, .name = "EOF" },
+        .{ .err = ScrapliError.Cancelled, .name = "Cancelled" },
+        .{ .err = ScrapliError.TimeoutExceeded, .name = "TimeoutExceeded" },
+        .{ .err = ScrapliError.Driver, .name = "Driver" },
+        .{ .err = ScrapliError.Session, .name = "Session" },
+        .{ .err = ScrapliError.Transport, .name = "Transport" },
+    };
+
+    for (expected) |entry| {
+        try std.testing.expectEqualStrings(entry.name, @errorName(entry.err));
+    }
+}
+
 /// Wraps a critical error with additional logging info.
 pub fn wrapCriticalError(
     err: anyerror,
