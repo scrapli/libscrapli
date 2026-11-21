@@ -2470,9 +2470,10 @@ pub const Transport = struct {
         }
     }
 
-    fn logHostKey(self: *@This()) void {
+    fn logHostKey(self: *Transport) void {
         var hostkey_len: usize = 0;
         var hostkey_type: c_int = 0;
+
         const hostkey_ptr = ssh2.libssh2_session_hostkey(
             self.initial_session,
             &hostkey_len,
@@ -2485,11 +2486,17 @@ pub const Transport = struct {
 
         const key_bytes = @as([*]const u8, @ptrCast(hostkey_ptr))[0..hostkey_len];
 
-        var sha256_digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+        const digest_size = std.crypto.hash.sha2.Sha256.digest_length;
+        const b64_buf_size = comptime std.base64.standard_no_pad.Encoder.calcSize(digest_size);
+
+        var sha256_digest: [digest_size]u8 = undefined;
         std.crypto.hash.sha2.Sha256.hash(key_bytes, &sha256_digest, .{});
 
-        var b64_buf: [std.base64.standard_no_pad.Encoder.calcSize(sha256_digest.len)]u8 = undefined;
-        const fingerprint = std.base64.standard_no_pad.Encoder.encode(&b64_buf, &sha256_digest);
+        var b64_buf: [b64_buf_size]u8 = undefined;
+        const fingerprint = std.base64.standard_no_pad.Encoder.encode(
+            &b64_buf,
+            &sha256_digest,
+        );
 
         const key_type_str = switch (hostkey_type) {
             ssh2.LIBSSH2_HOSTKEY_TYPE_RSA => "ssh-rsa",
@@ -2501,7 +2508,13 @@ pub const Transport = struct {
             else => "unknown",
         };
 
-        self.log.debug("ssh2.Transport: server host key: {s} SHA256:{s}", .{ key_type_str, fingerprint });
+        self.log.debug(
+            "ssh2.Transport: server host key: {s} SHA256:{s}",
+            .{
+                key_type_str,
+                fingerprint,
+            },
+        );
     }
 
     /// Reads content from the transport session -- dispatches to the appropriate write method based
